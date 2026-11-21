@@ -8,19 +8,19 @@
 //! compares against the identity as a constant and converts the coordinate
 //! once.
 
-use minocrab::v3::{Circuit3, FieldT, Secp256k1PointT, Secp256k1ScalarT, Wire3};
+use minocrab::{Circuit, FieldT, Secp256k1PointT, Secp256k1ScalarT, Wire};
 use minocrab::Public;
-use minocrab_std::v3::{hash_to_secp256k1_scalar, Secp256k1EcdsaSignature, Vis3, B32};
+use minocrab_std::{hash_to_secp256k1_scalar, Secp256k1EcdsaSignature, Vis, B32};
 
 /// `assert(pk != default<Secp256k1Point>, message)`. compactc's: the default
 /// point is generator · 0, built as `to_bytes(0)` → `from_bytes` scalar →
 /// `ec_mul_generator`, where the lean form names the identity directly. Also
 /// what a ported contract's own identity-key assert lowers to (the test
 /// caller's `initialise`).
-pub fn assert_not_identity<V: Vis3>(c: &mut Circuit3, pk: Wire3<Secp256k1PointT, V>, message: Option<&'static str>) {
+pub fn assert_not_identity<V: Vis>(c: &mut Circuit, pk: Wire<Secp256k1PointT, V>, message: Option<&'static str>) {
     let zero = c.constant(0u64);
     let zero_bytes = c.into_bytes32(zero);
-    let zero_scalar: Wire3<Secp256k1ScalarT, Public> = c.from_bytes32(zero_bytes);
+    let zero_scalar: Wire<Secp256k1ScalarT, Public> = c.from_bytes32(zero_bytes);
     let identity = c.ec_mul_generator(zero_scalar);
     let is_identity = c.test_eq(pk, V::from_public(identity));
     let not_identity = c.not(is_identity);
@@ -36,12 +36,12 @@ pub fn assert_not_identity<V: Vis3>(c: &mut Circuit3, pk: Wire3<Secp256k1PointT,
 /// infinity is rejected (`pk != default<Secp256k1Point>`). compactc's in the
 /// identity it builds (`assert_not_identity`) and the x coordinate's round
 /// trip; the lean form skips both.
-pub fn secp256k1_ecdsa_verify<V: Vis3>(
-    c: &mut Circuit3,
+pub fn secp256k1_ecdsa_verify<V: Vis>(
+    c: &mut Circuit,
     msg_hash: &B32<V>,
     sig: &Secp256k1EcdsaSignature<V>,
-    pk: Wire3<Secp256k1PointT, V>,
-) -> Wire3<FieldT, V> {
+    pk: Wire<Secp256k1PointT, V>,
+) -> Wire<FieldT, V> {
     // Private key 0 signs anything, so the point at infinity is refused
     // first, as compactc 0.36's library does.
     assert_not_identity(
@@ -63,6 +63,6 @@ pub fn secp256k1_ecdsa_verify<V: Vis3>(
     let x_bytes = c.into_bytes32(x);
     let x_pair = B32::from_typed(c, x_bytes);
     let x_typed = x_pair.to_typed(c);
-    let x_scalar: Wire3<Secp256k1ScalarT, V> = c.from_bytes32(x_typed);
+    let x_scalar: Wire<Secp256k1ScalarT, V> = c.from_bytes32(x_typed);
     c.test_eq(x_scalar, sig.r)
 }

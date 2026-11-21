@@ -21,7 +21,7 @@ include = ["src/**/*.rs", "README.md", "LICENSE-MIT", "LICENSE-APACHE"]
 workspace = true
 
 [dependencies]
-# `Circuit3` and `ImpactElem`.
+# `Circuit` and `ImpactElem`.
 minocrab.workspace = true
 # The Impact op builders and `emit`, re-exported in `impact::raw`.
 minocrab-ledger.workspace = true

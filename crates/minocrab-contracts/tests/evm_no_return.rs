@@ -22,7 +22,7 @@
 //! (`tests/support/mod.rs` lists what those cover). Nothing here is a
 //! deployment.
 
-use minocrab::v3::Circuit3;
+use minocrab::Circuit;
 use minocrab::Public;
 use minocrab_contracts::evm::{erc20, usdt, weth, Filed};
 use minocrab_contracts::evm_flow::{
@@ -30,8 +30,8 @@ use minocrab_contracts::evm_flow::{
 };
 use minocrab_contracts::signet_flow::{Requested, Settled, Signet};
 use minocrab_contracts::signet_v1::schema;
-use minocrab_sim::v3::cost;
-use minocrab_std::v3::{
+use minocrab_sim::cost;
+use minocrab_std::{
     circuit, label, Bytes, Disclose, Discloses, Ledger, LedgerRepr, Uint,
 };
 
@@ -76,7 +76,7 @@ label! {
 /// callee this slot accepts.
 #[circuit]
 fn send_tether(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     evm_nonce: Uint<64>,
     tether: Contract<usdt::UsdtLike>,
     to: Bytes<20>,
@@ -105,7 +105,7 @@ fn send_tether(
 /// declaring a `bool` the token never sends, whose failed decode the MPC
 /// resolves as its FAILURE kind, refunding a transfer that moved the money.
 #[circuit]
-fn complete_tether(c: &mut Circuit3, ticket: Succeeded<Tether>) -> Discloses<Settled> {
+fn complete_tether(c: &mut Circuit, ticket: Succeeded<Tether>) -> Discloses<Settled> {
     let outcome = WALLET.tethers.complete(c, ticket);
     let _amount = outcome.env.inner.amount;
     // The projection of a `Unit` return IS `()`, and naming it says so.
@@ -119,7 +119,7 @@ fn complete_tether(c: &mut Circuit3, ticket: Succeeded<Tether>) -> Discloses<Set
 /// own.
 #[circuit]
 fn refund_tether(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     ticket: Failed<Tether>,
 ) -> Discloses<(Settled, Recipient)> {
     let (_owner, env, ()) = WALLET.tethers.refund_to_owner::<Recipient>(c, ticket);
@@ -133,7 +133,7 @@ fn refund_tether(
 /// because `weth::Deposit` is the only call with a `Payable` impl.
 #[circuit]
 fn wrap(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     evm_nonce: Uint<64>,
     weth: Contract<weth::Weth>,
     amount: Uint<64>,
@@ -156,7 +156,7 @@ fn wrap(
 /// so it goes through the ordinary `request`.
 #[circuit]
 fn unwrap(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     evm_nonce: Uint<64>,
     weth: Contract<weth::Weth>,
     amount: Uint<64>,
@@ -176,7 +176,7 @@ fn unwrap(
 
 /// The wrap's completion — a `Unit` return again, and the same `()`.
 #[circuit]
-fn complete_wrap(c: &mut Circuit3, ticket: Succeeded<Wrap>) -> Discloses<Settled> {
+fn complete_wrap(c: &mut Circuit, ticket: Succeeded<Wrap>) -> Discloses<Settled> {
     let outcome = WALLET.wraps.complete(c, ticket);
     let () = outcome.output;
     Discloses::of(())

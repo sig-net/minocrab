@@ -1,5 +1,5 @@
 //! `bounded_ledger.compact` — a `Uint<0..1>` in LEDGER position, through
-//! [`minocrab_std::v3::BoundedUint`] (M31, notes/version-bump.org "Bump 1 —
+//! [`minocrab_std::BoundedUint`] (M31, notes/version-bump.org "Bump 1 —
 //! 2026-09-05" §"Family E", notes/bounded-integers.org §3).
 //!
 //! WHY THIS IS A SECOND FIXTURE BESIDE `bounded.compact`. compactc issue
@@ -23,9 +23,9 @@
 //! our lowering emits against the ones in the COMPILED `.zkir`, so a wrong
 //! `uint_atom_bytes` fails it regardless of what our own formula believes.
 
-use minocrab::v3::Circuit3;
+use minocrab::Circuit;
 use minocrab::Public;
-use minocrab_std::v3::{Assumed, contract, label, BoundedUint, Disclose, Discloses, Ledger, LedgerCell};
+use minocrab_std::{Assumed, contract, label, BoundedUint, Disclose, Discloses, Ledger, LedgerCell};
 
 label! {
     /// The one value this fixture ever discloses.
@@ -47,7 +47,7 @@ impl BoundedLedger {
     /// the write whose Impact op carries the alignment byte the M31 probe
     /// showed moving (`0x00` -> `0x01`).
     #[circuit]
-    pub fn bl_write(c: &mut Circuit3, x: BoundedUint<1>) -> Discloses<X> {
+    pub fn bl_write(c: &mut Circuit, x: BoundedUint<1>) -> Discloses<X> {
         let x = x.disclose_as::<X>(c);
         BOUNDED_LEDGER.cell.write(c, &x);
         Discloses::of(())
@@ -57,7 +57,7 @@ impl BoundedLedger {
     /// check a write-only fixture would miss: the read side carries the
     /// same alignment byte in its own Impact op.
     #[circuit(output = "cell")]
-    pub fn bl_read(c: &mut Circuit3) -> Assumed<BoundedUint<1, Public>> {
+    pub fn bl_read(c: &mut Circuit) -> Assumed<BoundedUint<1, Public>> {
         BOUNDED_LEDGER.cell.read(c)
     }
 }

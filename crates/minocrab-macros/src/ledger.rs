@@ -33,7 +33,7 @@
 //!
 //! — nothing but the paths, which is the whole point: the one place a ledger
 //! field's number is written down is the order it is declared in. By the
-//! THINNESS RULE the expansion contains no `Circuit3` call; every operation
+//! THINNESS RULE the expansion contains no `Circuit` call; every operation
 //! is a method on the slot types, in minocrab-std.
 //!
 //! A PATH AND NOT AN INDEX, because a ledger block is SEGMENTED at fifteen
@@ -89,7 +89,7 @@ pub fn expand(input: DeriveInput) -> syn::Result<TokenStream> {
         ));
     }
 
-    let width = quote!(::minocrab_std::v3::LedgerWidth);
+    let width = quote!(::minocrab_std::LedgerWidth);
     let types: Vec<&syn::Type> = fields.iter().map(|f| &f.ty).collect();
     // The block's field count and each slot's first flat index are SUMS OF
     // WIDTHS, evaluated at compile time: a slot that is a group of fields
@@ -157,7 +157,7 @@ pub fn expand(input: DeriveInput) -> syn::Result<TokenStream> {
             pub const fn new() -> Self {
                 #(#anchor_checks)*
                 const __TOTAL: usize = #total;
-                const __ANCHOR: usize = ::minocrab_std::v3::anchor_start(&[#(#anchor_rows),*]);
+                const __ANCHOR: usize = ::minocrab_std::anchor_start(&[#(#anchor_rows),*]);
                 #name { #(#inits),* }
             }
         }
@@ -327,8 +327,8 @@ mod tests {
             "expansion calls a method on the circuit:\n{expanded}"
         );
         assert!(
-            !expanded.contains("Circuit3 ::"),
-            "expansion calls a Circuit3 associated function:\n{expanded}"
+            !expanded.contains("Circuit ::"),
+            "expansion calls a Circuit associated function:\n{expanded}"
         );
     }
 
@@ -343,16 +343,16 @@ mod tests {
             }
         });
         assert!(expanded.contains("event_map : < LedgerMap < B32 < Public > , VaultRecord > > :: at_block_anchored (__TOTAL , 0usize , __ANCHOR)"), "{expanded}");
-        assert!(expanded.contains("signer : < LedgerField > :: at_block_anchored (__TOTAL , 0usize + < LedgerMap < B32 < Public > , VaultRecord > as :: minocrab_std :: v3 :: LedgerWidth > :: WIDTH , __ANCHOR)"), "{expanded}");
-        assert!(expanded.contains("initialized : < LedgerCounter > :: at_block_anchored (__TOTAL , 0usize + < LedgerMap < B32 < Public > , VaultRecord > as :: minocrab_std :: v3 :: LedgerWidth > :: WIDTH + < LedgerField as :: minocrab_std :: v3 :: LedgerWidth > :: WIDTH , __ANCHOR)"), "{expanded}");
+        assert!(expanded.contains("signer : < LedgerField > :: at_block_anchored (__TOTAL , 0usize + < LedgerMap < B32 < Public > , VaultRecord > as :: minocrab_std :: LedgerWidth > :: WIDTH , __ANCHOR)"), "{expanded}");
+        assert!(expanded.contains("initialized : < LedgerCounter > :: at_block_anchored (__TOTAL , 0usize + < LedgerMap < B32 < Public > , VaultRecord > as :: minocrab_std :: LedgerWidth > :: WIDTH + < LedgerField as :: minocrab_std :: LedgerWidth > :: WIDTH , __ANCHOR)"), "{expanded}");
         assert!(!expanded.contains("KINDS"), "{expanded}");
         // The anchor is found by one `const` over every field's two consts,
         // in declaration order.
         assert!(
             expanded.contains(
-                "const __ANCHOR : usize = :: minocrab_std :: v3 :: anchor_start (& [(< LedgerMap < B32 < Public > , VaultRecord > as \
-                 :: minocrab_std :: v3 :: LedgerWidth > :: IS_ANCHOR , < LedgerMap < B32 < Public > , VaultRecord > as \
-                 :: minocrab_std :: v3 :: LedgerWidth > :: NEEDS_ANCHOR , 0usize) , (< LedgerField as"
+                "const __ANCHOR : usize = :: minocrab_std :: anchor_start (& [(< LedgerMap < B32 < Public > , VaultRecord > as \
+                 :: minocrab_std :: LedgerWidth > :: IS_ANCHOR , < LedgerMap < B32 < Public > , VaultRecord > as \
+                 :: minocrab_std :: LedgerWidth > :: NEEDS_ANCHOR , 0usize) , (< LedgerField as"
             ),
             "{expanded}"
         );
@@ -361,8 +361,8 @@ mod tests {
         assert_eq!(expanded.matches("const _ : () = :: core :: assert !").count(), 6, "{expanded}");
         assert!(
             expanded.contains(
-                "! (< LedgerField as :: minocrab_std :: v3 :: LedgerWidth > :: IS_ANCHOR && (false || \
-                 < LedgerMap < B32 < Public > , VaultRecord > as :: minocrab_std :: v3 :: LedgerWidth > :: IS_ANCHOR))"
+                "! (< LedgerField as :: minocrab_std :: LedgerWidth > :: IS_ANCHOR && (false || \
+                 < LedgerMap < B32 < Public > , VaultRecord > as :: minocrab_std :: LedgerWidth > :: IS_ANCHOR))"
             ),
             "{expanded}"
         );
@@ -398,7 +398,7 @@ mod tests {
             struct Wide { #(#fields),* }
         });
         assert!(expanded.contains("f0 : < LedgerCell < Uint < 64 , Public > > > :: at_block_anchored (__TOTAL , 0usize , __ANCHOR)"), "{expanded}");
-        assert!(expanded.contains("const __TOTAL : usize = 0usize + < LedgerCell < Uint < 64 , Public > > as :: minocrab_std :: v3 :: LedgerWidth > :: WIDTH"), "{expanded}");
+        assert!(expanded.contains("const __TOTAL : usize = 0usize + < LedgerCell < Uint < 64 , Public > > as :: minocrab_std :: LedgerWidth > :: WIDTH"), "{expanded}");
     }
 
     /// A ledger block is one contract's state.

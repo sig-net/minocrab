@@ -11,11 +11,11 @@
 //! they reproduce compactc's op stream and its reads.
 //!
 //! WHAT STILL APPLIES. [`emit`] runs the stale-read check
-//! (`Circuit3::refuse_stale`) on the value a [`cell_write`], [`map_insert`]
+//! (`Circuit::refuse_stale`) on the value a [`cell_write`], [`map_insert`]
 //! or [`list_push_front_at`] stores, as a typed slot's write does: a value
 //! computed from an inline ledger read is refused at build time unless the
 //! read was acknowledged, with `.stale(c)` on a typed read or
-//! `Circuit3::acknowledge_stale` on the wires a raw read returned. Keys are
+//! `Circuit::acknowledge_stale` on the wires a raw read returned. Keys are
 //! not checked, as the typed slots do not check them. Every op element that
 //! is a wire is a public wire and is recorded as a disclosure, and [`emit`]
 //! resolves the ambient guard of `c.when(…)` (and refuses inside
@@ -29,13 +29,13 @@ pub use minocrab_ledger::{emit, ImpactOp};
 /// The values and keys ops are built over.
 pub use minocrab_ledger::{atom_limbs, LedgerKey, LedgerValue};
 /// One element of an op: an inline constant, or a public wire.
-pub use minocrab::v3::ImpactElem;
+pub use minocrab::ImpactElem;
 
 // --- reads --------------------------------------------------------------------
 
 /// Witnessing a read by hand: mint the `public_input` gates, and the `popeq`
 /// that embeds them. Name the minted wires for the stale-read backstop with
-/// `Circuit3::label_reads`, as the whole reads below do, so a refusal can
+/// `Circuit::label_reads`, as the whole reads below do, so a refusal can
 /// say which read a value descends from.
 pub use minocrab_ledger::{mint_read, popeq};
 /// The stack and path primitives a hand-written read is built from.

@@ -50,7 +50,7 @@ use midnight_onchain_runtime::cost_model::INITIAL_COST_MODEL;
 use midnight_transient_crypto::proofs::{ParamsProverProvider, ProvingKeyMaterial, Zkir};
 use minocrab_contracts::events::MISC_SIZE;
 use minocrab_contracts::signet_contract;
-use minocrab_zkir::v3::IrSource;
+use minocrab_zkir::IrSource;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 use serde::{Deserialize, Serialize};
@@ -84,7 +84,7 @@ fn ir_of(side: &str, circuit: &str) -> IrSource {
         "compactc" => {
             let dir = if circuit == "signBidirectional" { SIGNER_DIR } else { RESPONDER_DIR };
             let path = format!("{}/../../{dir}/{circuit}.zkir", env!("CARGO_MANIFEST_DIR"));
-            minocrab_zkir::v3::read_zkir(&path).expect("corpus golden parses")
+            minocrab_zkir::read_zkir(&path).expect("corpus golden parses")
         }
         other => panic!("unknown side {other}"),
     }

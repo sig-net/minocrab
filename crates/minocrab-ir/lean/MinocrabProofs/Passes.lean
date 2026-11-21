@@ -1,5 +1,5 @@
 /-
-The Lean model of `minocrab_ir::v3::passes::dedup_range_constraints`
+The Lean model of `minocrab_ir::passes::dedup_range_constraints`
 (M25's ZKIR-pass prong; design of record: notes/lean-port.org §4).
 
 THE MODEL GAP, stated once and inherited by everything here: these

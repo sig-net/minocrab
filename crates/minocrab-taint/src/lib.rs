@@ -127,7 +127,7 @@ use std::fmt;
 
 use midnight_base_crypto::fab::{Alignment, AlignmentAtom, AlignmentSegment};
 use minocrab_zkir::Fr;
-use minocrab_zkir::v3::{Identifier, Instruction, IrType, Operand};
+use minocrab_zkir::{Identifier, Instruction, IrType, Operand};
 
 /// Bytes a single field element can hold losslessly — the FAB limb width
 /// (transient-crypto `FR_BYTES_STORED`; the same 31 as `bytes_limbs`).
@@ -158,7 +158,7 @@ pub fn audit(instructions: &[Instruction]) -> Vec<Finding> {
 
     // Pass A — position-independent direct constraints. ZKIR v3 is SSA (no
     // identifier is ever rebound: upstream's synthesis memory is push-only
-    // and `Builder3` mints fresh identifiers), so a constraint anywhere in
+    // and `Builder` mints fresh identifiers), so a constraint anywhere in
     // the stream bounds the wire for the whole circuit — the same argument
     // `dedup_range_constraints` makes. The wildcard here is the SAFE
     // direction: a missed constraint only under-marks, which over-fires.
@@ -787,9 +787,9 @@ impl Flow {
             reads: instructions
                 .iter()
                 .map(|ins| {
-                    minocrab_ir::v3::passes::operands(ins)
+                    minocrab_ir::passes::operands(ins)
                         .iter()
-                        .chain(minocrab_ir::v3::passes::returned(ins).iter())
+                        .chain(minocrab_ir::passes::returned(ins).iter())
                         .filter_map(wire)
                         .collect()
                 })
@@ -797,7 +797,7 @@ impl Flow {
             defines: instructions
                 .iter()
                 .map(|ins| {
-                    minocrab_ir::v3::passes::defined_identifiers(ins)
+                    minocrab_ir::passes::defined_identifiers(ins)
                         .into_iter()
                         .map(|id| id.0)
                         .collect()
@@ -1020,7 +1020,7 @@ fn field_max() -> Max {
 //
 // ZKIR v3 has no `Sub`: `Uint::sub_with` / `BoundedUint::sub_with` lower to
 // `assert(ge(a, b)); let n = neg(b); from_field_unchecked(add(a, n))`
-// (minocrab-std/src/v3.rs). `Neg` wraps mod p and is deliberately unmarked
+// (minocrab-std/src/leaves.rs). `Neg` wraps mod p and is deliberately unmarked
 // (the module docs' soundness direction), so pass B's interval arithmetic
 // concludes nothing about the difference and every such wire fires — the
 // `%add.*` residue of the frozen baseline. These three rules recover the
@@ -1893,7 +1893,7 @@ mod tests {
     /// zero when the guard is false, which the transcript comparison
     /// accepts for ANY `x`. The "a skipped read yields 0, also in range"
     /// reading is the OFF-circuit `run`/preprocess semantics
-    /// (minocrab-sim/src/v3.rs, the `PublicInput` arm's
+    /// (minocrab-sim/src/vm.rs, the `PublicInput` arm's
     /// `default_ir_value(val_t)`), i.e. the witness GENERATOR, not a
     /// constraint a malicious prover is held to.
     #[test]
@@ -1923,7 +1923,7 @@ mod tests {
     }
 
     /// `assert(a ≥ b); add(a, neg(b))` — the lowering of
-    /// `Uint::<BITS>::sub_with` (minocrab-std/src/v3.rs) — is bounded by `Ma`
+    /// `Uint::<BITS>::sub_with` (minocrab-std/src/leaves.rs) — is bounded by `Ma`
     /// under WARRANT N2, which is the first and only place the lint reads an
     /// `Assert` (M23 R3 Class B, notes/taint-lint.org §8).
     ///

@@ -5,14 +5,14 @@
 It implements the V1 wire vocabulary of the `@sig-net/midnight` Signet module at 0.26.0-rc.15 (`aa91570`), the version erc20-vault v0.7.0-rc.2 pins: the V1 request record with its 64-byte `executionDest`, the domain-tagged Poseidon hashes, and the attestation that commits to the block height, the MPC's verdict and the output's width and hash. A request notifies the signet signer (`signet-signer-interface`); the MPC posts its attestation to the signet responder (`signet-responder-interface`), whose event a settle circuit takes as its ticket.
 
 ```rust
-use minocrab::v3::Circuit3;
+use minocrab::Circuit;
 use minocrab::{Private, Public};
 use minocrab_evm::erc20;
 use minocrab_signet::filing::Filed;
 use minocrab_signet::signet_v1::schema;
 use minocrab_signet::evm_flow::{Contract, Pending};
 use minocrab_signet::signet_flow::Signet;
-use minocrab_std::v3::{Bytes, Ledger, LedgerRepr, Uint};
+use minocrab_std::{Bytes, Ledger, LedgerRepr, Uint};
 
 #[derive(LedgerRepr)] struct Amount { amount: Uint<64, Public> }
 
@@ -24,7 +24,7 @@ struct Block {
 const BLOCK: Block = Block::new();
 
 fn send(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     callee: Contract<erc20::Erc20>,
     to: Bytes<20, Private>,
     amount: Uint<128, Private>,

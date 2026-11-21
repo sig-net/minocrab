@@ -27,9 +27,9 @@
 mod common;
 use common::*;
 
-use minocrab::v3::Compiled3;
+use minocrab::Compiled;
 use minocrab_contracts::coins::Coins;
-use minocrab_zkir::v3::IrSource;
+use minocrab_zkir::IrSource;
 
 /// compactc's artifact for one fixture circuit.
 fn theirs(name: &str) -> IrSource {
@@ -37,13 +37,13 @@ fn theirs(name: &str) -> IrSource {
         "{}/tests/fixtures/coins/out/zkir/{name}.zkir",
         env!("CARGO_MANIFEST_DIR")
     );
-    minocrab_zkir::v3::read_zkir(&path).expect("the pinned compactc's artifact parses")
+    minocrab_zkir::read_zkir(&path).expect("the pinned compactc's artifact parses")
 }
 
 /// Every circuit of the fixture: compactc's artifact name and our builder.
-fn cases() -> Vec<(&'static str, fn() -> Compiled3)> {
+fn cases() -> Vec<(&'static str, fn() -> Compiled)> {
     vec![
-        ("setInsertCoin", Coins::set_insert_coin as fn() -> Compiled3),
+        ("setInsertCoin", Coins::set_insert_coin as fn() -> Compiled),
         ("mapInsertCoin", Coins::map_insert_coin),
         ("listPushFrontCoin", Coins::list_push_front_coin),
     ]
@@ -116,11 +116,11 @@ fn every_fixture_circuit_is_covered() {
 /// atoms are exactly what the qualify dance's `push coin` embeds.
 #[test]
 fn compactc_s_abi_agrees_with_the_arguments() {
-    use minocrab::v3::CircuitAbi;
+    use minocrab::CircuitAbi;
     use minocrab::Public;
     use minocrab_abi::info::ContractInfo;
-    use minocrab_std::v3::{
-        ContractAddress, Either, ShieldedCoinInfo3, ZswapCoinPublicKey, B32,
+    use minocrab_std::{
+        ContractAddress, Either, ShieldedCoinInfo, ZswapCoinPublicKey, B32,
     };
 
     let text = std::fs::read_to_string(format!(
@@ -144,9 +144,9 @@ fn compactc_s_abi_agrees_with_the_arguments() {
 
     type Recipient = Either<ZswapCoinPublicKey<Public>, ContractAddress<Public>, Public>;
     let expected: Vec<(&str, (Vec<_>, Vec<_>))> = vec![
-        ("setInsertCoin", abi!(ShieldedCoinInfo3<Public>, Recipient)),
-        ("mapInsertCoin", abi!(B32<Public>, ShieldedCoinInfo3<Public>, Recipient)),
-        ("listPushFrontCoin", abi!(ShieldedCoinInfo3<Public>, Recipient)),
+        ("setInsertCoin", abi!(ShieldedCoinInfo<Public>, Recipient)),
+        ("mapInsertCoin", abi!(B32<Public>, ShieldedCoinInfo<Public>, Recipient)),
+        ("listPushFrontCoin", abi!(ShieldedCoinInfo<Public>, Recipient)),
     ];
 
     for (name, (atoms, prims)) in expected {

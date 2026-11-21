@@ -1,9 +1,9 @@
 //! The 32-byte protocol values a Signet request is built from, and the
 //! contract's own signing path.
 
-use minocrab::v3::{Circuit3, FieldT};
+use minocrab::{Circuit, FieldT};
 use minocrab::{Private, Public};
-use minocrab_std::v3::{b32_newtype, B32};
+use minocrab_std::{b32_newtype, B32};
 
 /// The vault's MPC derivation path, `pad(32, "vault")` — the constant
 /// [`SigningPath::contract_path`] pads.
@@ -55,7 +55,7 @@ b32_newtype! {
 /// A depositor's identity commitment IS a signing path — deposit's event
 /// signs from it. The only conversion into [`SigningPath`] besides
 /// [`SigningPath::vault_path`].
-impl<V: minocrab_std::v3::Vis3> From<UserCommitment<V>> for SigningPath<V> {
+impl<V: minocrab_std::Vis> From<UserCommitment<V>> for SigningPath<V> {
     fn from(commitment: UserCommitment<V>) -> Self {
         SigningPath(commitment.bytes())
     }
@@ -67,7 +67,7 @@ impl SigningPath<Public> {
     ///
     /// The vault's spelling of [`Self::contract_path`], kept because the
     /// deployed lineage names it (and because its pad IS the vault's).
-    pub fn vault_path(c: &mut Circuit3) -> Self {
+    pub fn vault_path(c: &mut Circuit) -> Self {
         Self::contract_path(c)
     }
 
@@ -82,14 +82,14 @@ impl SigningPath<Public> {
     /// pad under a name that no longer says "vault"; making the pad
     /// per-contract is queued with the nonce and the gas policy
     /// (notes/evm-calls.org §7).
-    pub fn contract_path(c: &mut Circuit3) -> Self {
+    pub fn contract_path(c: &mut Circuit) -> Self {
         SigningPath(B32::pad(c, VAULT_PATH))
     }
 }
 
 /// Witness a secret key (`witness …SecretKey(): Bytes<32>`), input-constrained.
 /// The ONLY [`SecretKey`] constructor.
-pub fn witness_sk(c: &mut Circuit3) -> SecretKey<Private> {
+pub fn witness_sk(c: &mut Circuit) -> SecretKey<Private> {
     let sk = B32 {
         hi: c.witness::<FieldT>(),
         lo: c.witness::<FieldT>(),

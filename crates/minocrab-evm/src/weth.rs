@@ -17,9 +17,9 @@
 //! transaction carries — so it is [`Payable`], and
 //! `Pending::request_payable` is the only way to file it with an amount.
 
-use minocrab::v3::Circuit3;
+use minocrab::Circuit;
 use minocrab::Private;
-use minocrab_std::v3::Check;
+use minocrab_std::Check;
 
 use super::erc20::{self, Erc20};
 use super::{always, EvmCall, Extends, Interface, Payable, Unit, U128};
@@ -69,9 +69,9 @@ impl EvmCall for Deposit {
     type Success = ();
     const GAS_LIMIT: u64 = CALL_GAS;
 
-    fn succeeded(c: &mut Circuit3, _out: &()) -> Check<Private> {
+    fn succeeded(c: &mut Circuit, _out: &()) -> Check<Private> {
         // The constant-true assert this makes is removed by
-        // `drop_true_asserts` in `Builder3::finish`.
+        // `drop_true_asserts` in `Builder::finish`.
         always(c)
     }
 }
@@ -101,7 +101,7 @@ impl EvmCall for Withdraw {
     type Success = ();
     const GAS_LIMIT: u64 = CALL_GAS;
 
-    fn succeeded(c: &mut Circuit3, _out: &()) -> Check<Private> {
+    fn succeeded(c: &mut Circuit, _out: &()) -> Check<Private> {
         always(c)
     }
 }

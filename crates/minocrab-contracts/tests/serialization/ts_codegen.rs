@@ -24,7 +24,7 @@ use std::fmt::Write as _;
 
 use borsh::schema::BorshSchemaContainer;
 use borsh::BorshSchema;
-use minocrab_std::v3::borsh::schema::{layout_rows, Row};
+use minocrab_std::borsh::schema::{layout_rows, Row};
 
 use super::spec_types::{schema_containers, ByteArray, Flagged, RECORD_FORMAT_VERSION};
 

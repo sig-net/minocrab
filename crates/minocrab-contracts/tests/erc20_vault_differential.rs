@@ -12,8 +12,8 @@
 use midnight_transient_crypto::proofs::ProofPreimage;
 use minocrab::Fr;
 use minocrab_contracts::signet_v1::output_kind;
-use minocrab_sim::v3::{assert_call_compatible, simulate};
-use minocrab_zkir::v3::IrSource;
+use minocrab_sim::{assert_call_compatible, simulate};
+use minocrab_zkir::IrSource;
 
 mod support;
 mod vault;

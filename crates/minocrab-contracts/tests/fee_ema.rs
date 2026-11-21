@@ -16,12 +16,12 @@ use midnight_onchain_vm::ops::{Key, Op};
 use midnight_storage::arena::Sp;
 use midnight_storage::db::InMemoryDB;
 use midnight_storage::storage::{Array, HashMap as StorageHashMap};
-use minocrab::v3::{Circuit3, Compiled3};
+use minocrab::{Circuit, Compiled};
 use minocrab::{Fr, Public};
-use minocrab_sim::v3::cost;
+use minocrab_sim::cost;
 use minocrab_ledger::field_key_checked;
-use minocrab_sim::v3::exec::{self, Call, ExecError, Executed};
-use minocrab_std::v3::{
+use minocrab_sim::exec::{self, Call, ExecError, Executed};
+use minocrab_std::{
     circuit, label, Disclose, Discloses, Fold, Ledger, LedgerRepr, NonEmpty, Serial, Stream,
     StreamSpec, Uint,
 };
@@ -41,7 +41,7 @@ struct Ema;
 impl Fold<U64> for Ema {
     type Delta = U64;
 
-    fn step(c: &mut Circuit3, s: U64, d: U64) -> U64 {
+    fn step(c: &mut Circuit, s: U64, d: U64) -> U64 {
         let weighted = c.mul(s.field(), 7u64);
         let sum = c.add(weighted, d.field());
         let (q, _rem) = c.div_mod_power_of_two(sum, 3);
@@ -59,11 +59,11 @@ impl StreamSpec for Fees {
     /// Flushed one to four at a time: REST counts the optional slots.
     type Step = Serial<Ema, 3>;
 
-    fn head(_c: &mut Circuit3, body: &Report) -> U64 {
+    fn head(_c: &mut Circuit, body: &Report) -> U64 {
         body.gas_used
     }
 
-    fn delta(_c: &mut Circuit3, head: &U64) -> U64 {
+    fn delta(_c: &mut Circuit, head: &U64) -> U64 {
         *head
     }
 }
@@ -85,7 +85,7 @@ label! {
 }
 
 #[circuit]
-fn report(c: &mut Circuit3, id: Uint<64>, gas_used: Uint<64>) -> Discloses<(ReportId, GasUsed)> {
+fn report(c: &mut Circuit, id: Uint<64>, gas_used: Uint<64>) -> Discloses<(ReportId, GasUsed)> {
     let id = id.disclose_as::<ReportId>(c);
     let gas_used = gas_used.disclose_as::<GasUsed>(c);
     BLOCK.fees.insert(c, &id, &Report { gas_used });
@@ -93,14 +93,14 @@ fn report(c: &mut Circuit3, id: Uint<64>, gas_used: Uint<64>) -> Discloses<(Repo
 }
 
 #[circuit]
-fn sequence(c: &mut Circuit3, keys: NonEmpty<Uint<64>, 3>) -> Discloses<(FlushKeys,)> {
+fn sequence(c: &mut Circuit, keys: NonEmpty<Uint<64>, 3>) -> Discloses<(FlushKeys,)> {
     let keys = keys.disclose_as::<FlushKeys>(c);
     BLOCK.fees.sequence(c, keys);
     Discloses::of(())
 }
 
 #[circuit]
-fn settle(c: &mut Circuit3, id: Uint<64>) -> Discloses<(ReportId,)> {
+fn settle(c: &mut Circuit, id: Uint<64>) -> Discloses<(ReportId,)> {
     let id = id.disclose_as::<ReportId>(c);
     let (_report, _ema) = BLOCK.fees.take(c, &id);
     Discloses::of(())
@@ -165,7 +165,7 @@ fn entry(st: &StateValue<InMemoryDB>, index: usize, key: u64) -> Option<u64> {
     Some(decode(av.value.0.first().map(|a| a.0.clone()).unwrap_or_default()))
 }
 
-fn run(compiled: &Compiled3, st: StateValue<InMemoryDB>, inputs: &[u64]) -> Result<Executed, ExecError> {
+fn run(compiled: &Compiled, st: StateValue<InMemoryDB>, inputs: &[u64]) -> Result<Executed, ExecError> {
     let inputs: Vec<Fr> = inputs.iter().map(|&v| Fr::from(v)).collect();
     let ctx = exec::context(st, [7u8; 32]);
     exec::execute(&compiled.ir, &Call::new(&inputs, &[]).with_comm_rand(Fr::from(5u64)), &ctx)

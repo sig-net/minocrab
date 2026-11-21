@@ -6,8 +6,8 @@
 //! touches MinoCrab still gets the gate-count value.
 //!
 //! Region-attributed profiling is deliberately NOT here: it needs the region-
-//! annotated `Compiled3` a Rust build produces, which a parsed `.zkir` does
-//! not carry. Rust users reach for `minocrab_sim::v3::profile()` in a test or
+//! annotated `Compiled` a Rust build produces, which a parsed `.zkir` does
+//! not carry. Rust users reach for `minocrab_sim::profile()` in a test or
 //! a criterion bench — normal Rust perf tooling, no bespoke wrapper.
 //!
 //! ```text
@@ -21,9 +21,9 @@
 use std::path::Path;
 use std::process::ExitCode;
 
-use minocrab_ir::v3::passes;
-use minocrab_sim::v3::cost;
-use minocrab_zkir::v3::read_zkir;
+use minocrab_ir::passes;
+use minocrab_sim::cost;
+use minocrab_zkir::read_zkir;
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -54,7 +54,7 @@ fn print_usage() {
          \n\
          `rows` reports k (= log2 of the proving-table rows, the number that\n\
          drives proving time and RAM) and the row count itself. Region-attributed\n\
-         profiling is a Rust-API feature: minocrab_sim::v3::profile()."
+         profiling is a Rust-API feature: minocrab_sim::profile()."
     );
 }
 
@@ -190,7 +190,7 @@ fn cmd_pass(args: &[String]) -> ExitCode {
     let (before_k, before_rows) = cost(&ir);
 
     let (instructions, report) = pass.run(ir.instructions.to_vec());
-    let transformed = minocrab_zkir::v3::IrSource {
+    let transformed = minocrab_zkir::IrSource {
         instructions: std::sync::Arc::new(instructions),
         ..ir
     };
@@ -212,7 +212,7 @@ fn cmd_pass(args: &[String]) -> ExitCode {
                 return ExitCode::FAILURE;
             }
         };
-        if let Err(e) = minocrab_zkir::v3::write_zkir(&transformed, file, out) {
+        if let Err(e) = minocrab_zkir::write_zkir(&transformed, file, out) {
             eprintln!("{out}: {e}");
             return ExitCode::FAILURE;
         }

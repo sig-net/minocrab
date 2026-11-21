@@ -8,7 +8,7 @@ fn main() {
     files.sort();
     let (mut v3, mut fired, mut total) = (0usize, 0usize, 0usize);
     for path in files {
-        let Ok(ir) = minocrab_zkir::v3::read_zkir(&path) else {
+        let Ok(ir) = minocrab_zkir::read_zkir(&path) else {
             continue; // v2 or unreadable
         };
         v3 += 1;

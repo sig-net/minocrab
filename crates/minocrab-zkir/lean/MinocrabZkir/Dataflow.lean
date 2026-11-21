@@ -1,7 +1,7 @@
 /-
 Dataflow over the real IR (M27 rung 2; notes/zkir-semantics.org §2, §8):
 which operand positions an instruction READS and which identifiers it
-DEFINES — the Lean twin of `minocrab_ir::v3::passes::operands_mut` /
+DEFINES — the Lean twin of `minocrab_ir::passes::operands_mut` /
 `returned_operands` (the reads, split the way the fold pass splits
 them) and of `defined_identifiers` (the writes). Every function is one
 exhaustive `match` over the 38 constructors, so the kernel checks

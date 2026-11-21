@@ -21,10 +21,10 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-use minocrab::v3::{Compiled3, DisclosedWire};
+use minocrab::{Compiled, DisclosedWire};
 use minocrab::DisclosureKind;
-use minocrab_ir::v3::passes::{defined_identifiers, operands};
-use minocrab_zkir::v3::{Instruction as I, IrSource, Operand};
+use minocrab_ir::passes::{defined_identifiers, operands};
+use minocrab_zkir::{Instruction as I, IrSource, Operand};
 
 // ---- provenance --------------------------------------------------------------------
 
@@ -260,7 +260,7 @@ fn walk(ir: &IrSource, literals: &[&str]) -> Walk {
 
 /// Every wire's DECLARED labels in its ancestry: seeded at the wires the
 /// `Disclosed` records name, propagated forward by the same operand rule.
-fn label_taint(compiled: &Compiled3) -> HashMap<String, BTreeSet<String>> {
+fn label_taint(compiled: &Compiled) -> HashMap<String, BTreeSet<String>> {
     let mut seeds: HashMap<String, BTreeSet<String>> = HashMap::new();
     for d in &compiled.disclosures {
         if !matches!(d.kind, DisclosureKind::Disclosed | DisclosureKind::DisclosedUntyped) {
@@ -321,7 +321,7 @@ fn label_taint(compiled: &Compiled3) -> HashMap<String, BTreeSet<String>> {
 /// none, so its twin line says so instead of comparing.
 pub fn inventory(
     name: &str,
-    compiled: &Compiled3,
+    compiled: &Compiled,
     twin: Option<&IrSource>,
     literals: &[&str],
 ) -> Vec<String> {

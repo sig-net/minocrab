@@ -8,7 +8,7 @@ use midnight_onchain_state::state::StateValue;
 use midnight_onchain_vm::ops::{Key, Op};
 use midnight_storage::arena::Sp;
 use midnight_transient_crypto::repr::FieldRepr;
-use minocrab::v3::ImpactElem;
+use minocrab::ImpactElem;
 use minocrab::Fr;
 
 use crate::impact::*;

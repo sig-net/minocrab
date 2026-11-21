@@ -29,7 +29,7 @@
 //! `SignetResponder::at(address)` takes one as data.
 
 use minocrab::Public;
-use minocrab_std::v3::{b32_newtype, interface, BoundedUint, CircuitArg, Uint, Vis3, B32};
+use minocrab_std::{b32_newtype, interface, BoundedUint, CircuitArg, Uint, Vis, B32};
 
 b32_newtype! {
     /// Compact `RequestId = Bytes<32>`.
@@ -38,14 +38,14 @@ b32_newtype! {
 
 /// Compact `struct AffinePoint { x: Bytes<32>, y: Bytes<32> }`.
 #[derive(Clone, CircuitArg)]
-pub struct AffinePoint<V: Vis3> {
+pub struct AffinePoint<V: Vis> {
     pub x: B32<V>,
     pub y: B32<V>,
 }
 
 /// Compact `struct Signature { bigR: AffinePoint, s: Bytes<32>, recoveryId: Uint<8> }`.
 #[derive(Clone, CircuitArg)]
-pub struct Signature<V: Vis3> {
+pub struct Signature<V: Vis> {
     pub big_r: AffinePoint<V>,
     pub s: B32<V>,
     pub recovery_id: Uint<8, V>,
@@ -53,14 +53,14 @@ pub struct Signature<V: Vis3> {
 
 /// Compact `struct SignatureRespondedEventV1 { requestId: RequestId, signature: Signature }`.
 #[derive(Clone, CircuitArg)]
-pub struct SignatureRespondedEventV1<V: Vis3> {
+pub struct SignatureRespondedEventV1<V: Vis> {
     pub request_id: RequestId<V>,
     pub signature: Signature<V>,
 }
 
 /// Compact `struct RespondBidirectionalEventV1 { requestId: RequestId, blockHeight: Uint<64>, outputKind: OutputKind, serializedOutputLength: Uint<64>, outputHash: Bytes<32>, digest: Bytes<32>, signature: Signature }`.
 #[derive(Clone, CircuitArg)]
-pub struct RespondBidirectionalEventV1<V: Vis3> {
+pub struct RespondBidirectionalEventV1<V: Vis> {
     pub request_id: RequestId<V>,
     pub block_height: Uint<64, V>,
     pub output_kind: BoundedUint<3, V>,

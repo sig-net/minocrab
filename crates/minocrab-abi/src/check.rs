@@ -24,7 +24,7 @@
 
 use std::path::{Path, PathBuf};
 
-use minocrab::v3::{CallArgs, Decode, Prim};
+use minocrab::{CallArgs, Decode, Prim};
 use minocrab::{AlignmentAtom, Public};
 use minocrab_ledger::EntryPoint;
 
@@ -232,7 +232,7 @@ impl Artifact {
 /// `A` is the circuit's argument list and `R` its result, exactly as in
 /// [`Artifact::check`].
 pub fn check_ir<A: CallArgs, R: Decode<Public>>(
-    ir: &minocrab_zkir::v3::IrSource,
+    ir: &minocrab_zkir::IrSource,
     entry_point: EntryPoint,
 ) -> Result<(), Problems> {
     let name = entry_point.name();
@@ -251,7 +251,7 @@ pub fn check_ir<A: CallArgs, R: Decode<Public>>(
 
 /// [`check_ir`], as an assertion.
 pub fn assert_ir_matches_interface<A: CallArgs, R: Decode<Public>>(
-    ir: &minocrab_zkir::v3::IrSource,
+    ir: &minocrab_zkir::IrSource,
     entry_point: EntryPoint,
 ) {
     if let Err(problems) = check_ir::<A, R>(ir, entry_point) {

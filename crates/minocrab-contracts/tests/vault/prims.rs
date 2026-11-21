@@ -31,7 +31,7 @@ use midnight_zkir_v3::ir_instructions::mul::mul_offcircuit;
 use minocrab::Fr;
 use minocrab_contracts::erc20_vault as v;
 use minocrab_contracts::signet_v1::{hash_domain, ETHEREUM_CAIP2_ID};
-use minocrab_zkir::v3::{IrSource, IrType, IrValue};
+use minocrab_zkir::{IrSource, IrType, IrValue};
 use sha2::{Digest, Sha256};
 
 // The FAB encodings every suite shares (`atom`, `bytesn_value`,

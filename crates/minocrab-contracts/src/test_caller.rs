@@ -30,13 +30,13 @@
 //! `signetRequestNonce` counter at field 1 and no identity-key assert.
 
 use minocrab::label;
-use minocrab::v3::Circuit3;
+use minocrab::Circuit;
 use minocrab::AlignmentAtom;
 use minocrab_experimental::impact::raw::{
     cell_read, cell_write, counter_increment, emit, ImpactElem, LedgerValue,
 };
-use minocrab_std::v3::hash::upgrade_from_transient;
-use minocrab_std::v3::{contract, Disclose, Discloses, Secp256k1Point, B32};
+use minocrab_std::hash::upgrade_from_transient;
+use minocrab_std::{contract, Disclose, Discloses, Secp256k1Point, B32};
 
 use crate::common;
 
@@ -62,7 +62,7 @@ impl TestCaller {
     /// `export circuit initialise(responseKey: Secp256k1Point): []`
     #[circuit]
     pub fn initialise(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         response_key: Secp256k1Point,
     ) -> Discloses<(MpcResponseKey,)> {
         let response_key = response_key.point();

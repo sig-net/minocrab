@@ -4,9 +4,9 @@
 //! One artifact since M28: the compat port, PI-equal to compactc's (the
 //! flush-pattern vault since M44).
 
-use minocrab::v3::Compiled3;
+use minocrab::Compiled;
 use minocrab_contracts::erc20_vault;
-use minocrab_zkir::v3::IrSource;
+use minocrab_zkir::IrSource;
 
 /// One vault circuit.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -111,7 +111,7 @@ impl Circuit {
         }
     }
 
-    pub fn build(self) -> Compiled3 {
+    pub fn build(self) -> Compiled {
         match self {
             Circuit::Initialise => erc20_vault::Vault::initialise(),
             Circuit::SetGasParams => erc20_vault::Vault::set_gas_params(),

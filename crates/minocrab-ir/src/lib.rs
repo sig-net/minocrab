@@ -1,7 +1,7 @@
 //! L1 — typed circuit builder over ZKIR v3 instructions.
 //!
-//! [`v3::Builder3`] emits a ZKIR v3 instruction stream over *named, typed*
-//! values with inline immediates, checking every operand's [`v3::IrType`]
+//! [`Builder`] emits a ZKIR v3 instruction stream over *named, typed*
+//! values with inline immediates, checking every operand's [`IrType`]
 //! against the instruction's supported-type list as it goes, so an emitted
 //! stream is well-formed by construction. The passes (L4) operate on this
 //! layer. Semantics reference: midnight-zkir's `src/ir_vm.rs`.
@@ -17,21 +17,36 @@
 //!
 //! # Start here
 //!
-//! - [`v3::Builder3`] and [`v3::Arg`] — the builder, over *named, typed*
+//! - [`Builder`] and [`Arg`] — the builder, over *named, typed*
 //!   values with inline immediates
-//! - [`v3::IrType`] — the v3 value types the builder checks operands against
-//! - [`v3::passes`] — the normalisation passes both sides of a differential
+//! - [`IrType`] — the v3 value types the builder checks operands against
+//! - [`passes`] — the normalisation passes both sides of a differential
 //!   are run through
-//! - [`minocrab_zkir::v3::IrSource`] — what a finished build hands to L0 for
+//! - [`minocrab_zkir::IrSource`] — what a finished build hands to L0 for
 //!   writing
 //!
 //! # Stability
 //!
-//! [`v3::passes`] (the [`v3::passes::Pass`] trait and the reference passes)
-//! and the re-exported ZKIR types are the surface a pass crate builds on. The raw [`v3::Builder3`] layer is the eDSL's implementation detail,
-//! wrapped by `minocrab`'s `Circuit3`, and carries no stability promise.
+//! [`passes`] (the [`passes::Pass`] trait and the reference passes)
+//! and the re-exported ZKIR types are the surface a pass crate builds on. The raw [`Builder`] layer is the eDSL's implementation detail,
+//! wrapped by `minocrab`'s `Circuit`, and carries no stability promise.
 
 pub use midnight_base_crypto::fab::{Alignment, AlignmentAtom, AlignmentSegment};
 pub use minocrab_zkir::Fr;
 
-pub mod v3;
+mod builder;
+pub mod passes;
+pub use builder::*;
+
+// rename-v3: begin shim (tools/rename-v3.sh never rewrites this block)
+/// The pre-rename path: everything that was `minocrab_ir::v3::X` is `minocrab_ir::X`.
+/// Kept for the downstream pins only; nothing in this workspace uses it.
+#[doc(hidden)]
+#[deprecated(note = "`minocrab_ir::v3` is gone: the items are at the crate root \
+                     (`minocrab_ir::X`) and lose the `3` suffix; this module is removed in the next release")]
+pub mod v3 {
+    pub use crate::*;
+    #[deprecated(note = "renamed to `minocrab_ir::Builder`")]
+    pub type Builder3 = crate::Builder;
+}
+// rename-v3: end shim

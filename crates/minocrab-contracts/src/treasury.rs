@@ -40,9 +40,9 @@
 //! pins its tokens in a ledger cell and builds the callee with
 //! `Contract::from_address`.
 
-use minocrab::v3::Circuit3;
+use minocrab::Circuit;
 use minocrab::Public;
-use minocrab_std::v3::{
+use minocrab_std::{
     contract, label, Bytes, Disclose, Discloses, Ledger, LedgerRepr, Uint,
 };
 
@@ -107,7 +107,7 @@ impl Treasury {
     /// `token.transfer(to, amount)`, remembering the amount and the caller.
     #[circuit]
     pub fn send(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         evm_nonce: Uint<64>,
         token: Contract<Erc20>,
         to: Bytes<20>,
@@ -136,7 +136,7 @@ impl Treasury {
     /// `EvmCall::succeeded` is that flag, which `complete` asserts — so
     /// nothing in this body has to remember to look.
     #[circuit]
-    pub fn complete(c: &mut Circuit3, ticket: Succeeded<Transfer>) -> Discloses<Settled> {
+    pub fn complete(c: &mut Circuit, ticket: Succeeded<Transfer>) -> Discloses<Settled> {
         let outcome = TREASURY.transfers.complete(c, ticket);
         let _amount = outcome.env.inner.amount;
         Discloses::of(())
@@ -152,7 +152,7 @@ impl Treasury {
     /// so the circuit is the API and nothing else.
     #[circuit]
     pub fn refund(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         ticket: Failed<Transfer>,
     ) -> Discloses<(Settled, RefundRecipient)> {
         // The attested flag comes back too — `false` for a mined call that

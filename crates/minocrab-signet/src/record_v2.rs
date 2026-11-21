@@ -5,10 +5,10 @@
 //! ([`layout`]) it is written over and the two pieces both record formats
 //! share ([`record_atoms_through_caip2`], [`request_id_of`]).
 
-use minocrab::v3::{Circuit3, FieldT, Wire3};
+use minocrab::{Circuit, FieldT, Wire};
 use minocrab::{AlignmentAtom, Public};
-use minocrab_std::v3::hash::upgrade_from_transient;
-use minocrab_std::v3::{BytesN, ContractAddress, LedgerRepr, ProofWires, Vis3, B32};
+use minocrab_std::hash::upgrade_from_transient;
+use minocrab_std::{BytesN, ContractAddress, LedgerRepr, ProofWires, Vis, B32};
 
 use crate::common::{Caip2Id, SigningPath};
 use crate::signet_v1::{EvmType2TxParams, RequestId, PARAMS_LEN};
@@ -22,7 +22,7 @@ fn bytes(length: u32) -> AlignmentAtom {
 /// One definition, so the deployed record (`SignBidirectionalEvent`) and the
 /// stage-7 record ([`SignBidirectionalEventV2`]) cannot drift in the middle —
 /// stage 7 changes the two ENDS, and this function is what says so.
-pub fn record_atoms_through_caip2<V: Vis3, const WORDS: usize>() -> Vec<AlignmentAtom> {
+pub fn record_atoms_through_caip2<V: Vis, const WORDS: usize>() -> Vec<AlignmentAtom> {
     let mut a = vec![
         bytes(32), // sender
         bytes(8),  // requestNonce
@@ -56,7 +56,7 @@ pub fn record_atoms_through_caip2<V: Vis3, const WORDS: usize>() -> Vec<Alignmen
 /// `SignBidirectionalEvent::limbs` emits. Nothing here is counted by
 /// hand, so a field width change moves every later offset with it.
 pub mod layout {
-    use minocrab_std::v3::bytes_limbs;
+    use minocrab_std::bytes_limbs;
 
     /// `sender: Bytes<32>` — `[hi, lo]`.
     pub const SENDER: usize = 0;
@@ -168,18 +168,18 @@ pub const RECORD_FORMAT_VERSION: u8 = 0x80;
 /// The type parameter list also loses `LEN_OUT`/`LEN_RESPOND`: there are no
 /// schema widths left for an instantiation to disagree about.
 #[derive(Clone)]
-pub struct SignBidirectionalEventV2<V: Vis3, const WORDS: usize> {
+pub struct SignBidirectionalEventV2<V: Vis, const WORDS: usize> {
     /// [`RECORD_FORMAT_VERSION`] — a `Uint<8>`, the first byte a decoder reads.
-    pub format_version: Wire3<FieldT, V>,
+    pub format_version: Wire<FieldT, V>,
     pub sender: ContractAddress<V>,
-    pub request_nonce: Wire3<FieldT, V>,
-    pub key_version: Wire3<FieldT, V>,
+    pub request_nonce: Wire<FieldT, V>,
+    pub key_version: Wire<FieldT, V>,
     pub path: SigningPath<V>,
-    pub algo: Wire3<FieldT, V>,
-    pub dest: Wire3<FieldT, V>,
+    pub algo: Wire<FieldT, V>,
+    pub dest: Wire<FieldT, V>,
     /// `params: Bytes<64>` — 3 limbs `[2, 31, 31]`, zero-fill today.
     pub params: BytesN<V, PARAMS_LEN>,
-    pub tx_param_type: Wire3<FieldT, V>,
+    pub tx_param_type: Wire<FieldT, V>,
     pub tx_params: EvmType2TxParams<V, WORDS>,
     pub caip2_id: Caip2Id<V>,
     /// The response KIND this request expects — one Borsh byte, the same
@@ -188,7 +188,7 @@ pub struct SignBidirectionalEventV2<V: Vis3, const WORDS: usize> {
     /// `Tag<K>`: the value is a contract-fixed constant at every construction
     /// site, so there is no argument to range-check, and the K would have to
     /// become a third const parameter of this type for no reader's benefit.
-    pub response_kind: Wire3<FieldT, V>,
+    pub response_kind: Wire<FieldT, V>,
 }
 
 /// [`SignBidirectionalEventV2`]'s FAB slot layout — [`layout`]'s, shifted by
@@ -249,7 +249,7 @@ pub mod layout_v2 {
     }
 }
 
-impl<V: Vis3, const WORDS: usize> SignBidirectionalEventV2<V, WORDS> {
+impl<V: Vis, const WORDS: usize> SignBidirectionalEventV2<V, WORDS> {
     /// The record's FAB limb count.
     pub const LIMBS: usize = layout_v2::limbs(WORDS);
 
@@ -263,7 +263,7 @@ impl<V: Vis3, const WORDS: usize> SignBidirectionalEventV2<V, WORDS> {
     }
 
     /// The record's FAB limbs, slot order ([`Self::LIMBS`] of them).
-    pub fn limbs(&self) -> Vec<Wire3<FieldT, V>> {
+    pub fn limbs(&self) -> Vec<Wire<FieldT, V>> {
         let mut l = vec![
             self.format_version,
             self.sender.bytes().hi,
@@ -289,7 +289,7 @@ impl<V: Vis3, const WORDS: usize> SignBidirectionalEventV2<V, WORDS> {
 /// A [`SignBidirectionalEventV2`] read back out of the ledger — the stage-7
 /// twin of `EventRecord`, and a DISTINCT type, so a settle circuit cannot
 /// read a stage-7 record with the deployed record's offsets (or the reverse).
-pub struct EventRecordV2<const WORDS: usize>(Vec<Wire3<FieldT, Public>>);
+pub struct EventRecordV2<const WORDS: usize>(Vec<Wire<FieldT, Public>>);
 
 impl<const WORDS: usize> EventRecordV2<WORDS> {
     pub const LIMBS: usize = layout_v2::limbs(WORDS);
@@ -305,23 +305,23 @@ impl<const WORDS: usize> EventRecordV2<WORDS> {
 
     /// `formatVersion` — the record's first byte
     /// ([`RECORD_FORMAT_VERSION`]).
-    pub fn format_version(&self) -> Wire3<FieldT, Public> {
+    pub fn format_version(&self) -> Wire<FieldT, Public> {
         self.0[layout_v2::FORMAT_VERSION]
     }
 
     /// `responseKind` — which response kind the record declared would
     /// settle it.
-    pub fn response_kind(&self) -> Wire3<FieldT, Public> {
+    pub fn response_kind(&self) -> Wire<FieldT, Public> {
         self.0[layout_v2::response_kind(WORDS)]
     }
 
     /// `txParams.to`.
-    pub fn to(&self) -> Wire3<FieldT, Public> {
+    pub fn to(&self) -> Wire<FieldT, Public> {
         self.0[layout_v2::TO]
     }
 
     /// `txParams.calldata.is_some`.
-    pub fn calldata_is_some(&self) -> Wire3<FieldT, Public> {
+    pub fn calldata_is_some(&self) -> Wire<FieldT, Public> {
         self.0[layout_v2::CALLDATA_IS_SOME]
     }
 
@@ -336,7 +336,7 @@ impl<const WORDS: usize> EventRecordV2<WORDS> {
 }
 
 impl<const WORDS: usize> ProofWires for EventRecordV2<WORDS> {
-    fn push_wires(&self, out: &mut Vec<minocrab::v3::Val>) {
+    fn push_wires(&self, out: &mut Vec<minocrab::Val>) {
         out.extend(self.0.iter().map(|w| w.val()));
     }
 }
@@ -346,11 +346,11 @@ impl<const WORDS: usize> LedgerRepr for EventRecordV2<WORDS> {
         SignBidirectionalEventV2::<Public, WORDS>::atoms()
     }
 
-    fn push_limbs(&self, _c: &mut Circuit3, limbs: &mut Vec<Wire3<FieldT, Public>>) {
+    fn push_limbs(&self, _c: &mut Circuit, limbs: &mut Vec<Wire<FieldT, Public>>) {
         limbs.extend_from_slice(&self.0);
     }
 
-    fn from_limbs(limbs: Vec<Wire3<FieldT, Public>>) -> Self {
+    fn from_limbs(limbs: Vec<Wire<FieldT, Public>>) -> Self {
         assert_eq!(
             limbs.len(),
             Self::LIMBS,
@@ -372,11 +372,11 @@ impl<const WORDS: usize> LedgerRepr for EventRecordV2<WORDS> {
 /// `Tag<K>` parameters, where the const generic is a `u32`), so a call site
 /// casts — and the cast is where the type says the wire is one byte.
 #[allow(clippy::too_many_arguments)]
-pub fn construct_sign_bidirectional_event_v2<V: Vis3, const WORDS: usize>(
-    c: &mut Circuit3,
+pub fn construct_sign_bidirectional_event_v2<V: Vis, const WORDS: usize>(
+    c: &mut Circuit,
     sender: ContractAddress<V>,
-    request_nonce: Wire3<FieldT, V>,
-    key_version: Wire3<FieldT, V>,
+    request_nonce: Wire<FieldT, V>,
+    key_version: Wire<FieldT, V>,
     path: SigningPath<V>,
     tx_params: EvmType2TxParams<V, WORDS>,
     caip2_id: Caip2Id<V>,
@@ -412,8 +412,8 @@ pub fn construct_sign_bidirectional_event_v2<V: Vis3, const WORDS: usize>(
 /// `calculate_request_id` over a stage-7 record: `keccak256` of the whole
 /// record in its FAB alignment, which for these all-`bytes<n>` atoms IS
 /// `keccak256(borsh(record))` (notes/borsh-format.org, finding #1).
-pub fn calculate_request_id_v2<V: Vis3, const WORDS: usize>(
-    c: &mut Circuit3,
+pub fn calculate_request_id_v2<V: Vis, const WORDS: usize>(
+    c: &mut Circuit,
     request: &SignBidirectionalEventV2<V, WORDS>,
 ) -> RequestId<V> {
     request_id_of(c, &request.limbs())
@@ -431,7 +431,7 @@ pub fn calculate_request_id_v2<V: Vis3, const WORDS: usize>(
 /// then the 31 low bytes as a `Bytes<32>` whose byte 31 is zero. The
 /// keccak construction it replaces is in git history (the corpus at
 /// signet-midnight-integration `1ee4a7f3`).
-pub fn request_id_of<V: Vis3>(c: &mut Circuit3, limbs: &[Wire3<FieldT, V>]) -> RequestId<V> {
+pub fn request_id_of<V: Vis>(c: &mut Circuit, limbs: &[Wire<FieldT, V>]) -> RequestId<V> {
     c.region("signet: request id (transientHash)", |c| {
         let f = c.transient_hash(limbs);
         RequestId(upgrade_from_transient(c, f))

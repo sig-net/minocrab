@@ -7,7 +7,7 @@
 //! Where std's has gone lean (M48 C step 3) they cannot, and they are held to
 //! EQUIVALENT BEHAVIOUR instead (the `agree_*` tests): each side is built in
 //! the same harness, both are run on the same inputs through the executor
-//! (`minocrab_sim::v3::exec`, which settles the transcript against Midnight's
+//! (`minocrab_sim::exec`, which settles the transcript against Midnight's
 //! on-chain VM and replays it in `ResultModeVerify`), and they must agree on
 //! accept or reject (and on which side refused: the circuit or the ledger),
 //! and on acceptance on the whole preimage (the transcript in and out, which
@@ -15,30 +15,30 @@
 //! call's effects and the post-state; each accepted preimage is also checked
 //! by upstream's own `IrSource::check`.
 
-use minocrab::v3::{Circuit3, FieldT, Lowering, SelfAddressReads, Secp256k1PointT, Secp256k1ScalarT, Wire3};
+use minocrab::{Circuit, FieldT, Lowering, SelfAddressReads, Secp256k1PointT, Secp256k1ScalarT, Wire};
 use minocrab::{Private, Public};
 use minocrab_compat::{kernel as compat_kernel, merkle, secp as compat_secp};
-use minocrab_std::v3::kernel::{self as std_kernel, UnshieldedRecipient};
-use minocrab_std::v3::{
+use minocrab_std::kernel::{self as std_kernel, UnshieldedRecipient};
+use minocrab_std::{
     Bool, CoinColor, CoinNonce, CoinRecipient, ContractAddress, Either, LedgerHistoricMerkleTree,
-    LedgerMerkleTree, QualifiedShieldedCoinInfo3, Secp256k1EcdsaSignature, ShieldedCoinInfo3,
+    LedgerMerkleTree, QualifiedShieldedCoinInfo, Secp256k1EcdsaSignature, ShieldedCoinInfo,
     TokenDomainSeparator, Uint, UserAddress, ZswapCoinPublicKey, B32,
 };
-use minocrab_zkir::v3::to_zkir_string;
+use minocrab_zkir::to_zkir_string;
 
 use midnight_onchain_state::state::StateValue;
 use midnight_storage::db::InMemoryDB;
 use midnight_storage::storage::Array;
-use minocrab::v3::Compiled3;
+use minocrab::Compiled;
 use minocrab::Fr;
 use midnight_transient_crypto::proofs::Zkir;
-use minocrab_sim::v3::exec::{self, Call, ExecError, Executed};
+use minocrab_sim::exec::{self, Call, ExecError, Executed};
 
 /// The circuit `f` builds under compactc's lowering, serialized. Both sides
 /// of a `pin_*` comparison are built this way: the pin is about the GADGET
 /// emitting the same instructions, not about the lowering settings.
-fn build(f: impl FnOnce(&mut Circuit3)) -> String {
-    let mut c = Circuit3::new();
+fn build(f: impl FnOnce(&mut Circuit)) -> String {
+    let mut c = Circuit::new();
     minocrab_compat::profile(&mut c);
     f(&mut c);
     to_zkir_string(&c.finish(true).ir).expect("IR serializes")
@@ -47,8 +47,8 @@ fn build(f: impl FnOnce(&mut Circuit3)) -> String {
 /// The circuit `f` builds under `lowering` (`None`: the defaults, which is
 /// what a MinoCrab-only circuit gets), finished without a communications
 /// commitment (so a call needs no randomness), for running.
-fn compile_with(lowering: Option<Lowering>, f: impl FnOnce(&mut Circuit3)) -> Compiled3 {
-    let mut c = Circuit3::new();
+fn compile_with(lowering: Option<Lowering>, f: impl FnOnce(&mut Circuit)) -> Compiled {
+    let mut c = Circuit::new();
     if let Some(l) = lowering {
         c.set_lowering(l);
     }
@@ -58,14 +58,14 @@ fn compile_with(lowering: Option<Lowering>, f: impl FnOnce(&mut Circuit3)) -> Co
 
 /// compactc's lowering, as every port and the signer state it.
 fn compactc() -> Lowering {
-    let mut c = Circuit3::new();
+    let mut c = Circuit::new();
     minocrab_compat::profile(&mut c);
     c.lowering()
 }
 
 /// The two sides of an `agree_*` test as each would be deployed: std's lean
 /// gadget under the defaults, compat's twin under compactc's lowering.
-fn compile(use_compat: bool, f: impl FnOnce(&mut Circuit3)) -> Compiled3 {
+fn compile(use_compat: bool, f: impl FnOnce(&mut Circuit)) -> Compiled {
     compile_with(use_compat.then(compactc), f)
 }
 
@@ -95,8 +95,8 @@ fn verdict(r: &Result<Executed, ExecError>) -> Verdict {
 
 /// Run both circuits on `inputs` against `state` and require that they
 /// agree on everything the module doc lists. Returns the verdict.
-fn agree(what: &str, lean: &Compiled3, twin: &Compiled3, state: &StateValue<InMemoryDB>, inputs: &[Fr]) -> Verdict {
-    let run = |compiled: &Compiled3| {
+fn agree(what: &str, lean: &Compiled, twin: &Compiled, state: &StateValue<InMemoryDB>, inputs: &[Fr]) -> Verdict {
+    let run = |compiled: &Compiled| {
         let ctx = exec::context(state.clone(), SELF);
         exec::execute(&compiled.ir, &Call::new(inputs, &[]), &ctx)
     };
@@ -120,24 +120,24 @@ fn agree(what: &str, lean: &Compiled3, twin: &Compiled3, state: &StateValue<InMe
 
 /// Twenty public field wires: arguments first (ZKIR wants every input before
 /// every instruction), then disclosed.
-fn inputs(c: &mut Circuit3) -> Vec<Wire3<FieldT, Public>> {
-    let args: Vec<Wire3<FieldT, Private>> = (0..20).map(|i| c.arg::<FieldT>(&format!("x{i}"))).collect();
+fn inputs(c: &mut Circuit) -> Vec<Wire<FieldT, Public>> {
+    let args: Vec<Wire<FieldT, Private>> = (0..20).map(|i| c.arg::<FieldT>(&format!("x{i}"))).collect();
     args.into_iter().enumerate().map(|(i, w)| c.disclose(w, &format!("x{i}"))).collect()
 }
 
-fn b32(w: &[Wire3<FieldT, Public>], at: usize) -> B32<Public> {
+fn b32(w: &[Wire<FieldT, Public>], at: usize) -> B32<Public> {
     B32 { hi: w[at], lo: w[at + 1] }
 }
 
-fn u64_(w: Wire3<FieldT, Public>) -> Uint<64, Public> {
+fn u64_(w: Wire<FieldT, Public>) -> Uint<64, Public> {
     Uint::from_field_unchecked(w)
 }
 
-fn u128_(w: Wire3<FieldT, Public>) -> Uint<128, Public> {
+fn u128_(w: Wire<FieldT, Public>) -> Uint<128, Public> {
     Uint::from_field_unchecked(w)
 }
 
-fn recipient(w: &[Wire3<FieldT, Public>]) -> UnshieldedRecipient<Public> {
+fn recipient(w: &[Wire<FieldT, Public>]) -> UnshieldedRecipient<Public> {
     Either {
         is_left: Bool::from_field_unchecked(w[10]),
         left: ContractAddress::from_limbs([w[11], w[12]]),
@@ -145,7 +145,7 @@ fn recipient(w: &[Wire3<FieldT, Public>]) -> UnshieldedRecipient<Public> {
     }
 }
 
-fn coin_recipient(w: &[Wire3<FieldT, Public>]) -> CoinRecipient<Public> {
+fn coin_recipient(w: &[Wire<FieldT, Public>]) -> CoinRecipient<Public> {
     CoinRecipient {
         is_left: w[10],
         left: ZswapCoinPublicKey(b32(w, 11)),
@@ -153,8 +153,8 @@ fn coin_recipient(w: &[Wire3<FieldT, Public>]) -> CoinRecipient<Public> {
     }
 }
 
-fn qualified(w: &[Wire3<FieldT, Public>], at: usize) -> QualifiedShieldedCoinInfo3<Public> {
-    QualifiedShieldedCoinInfo3 {
+fn qualified(w: &[Wire<FieldT, Public>], at: usize) -> QualifiedShieldedCoinInfo<Public> {
+    QualifiedShieldedCoinInfo {
         nonce: CoinNonce(b32(w, at)),
         color: CoinColor(b32(w, at + 2)),
         value: w[at + 4],
@@ -162,8 +162,8 @@ fn qualified(w: &[Wire3<FieldT, Public>], at: usize) -> QualifiedShieldedCoinInf
     }
 }
 
-fn coin(w: &[Wire3<FieldT, Public>], at: usize) -> ShieldedCoinInfo3<Public> {
-    ShieldedCoinInfo3 { nonce: CoinNonce(b32(w, at)), color: CoinColor(b32(w, at + 2)), value: w[at + 4] }
+fn coin(w: &[Wire<FieldT, Public>], at: usize) -> ShieldedCoinInfo<Public> {
+    ShieldedCoinInfo { nonce: CoinNonce(b32(w, at)), color: CoinColor(b32(w, at + 2)), value: w[at + 4] }
 }
 
 /// One test per kernel gadget: `$call` is written once against a module
@@ -178,7 +178,7 @@ macro_rules! pin_kernel {
                     build(|$c| {
                         let $w = inputs($c);
                         let g = $w[19];
-                        let body = |$c: &mut Circuit3| {
+                        let body = |$c: &mut Circuit| {
                             if use_compat {
                                 use compat_kernel as $k;
                                 let _ = $call;
@@ -246,7 +246,7 @@ fn agree_insert_index_default() {
     assert!(seen.contains(&Verdict::Accepted) && seen.iter().any(|v| *v != Verdict::Accepted), "both verdicts covered: {seen:?}");
 
     // The fold is the whole saving: the lean side hashes nothing in circuit.
-    let hashes = |c: &Compiled3| c.ir.instructions.iter().filter(|i| format!("{i:?}").starts_with("PersistentHash")).count();
+    let hashes = |c: &Compiled| c.ir.instructions.iter().filter(|i| format!("{i:?}").starts_with("PersistentHash")).count();
     assert_eq!((hashes(&lean), hashes(&twin)), (0, 3));
 }
 
@@ -265,7 +265,7 @@ fn secp256k1_ecdsa_verify() {
             let ok = if use_compat {
                 compat_secp::secp256k1_ecdsa_verify(c, &msg, &sig, pk)
             } else {
-                minocrab_std::v3::secp256k1_ecdsa_verify(c, &msg, &sig, pk)
+                minocrab_std::secp256k1_ecdsa_verify(c, &msg, &sig, pk)
             };
             c.assert(ok);
         })
@@ -285,7 +285,7 @@ fn secp256k1_ecdsa_verify() {
             let ok = if use_compat {
                 compat_secp::secp256k1_ecdsa_verify(c, &msg, &sig, pk)
             } else {
-                minocrab_std::v3::secp256k1_ecdsa_verify(c, &msg, &sig, pk)
+                minocrab_std::secp256k1_ecdsa_verify(c, &msg, &sig, pk)
             };
             c.assert(ok);
         })
@@ -303,12 +303,12 @@ fn secp256k1_ecdsa_verify() {
 // default `OncePerCircuit`: the lean transcript legitimately carries fewer
 // `kernel.self()` reads, so verdict, effects, post-state and returned values).
 
-type W = Wire3<FieldT, Public>;
+type W = Wire<FieldT, Public>;
 
 /// What an observer outside the circuit sees, minus the transcript: the
 /// verdict and, on acceptance, the returned values, effects and post-state.
-fn agree_on_effects(what: &str, lean: &Compiled3, twin: &Compiled3, state: &StateValue<InMemoryDB>, inputs: &[Fr]) -> Verdict {
-    let run = |compiled: &Compiled3| {
+fn agree_on_effects(what: &str, lean: &Compiled, twin: &Compiled, state: &StateValue<InMemoryDB>, inputs: &[Fr]) -> Verdict {
+    let run = |compiled: &Compiled| {
         let ctx = exec::context(state.clone(), SELF);
         exec::execute(&compiled.ir, &Call::new(inputs, &[]), &ctx)
     };
@@ -328,9 +328,9 @@ fn agree_on_effects(what: &str, lean: &Compiled3, twin: &Compiled3, state: &Stat
 
 /// A gadget body: the arguments, and whether to call compat's twin; returns
 /// the wires the circuit outputs.
-type Body = fn(&mut Circuit3, &[W], bool) -> Vec<W>;
+type Body = fn(&mut Circuit, &[W], bool) -> Vec<W>;
 
-fn side(body: Body, use_compat: bool, guarded: bool, lean: Lowering) -> Compiled3 {
+fn side(body: Body, use_compat: bool, guarded: bool, lean: Lowering) -> Compiled {
     compile_with(Some(if use_compat { compactc() } else { lean }), move |c| {
         let w = inputs(c);
         let out = if guarded { c.when(w[19], |c| body(c, &w, use_compat)).or_default() } else { body(c, &w, use_compat) };
@@ -366,14 +366,14 @@ fn fr(v: u128) -> Fr {
 /// `kernel.self()`'s two limbs, as a circuit sees them.
 fn self_limbs() -> (Fr, Fr) {
     let probe = compile(false, |c| {
-        let me = minocrab_std::v3::kernel::self_address(c).bytes();
+        let me = minocrab_std::kernel::self_address(c).bytes();
         c.output(me.hi, "hi");
         c.output(me.lo, "lo");
     });
     let ctx = exec::context(StateValue::Null, SELF);
     let out = exec::execute(&probe.ir, &Call::new(&[], &[]), &ctx).expect("a bare self read runs").run.outputs;
-    let limb = |v: &minocrab_zkir::v3::IrValue| match v {
-        minocrab_zkir::v3::IrValue::Native(f) => *f,
+    let limb = |v: &minocrab_zkir::IrValue| match v {
+        minocrab_zkir::IrValue::Native(f) => *f,
         other => panic!("not a native limb: {other:?}"),
     };
     (limb(&out[0]), limb(&out[1]))
@@ -396,15 +396,15 @@ fn both_verdicts(what: &str, seen: &[Verdict]) {
 /// The four negated forms: `!` is the `not` instruction on the lean side.
 #[test]
 fn agree_negations() {
-    fn bt_gte(c: &mut Circuit3, w: &[W], compat: bool) -> Vec<W> {
+    fn bt_gte(c: &mut Circuit, w: &[W], compat: bool) -> Vec<W> {
         let r = if compat { compat_kernel::block_time_gte(c, u64_(w[0])) } else { std_kernel::block_time_gte(c, u64_(w[0])) };
         vec![(*r).field()]
     }
-    fn bt_lte(c: &mut Circuit3, w: &[W], compat: bool) -> Vec<W> {
+    fn bt_lte(c: &mut Circuit, w: &[W], compat: bool) -> Vec<W> {
         let r = if compat { compat_kernel::block_time_lte(c, u64_(w[0])) } else { std_kernel::block_time_lte(c, u64_(w[0])) };
         vec![(*r).field()]
     }
-    fn bal_gte(c: &mut Circuit3, w: &[W], compat: bool) -> Vec<W> {
+    fn bal_gte(c: &mut Circuit, w: &[W], compat: bool) -> Vec<W> {
         let r = if compat {
             compat_kernel::unshielded_balance_gte(c, CoinColor(b32(w, 0)), u128_(w[2]))
         } else {
@@ -412,7 +412,7 @@ fn agree_negations() {
         };
         vec![(*r).field()]
     }
-    fn bal_lte(c: &mut Circuit3, w: &[W], compat: bool) -> Vec<W> {
+    fn bal_lte(c: &mut Circuit, w: &[W], compat: bool) -> Vec<W> {
         let r = if compat {
             compat_kernel::unshielded_balance_lte(c, CoinColor(b32(w, 0)), u128_(w[2]))
         } else {
@@ -469,7 +469,7 @@ fn unshielded_cases() -> Vec<Vec<Fr>> {
 /// (refused); zero and non-zero amounts; two token colours.
 #[test]
 fn agree_send_unshielded() {
-    fn body(c: &mut Circuit3, w: &[W], compat: bool) -> Vec<W> {
+    fn body(c: &mut Circuit, w: &[W], compat: bool) -> Vec<W> {
         if compat {
             compat_kernel::send_unshielded(c, CoinColor(b32(w, 0)), u128_(w[2]), &recipient(w));
         } else {
@@ -483,7 +483,7 @@ fn agree_send_unshielded() {
 /// `mintUnshieldedToken`, over the same recipients and amounts.
 #[test]
 fn agree_mint_unshielded_token() {
-    fn body(c: &mut Circuit3, w: &[W], compat: bool) -> Vec<W> {
+    fn body(c: &mut Circuit, w: &[W], compat: bool) -> Vec<W> {
         let ds = TokenDomainSeparator(b32(w, 0));
         let color = if compat {
             compat_kernel::mint_unshielded_token(c, &ds, u64_(w[2]), &recipient(w))
@@ -495,7 +495,7 @@ fn agree_mint_unshielded_token() {
     both_verdicts("mint_unshielded_token", &agree_gadget("mint_unshielded_token", body, &unshielded_cases()));
 }
 
-fn coin_out(coin: &ShieldedCoinInfo3<Public>) -> Vec<W> {
+fn coin_out(coin: &ShieldedCoinInfo<Public>) -> Vec<W> {
     vec![coin.nonce.bytes().hi, coin.nonce.bytes().lo, coin.color.bytes().hi, coin.color.bytes().lo, coin.value]
 }
 
@@ -529,7 +529,7 @@ fn merge_cases() -> Vec<Vec<Fr>> {
 /// in range and one past `Uint<128>` (refused).
 #[test]
 fn agree_merge_coin() {
-    fn body(c: &mut Circuit3, w: &[W], compat: bool) -> Vec<W> {
+    fn body(c: &mut Circuit, w: &[W], compat: bool) -> Vec<W> {
         let (a, b) = (qualified(w, 0), qualified(w, 6));
         coin_out(&if compat { compat_kernel::merge_coin(c, &a, &b) } else { std_kernel::merge_coin(c, &a, &b) })
     }
@@ -539,7 +539,7 @@ fn agree_merge_coin() {
 /// `mergeCoinImmediate`, over the same cases.
 #[test]
 fn agree_merge_coin_immediate() {
-    fn body(c: &mut Circuit3, w: &[W], compat: bool) -> Vec<W> {
+    fn body(c: &mut Circuit, w: &[W], compat: bool) -> Vec<W> {
         let (a, b) = (qualified(w, 0), coin(w, 6));
         coin_out(&if compat { compat_kernel::merge_coin_immediate(c, &a, &b) } else { std_kernel::merge_coin_immediate(c, &a, &b) })
     }
@@ -552,7 +552,7 @@ fn agree_merge_coin_immediate() {
 /// it holds (refused); two colours.
 #[test]
 fn agree_send_shielded() {
-    fn body(c: &mut Circuit3, w: &[W], compat: bool) -> Vec<W> {
+    fn body(c: &mut Circuit, w: &[W], compat: bool) -> Vec<W> {
         let (input, to, value) = (qualified(w, 0), coin_recipient(w), u128_(w[6]));
         let r = if compat { compat_kernel::send_shielded(c, &input, &to, value) } else { std_kernel::send_shielded(c, &input, &to, value) };
         let mut out = vec![r.change.is_some.field()];
@@ -595,38 +595,38 @@ fn agree_send_shielded() {
 /// Every lean form costs no more.
 #[test]
 fn lean_gadgets_cost_no_more_than_their_twins() {
-    fn send_u(c: &mut Circuit3, w: &[W], k: bool) -> Vec<W> {
+    fn send_u(c: &mut Circuit, w: &[W], k: bool) -> Vec<W> {
         if k { compat_kernel::send_unshielded(c, CoinColor(b32(w, 0)), u128_(w[2]), &recipient(w)) } else { std_kernel::send_unshielded(c, CoinColor(b32(w, 0)), u128_(w[2]), &recipient(w)) }
         vec![]
     }
-    fn mint_u(c: &mut Circuit3, w: &[W], k: bool) -> Vec<W> {
+    fn mint_u(c: &mut Circuit, w: &[W], k: bool) -> Vec<W> {
         let ds = TokenDomainSeparator(b32(w, 0));
         let col = if k { compat_kernel::mint_unshielded_token(c, &ds, u64_(w[2]), &recipient(w)) } else { std_kernel::mint_unshielded_token(c, &ds, u64_(w[2]), &recipient(w)) };
         vec![col.bytes().hi, col.bytes().lo]
     }
-    fn merge(c: &mut Circuit3, w: &[W], k: bool) -> Vec<W> {
+    fn merge(c: &mut Circuit, w: &[W], k: bool) -> Vec<W> {
         let (a, b) = (qualified(w, 0), qualified(w, 6));
         coin_out(&if k { compat_kernel::merge_coin(c, &a, &b) } else { std_kernel::merge_coin(c, &a, &b) })
     }
-    fn merge_i(c: &mut Circuit3, w: &[W], k: bool) -> Vec<W> {
+    fn merge_i(c: &mut Circuit, w: &[W], k: bool) -> Vec<W> {
         let (a, b) = (qualified(w, 0), coin(w, 6));
         coin_out(&if k { compat_kernel::merge_coin_immediate(c, &a, &b) } else { std_kernel::merge_coin_immediate(c, &a, &b) })
     }
-    fn send_s(c: &mut Circuit3, w: &[W], k: bool) -> Vec<W> {
+    fn send_s(c: &mut Circuit, w: &[W], k: bool) -> Vec<W> {
         let (input, to, value) = (qualified(w, 0), coin_recipient(w), u128_(w[6]));
         let r = if k { compat_kernel::send_shielded(c, &input, &to, value) } else { std_kernel::send_shielded(c, &input, &to, value) };
         coin_out(&r.sent)
     }
-    fn bt_gte(c: &mut Circuit3, w: &[W], k: bool) -> Vec<W> {
+    fn bt_gte(c: &mut Circuit, w: &[W], k: bool) -> Vec<W> {
         let r = if k { compat_kernel::block_time_gte(c, u64_(w[0])) } else { std_kernel::block_time_gte(c, u64_(w[0])) };
         vec![(*r).field()]
     }
-    let base = minocrab_sim::v3::cost(&compile_with(None, |c| {
+    let base = minocrab_sim::cost(&compile_with(None, |c| {
         let _ = inputs(c);
     }).ir).1;
     for (what, body) in [("send_unshielded", send_u as Body), ("mint_unshielded_token", mint_u), ("merge_coin", merge), ("merge_coin_immediate", merge_i), ("send_shielded", send_s), ("block_time_gte", bt_gte)] {
         for guarded in [false, true] {
-            let rows = |k: bool| minocrab_sim::v3::cost(&side(body, k, guarded, if k { compactc() } else { Lowering::default() }).ir).1 - base;
+            let rows = |k: bool| minocrab_sim::cost(&side(body, k, guarded, if k { compactc() } else { Lowering::default() }).ir).1 - base;
             let (lean, twin) = (rows(false), rows(true));
             println!("{what} (guarded: {guarded}): compat {twin}, std {lean}");
             assert!(lean <= twin, "{what} (guarded: {guarded}): lean {lean} > compat {twin}");

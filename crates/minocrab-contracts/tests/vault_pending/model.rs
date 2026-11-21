@@ -33,7 +33,7 @@ use minocrab_contracts::evm_flow::REFUND_PAD;
 // `erc20_vault_pending` only as the retired fork's documented numbering.
 use minocrab_contracts::erc20_vault_pending::VAULT_TOKEN_TAG;
 use minocrab_contracts::signet_v1::{output_kind, schema, OutputSchema};
-use minocrab_zkir::v3::IrValue;
+use minocrab_zkir::IrValue;
 
 use super::exec::PreState;
 use super::ops;

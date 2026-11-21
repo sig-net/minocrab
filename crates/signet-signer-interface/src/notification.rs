@@ -9,16 +9,16 @@
 //! a caller that packed it itself would be reimplementing the callee's
 //! format at every call site.
 
-use minocrab::v3::Circuit3;
-use minocrab_std::v3::{BytesN, Uint, Vis3, B32};
+use minocrab::Circuit;
+use minocrab_std::{BytesN, Uint, Vis, B32};
 
 use crate::SignBidirectionalEventNotification;
 
 /// `constructSignBidirectionalEventNotificationV1(callerAddress, depth,
 /// path)` with a compile-time path: the version byte (1) and the
 /// `Bytes<128>` payload `callerAddress ‖ depth ‖ path[0..4] ‖ zeros`.
-pub fn construct_notification_v1<V: Vis3>(
-    c: &mut Circuit3,
+pub fn construct_notification_v1<V: Vis>(
+    c: &mut Circuit,
     caller_address: &B32<V>,
     requests_path_depth: u8,
     requests_path: [u8; 4],

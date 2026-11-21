@@ -37,7 +37,7 @@ use anyhow::{bail, Context, Result};
 use midnight_base_crypto::data_provider::{FetchMode, MidnightDataProvider, OutputMode};
 use midnight_transient_crypto::proofs::{ParamsProverProvider, ProofPreimage, Zkir};
 use minocrab_contracts::{erc20_vault, signet_contract};
-use minocrab_zkir::v3::IrSource;
+use minocrab_zkir::IrSource;
 use serde::{Deserialize, Serialize};
 
 struct Target {
@@ -46,7 +46,7 @@ struct Target {
     /// Corpus artifact path relative to the repo root.
     corpus: &'static str,
     /// The MinoCrab direct port.
-    ours: fn() -> minocrab::v3::Compiled3,
+    ours: fn() -> minocrab::Compiled,
 }
 
 /// Where a side's circuits come from.
@@ -122,7 +122,7 @@ impl Side {
             Artifacts::Corpus => {
                 let path = repo_root().join(target.corpus);
                 Some(
-                    minocrab_zkir::v3::read_zkir(path.to_str().unwrap())
+                    minocrab_zkir::read_zkir(path.to_str().unwrap())
                         .with_context(|| format!("corpus artifact {}", target.corpus)),
                 )
             }
@@ -131,7 +131,7 @@ impl Side {
 
     /// Profiles are MinoCrab-side only: they need the eDSL's region
     /// annotations, which a parsed `.zkir` does not carry.
-    fn profiled(&self, target: &Target) -> Option<minocrab::v3::Compiled3> {
+    fn profiled(&self, target: &Target) -> Option<minocrab::Compiled> {
         match self.artifacts {
             Artifacts::Port => Some((target.ours)()),
             Artifacts::Corpus => None,
@@ -479,7 +479,7 @@ fn write_profiles(out_dir: &std::path::Path) -> Result<()> {
             Artifacts::Port => target.name.to_string(),
             _ => format!("{}.{}", target.name, side.name),
         };
-        let profile = minocrab_sim::v3::profile(&compiled);
+        let profile = minocrab_sim::profile(&compiled);
         std::fs::write(profile_dir.join(format!("{stem}.txt")), format!("{profile}"))?;
         serde_json::to_writer_pretty(
             std::fs::File::create(profile_dir.join(format!("{stem}.json")))?,

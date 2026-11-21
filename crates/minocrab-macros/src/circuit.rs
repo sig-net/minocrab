@@ -4,7 +4,7 @@
 //!
 //! ```ignore
 //! #[circuit]
-//! pub fn deposit(c: &mut Circuit3, evm_nonce: Uint<64>, deposit_request: DepositRequest) {
+//! pub fn deposit(c: &mut Circuit, evm_nonce: Uint<64>, deposit_request: DepositRequest) {
 //!     // body
 //! }
 //! ```
@@ -12,11 +12,11 @@
 //! the expansion is
 //!
 //! ```ignore
-//! pub fn deposit() -> Compiled3 {
+//! pub fn deposit() -> Compiled {
 //!     struct __deposit_Args { evm_nonce: Uint<64>, deposit_request: DepositRequest }
 //!     impl CircuitArg for __deposit_Args { .. }     // the derive's own codegen
 //!     impl CircuitArgs for __deposit_Args { .. }
-//!     pub fn deposit(c: &mut Circuit3, evm_nonce: Uint<64>, deposit_request: DepositRequest) {
+//!     pub fn deposit(c: &mut Circuit, evm_nonce: Uint<64>, deposit_request: DepositRequest) {
 //!         // body, verbatim
 //!     }
 //!     entry(|__c, __args: __deposit_Args| deposit(__c, __args.evm_nonce, __args.deposit_request))
@@ -50,7 +50,7 @@
 //! without the attribute, because the tokens rust-analyzer is looking at ARE
 //! the ones in the source file, at the same spans.
 //!
-//! THINNESS RULE: the generated scaffolding contains no `Circuit3` call at
+//! THINNESS RULE: the generated scaffolding contains no `Circuit` call at
 //! all — it declares a struct, calls `entry`/`entry_out`, and passes `c`
 //! along to the body.
 
@@ -188,7 +188,7 @@ pub fn expand_in(
         }
     }
 
-    let root = quote!(::minocrab_std::v3);
+    let root = quote!(::minocrab_std);
     // `entry(closure)` and `entry_out(label, closure)` differ only in the
     // function and the argument that precedes the closure. A
     // `Discloses<D, R>` return is the R case wearing a declaration: the
@@ -218,9 +218,9 @@ pub fn expand_in(
             #entry_fn(#label_arg |__c, __args: #args_ty| #name(__c #(, __args.#idents)*))
         },
         // The contract's lowering, before the body and before anything in
-        // it could consult the settings (`Circuit3::set_lowering` refuses a
+        // it could consult the settings (`Circuit::set_lowering` refuses a
         // late call). The path's own tokens, so a path that is not a
-        // `fn(&mut Circuit3)` is a type error pointing at the attribute.
+        // `fn(&mut Circuit)` is a type error pointing at the attribute.
         Some(lowering) => quote! {
             #entry_fn(#label_arg |__c, __args: #args_ty| {
                 #lowering(__c);
@@ -233,7 +233,7 @@ pub fn expand_in(
 
     let entry = quote! {
         #(#attrs)*
-        #vis fn #name() -> #root::__private::Compiled3 {
+        #vis fn #name() -> #root::__private::Compiled {
             #[allow(non_camel_case_types)]
             struct #args_ty {
                 #( #idents: #types, )*
@@ -348,7 +348,7 @@ fn max_k_test(
 
             #[test]
             fn the_circuit_is_within_its_declared_cost_budget() {
-                ::minocrab_sim::v3::assert_max_k(#circuit, &#build(), #budget);
+                ::minocrab_sim::assert_max_k(#circuit, &#build(), #budget);
             }
         }
     })
@@ -418,14 +418,14 @@ fn check_signature(sig: &Signature) -> syn::Result<()> {
     Ok(())
 }
 
-/// The mandatory first parameter, `c: &mut Circuit3` — the one parameter
+/// The mandatory first parameter, `c: &mut Circuit` — the one parameter
 /// that is not an argument.
 fn check_circuit_param(sig: &Signature) -> syn::Result<()> {
     let missing = || {
         syn::Error::new(
             sig.paren_token.span.join(),
             "a circuit's first parameter must be the circuit being built, \
-             `c: &mut Circuit3`",
+             `c: &mut Circuit`",
         )
     };
     let first = sig.inputs.first().ok_or_else(missing)?;
@@ -433,14 +433,14 @@ fn check_circuit_param(sig: &Signature) -> syn::Result<()> {
         return Err(syn::Error::new(
             first.span(),
             "a circuit entry point is a free function: its first parameter must be \
-             `c: &mut Circuit3`, not `self`",
+             `c: &mut Circuit`, not `self`",
         ));
     };
     if !is_circuit_ref(&pat.ty) {
         return Err(syn::Error::new(
             pat.span(),
             "a circuit's first parameter must be the circuit being built, \
-             `c: &mut Circuit3`; every parameter after it is a circuit argument",
+             `c: &mut Circuit`; every parameter after it is a circuit argument",
         ));
     }
     if let Some(attr) = pat.attrs.iter().find(|a| a.path().is_ident("arg")) {
@@ -452,7 +452,7 @@ fn check_circuit_param(sig: &Signature) -> syn::Result<()> {
     Ok(())
 }
 
-/// `&mut Circuit3` — spelled as a path ending in `Circuit3`, since that is
+/// `&mut Circuit` — spelled as a path ending in `Circuit`, since that is
 /// the only type `entry` hands the body.
 fn is_circuit_ref(ty: &Type) -> bool {
     let Type::Reference(reference) = ty else {
@@ -467,7 +467,7 @@ fn is_circuit_ref(ty: &Type) -> bool {
     path.path
         .segments
         .last()
-        .is_some_and(|segment| segment.ident == "Circuit3")
+        .is_some_and(|segment| segment.ident == "Circuit" || segment.ident == crate::OLD_CIRCUIT)
 }
 
 /// The parameters after `c`: the circuit's arguments, in declaration order —
@@ -581,22 +581,22 @@ mod tests {
     #[test]
     fn the_expansion_calls_no_circuit_method() {
         let expanded = expansion(syn::parse_quote! {
-            pub fn deposit(c: &mut Circuit3, evm_nonce: Uint<64>, request: DepositRequest) {}
+            pub fn deposit(c: &mut Circuit, evm_nonce: Uint<64>, request: DepositRequest) {}
         });
         assert!(!expanded.contains("c ."), "expansion calls a method on the circuit:\n{expanded}");
         assert!(
-            !expanded.contains("Circuit3 ::"),
-            "expansion calls a Circuit3 associated function:\n{expanded}"
+            !expanded.contains("Circuit ::"),
+            "expansion calls a Circuit associated function:\n{expanded}"
         );
     }
 
     #[test]
     fn the_public_function_takes_nothing_and_returns_a_circuit() {
         let expanded = expansion(syn::parse_quote! {
-            pub fn deposit(c: &mut Circuit3, evm_nonce: Uint<64>) {}
+            pub fn deposit(c: &mut Circuit, evm_nonce: Uint<64>) {}
         });
         assert!(
-            expanded.contains("pub fn deposit () -> :: minocrab_std :: v3 :: __private :: Compiled3"),
+            expanded.contains("pub fn deposit () -> :: minocrab_std :: __private :: Compiled"),
             "{expanded}"
         );
         assert!(expanded.contains("entry (| __c , __args : __deposit_Args |"), "{expanded}");
@@ -609,7 +609,7 @@ mod tests {
     fn parameter_names_become_the_argument_labels() {
         let expanded = expansion(syn::parse_quote! {
             fn claim(
-                c: &mut Circuit3,
+                c: &mut Circuit,
                 request_id: B32<Private>,
                 #[arg(name = "respond")] respond_bidirectional_event: RespondSignature,
             ) {
@@ -625,7 +625,7 @@ mod tests {
     #[test]
     fn a_returning_circuit_needs_an_output_label() {
         let item: ItemFn = syn::parse_quote! {
-            fn hash(c: &mut Circuit3) -> B32<Public> { unimplemented!() }
+            fn hash(c: &mut Circuit) -> B32<Public> { unimplemented!() }
         };
         let err = expand(attr(quote!()), item.clone()).expect_err("label required").to_string();
         assert!(err.contains("output = "), "{err}");
@@ -640,7 +640,7 @@ mod tests {
     fn an_output_label_on_a_returnless_circuit_is_an_error() {
         let err = expand(
             attr(quote!(output = "event hash")),
-            syn::parse_quote! { fn emit_it(c: &mut Circuit3) {} },
+            syn::parse_quote! { fn emit_it(c: &mut Circuit) {} },
         )
         .expect_err("nothing to label")
         .to_string();
@@ -650,9 +650,9 @@ mod tests {
     #[test]
     fn the_unit_return_is_the_returnless_one() {
         let expanded = expansion(syn::parse_quote! {
-            fn emit_it(c: &mut Circuit3) -> () {}
+            fn emit_it(c: &mut Circuit) -> () {}
         });
-        assert!(expanded.contains("v3 :: entry ("), "{expanded}");
+        assert!(expanded.contains("minocrab_std :: entry ("), "{expanded}");
     }
 
     /// A disclosure declaration is type-level: it must not turn a `[]`
@@ -660,22 +660,22 @@ mod tests {
     #[test]
     fn a_discloses_declaration_alone_needs_no_output_label() {
         let expanded = expansion(syn::parse_quote! {
-            fn deposit(c: &mut Circuit3) -> Discloses<(RequestId, RequestRecord)> {
+            fn deposit(c: &mut Circuit) -> Discloses<(RequestId, RequestRecord)> {
                 Discloses::of(())
             }
         });
-        assert!(expanded.contains("v3 :: entry ("), "{expanded}");
+        assert!(expanded.contains("minocrab_std :: entry ("), "{expanded}");
 
         let expanded = expansion(syn::parse_quote! {
-            fn deposit(c: &mut Circuit3) -> Discloses<(RequestId,), ()> { Discloses::of(()) }
+            fn deposit(c: &mut Circuit) -> Discloses<(RequestId,), ()> { Discloses::of(()) }
         });
-        assert!(expanded.contains("v3 :: entry ("), "{expanded}");
+        assert!(expanded.contains("minocrab_std :: entry ("), "{expanded}");
     }
 
     #[test]
     fn a_discloses_with_a_value_still_names_its_output() {
         let item: ItemFn = syn::parse_quote! {
-            fn hash(c: &mut Circuit3) -> Discloses<(EventHash,), B32<Public>> {
+            fn hash(c: &mut Circuit) -> Discloses<(EventHash,), B32<Public>> {
                 unimplemented!()
             }
         };
@@ -693,7 +693,7 @@ mod tests {
     #[test]
     fn a_declaring_circuit_gets_its_set_equality_test() {
         let expanded = expansion(syn::parse_quote! {
-            pub fn deposit(c: &mut Circuit3, evm_nonce: Uint<64>) -> Discloses<(RequestId,)> {
+            pub fn deposit(c: &mut Circuit, evm_nonce: Uint<64>) -> Discloses<(RequestId,)> {
                 Discloses::of(())
             }
         });
@@ -710,7 +710,7 @@ mod tests {
     #[test]
     fn a_circuit_without_a_declaration_gets_a_discloses_nothing_test() {
         let expanded = expansion(syn::parse_quote! {
-            pub fn deposit(c: &mut Circuit3, evm_nonce: Uint<64>) {}
+            pub fn deposit(c: &mut Circuit, evm_nonce: Uint<64>) {}
         });
         assert!(expanded.contains("mod __deposit_discloses"), "{expanded}");
         assert!(
@@ -721,7 +721,7 @@ mod tests {
 
         let expanded = expand(
             attr(quote!(output = "event hash")),
-            syn::parse_quote! { fn hash(c: &mut Circuit3) -> B32<Public> { unimplemented!() } },
+            syn::parse_quote! { fn hash(c: &mut Circuit) -> B32<Public> { unimplemented!() } },
         )
         .expect("expands")
         .to_string();
@@ -736,34 +736,34 @@ mod tests {
         let err = error(syn::parse_quote! { fn deposit(evm_nonce: Uint<64>) {} });
         assert!(err.contains("first parameter must be"), "{err}");
 
-        let err = error(syn::parse_quote! { fn deposit(c: &Circuit3) {} });
+        let err = error(syn::parse_quote! { fn deposit(c: &Circuit) {} });
         assert!(err.contains("first parameter must be"), "{err}");
     }
 
     #[test]
     fn generics_async_and_friends_are_rejected() {
-        let err = error(syn::parse_quote! { async fn deposit(c: &mut Circuit3) {} });
+        let err = error(syn::parse_quote! { async fn deposit(c: &mut Circuit) {} });
         assert!(err.contains("not awaited"), "{err}");
 
-        let err = error(syn::parse_quote! { fn deposit<T>(c: &mut Circuit3, a: T) {} });
+        let err = error(syn::parse_quote! { fn deposit<T>(c: &mut Circuit, a: T) {} });
         assert!(err.contains("monomorphic"), "{err}");
 
         let err = error(syn::parse_quote! {
-            fn deposit(c: &mut Circuit3, a: Uint<64>) where Uint<64>: Copy {}
+            fn deposit(c: &mut Circuit, a: Uint<64>) where Uint<64>: Copy {}
         });
         assert!(err.contains("where-clause"), "{err}");
 
-        let err = error(syn::parse_quote! { unsafe fn deposit(c: &mut Circuit3) {} });
+        let err = error(syn::parse_quote! { unsafe fn deposit(c: &mut Circuit) {} });
         assert!(err.contains("unsafe"), "{err}");
     }
 
     #[test]
     fn an_argument_must_be_a_named_binding() {
-        let err = error(syn::parse_quote! { fn deposit(c: &mut Circuit3, _: Uint<64>) {} });
+        let err = error(syn::parse_quote! { fn deposit(c: &mut Circuit, _: Uint<64>) {} });
         assert!(err.contains("plain `name: Type`"), "{err}");
 
         let err = error(syn::parse_quote! {
-            fn deposit(c: &mut Circuit3, (a, b): (Uint<64>, Uint<64>)) {}
+            fn deposit(c: &mut Circuit, (a, b): (Uint<64>, Uint<64>)) {}
         });
         assert!(err.contains("plain `name: Type`"), "{err}");
     }
@@ -771,17 +771,17 @@ mod tests {
     #[test]
     fn only_the_name_attribute_is_understood() {
         let err = error(syn::parse_quote! {
-            fn deposit(c: &mut Circuit3, #[arg(rename = "x")] a: Uint<64>) {}
+            fn deposit(c: &mut Circuit, #[arg(rename = "x")] a: Uint<64>) {}
         });
         assert!(err.contains("expected name"), "{err}");
 
         let err = error(syn::parse_quote! {
-            fn deposit(c: &mut Circuit3, #[allow(unused)] a: Uint<64>) {}
+            fn deposit(c: &mut Circuit, #[allow(unused)] a: Uint<64>) {}
         });
         assert!(err.contains("unsupported attribute"), "{err}");
 
         let err = error(syn::parse_quote! {
-            fn deposit(#[arg(name = "c")] c: &mut Circuit3) {}
+            fn deposit(#[arg(name = "c")] c: &mut Circuit) {}
         });
         assert!(err.contains("not an argument"), "{err}");
     }
@@ -792,14 +792,14 @@ mod tests {
     fn a_cost_budget_generates_its_own_test() {
         let expanded = expand(
             attr(quote!(max_k = 14)),
-            syn::parse_quote! { pub fn deposit(c: &mut Circuit3, a: Uint<64>) {} },
+            syn::parse_quote! { pub fn deposit(c: &mut Circuit, a: Uint<64>) {} },
         )
         .expect("expands")
         .to_string();
         assert!(expanded.contains("mod __deposit_max_k"), "{expanded}");
         assert!(
             expanded.contains(
-                ":: minocrab_sim :: v3 :: assert_max_k (\"deposit\" , & super :: deposit () , 14)"
+                ":: minocrab_sim :: assert_max_k (\"deposit\" , & super :: deposit () , 14)"
             ),
             "{expanded}"
         );
@@ -807,7 +807,7 @@ mod tests {
         let expanded = expand(
             attr(quote!(output = "event hash", max_k = 9)),
             syn::parse_quote! {
-                fn hash(c: &mut Circuit3) -> Discloses<(EventHash,), B32<Public>> {
+                fn hash(c: &mut Circuit) -> Discloses<(EventHash,), B32<Public>> {
                     unimplemented!()
                 }
             },
@@ -822,7 +822,7 @@ mod tests {
     #[test]
     fn a_circuit_without_a_budget_gets_no_budget_test() {
         let expanded = expansion(syn::parse_quote! {
-            pub fn deposit(c: &mut Circuit3, a: Uint<64>) {}
+            pub fn deposit(c: &mut Circuit, a: Uint<64>) {}
         });
         assert!(!expanded.contains("max_k"), "{expanded}");
     }
@@ -866,7 +866,7 @@ mod tests {
         let item: ItemFn = syn::parse_quote! {
             /// Sends an amount to a token contract.
             pub fn send(
-                c: &mut Circuit3,
+                c: &mut Circuit,
                 #[arg(name = "token")] token: Contract<Erc20>,
                 to: EvmAddress,
                 amount: Uint<64>,

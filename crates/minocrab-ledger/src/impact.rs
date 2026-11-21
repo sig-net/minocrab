@@ -10,7 +10,7 @@ use midnight_onchain_vm::ops::{Key, Op};
 use midnight_onchain_vm::result_mode::ResultModeVerify;
 use midnight_storage::db::InMemoryDB;
 use midnight_transient_crypto::repr::FieldRepr;
-use minocrab::v3::{ImpactElem, Val};
+use minocrab::{ImpactElem, Val};
 use minocrab::Fr;
 
 /// The concrete op type whose `field_repr` defines the PI encoding.
@@ -21,7 +21,7 @@ pub type VmOp = Op<ResultModeVerify, InMemoryDB>;
 /// ledger state.
 ///
 /// The second field is what [`emit`](crate::emit) runs through the
-/// stale-read backstop (`Circuit3::refuse_stale`). It is filled by the
+/// stale-read backstop (`Circuit::refuse_stale`). It is filled by the
 /// builders of the writes whose value a typed slot checks, from the same
 /// [`LedgerValue`] they splice into the op, so the wires checked are the
 /// wires written: [`cell_write_at`](crate::cell_write_at),

@@ -7,7 +7,7 @@
 //! artifact was a directory of files. This crate builds that directory:
 //!
 //! ```text
-//! <out-dir>/zkir/<circuit>.zkir        - minocrab_zkir::v3::write_zkir's
+//! <out-dir>/zkir/<circuit>.zkir        - minocrab_zkir::write_zkir's
 //!                                         on-disk form, COMMITTED (small,
 //!                                         reviewable)
 //! <out-dir>/zkir/<circuit>.bzkir       - the pinned `zkir-v3` binary's
@@ -33,13 +33,13 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use minocrab::v3::Compiled3;
+use minocrab::Compiled;
 use sha2::{Digest, Sha256};
 use signet_protocol::circuits::{RESPOND, RESPOND_BIDIRECTIONAL, SIGN_BIDIRECTIONAL};
 use signet_protocol::hash_verifier_key;
 
 /// A signer circuit: its on-disk (Compact) name and how to build it.
-pub type Circuit = (&'static str, fn() -> Compiled3);
+pub type Circuit = (&'static str, fn() -> Compiled);
 
 /// The three Signet circuits, named the way compactc's artifacts and the
 /// packages' `expectedVk` tables name them (`signet_protocol::circuits`),
@@ -57,9 +57,9 @@ pub type Circuit = (&'static str, fn() -> Compiled3);
 pub fn circuits() -> Vec<Circuit> {
     use minocrab_contracts::signet_contract::{Responder, Signer};
     vec![
-        (SIGN_BIDIRECTIONAL, Signer::sign_bidirectional as fn() -> Compiled3),
-        (RESPOND, Responder::respond as fn() -> Compiled3),
-        (RESPOND_BIDIRECTIONAL, Responder::respond_bidirectional as fn() -> Compiled3),
+        (SIGN_BIDIRECTIONAL, Signer::sign_bidirectional as fn() -> Compiled),
+        (RESPOND, Responder::respond as fn() -> Compiled),
+        (RESPOND_BIDIRECTIONAL, Responder::respond_bidirectional as fn() -> Compiled),
     ]
 }
 
@@ -177,7 +177,7 @@ pub fn generate(out_dir: &Path, zkir_v3: &Path) -> anyhow::Result<()> {
         let path = zkir_dir.join(format!("{name}.zkir"));
         let file = std::fs::File::create(&path)
             .map_err(|e| anyhow::anyhow!("creating {}: {e}", path.display()))?;
-        minocrab_zkir::v3::write_zkir(&compiled.ir, std::io::BufWriter::new(file), name)
+        minocrab_zkir::write_zkir(&compiled.ir, std::io::BufWriter::new(file), name)
             .map_err(|e| anyhow::anyhow!("writing {}: {e}", path.display()))?;
     }
 

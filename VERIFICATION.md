@@ -37,10 +37,10 @@ make specific error classes unwritable rather than merely untested.
   re-parses through our bindings without loss.
 - **Instrument** — [corpus_roundtrip.rs](crates/minocrab-zkir/tests/corpus_roundtrip.rs)
   over the 855 ZKIR v3 `.zkir` in `corpus/zkir` (the count is asserted), plus
-  [v3_builder.rs](crates/minocrab-ir/tests/v3_builder.rs), a hand-built
+  [builder.rs](crates/minocrab-ir/tests/builder.rs), a hand-built
   circuit through the pinned `zkir-v3 mock-compile`.
 - **Command** — `cargo test -p minocrab-zkir` and
-  `cargo test -p minocrab-ir --test v3_builder`
+  `cargo test -p minocrab-ir --test builder`
 - **Why it is first** — it is the most fundamental instrument in the tree; if it
   is red, nothing downstream tells you anything new
   ([notes/version-bump.org §Drift taxonomy 3](notes/version-bump.org)).
@@ -125,7 +125,7 @@ verdict and the three reasons, each sufficient alone):
   2. reference VM — `IrSource::check` on every accepted run, with `pi_skips` equal to the simulator's;
   3. PI-equality re-anchored to **our** op stream — the preimage's transcript is `Op::field_repr` of the reference op stream, and the PI vector is exactly that transcript plus the skipped Impacts' zeros;
   4. ledger execution — the same op stream runs through the pinned Impact VM against a real pre-state, must fit the guaranteed section, and the `Effect`s it produced must be exactly the ones the spec declared.
-- **The executor gate** ([executor_vault.rs](crates/minocrab-contracts/tests/executor_vault.rs), 18 properties on the same generators): the transcript `minocrab_sim::v3::exec` derives from ledger state must equal the hand model's op for op (each `popeq`'s expected value included); both public transcript halves and the communications commitment must equal the model's; `IrSource::check` must accept the executor's preimage; its post-state must equal the model's; and a case the spec rejects must be rejected by the executor (or, for a counter at its maximum, refused by the ledger exactly as the model's op stream is).
+- **The executor gate** ([executor_vault.rs](crates/minocrab-contracts/tests/executor_vault.rs), 18 properties on the same generators): the transcript `minocrab_sim::exec` derives from ledger state must equal the hand model's op for op (each `popeq`'s expected value included); both public transcript halves and the communications commitment must equal the model's; `IrSource::check` must accept the executor's preimage; its post-state must equal the model's; and a case the spec rejects must be rejected by the executor (or, for a counter at its maximum, refused by the ledger exactly as the model's op stream is).
 - **Scale** — 48 cases per property by default (`DEFAULT_CASES` in `tests/vault_pending/gen.rs`); the nightly job runs both files at `PROPTEST_CASES=100000` in release ([nightly.yml](.github/workflows/nightly.yml)) and `./bump.sh gates --heavy` at 20,000. The scale figures recorded for the retired harnesses (34,000 cases on the seventeen-circuit port, 9,000,000 on the nine-circuit vault before it; [notes/vault-refresh.org §1](notes/vault-refresh.org), [notes/vault-optimization.org §"Full-scale gating run"](notes/vault-optimization.org)) are history and are not claimed for either current vault.
 - **What the retired sweeps pinned** — the old adversarial suite found that an identity `mpcResponseKey` authenticates any signature, that at `signetRequestNonce == u64::MAX` only the Impact VM refuses, that a forged membership answer yields a valid proof caught only by `ResultModeVerify::process_read`, and that ECDSA `s = 0` aborts rather than returning false; the first property run also caught a bug in the reference model itself ([notes/vault-optimization.org §"Findings the sweeps pinned"](notes/vault-optimization.org)). Those tests were removed with the suite in M44 and are not claimed for the flush vault until rung F re-establishes them.
 - **Commands** — default: `cargo test -p minocrab-contracts --test erc20_vault_pending_spec --test executor_vault`. Elevated: `PROPTEST_CASES=2000 cargo test --release -p minocrab-contracts --test erc20_vault_pending_spec --test executor_vault` (or `./bump.sh gates --heavy`). The wall clock scales linearly with the count.
@@ -141,8 +141,8 @@ verdict and the three reasons, each sufficient alone):
   disclosure manifest; the macro emits a generated **set-equality** test per
   circuit (`assert_declared_disclosures`), so a circuit that discloses something
   not in its manifest fails the build
-  ([disclose.rs](crates/minocrab/src/v3/disclose.rs),
-  [v3_disclose.rs](crates/minocrab-std/tests/v3_disclose.rs), 6 tests).
+  ([disclose.rs](crates/minocrab/src/disclose.rs),
+  [disclose.rs](crates/minocrab-std/tests/disclose.rs), 6 tests).
 - **Zero-movement rule** — a declaration is type-level only: the same circuit
   with and without one must lower to byte-identical ZKIR.
 - **What it caught, twice** — four vault circuits were publishing a
@@ -167,14 +167,14 @@ cannot express.
 | `Wire<T, Vis>` + `Meet` | a private value reaching a public output without `disclose` | compile_fail doctest, [lib.rs](crates/minocrab/src/lib.rs) |
 | `Discloses<..>` manifest | disclosing a label the signature does not name | generated set-equality tests |
 | `Guarded<T>` | consuming a guarded-off read without saying what the default means (`.or_default()` / `.or(c, alt)` / `.assert_read(c)`) | [notes/ir-passes.org §10](notes/ir-passes.org); 19 sites had to choose |
-| `Uint::sub` / `sub_with` | a field subtraction with no underflow guard — emits `assert(a >= b)` + `neg` + `add`, at the width read off the type | [v3_bounded.rs](crates/minocrab-std/tests/v3_bounded.rs); the vault's only subtraction was ported to it and **the ZKIR dump did not move** |
-| `BoundedUint<BOUND>` `add`/`mul` | a result bound too small to hold the value — an inline-const `E0080` at the call site; bound arithmetic is `checked_*`, so an overflowing bound is itself a compile error | [v3_bounded.rs](crates/minocrab-std/tests/v3_bounded.rs), [bounded_differential.rs](crates/minocrab-contracts/tests/bounded_differential.rs) |
-| `BoundedUint::narrow::<BITS>` | an unchecked narrowing downcast — MinoCrab **additionally emits** the range check at this seam (one `Prim::Uint { bits }`, ~BITS/4 rows), and asking `narrow` for the free direction is an `E0080` pointing at `to_uint` | [v3_bounded.rs](crates/minocrab-std/tests/v3_bounded.rs) |
-| `CheckOperand::MAX` | a comparison against a literal outside the operand's bound (which would make the comparison constant) | [v3_predicates.rs](crates/minocrab-std/tests/v3_predicates.rs), 22 tests |
+| `Uint::sub` / `sub_with` | a field subtraction with no underflow guard — emits `assert(a >= b)` + `neg` + `add`, at the width read off the type | [bounded.rs](crates/minocrab-std/tests/bounded.rs); the vault's only subtraction was ported to it and **the ZKIR dump did not move** |
+| `BoundedUint<BOUND>` `add`/`mul` | a result bound too small to hold the value — an inline-const `E0080` at the call site; bound arithmetic is `checked_*`, so an overflowing bound is itself a compile error | [bounded.rs](crates/minocrab-std/tests/bounded.rs), [bounded_differential.rs](crates/minocrab-contracts/tests/bounded_differential.rs) |
+| `BoundedUint::narrow::<BITS>` | an unchecked narrowing downcast — MinoCrab **additionally emits** the range check at this seam (one `Prim::Uint { bits }`, ~BITS/4 rows), and asking `narrow` for the free direction is an `E0080` pointing at `to_uint` | [bounded.rs](crates/minocrab-std/tests/bounded.rs) |
+| `CheckOperand::MAX` | a comparison against a literal outside the operand's bound (which would make the comparison constant) | [predicates.rs](crates/minocrab-std/tests/predicates.rs), 22 tests |
 | `ContractAddress<Public>` | passing a bare `B32` where `kernel.self()` was meant — the `_with` twins take the typed address, so a raw pair of limbs no longer type-checks there. NOT a proof of self: `ContractAddress` is Compact's value type (recipients, call targets, `Either` arms) and is built from any `B32` in a dozen places. The proof of self is `kernel::SelfAddress` — a private-field newtype only the `self_address*` readers produce, taken by the helpers that act AS the contract (`contract_recipient`, `burn_body`); `.address()` is the way down to the value type ([notes/api-safety-survey.org §3 item 5](notes/api-safety-survey.org)) | zero rows, dump unchanged ([notes/api-safety-survey.org §A4](notes/api-safety-survey.org)) |
-| `Opaque<T: TsType>` | mixing two TypeScript-side types | compile_fail doctest, [v3.rs](crates/minocrab-std/src/v3.rs) |
+| `Opaque<T: TsType>` | mixing two TypeScript-side types | compile_fail doctest, [leaves.rs](crates/minocrab-std/src/leaves.rs) |
 | `from_field_unchecked` | *nothing* — it is the escape hatch, named as an assertion. `from_field_checked(c, w)` is the constrained twin (`Uint`, `BoundedUint`, `Bool`, `Bytes`, Borsh `Tag<K>`); there is no bare `from_field` left, so every site chose | [notes/api-safety-survey.org §A1](notes/api-safety-survey.org) |
-| guard scoping | an effect inside `c.when` escaping the guard — every witness read, transcript read, Impact op and check (`assert`, `assert_eq`, `assert_bits`, `assert_boolean`) resolves its guard through ONE private choke point ([v3/effects.rs](crates/minocrab/src/v3/effects.rs)); the scope is the only spelling of a conditional outside the four core primitives it lowers to (the per-operation `_under` / `_guarded` families are gone — [notes/edsl-trim.org §B](notes/edsl-trim.org)), and a value read inside a scope comes back as a `Guarded` that must be resolved | [v3_guard_scope.rs](crates/minocrab-std/tests/v3_guard_scope.rs), 39 tests, each asserting the scoped form is byte-identical to the core primitives' hand-threaded form |
+| guard scoping | an effect inside `c.when` escaping the guard — every witness read, transcript read, Impact op and check (`assert`, `assert_eq`, `assert_bits`, `assert_boolean`) resolves its guard through ONE private choke point ([effects.rs](crates/minocrab/src/effects.rs)); the scope is the only spelling of a conditional outside the four core primitives it lowers to (the per-operation `_under` / `_guarded` families are gone — [notes/edsl-trim.org §B](notes/edsl-trim.org)), and a value read inside a scope comes back as a `Guarded` that must be resolved | [guard_scope.rs](crates/minocrab-std/tests/guard_scope.rs), 39 tests, each asserting the scoped form is byte-identical to the core primitives' hand-threaded form |
 
 The Borsh layer belongs here as a safety feature in its own right:
 
@@ -237,12 +237,12 @@ Raw material: the drift taxonomy in [notes/version-bump.org](notes/version-bump.
 |---|---|---|
 | wrong instruction stream, same statement | row snapshot; zkir dump; the leakage inventory's surface counts | the differentials (instruction streams are free under PI-equality) |
 | wrong PI framing / transcript shape | the 20 differential suites; spec-harness link 2 (PI re-anchored to our op stream) | row snapshot (a reorder costs no rows) |
-| missing guard, assert or range check | the type-level constructions in §2(g); `v3_predicates`; `v3_guard_scope`; row snapshot (as a *row* delta, not a diagnosis) | every differential on an honest preimage — this is the class the API safety survey was commissioned to hunt by reading, not by testing |
+| missing guard, assert or range check | the type-level constructions in §2(g); `predicates`; `guard_scope`; row snapshot (as a *row* delta, not a diagnosis) | every differential on an honest preimage — this is the class the API safety survey was commissioned to hunt by reading, not by testing |
 | witness-stream drift (a read on the untaken branch) | interface snapshot (`wit` lines, `(guarded)` marked); the differentials, once the private transcript diverges | row snapshot, if the counts happen to match |
 | undeclared disclosure | the generated set-equality test per circuit | everything else — the labels are not in the ZKIR |
 | a secret reaching the public statement under no declared label | [leakage_inventory.rs](crates/minocrab-contracts/tests/leakage_inventory.rs) (completeness gate: witness provenance × label taint over the ZKIR, per Impact operand) | the set-equality tests (they check the label SET, not what the labels cover); the differentials (an honest preimage leaks the same either way) |
 | a circuit added and not listed | [circuit_closure.rs](crates/minocrab-contracts/tests/circuit_closure.rs) (every `#[circuit]` under `src/` is in `support::circuits()`); a `#[contract]` block derives its set | an `entry()`-built family with no attribute — listed by hand, with a comment saying why |
-| range-constraint gap at a typed seam | `v3_bounded` / `v3_leaves` / `v3_entry` (the argument types *are* the constraints); interface-crate check 6 (constraint prefix, slot for slot) | the differentials; the row snapshot sees only a row delta |
+| range-constraint gap at a typed seam | `bounded` / `leaves` / `entry` (the argument types *are* the constraints); interface-crate check 6 (constraint prefix, slot for slot) | the differentials; the row snapshot sees only a row delta |
 | upstream drift after a version bump | in diagnosis order: `cargo metadata` → workspace build → corpus compile report → ZKIR round-trip → ABI/Impact baseline → workspace → row snapshot → spec/vectors/TS → elevated property run | — `./bump.sh gates` runs exactly this sequence and prints the taxonomy line for whatever fired |
 | the Pending lineage drifting from the port's statement | the per-pair cost pins in `erc20_vault_pending.rs`; the record-byte and request-id equalities in `serialization_conformance` and `signet_flow.rs`; the interface snapshot | PI-equality — the lineage does not claim it (§2d) |
 | interface-crate drift vs a deployed callee | `artifact_agreement.rs` — six checks, hash-pinned artifact, 9 mutation cases proving the checker bites | the circuit does not bind argument types (§5) |
@@ -396,9 +396,9 @@ is [TRUST.md](TRUST.md), generated and closure-tested.
   fails when one is not listed (M32 C's mutation — an unlisted attribute in
   a source module — fails the test by name).
 - **The Borsh injectivity obligation is preventable, not prevented.**
-  `Serializer::constrained()` plus `Circuit3::dedup_range_constraints` make
+  `Serializer::constrained()` plus `Circuit::dedup_range_constraints` make
   constrain-on-construction **free** — proven by byte-identical serialized ZKIR
-  in [v3_dedup.rs](crates/minocrab-std/tests/v3_dedup.rs) — but the flag is off
+  in [dedup.rs](crates/minocrab-std/tests/dedup.rs) — but the flag is off
   on every shipped artifact, and every corpus caller still relies on its
   arguments being constrained at entry. Scanning all 863 `.zkir` in the repo for
   a range constraint implied by an earlier one on the same wire finds **zero**,

@@ -29,7 +29,7 @@
 //! `XcallTarget::at(address)` takes one as data.
 
 use minocrab::Public;
-use minocrab_std::v3::{interface, BytesN, Uint, B32};
+use minocrab_std::{interface, BytesN, Uint, B32};
 
 /// ```text
 /// contract XcallTarget {

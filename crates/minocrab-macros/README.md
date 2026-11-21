@@ -12,10 +12,10 @@
 
 **Do not depend on this crate directly.** `minocrab-std`'s default `macros` feature re-exports every macro next to the trait it implements, the way `serde` does, which is also where they are documented in context.
 
-A leaf of the build graph: it depends on nothing of ours and emits fully-qualified `::minocrab_std::v3::…` paths, so an expansion cannot smuggle circuit-building code in. By the thinness rule the expansions contain no `Circuit3` method call at all — everything goes through `CircuitArg` and `ArgPath`, and each expansion is exactly what was previously written by hand.
+A leaf of the build graph: it depends on nothing of ours and emits fully-qualified `::minocrab_std::…` paths, so an expansion cannot smuggle circuit-building code in. By the thinness rule the expansions contain no `Circuit` method call at all — everything goes through `CircuitArg` and `ArgPath`, and each expansion is exactly what was previously written by hand.
 
 ```rust
-use minocrab_std::v3::{circuit, Circuit3, CircuitArg, Bytes, Uint};
+use minocrab_std::{circuit, Circuit, CircuitArg, Bytes, Uint};
 
 #[derive(CircuitArg)]            // field order is the wire contract
 struct DepositRequest {
@@ -24,7 +24,7 @@ struct DepositRequest {
 }
 
 #[circuit]
-fn deposit(c: &mut Circuit3, evm_nonce: Uint<64>, request: DepositRequest) {
+fn deposit(c: &mut Circuit, evm_nonce: Uint<64>, request: DepositRequest) {
     c.assert(request.amount.gt(0u64));
 }
 ```

@@ -33,10 +33,10 @@
 //!   SURFACE is the same shape too, so the inventory describes both.
 //!
 //! The walk is static — no preimage, no run. Provenance is the transitive
-//! closure of `minocrab_ir::v3::passes::operands` (rung 2's `Instr.operands`
+//! closure of `minocrab_ir::passes::operands` (rung 2's `Instr.operands`
 //! in Lean, gate-equal on the corpus) seeded at the circuit inputs, the
 //! `private_input`s and the `public_input`s; labels are seeded at the wires
-//! `Compiled3::disclosures` names and propagated the same way. Provenance
+//! `Compiled::disclosures` names and propagated the same way. Provenance
 //! over-approximates (a hash of a secret "depends on" the secret, which is
 //! exactly the claim the inventory wants to make), never under-approximates.
 //!

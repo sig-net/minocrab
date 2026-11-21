@@ -48,7 +48,7 @@ use borsh::{BorshDeserialize, BorshSchema, BorshSerialize};
 use minocrab::{AlignmentAtom, Fr};
 use minocrab_contracts::signet_v1::{hash_domain, output_kind};
 use minocrab_contracts::{erc20_vault, signet_contract};
-use minocrab_sim::v3::simulate;
+use minocrab_sim::simulate;
 use proptest::prelude::*;
 use proptest::test_runner::TestRunner;
 use serde::Serialize;
@@ -652,7 +652,7 @@ fn lens_match_the_deployed_alignments() {
     // `executionDest` of 0.25 takes it to 558 and back to FIVE, the count of
     // the `fff3421c` record. Nothing hashes a V1 record with keccak, so the
     // count is a size fact, not a cost.
-    use minocrab_sim::v3::rowcost::keccak_blocks as blocks;
+    use minocrab_sim::rowcost::keccak_blocks as blocks;
     assert_eq!(blocks(VaultEventV1::LEN), 3);
     assert_eq!(blocks(SwapEventV1::LEN), 5);
     assert_eq!((blocks(VaultEventV2::LEN), blocks(SwapEventV2::LEN)), (3, 4));
@@ -813,7 +813,7 @@ fn schema_widths_match_the_lens() {
 /// one restated.
 fn v2_limbs(req: &Req, env: &Env, request_nonce: u64, kind: u8) -> Vec<Fr> {
     use minocrab_contracts::signet_v1::layout as v1;
-    use minocrab_std::v3::bytes_limbs;
+    use minocrab_std::bytes_limbs;
 
     let l = req.limbs(env);
     let words = req.tx.capacity;
@@ -1612,7 +1612,7 @@ fn layout_matches_its_frozen_table() {
 
 // ---- (e) THE IN-CIRCUIT ENCODER against a deployed shape (M11 stage 1) ---------
 //
-// Stage 1 built `minocrab_std::v3::borsh` — the same Borsh subset, emitted by
+// Stage 1 built `minocrab_std::borsh` — the same Borsh subset, emitted by
 // a circuit. Its own suite proves it against a twin of its own. Here it is
 // pointed at a DEPLOYED payload shape, `RespondMisc`, whose bytes stage 0
 // proved the pinned compactc artifact itself accepts: the circuit's packed
@@ -1622,12 +1622,12 @@ fn layout_matches_its_frozen_table() {
 mod in_circuit {
     use super::*;
 
-    use minocrab_std::v3::borsh::{to_bytes, CircuitBorsh};
-    use minocrab_std::v3::{ArgPath, CircuitArg, Uint, Vis3, B32};
+    use minocrab_std::borsh::{to_bytes, CircuitBorsh};
+    use minocrab_std::{ArgPath, CircuitArg, Uint, Vis, B32};
 
-    use minocrab::v3::Circuit3;
+    use minocrab::Circuit;
     use minocrab::Private;
-    use minocrab_zkir::v3::IrValue;
+    use minocrab_zkir::IrValue;
 
     /// [`RespondMisc`] over wires — ONE DERIVE for the circuit-argument
     /// family and the serialization, and `#[borsh(spec = …)]` for the
@@ -1641,7 +1641,7 @@ mod in_circuit {
     /// deployed interface).
     #[derive(CircuitBorsh)]
     #[borsh(spec = RespondMisc)]
-    struct RespondMiscCircuit<V: Vis3> {
+    struct RespondMiscCircuit<V: Vis> {
         request_id: B32<V>,
         big_r_x: B32<V>,
         big_r_y: B32<V>,
@@ -1669,7 +1669,7 @@ mod in_circuit {
     /// deployed `respond` payload ARE `borsh::to_vec` of the spec type.
     #[test]
     fn the_circuit_encoder_emits_the_spec_bytes() {
-        let mut c = Circuit3::new();
+        let mut c = Circuit::new();
         let value =
             <RespondMiscCircuit<Private> as CircuitArg>::declare(&mut c, &ArgPath::root("respond"));
         value.constrain(&mut c);
@@ -1709,7 +1709,7 @@ mod in_circuit {
                 let mut bytes = Vec::with_capacity(RespondMisc::LEN);
                 for (i, limb) in limbs.iter().enumerate().rev() {
                     let width =
-                        minocrab_std::v3::BytesN::<Private, { RespondMisc::LEN }>::limb_len(i);
+                        minocrab_std::BytesN::<Private, { RespondMisc::LEN }>::limb_len(i);
                     bytes.extend_from_slice(&limb.as_le_bytes()[..width]);
                 }
                 prop_assert_eq!(bytes, borsh_bytes(&payload));
@@ -1725,7 +1725,7 @@ mod in_circuit {
     fn the_schema_cross_check_catches_a_moved_offset() {
         let mut ours = <RespondMiscCircuit<Private> as CircuitBorsh<Private>>::layout();
         ours[1].offset += 1;
-        minocrab_std::v3::borsh::schema::assert_matches_schema::<RespondMisc>(
+        minocrab_std::borsh::schema::assert_matches_schema::<RespondMisc>(
             "RespondMiscCircuit",
             &ours,
         );

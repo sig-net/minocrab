@@ -80,10 +80,10 @@
 
 use core::cell::Cell;
 
-use minocrab::v3::{Circuit3, FieldT, Wire3};
+use minocrab::{Circuit, FieldT, Wire};
 use minocrab::{Private, Public};
-use minocrab_std::v3::kernel;
-use minocrab_std::v3::{
+use minocrab_std::kernel;
+use minocrab_std::{
     contract, eq, label, own_public_key, Bytes, CircuitArg, CoinColor, CoinNonce,
     CoinRecipient, Disclose, Discloses, Either, Ledger, LedgerCell, LedgerCounter, LedgerRepr,
     Maybe, Secp256k1Point, TokenDomainSeparator, Uint, B32,
@@ -364,12 +364,12 @@ label! {
 
 // ---- shared pieces ------------------------------------------------------------------------
 
-fn assert_initialized(c: &mut Circuit3) {
+fn assert_initialized(c: &mut Circuit) {
     let init = VAULT.initialized.read(c);
     c.assert(init.gt(0u64).message("Not initialized"));
 }
 
-fn assert_deployer(c: &mut Circuit3) {
+fn assert_deployer(c: &mut Circuit) {
     let sk = common::witness_sk(c);
     let digest = common::commitment_transient(c, &sk);
     let stored = VAULT.deployer.read(c);
@@ -379,8 +379,8 @@ fn assert_deployer(c: &mut Circuit3) {
 /// The vault token's pre-token for an ERC-20 (see
 /// `erc20_vault_modern::vault_token_domain_separator`).
 fn vault_token_domain_separator(
-    c: &mut Circuit3,
-    erc20_address: Wire3<FieldT, Public>,
+    c: &mut Circuit,
+    erc20_address: Wire<FieldT, Public>,
 ) -> TokenDomainSeparator<Public> {
     c.region("token domain separator", |c| {
         TokenDomainSeparator(B32 {
@@ -393,7 +393,7 @@ fn vault_token_domain_separator(
 /// The private `Bytes<20>` an ABI `address` argument takes, from a ledger
 /// cell read HERE — inside an argument builder, so the read emits where the
 /// deployed circuit reads it (`crate::evm::AbiArgs`).
-fn cell_address(c: &mut Circuit3, cell: &LedgerCell<Bytes<20, Public>>) -> Bytes<20, Private> {
+fn cell_address(c: &mut Circuit, cell: &LedgerCell<Bytes<20, Public>>) -> Bytes<20, Private> {
     Bytes::from_field_unchecked(cell.read(c).stale(c).field().private())
 }
 
@@ -408,18 +408,18 @@ struct ShieldedCoinArg {
 /// The surrendered coin must be the vault token for `erc20` of exactly
 /// `amount`; then it is burned. Returns nothing: the checks assert.
 fn burn_vault_coin(
-    c: &mut Circuit3,
-    one: Wire3<FieldT, Public>,
-    erc20: Wire3<FieldT, Public>,
-    amount: Wire3<FieldT, Private>,
+    c: &mut Circuit,
+    one: Wire<FieldT, Public>,
+    erc20: Wire<FieldT, Public>,
+    amount: Wire<FieldT, Private>,
     coin: ShieldedCoinArg,
 ) {
     let domain_sep = vault_token_domain_separator(c, erc20);
     let me = kernel::cache_self_address(c);
-    let color = minocrab_std::v3::token_type(c, &domain_sep, &me.bytes());
+    let color = minocrab_std::token_type(c, &domain_sep, &me.bytes());
     c.assert(coin.color.bytes().equals(color.private().bytes()));
     c.assert(eq(coin.value.field(), amount));
-    let coin = minocrab_std::v3::ShieldedCoinInfo3 {
+    let coin = minocrab_std::ShieldedCoinInfo {
         nonce: coin.nonce.disclose_as::<SurrenderedCoinNonce>(c),
         color: coin.color.disclose_as::<SurrenderedCoinColor>(c),
         value: coin.value.field().disclose_as::<SurrenderedCoinValue>(c),
@@ -429,7 +429,7 @@ fn burn_vault_coin(
 
 /// completeSwap's change-coin nonce: `[255 − hi, lo]` (see
 /// `erc20_vault_modern::change_nonce`).
-fn change_nonce(c: &mut Circuit3, mint_nonce: &CoinNonce<Public>) -> CoinNonce<Public> {
+fn change_nonce(c: &mut Circuit, mint_nonce: &CoinNonce<Public>) -> CoinNonce<Public> {
     c.region("change nonce", |c| {
         let neg_hi = c.neg(mint_nonce.bytes().hi);
         CoinNonce(B32 {
@@ -441,7 +441,7 @@ fn change_nonce(c: &mut Circuit3, mint_nonce: &CoinNonce<Public>) -> CoinNonce<P
 
 /// `numericAbiWord(unlimitedAllowance())` — 2^128 − 1 as an ABI word: 16
 /// zero bytes then 16 `0xff` bytes.
-fn unlimited_allowance_word(c: &mut Circuit3) -> B32<Private> {
+fn unlimited_allowance_word(c: &mut Circuit) -> B32<Private> {
     let mut max_word = [0u8; 32];
     max_word[16..].copy_from_slice(&[0xff; 16]);
     B32 {
@@ -488,7 +488,7 @@ impl Vault {
     /// place, as a cell, so no later circuit takes one.
     #[circuit]
     pub fn initialize(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         vault_evm: Bytes<20>,
         swap_router: Bytes<20>,
         stata_underlying_addr: Bytes<20>,
@@ -552,7 +552,7 @@ impl Vault {
     /// under the depositor's identity commitment and notify the MPC.
     #[circuit]
     pub fn deposit(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         evm_nonce: Uint<64>,
         gas_limit: Uint<64>,
         max_fee_per_gas: Uint<128>,
@@ -579,8 +579,8 @@ impl Vault {
             c,
             |c| Contract::<Erc20>::from_address(c, deposit_request.erc20_address),
             (
-                |c: &mut Circuit3| cell_address(c, &VAULT.vault_evm_address),
-                |_c: &mut Circuit3| deposit_request.amount,
+                |c: &mut Circuit| cell_address(c, &VAULT.vault_evm_address),
+                |_c: &mut Circuit| deposit_request.amount,
             ),
             Envelope::caller(max_priority_fee_per_gas, max_fee_per_gas, gas_limit),
             evm_nonce,
@@ -599,13 +599,13 @@ impl Vault {
     /// tokens to the recipient (depositor-only).
     #[circuit]
     pub fn claim(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         ticket: Succeeded<Deposit>,
         mint_nonce: CoinNonce<Private>,
         recipient: Maybe<
             Either<
-                minocrab_std::v3::ZswapCoinPublicKey<Private>,
-                minocrab_std::v3::ContractAddress<Private>,
+                minocrab_std::ZswapCoinPublicKey<Private>,
+                minocrab_std::ContractAddress<Private>,
                 Private,
             >,
         >,
@@ -646,8 +646,8 @@ impl Vault {
             let rec_left = recipient.value.left.disclose_as::<ClaimRecipientKey>(c);
             let rec_right = recipient.value.right.disclose_as::<ClaimRecipientContract>(c);
             let is_left = c.cond_select(rec_is_some, rec_is_left, one);
-            let left = minocrab_std::v3::ZswapCoinPublicKey::cond_select(c, rec_is_some, &rec_left, &own_pk);
-            let right = minocrab_std::v3::ContractAddress(B32 {
+            let left = minocrab_std::ZswapCoinPublicKey::cond_select(c, rec_is_some, &rec_left, &own_pk);
+            let right = minocrab_std::ContractAddress(B32 {
                 hi: c.cond_select(rec_is_some, rec_right.bytes().hi, 0u64),
                 lo: c.cond_select(rec_is_some, rec_right.bytes().lo, 0u64),
             });
@@ -666,7 +666,7 @@ impl Vault {
     /// signed by the VAULT's account, the withdrawer kept as a commitment.
     #[circuit]
     pub fn withdraw(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         evm_nonce: Uint<64>,
         withdraw_request: WithdrawRequest,
         coin: ShieldedCoinArg,
@@ -695,8 +695,8 @@ impl Vault {
             c,
             |c| Contract::<Erc20>::from_address(c, erc20),
             (
-                |_c: &mut Circuit3| withdraw_request.dest_evm_address,
-                |_c: &mut Circuit3| withdraw_request.amount,
+                |_c: &mut Circuit| withdraw_request.dest_evm_address,
+                |_c: &mut Circuit| withdraw_request.amount,
             ),
             Envelope::fixed(),
             evm_nonce,
@@ -730,7 +730,7 @@ impl Vault {
     /// might not take; that is Gap 2, and this is its repair.
     #[circuit]
     pub fn complete_withdraw(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         ticket: Succeeded<Withdrawal>,
     ) -> Discloses<Settled> {
         assert_initialized(c);
@@ -747,7 +747,7 @@ impl Vault {
     /// secret and opens the environment's commitment against it.
     #[circuit]
     pub fn refund_withdrawal(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         ticket: Failed<Withdrawal>,
         mint_nonce: CoinNonce<Private>,
     ) -> Discloses<(Settled, RefundRecipient, RefundMintNonce)> {
@@ -768,7 +768,7 @@ impl Vault {
     /// router, signed by the VAULT's account.
     #[circuit]
     pub fn swap(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         evm_nonce: Uint<64>,
         swap_request: SwapRequest,
         coin: ShieldedCoinArg,
@@ -810,15 +810,15 @@ impl Vault {
                 Contract::<UniswapV3Router>::from_address(c, router)
             },
             (
-                |_c: &mut Circuit3| Bytes::from_field_unchecked(token_in.field().private()),
-                |_c: &mut Circuit3| Bytes::from_field_unchecked(token_out.field().private()),
-                |_c: &mut Circuit3| swap_request.fee,
-                |c: &mut Circuit3| cell_address(c, &VAULT.vault_evm_address),
-                |_c: &mut Circuit3| swap_request.amount_out,
-                |_c: &mut Circuit3| swap_request.amount_in_maximum,
+                |_c: &mut Circuit| Bytes::from_field_unchecked(token_in.field().private()),
+                |_c: &mut Circuit| Bytes::from_field_unchecked(token_out.field().private()),
+                |_c: &mut Circuit| swap_request.fee,
+                |c: &mut Circuit| cell_address(c, &VAULT.vault_evm_address),
+                |_c: &mut Circuit| swap_request.amount_out,
+                |_c: &mut Circuit| swap_request.amount_in_maximum,
                 // `sqrtPriceLimitX96 = 0`: a `U256`/`U160` wire IS the
                 // already-encoded word, so this emits nothing.
-                |_c: &mut Circuit3| B32::<Private> {
+                |_c: &mut Circuit| B32::<Private> {
                     hi: zero.private(),
                     lo: zero.private(),
                 },
@@ -854,7 +854,7 @@ impl Vault {
     /// (fresh witness against the commitment).
     #[circuit]
     pub fn complete_swap(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         ticket: Succeeded<Swap>,
         mint_nonce: CoinNonce<Private>,
     ) -> Discloses<(Settled, SwapRecipient, SwapMintNonce, AttestedAmountIn)> {
@@ -902,7 +902,7 @@ impl Vault {
     /// surrendered amountInMaximum of tokenIn to the swapper.
     #[circuit]
     pub fn refund_swap(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         ticket: Failed<Swap>,
         mint_nonce: CoinNonce<Private>,
     ) -> Discloses<(Settled, RefundRecipient, RefundMintNonce)> {
@@ -927,7 +927,7 @@ impl Vault {
     /// Request-only.
     #[circuit]
     pub fn approve_router(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         erc20_address: Bytes<20>,
         evm_nonce: Uint<64>,
     ) -> Discloses<(ApprovedErc20, Requested)> {
@@ -941,8 +941,8 @@ impl Vault {
             c,
             |c| Contract::<Erc20>::from_address(c, erc20),
             (
-                |c: &mut Circuit3| cell_address(c, &VAULT.uniswap_router),
-                |c: &mut Circuit3| unlimited_allowance_word(c),
+                |c: &mut Circuit| cell_address(c, &VAULT.uniswap_router),
+                |c: &mut Circuit| unlimited_allowance_word(c),
             ),
             Envelope::fixed(),
             evm_nonce,
@@ -956,7 +956,7 @@ impl Vault {
     /// wrapper can pull it during a supply. Request-only.
     #[circuit]
     pub fn approve_stata(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         evm_nonce: Uint<64>,
     ) -> Discloses<(Requested,)> {
         assert_initialized(c);
@@ -971,8 +971,8 @@ impl Vault {
                 Contract::<Erc20>::from_address(c, underlying)
             },
             (
-                |c: &mut Circuit3| cell_address(c, &VAULT.stata_token),
-                |c: &mut Circuit3| unlimited_allowance_word(c),
+                |c: &mut Circuit| cell_address(c, &VAULT.stata_token),
+                |c: &mut Circuit| unlimited_allowance_word(c),
             ),
             Envelope::fixed(),
             evm_nonce,
@@ -988,7 +988,7 @@ impl Vault {
     /// signed by the VAULT's account (exact-input, so no change).
     #[circuit]
     pub fn supply(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         evm_nonce: Uint<64>,
         amount: Uint<128>,
         coin: ShieldedCoinArg,
@@ -1020,8 +1020,8 @@ impl Vault {
                 Contract::<Erc4626>::from_address(c, stata)
             },
             (
-                |_c: &mut Circuit3| amount,
-                |c: &mut Circuit3| cell_address(c, &VAULT.vault_evm_address),
+                |_c: &mut Circuit| amount,
+                |c: &mut Circuit| cell_address(c, &VAULT.vault_evm_address),
             ),
             Envelope::fixed(),
             evm_nonce,
@@ -1045,7 +1045,7 @@ impl Vault {
     /// against the commitment).
     #[circuit]
     pub fn complete_supply(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         ticket: Succeeded<Supply>,
         mint_nonce: CoinNonce<Private>,
     ) -> Discloses<(Settled, SupplyRecipient, SupplyMintNonce, AttestedShares)> {
@@ -1072,7 +1072,7 @@ impl Vault {
     /// IS the outcome); re-mint the surrendered USDC amount to the supplier.
     #[circuit]
     pub fn refund_supply(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         ticket: Failed<Supply>,
         mint_nonce: CoinNonce<Private>,
     ) -> Discloses<(Settled, RefundRecipient, RefundMintNonce)> {
@@ -1096,7 +1096,7 @@ impl Vault {
     /// assets through the same `Uint<64>` API after the coin is already burned.
     #[circuit]
     pub fn redeem(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         evm_nonce: Uint<64>,
         shares: Uint<128>,
         coin: ShieldedCoinArg,
@@ -1129,13 +1129,13 @@ impl Vault {
             c,
             |_c| Contract::<Erc4626>::from_address(_c, stata_token),
             (
-                |_c: &mut Circuit3| shares,
-                |c: &mut Circuit3| {
+                |_c: &mut Circuit| shares,
+                |c: &mut Circuit| {
                     let read = cell_address(c, &VAULT.vault_evm_address);
                     vault_evm.set(Some(read));
                     read
                 },
-                |_c: &mut Circuit3| {
+                |_c: &mut Circuit| {
                     vault_evm
                         .get()
                         .expect("the second address builder runs after the first")
@@ -1165,7 +1165,7 @@ impl Vault {
     /// witness against the commitment).
     #[circuit]
     pub fn complete_redeem(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         ticket: Succeeded<Redeem>,
         mint_nonce: CoinNonce<Private>,
     ) -> Discloses<(Settled, RedeemRecipient, RedeemMintNonce, AttestedAssets)> {
@@ -1192,7 +1192,7 @@ impl Vault {
     /// stataToken shares to the redeemer.
     #[circuit]
     pub fn refund_redeem(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         ticket: Failed<Redeem>,
         mint_nonce: CoinNonce<Private>,
     ) -> Discloses<(Settled, RefundRecipient, RefundMintNonce)> {

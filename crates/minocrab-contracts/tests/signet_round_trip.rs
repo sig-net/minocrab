@@ -3,7 +3,7 @@
 //!
 //! Rung D built the responder (`crates/signet-sim`) but could not chain it,
 //! because nothing produced a circuit's transcript from ledger state. The
-//! executor (`minocrab_sim::v3::exec`) does, so this file closes the loop as
+//! executor (`minocrab_sim::exec`) does, so this file closes the loop as
 //! far as it goes:
 //!
 //! 1. a request circuit runs against a real pre-state; the executor derives
@@ -35,7 +35,7 @@ use midnight_onchain_state::state::StateValue;
 use midnight_transient_crypto::proofs::Zkir;
 use minocrab::Fr;
 use minocrab_contracts::erc20_vault_pending::{self as pending};
-use minocrab_sim::v3::exec::{self, Call};
+use minocrab_sim::exec::{self, Call};
 use signet_sim::reader::MISC_PAYLOAD_LEN;
 use signet_sim::{EvmOutcome, Refusal, SigNetSim};
 
@@ -65,7 +65,7 @@ fn notification(request_id: &[u8; 32], caller: &[u8; 32], path: &[u8]) -> [u8; M
 
 /// Run a request circuit against `pre` and return the state it leaves.
 fn post_state_of(
-    ir: &minocrab_zkir::v3::IrSource,
+    ir: &minocrab_zkir::IrSource,
     scenario_inputs: &[Fr],
     scenario_witnesses: &[Fr],
     comm_rand: Fr,
@@ -320,10 +320,10 @@ fn the_typed_settle_digest_is_the_digest_the_mpc_signs() {
 /// reads — the record, the environment, the response key — are answered out
 /// of what the request wrote, not out of a scenario the test built.
 fn chain(
-    request_ir: &minocrab_zkir::v3::IrSource,
+    request_ir: &minocrab_zkir::IrSource,
     request_pi: &midnight_transient_crypto::proofs::ProofPreimage,
     request_pre: &vault_pending::exec::PreState,
-    settle_ir: &minocrab_zkir::v3::IrSource,
+    settle_ir: &minocrab_zkir::IrSource,
     settle_pi: &midnight_transient_crypto::proofs::ProofPreimage,
     settle_ops: &[vault_pending::prims::VmOp],
     self_addr: &[u8; 32],

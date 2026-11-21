@@ -14,7 +14,7 @@ selection in the typed layer* — choosing a cheaper lowering because the eDSL
 *knows a value is a `Bytes<32>` with a known alignment*. ZKIR is type-erased,
 so an IR pass can never recover this. Optimize where the types still are.
 
-Measure everything with `minocrab_sim::v3::{cost, profile}` (in a `#[test]`
+Measure everything with `minocrab_sim::{cost, profile}` (in a `#[test]`
 or a criterion bench) or the `minocrab` CLI over a `.zkir`. A lever that
 does not move `(k, rows)` on *your* circuit is not helping *your* circuit.
 
@@ -46,7 +46,7 @@ native `Reverse` (~150 rows). The stdlib's explode/rebuild chain is
 
 ### 4. `Serializer` re-limbs by segment
 
-Packing several values into one byte string? `minocrab_std::v3::Serializer`
+Packing several values into one byte string? `minocrab_std::Serializer`
 emits at most one `div_mod` per output-limb boundary a field straddles,
 instead of exploding every input to bytes. Push typed values
 (`push_uint`, `push_b32`, `push_bytes_n`, `push_literal`) and `finish::<N>()`.

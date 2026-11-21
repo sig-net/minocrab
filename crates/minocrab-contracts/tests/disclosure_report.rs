@@ -6,7 +6,7 @@
 //! `simulate_compiled` report — and it needs a `ProofPreimage`, so it lives
 //! here, on the vault harness that already builds one.
 //!
-//! What it pins is the whole reporting path at once: that a v3 `Disclosure3`
+//! What it pins is the whole reporting path at once: that a v3 `Disclosure`
 //! carries an `Identifier` the simulator's memory can be keyed by (before
 //! phase 6 it carried `index: 0`, and every value in a v3 report would have
 //! read `<not computed>`); that a `Bytes<32>` disclosed under one label
@@ -14,9 +14,9 @@
 //! preimage's own.
 
 use midnight_transient_crypto::proofs::ProofPreimage;
-use minocrab::v3::Compiled3;
+use minocrab::Compiled;
 use minocrab_contracts::erc20_vault;
-use minocrab_sim::v3::simulate_compiled;
+use minocrab_sim::simulate_compiled;
 
 mod support;
 mod vault;
@@ -39,7 +39,7 @@ the request's EIP-1559 fee envelope | disclosed | 00943577
 the request's EIP-1559 fee envelope | disclosed | 905f01
 the request's ownership commitment | disclosed | -, 3ccff5f8d992d4111463daaf9853d87eaf1d2ee838157f016a56692a715993";
 
-fn report_lines(compiled: &Compiled3, pi: &ProofPreimage) -> Vec<String> {
+fn report_lines(compiled: &Compiled, pi: &ProofPreimage) -> Vec<String> {
     let (_run, report) = simulate_compiled(compiled, pi).expect("the circuit accepts");
     report
         .disclosures

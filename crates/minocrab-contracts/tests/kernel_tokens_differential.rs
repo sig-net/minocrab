@@ -16,9 +16,9 @@
 mod common;
 use common::*;
 
-use minocrab::v3::Compiled3;
+use minocrab::Compiled;
 use minocrab_contracts::kernel_tokens::KernelTokens;
-use minocrab_zkir::v3::IrSource;
+use minocrab_zkir::IrSource;
 
 /// compactc's artifact for one fixture circuit.
 fn theirs(name: &str) -> IrSource {
@@ -26,14 +26,14 @@ fn theirs(name: &str) -> IrSource {
         "{}/tests/fixtures/kernel/out/zkir/{name}.zkir",
         env!("CARGO_MANIFEST_DIR")
     );
-    minocrab_zkir::v3::read_zkir(&path).expect("the pinned compactc's artifact parses")
+    minocrab_zkir::read_zkir(&path).expect("the pinned compactc's artifact parses")
 }
 
 /// The circuits ported so far: compactc's artifact name and our builder.
-fn cases() -> Vec<(&'static str, fn() -> Compiled3)> {
+fn cases() -> Vec<(&'static str, fn() -> Compiled)> {
     vec![
         // the nine kernel primitives that have vm-code and can be compiled
-        ("kMintUnshielded", KernelTokens::k_mint_unshielded as fn() -> Compiled3),
+        ("kMintUnshielded", KernelTokens::k_mint_unshielded as fn() -> Compiled),
         ("kClaimUnshieldedCoinSpend", KernelTokens::k_claim_unshielded_coin_spend),
         ("kIncUnshieldedOutputs", KernelTokens::k_inc_unshielded_outputs),
         ("kIncUnshieldedInputs", KernelTokens::k_inc_unshielded_inputs),

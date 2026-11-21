@@ -24,13 +24,13 @@
 //! envelope and the gas limit are not written down anywhere here:
 //!
 //! ```
-//! use minocrab::v3::{Circuit3, FieldT};
+//! use minocrab::{Circuit, FieldT};
 //! use minocrab::Private;
 //! use minocrab_evm::erc20;
 //! use minocrab_signet::filing::build_tx;
-//! use minocrab_std::v3::{Bytes, Uint};
+//! use minocrab_std::{Bytes, Uint};
 //!
-//! let mut c = Circuit3::new();
+//! let mut c = Circuit::new();
 //! let to = Bytes::<20, Private>::from_field_unchecked(c.arg::<FieldT>("to"));
 //! let amount = Uint::<128, Private>::from_field_unchecked(c.arg::<FieldT>("amount"));
 //! let nonce = c.arg::<FieldT>("nonce");
@@ -49,13 +49,13 @@
 //! sends tokens to an address made out of an amount:
 //!
 //! ```compile_fail,E0308
-//! use minocrab::v3::{Circuit3, FieldT};
+//! use minocrab::{Circuit, FieldT};
 //! use minocrab::Private;
 //! use minocrab_evm::erc20;
 //! use minocrab_signet::filing::build_tx;
-//! use minocrab_std::v3::{Bytes, Uint};
+//! use minocrab_std::{Bytes, Uint};
 //!
-//! let mut c = Circuit3::new();
+//! let mut c = Circuit::new();
 //! let to = Bytes::<20, Private>::from_field_unchecked(c.arg::<FieldT>("to"));
 //! let amount = Uint::<128, Private>::from_field_unchecked(c.arg::<FieldT>("amount"));
 //! let nonce = c.arg::<FieldT>("nonce");
@@ -70,13 +70,13 @@
 //! the call site:
 //!
 //! ```compile_fail,E0080
-//! use minocrab::v3::{Circuit3, FieldT};
+//! use minocrab::{Circuit, FieldT};
 //! use minocrab::Private;
 //! use minocrab_evm::erc20;
 //! use minocrab_signet::filing::build_tx;
-//! use minocrab_std::v3::{Bytes, Uint};
+//! use minocrab_std::{Bytes, Uint};
 //!
-//! let mut c = Circuit3::new();
+//! let mut c = Circuit::new();
 //! let to = Bytes::<20, Private>::from_field_unchecked(c.arg::<FieldT>("to"));
 //! let amount = Uint::<128, Private>::from_field_unchecked(c.arg::<FieldT>("amount"));
 //! let nonce = c.arg::<FieldT>("nonce");
@@ -91,13 +91,13 @@
 //! is a missing impl for every call but WETH's `deposit()`:
 //!
 //! ```compile_fail,E0277
-//! use minocrab::v3::{Circuit3, FieldT};
+//! use minocrab::{Circuit, FieldT};
 //! use minocrab::Private;
 //! use minocrab_evm::erc20;
 //! use minocrab_signet::filing::build_tx_payable;
-//! use minocrab_std::v3::{Bytes, Uint};
+//! use minocrab_std::{Bytes, Uint};
 //!
-//! let mut c = Circuit3::new();
+//! let mut c = Circuit::new();
 //! let to = Bytes::<20, Private>::from_field_unchecked(c.arg::<FieldT>("to"));
 //! let amount = Uint::<128, Private>::from_field_unchecked(c.arg::<FieldT>("amount"));
 //! let value = Uint::<128, Private>::from_field_unchecked(c.arg::<FieldT>("value"));
@@ -111,13 +111,13 @@
 //! ether IS its argument, so the tuple is empty and the word count is zero:
 //!
 //! ```
-//! use minocrab::v3::{Circuit3, FieldT};
+//! use minocrab::{Circuit, FieldT};
 //! use minocrab::Private;
 //! use minocrab_evm::weth;
 //! use minocrab_signet::filing::build_tx_payable;
-//! use minocrab_std::v3::{Bytes, Uint};
+//! use minocrab_std::{Bytes, Uint};
 //!
-//! let mut c = Circuit3::new();
+//! let mut c = Circuit::new();
 //! let value = Uint::<128, Private>::from_field_unchecked(c.arg::<FieldT>("value"));
 //! let nonce = c.arg::<FieldT>("nonce");
 //! let weth9 = Bytes::<20, Private>::from_field_unchecked(c.arg::<FieldT>("weth"));
@@ -126,9 +126,9 @@
 
 use core::marker::PhantomData;
 
-use minocrab::v3::{Circuit3, FieldT, Wire3};
+use minocrab::{Circuit, FieldT, Wire};
 use minocrab::{Fr, Private};
-use minocrab_std::v3::{Bytes, Uint, B32};
+use minocrab_std::{Bytes, Uint, B32};
 
 use minocrab_evm::{AbiArgs, AbiTuple, EvmCall, Payable};
 use crate::signet_flow::EvmTx;
@@ -279,10 +279,10 @@ impl<Call: EvmCall + 'static, Schema: OutputSchema> Filing for Filed<Call, Schem
 /// transaction's constants — so a vault circuit moving onto this emits the
 /// same stream it emits today.
 pub fn build_tx<C: EvmCall, const WORDS: usize>(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     callee: Bytes<20, Private>,
     args: <C::Args as AbiTuple>::Wires<Private>,
-    nonce: Wire3<FieldT, Private>,
+    nonce: Wire<FieldT, Private>,
 ) -> EvmTx<WORDS> {
     build_tx_at::<C, WORDS>(c, callee, args, nonce, C::GAS_LIMIT)
 }
@@ -296,10 +296,10 @@ pub fn build_tx<C: EvmCall, const WORDS: usize>(
 /// unoverridden filing emits exactly what [`build_tx`] does — ZERO
 /// MOVEMENT for every filing that does not name this const.
 pub fn build_tx_filed<F: Filing, const WORDS: usize>(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     callee: Bytes<20, Private>,
     args: <<F::Call as EvmCall>::Args as AbiTuple>::Wires<Private>,
-    nonce: Wire3<FieldT, Private>,
+    nonce: Wire<FieldT, Private>,
 ) -> EvmTx<WORDS> {
     build_tx_at::<F::Call, WORDS>(c, callee, args, nonce, F::GAS_LIMIT)
 }
@@ -307,10 +307,10 @@ pub fn build_tx_filed<F: Filing, const WORDS: usize>(
 /// The shared body of [`build_tx`] and [`build_tx_filed`]: `gas_limit` is
 /// the only thing that differs between the two callers.
 fn build_tx_at<C: EvmCall, const WORDS: usize>(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     callee: Bytes<20, Private>,
     args: <C::Args as AbiTuple>::Wires<Private>,
-    nonce: Wire3<FieldT, Private>,
+    nonce: Wire<FieldT, Private>,
     gas_limit: u64,
 ) -> EvmTx<WORDS> {
     const {
@@ -343,11 +343,11 @@ fn build_tx_at<C: EvmCall, const WORDS: usize>(
 /// re-encodes them here and nothing needs to, because the read's `popeq`
 /// binds them to the stored entry [`AbiTuple::words`] encoded at insert.
 pub fn build_tx_from_words<C: EvmCall, const WORDS: usize>(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     callee: Bytes<20, Private>,
     words: [B32<Private>; WORDS],
     envelope: Envelope,
-    nonce: Wire3<FieldT, Private>,
+    nonce: Wire<FieldT, Private>,
     gas_limit: u64,
 ) -> EvmTx<WORDS> {
     const {
@@ -372,11 +372,11 @@ pub fn build_tx_from_words<C: EvmCall, const WORDS: usize>(
 /// that would ignore it. Everything else is [`build_tx`] — the same
 /// envelope, the same emission order, the same const-checked `WORDS`.
 pub fn build_tx_payable<C: Payable, const WORDS: usize>(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     callee: Bytes<20, Private>,
     args: <C::Args as AbiTuple>::Wires<Private>,
     value: Uint<128, Private>,
-    nonce: Wire3<FieldT, Private>,
+    nonce: Wire<FieldT, Private>,
 ) -> EvmTx<WORDS> {
     build_tx_payable_at::<C, WORDS>(c, callee, args, value, nonce, C::GAS_LIMIT)
 }
@@ -386,11 +386,11 @@ pub fn build_tx_payable<C: Payable, const WORDS: usize>(
 /// counterpart to [`build_tx_payable`], reading the slot's
 /// [`Filing::GAS_LIMIT`] instead of the call's.
 pub fn build_tx_payable_filed<F: Filing, const WORDS: usize>(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     callee: Bytes<20, Private>,
     args: <<F::Call as EvmCall>::Args as AbiTuple>::Wires<Private>,
     value: Uint<128, Private>,
-    nonce: Wire3<FieldT, Private>,
+    nonce: Wire<FieldT, Private>,
 ) -> EvmTx<WORDS>
 where
     F::Call: Payable,
@@ -400,11 +400,11 @@ where
 
 /// The shared body of [`build_tx_payable`] and [`build_tx_payable_filed`].
 fn build_tx_payable_at<C: Payable, const WORDS: usize>(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     callee: Bytes<20, Private>,
     args: <C::Args as AbiTuple>::Wires<Private>,
     value: Uint<128, Private>,
-    nonce: Wire3<FieldT, Private>,
+    nonce: Wire<FieldT, Private>,
     gas_limit: u64,
 ) -> EvmTx<WORDS> {
     const {
@@ -462,11 +462,11 @@ enum Tail {
         /// The ether the transaction carries, for a [`Payable`] call.
         /// `None` — every non-payable call — is the constant zero, named
         /// where it has always been named.
-        value: Option<Wire3<FieldT, Private>>,
+        value: Option<Wire<FieldT, Private>>,
     },
     Literal {
-        value: Option<Wire3<FieldT, Private>>,
-        calldata_is_some: Wire3<FieldT, Private>,
+        value: Option<Wire<FieldT, Private>>,
+        calldata_is_some: Wire<FieldT, Private>,
     },
 }
 
@@ -517,8 +517,8 @@ impl Envelope {
     /// `value` only if it is not supplied.
     ///
     /// IT CHANGES NO INSTRUCTION. Every one of these is a `Copy` of an
-    /// immediate, and `minocrab_ir::v3::passes::fold_immediate_copies` folds
-    /// each into its consumers and deletes it inside `Builder3::finish`, so
+    /// immediate, and `minocrab_ir::passes::fold_immediate_copies` folds
+    /// each into its consumers and deletes it inside `Builder::finish`, so
     /// the two spellings execute identically and cost identical rows. What
     /// they do not share is the SEQUENTIAL NAMES the surviving instructions
     /// get, because the counter runs over every emitted instruction including
@@ -528,8 +528,8 @@ impl Envelope {
     /// renumber after folding, which would move every circuit in the tree.)
     pub fn literal(
         self,
-        value: Option<Wire3<FieldT, Private>>,
-        calldata_is_some: Wire3<FieldT, Private>,
+        value: Option<Wire<FieldT, Private>>,
+        calldata_is_some: Wire<FieldT, Private>,
     ) -> Self {
         Envelope {
             fees: self.fees,
@@ -560,7 +560,7 @@ impl Envelope {
     /// [`build_tx_payable_filed`] pass the slot's [`Filing::GAS_LIMIT`]
     /// instead (notes/evm-interfaces.org §10). [`Fees::Caller`] ignores it —
     /// its own wire is already the caller's number.
-    fn fee_wires(fees: Fees, gas_limit: u64, c: &mut Circuit3) -> [Wire3<FieldT, Private>; 3] {
+    fn fee_wires(fees: Fees, gas_limit: u64, c: &mut Circuit) -> [Wire<FieldT, Private>; 3] {
         match fees {
             Fees::Fixed => {
                 let priority_fee = c.constant(FIXED_PRIORITY_FEE);
@@ -603,11 +603,11 @@ impl Envelope {
 /// [`Envelope::caller`] envelope ignores it — its own wire is already the
 /// caller's number.
 pub fn build_tx_with<C: EvmCall, const WORDS: usize>(
-    c: &mut Circuit3,
-    callee: impl FnOnce(&mut Circuit3) -> Bytes<20, Private>,
+    c: &mut Circuit,
+    callee: impl FnOnce(&mut Circuit) -> Bytes<20, Private>,
     args: impl AbiArgs<C::Args>,
     envelope: Envelope,
-    nonce: Wire3<FieldT, Private>,
+    nonce: Wire<FieldT, Private>,
     gas_limit: u64,
 ) -> EvmTx<WORDS> {
     const {
@@ -627,11 +627,11 @@ pub fn build_tx_with<C: EvmCall, const WORDS: usize>(
 /// The shared tail of [`build_tx`] and [`build_tx_with`]: envelope, callee,
 /// then `value = 0`, `calldata_is_some = 1`, the word count and the selector.
 fn finish_tx<C: EvmCall, const WORDS: usize>(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     words: Vec<B32<Private>>,
     envelope: Envelope,
-    callee: impl FnOnce(&mut Circuit3) -> Bytes<20, Private>,
-    nonce: Wire3<FieldT, Private>,
+    callee: impl FnOnce(&mut Circuit) -> Bytes<20, Private>,
+    nonce: Wire<FieldT, Private>,
     gas_limit: u64,
 ) -> EvmTx<WORDS> {
     let words: [B32<Private>; WORDS] = match words.try_into() {

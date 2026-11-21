@@ -20,7 +20,7 @@ bundled binary is built from), and the two walks in
 =zkir-v3/src/ir_vm.rs= — =preprocess= (off-circuit, lines 185-691) and
 =circuit= (in-circuit, lines 705-1210). No Agda, no prose spec, nothing
 upstream says anything formal about it (lean-port.org §0). Our own
-readers are re-exports (=minocrab-zkir/src/v3.rs=: =IrSource::load=
+readers are re-exports (=minocrab-zkir/src/io.rs=: =IrSource::load=
 plus the version-envelope rewrite), so the Lean is not modelling our
 code — it is modelling THEIRS, and the corpus is the instrument that
 keeps the model honest (M27 decision: corpus-gated forever).
@@ -363,8 +363,8 @@ tests write =<circuit>.preimage= = =midnight_serialize::tagged_serialize
 (=preimages/=, =preimages/opt/=, =preimages/borsh/=); =bench.sh= runs
 that and the bench binary loads them (bench/src/main.rs:228-240). The
 sim's =Run3= surfaces everything =Preprocessed= carries plus outputs
-(minocrab-sim/src/v3.rs header) and is cross-checked against upstream
-=IrSource::check= in =tests/v3_end_to_end.rs=.
+(minocrab-sim/src/vm.rs header) and is cross-checked against upstream
+=IrSource::check= in =tests/end_to_end.rs=.
 Lean should NOT parse the tagged binary (a second serializer for a
 format we refused to re-implement at M21). INTERFACE: a Rust
 regenerator (an =--ignored= test beside the snapshot regenerators, the

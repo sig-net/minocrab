@@ -9,7 +9,7 @@
 fn main() {
     for path in std::env::args().skip(1) {
         match minocrab_zkir::major_version(&path) {
-            Ok(3) => match minocrab_zkir::v3::read_zkir(&path) {
+            Ok(3) => match minocrab_zkir::read_zkir(&path) {
                 Ok(ir) => {
                     println!("== {path} (v3, {} instructions)", ir.instructions.len());
                     for (i, ins) in ir.instructions.iter().enumerate() {

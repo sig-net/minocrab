@@ -32,7 +32,7 @@ mod tests {
         assert!(plain.contains("__is :: < Env > ()"), "{plain}");
 
         let generic = expand(syn::parse_quote! {
-            struct Env<V: Vis3> { a: B32<V> }
+            struct Env<V: Vis> { a: B32<V> }
         })
         .expect("generics are accepted")
         .to_string();

@@ -1,5 +1,5 @@
 //! THE acceptance test for the ledger-op layer (notes/ledger-abi.org §6):
-//! rebuild corpus baseline circuits with minocrab-ledger + Circuit3 and
+//! rebuild corpus baseline circuits with minocrab-ledger + Circuit and
 //! prove call-compatibility with compactc's artifacts — identical typed
 //! inputs/outputs schemas, and identical `pis` + `pi_skips` from the v3
 //! simulator on the same ProofPreimage, with upstream `check()` agreeing.
@@ -24,14 +24,14 @@ use midnight_storage::arena::Sp;
 use midnight_transient_crypto::hash::transient_commit;
 use midnight_transient_crypto::proofs::{KeyLocation, ProofPreimage};
 use midnight_transient_crypto::repr::FieldRepr;
-use minocrab::v3::{Circuit3, FieldT};
+use minocrab::{Circuit, FieldT};
 use minocrab::Fr;
 use minocrab_ledger::{cell_write, counter_increment, emit, map_insert, ImpactElem, LedgerValue, VmOp};
-use minocrab_sim::v3::assert_call_compatible;
+use minocrab_sim::assert_call_compatible;
 
-fn corpus_zkir(rel: &str) -> minocrab_zkir::v3::IrSource {
+fn corpus_zkir(rel: &str) -> minocrab_zkir::IrSource {
     let path = format!("{}/../../corpus/zkir/{rel}", env!("CARGO_MANIFEST_DIR"));
-    minocrab_zkir::v3::read_zkir(&path).expect("corpus golden parses")
+    minocrab_zkir::read_zkir(&path).expect("corpus golden parses")
 }
 
 fn transcript(ops: &[VmOp]) -> Vec<Fr> {
@@ -87,7 +87,7 @@ fn noop_matches_corpus() {
         "signet-midnight-experiments/experiments/baseline/contract/src/baseline/zkir/noop.zkir",
     );
 
-    let mut c = Circuit3::new();
+    let mut c = Circuit::new();
     emit(&mut c, &counter_increment(0, 1));
     let ours = c.finish(true).ir;
 
@@ -114,7 +114,7 @@ fn base_matches_corpus() {
     r_bytes[31] = r_hi;
 
     // Our circuit, mirroring base(): args in compactc's flattened order.
-    let mut c = Circuit3::new();
+    let mut c = Circuit::new();
     let rec_hi = c.arg::<FieldT>("recipient_hi");
     let rec_lo = c.arg::<FieldT>("recipient_lo");
     let amt = c.arg::<FieldT>("amount");

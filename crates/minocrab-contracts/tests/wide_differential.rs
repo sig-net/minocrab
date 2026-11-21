@@ -27,10 +27,10 @@
 mod common;
 use common::*;
 
-use minocrab::v3::{Circuit3, Compiled3};
+use minocrab::{Circuit, Compiled};
 use minocrab::{Private, Public};
-use minocrab_std::v3::{contract, label, Disclose, Discloses, Ledger, LedgerCell, Uint};
-use minocrab_zkir::v3::{to_zkir_string, IrSource};
+use minocrab_std::{contract, label, Disclose, Discloses, Ledger, LedgerCell, Uint};
+use minocrab_zkir::{to_zkir_string, IrSource};
 
 label! {
     Val = "value";
@@ -73,7 +73,7 @@ impl WideContract {
     /// because the leading `idxp` over the segment and the closing `insc 1`
     /// that a one-element path suppresses are both live here.
     #[circuit]
-    pub fn w(c: &mut Circuit3, v: Uint<64, Private>) -> Discloses<(Val,)> {
+    pub fn w(c: &mut Circuit, v: Uint<64, Private>) -> Discloses<(Val,)> {
         let v = v.disclose_as::<Val>(c);
         WIDE.f0.write(c, &v);
         WIDE.f15.write(c, &v);
@@ -87,13 +87,13 @@ fn theirs(name: &str) -> IrSource {
         "{}/tests/fixtures/wide/out/zkir/{name}.zkir",
         env!("CARGO_MANIFEST_DIR")
     );
-    minocrab_zkir::v3::read_zkir(&path).expect("the pinned compactc's artifact parses")
+    minocrab_zkir::read_zkir(&path).expect("the pinned compactc's artifact parses")
 }
 
 /// THE HEADLINE: the derive's paths are compactc's, on the wire.
 #[test]
 fn identical_instruction_streams() {
-    let ours: fn() -> Compiled3 = WideContract::w;
+    let ours: fn() -> Compiled = WideContract::w;
     assert_eq!(
         canonical(&ours().ir),
         canonical(&theirs("w")),
@@ -165,7 +165,7 @@ fn the_derive_gives_every_field_a_two_element_path() {
     // asserts, and that no field pretends to have a bare index. The macro
     // crate's `a_sixteen_field_block_expands_to_two_element_paths` pins the
     // expansion itself.
-    let ours: fn() -> Compiled3 = WideContract::w;
+    let ours: fn() -> Compiled = WideContract::w;
     let text = to_zkir_string(&ours().ir).expect("serializes");
     assert_eq!(
         text.matches("0xa1").count(),

@@ -1,4 +1,4 @@
-//! `bounded.compact` — the M14 differential: [`minocrab_std::v3::BoundedUint`]
+//! `bounded.compact` — the M14 differential: [`minocrab_std::BoundedUint`]
 //! against compactc's own artifacts, for every shape a `Uint<0..n>` bound
 //! can take.
 //!
@@ -50,11 +50,11 @@ use midnight_storage::db::InMemoryDB;
 use midnight_transient_crypto::hash::transient_commit;
 use midnight_transient_crypto::proofs::{KeyLocation, ProofPreimage, Zkir};
 use midnight_transient_crypto::repr::FieldRepr;
-use minocrab::v3::Compiled3;
+use minocrab::Compiled;
 use minocrab::Fr;
 use minocrab_contracts::bounded;
-use minocrab_sim::v3::{assert_call_compatible, simulate};
-use minocrab_zkir::v3::IrSource;
+use minocrab_sim::{assert_call_compatible, simulate};
+use minocrab_zkir::IrSource;
 
 type VmOp = Op<ResultModeVerify, InMemoryDB>;
 
@@ -64,7 +64,7 @@ fn theirs(name: &str) -> IrSource {
         "{}/tests/fixtures/bounded/out/zkir/{name}.zkir",
         env!("CARGO_MANIFEST_DIR")
     );
-    minocrab_zkir::v3::read_zkir(&path).expect("the pinned compactc's artifact parses")
+    minocrab_zkir::read_zkir(&path).expect("the pinned compactc's artifact parses")
 }
 
 fn bytes1_value(v: u8) -> AlignedValue {
@@ -133,9 +133,9 @@ fn flag_write_transcript(less: bool) -> Vec<Fr> {
 
 /// Every single-argument circuit of the fixture: our builder, compactc's
 /// artifact name, and a LARGEST-LEGAL witness.
-fn cases() -> Vec<(&'static str, fn() -> Compiled3, Vec<u128>)> {
+fn cases() -> Vec<(&'static str, fn() -> Compiled, Vec<u128>)> {
     vec![
-        ("b10", bounded::Bounded::b10 as fn() -> Compiled3, vec![9]),
+        ("b10", bounded::Bounded::b10 as fn() -> Compiled, vec![9]),
         ("b300", bounded::Bounded::b300, vec![299]),
         ("b1000", bounded::Bounded::b1000, vec![999]),
         ("b70000", bounded::Bounded::b70000, vec![69_999]),
@@ -206,8 +206,8 @@ fn the_comparison_is_call_compatible_both_ways() {
 /// arm (`b1`).
 #[test]
 fn both_reject_the_first_illegal_value() {
-    let over: Vec<(&str, fn() -> Compiled3, u128)> = vec![
-        ("b10", bounded::Bounded::b10 as fn() -> Compiled3, 10),
+    let over: Vec<(&str, fn() -> Compiled, u128)> = vec![
+        ("b10", bounded::Bounded::b10 as fn() -> Compiled, 10),
         ("b300", bounded::Bounded::b300, 300),
         ("b1000", bounded::Bounded::b1000, 1000),
         ("b70000", bounded::Bounded::b70000, 70_000),
@@ -250,9 +250,9 @@ fn both_reject_the_first_illegal_value() {
 #[test]
 fn compactc_s_abi_agrees_with_the_leafs() {
     use minocrab_abi::info::ContractInfo;
-    use minocrab::v3::CircuitAbi;
+    use minocrab::CircuitAbi;
     use minocrab::Public;
-    use minocrab_std::v3::{BoundedUint, Bytes, Uint};
+    use minocrab_std::{BoundedUint, Bytes, Uint};
 
     let text = std::fs::read_to_string(format!(
         "{}/tests/fixtures/bounded/out/compiler/contract-info.json",
@@ -262,7 +262,7 @@ fn compactc_s_abi_agrees_with_the_leafs() {
     let info = ContractInfo::parse(&text).expect("contract-info parses");
 
     /// The Rust type each fixture circuit's ONE argument has.
-    fn ours(name: &str) -> (Vec<minocrab::AlignmentAtom>, Vec<minocrab::v3::Prim>) {
+    fn ours(name: &str) -> (Vec<minocrab::AlignmentAtom>, Vec<minocrab::Prim>) {
         macro_rules! abi {
             ($ty:ty) => {
                 (<$ty as CircuitAbi>::atoms(), <$ty as CircuitAbi>::prims())

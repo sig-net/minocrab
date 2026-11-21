@@ -1,4 +1,4 @@
-//! `opaque.compact` — the M15 differential: [`minocrab_std::v3::Opaque`] and
+//! `opaque.compact` — the M15 differential: [`minocrab_std::Opaque`] and
 //! the two curve-point leaves against compactc's own artifacts.
 //!
 //! WHY THE FIXTURE IS OURS. The corpus has 74 `Opaque` nodes across 23 of the
@@ -32,7 +32,7 @@
 //!    `ValueAtom::field_repr_unchecked`), so a preimage whose ledger write
 //!    carries the BYTES and whose circuit input carries the COMMITMENT must
 //!    satisfy both artifacts. Nothing else in the suite pins that reading of
-//!    upstream, and everything in `minocrab_std::v3::Opaque`'s docs rests on
+//!    upstream, and everything in `minocrab_std::Opaque`'s docs rests on
 //!    it.
 
 #[path = "support/common.rs"]
@@ -51,11 +51,11 @@ use midnight_storage::db::InMemoryDB;
 use midnight_transient_crypto::hash::transient_commit;
 use midnight_transient_crypto::proofs::{KeyLocation, ProofPreimage, Zkir};
 use midnight_transient_crypto::repr::FieldRepr;
-use minocrab::v3::Compiled3;
+use minocrab::Compiled;
 use minocrab::Fr;
 use minocrab_contracts::opaque;
-use minocrab_sim::v3::simulate;
-use minocrab_zkir::v3::{to_zkir_string, IrSource};
+use minocrab_sim::simulate;
+use minocrab_zkir::{to_zkir_string, IrSource};
 
 type VmOp = Op<ResultModeVerify, InMemoryDB>;
 
@@ -65,7 +65,7 @@ fn theirs(name: &str) -> IrSource {
         "{}/tests/fixtures/opaque/out/zkir/{name}.zkir",
         env!("CARGO_MANIFEST_DIR")
     );
-    minocrab_zkir::v3::read_zkir(&path).expect("the pinned compactc's artifact parses")
+    minocrab_zkir::read_zkir(&path).expect("the pinned compactc's artifact parses")
 }
 
 fn bytes1_value(v: u8) -> AlignedValue {
@@ -172,9 +172,9 @@ fn cell_write_transcript(index: u8, value: AlignedValue) -> Vec<Fr> {
 }
 
 /// Every circuit of the fixture: compactc's artifact name and our builder.
-fn cases() -> Vec<(&'static str, fn() -> Compiled3)> {
+fn cases() -> Vec<(&'static str, fn() -> Compiled)> {
     vec![
-        ("opArg", opaque::OpaqueLedger::op_arg as fn() -> Compiled3),
+        ("opArg", opaque::OpaqueLedger::op_arg as fn() -> Compiled),
         ("opRet", opaque::OpaqueLedger::op_ret),
         ("opEq", opaque::OpaqueLedger::op_eq),
         ("opCell", opaque::OpaqueLedger::op_cell),
@@ -315,7 +315,7 @@ fn the_increment_only_circuits_are_call_compatible() {
     // into the communications commitment instead. `opEq` returns `a == b` on
     // two equal commitments, hence the `1`.
     for (label, build, inputs, outputs) in [
-        ("opArg", opaque::OpaqueLedger::op_arg as fn() -> Compiled3, vec![name], vec![]),
+        ("opArg", opaque::OpaqueLedger::op_arg as fn() -> Compiled, vec![name], vec![]),
         ("opEq", opaque::OpaqueLedger::op_eq, vec![name, name], vec![Fr::from(1u64)]),
     ] {
         let pi = preimage_out(inputs, increment_transcript(), &outputs);
@@ -344,10 +344,10 @@ fn the_increment_only_circuits_are_call_compatible() {
 /// five atoms against five.
 #[test]
 fn compactc_s_abi_agrees_with_the_leafs() {
-    use minocrab::v3::CircuitAbi;
+    use minocrab::CircuitAbi;
     use minocrab::Public;
     use minocrab_abi::info::ContractInfo;
-    use minocrab_std::v3::{ts, JubjubPoint, Opaque, Secp256k1Point, Uint, B32};
+    use minocrab_std::{ts, JubjubPoint, Opaque, Secp256k1Point, Uint, B32};
 
     let text = std::fs::read_to_string(format!(
         "{}/tests/fixtures/opaque/out/compiler/contract-info.json",
@@ -408,10 +408,10 @@ fn compactc_s_abi_agrees_with_the_leafs() {
 /// artifact rather than from our fixture.
 #[test]
 fn the_vaults_own_initialize_now_flattens() {
-    use minocrab::v3::{CircuitAbi, Prim};
+    use minocrab::{CircuitAbi, Prim};
     use minocrab::Public;
     use minocrab_abi::info::ContractInfo;
-    use minocrab_std::v3::{Bytes, Secp256k1Point, Uint, B32};
+    use minocrab_std::{Bytes, Secp256k1Point, Uint, B32};
 
     let text = std::fs::read_to_string(format!(
         "{}/../../corpus/zkir/signet-midnight-examples-v070/examples/erc20-vault/contract/\

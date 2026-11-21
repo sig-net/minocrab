@@ -3,8 +3,8 @@
 
 use midnight_base_crypto::fab::AlignmentAtom;
 use midnight_onchain_state::state::EntryPointBuf;
-use minocrab::v3::{CallArgs, Circuit3, Decode, Disclose, FieldT, Prim, Wire3};
-use minocrab::v3::{ImpactElem, LimbConstraint};
+use minocrab::{CallArgs, Circuit, Decode, Disclose, FieldT, Prim, Wire};
+use minocrab::{ImpactElem, LimbConstraint};
 use minocrab::{Fr, Public};
 
 use crate::impact::*;
@@ -53,15 +53,15 @@ minocrab::label! {
 /// them publicly (under cc-rand hiding) via `comm`, and Compact treats
 /// them as public downstream.
 pub fn contract_call(
-    c: &mut Circuit3,
-    addr: [Wire3<FieldT, Public>; 2],
+    c: &mut Circuit,
+    addr: [Wire<FieldT, Public>; 2],
     entry_point: EntryPoint,
-    args: &[Wire3<FieldT, Public>],
+    args: &[Wire<FieldT, Public>],
     results: &[LimbConstraint],
-) -> Vec<Wire3<FieldT, Public>> {
+) -> Vec<Wire<FieldT, Public>> {
     // Every witness of the call is read under the AMBIENT scope, as the op
     // that claims it is emitted under it (`c.witness()` resolves whatever
-    // `Circuit3::when` the call sits inside — notes/edsl-trim.org §B): a call
+    // `Circuit::when` the call sits inside — notes/edsl-trim.org §B): a call
     // inside a branch consumes the prover's cc-rand and results only where
     // the branch runs, or the private transcript shifts for everything after
     // it (the external review's §4.3; the same class the choke point closed
@@ -128,7 +128,7 @@ pub enum Callee {
     /// fields or more is segmented and its fields have no single index.
     FieldPath([u8; 3], u8),
     /// The callee's address as FAB limbs `[hi, lo]`.
-    Pinned([Wire3<FieldT, Public>; 2]),
+    Pinned([Wire<FieldT, Public>; 2]),
 }
 
 impl Callee {
@@ -144,12 +144,12 @@ impl Callee {
     /// arguments emit nothing (every other call site in the corpus),
     /// `Field` resolved inside [`call`] gives the same stream and is the
     /// simpler spelling.
-    pub fn pin(self, c: &mut Circuit3) -> Callee {
+    pub fn pin(self, c: &mut Circuit) -> Callee {
         Callee::Pinned(self.address(c))
     }
 
     /// The address limbs — for [`Callee::Field`], the fresh uncached read.
-    fn address(self, c: &mut Circuit3) -> [Wire3<FieldT, Public>; 2] {
+    fn address(self, c: &mut Circuit) -> [Wire<FieldT, Public>; 2] {
         match self {
             Callee::Field(index) => {
                 let limbs = cell_read(c, index, vec![AlignmentAtom::Bytes { length: 32 }]);
@@ -174,7 +174,7 @@ impl Callee {
 /// vectors and a hand-written result-constraint list; this takes the
 /// callee's declared argument and result TYPES and derives both — the limb
 /// order from [`CallArgs::push_call_slots`], the result constraints from
-/// [`CircuitAbi::prims`](minocrab::v3::CircuitAbi::prims) run through
+/// [`CircuitAbi::prims`](minocrab::CircuitAbi::prims) run through
 /// compactc's own table. A caller can no
 /// longer flatten a struct in the wrong order or forget a result's range
 /// check, because it never writes either down.
@@ -183,7 +183,7 @@ impl Callee {
 /// hash into the claim as a constant, so the proof binds the call to that
 /// circuit and to no other entry point of the callee.
 pub fn call<A: CallArgs, R: Decode<Public>>(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     callee: Callee,
     entry_point: EntryPoint,
     args: A,

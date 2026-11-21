@@ -29,8 +29,8 @@ use midnight_zkir_v3::ir_instructions::encode::encode_offcircuit;
 use midnight_zkir_v3::ir_instructions::from_bytes::from_bytes_offcircuit;
 use minocrab::Fr;
 use minocrab_contracts::test_caller;
-use minocrab_sim::v3::{assert_call_compatible, simulate};
-use minocrab_zkir::v3::{IrSource, IrType, IrValue};
+use minocrab_sim::{assert_call_compatible, simulate};
+use minocrab_zkir::{IrSource, IrType, IrValue};
 
 type VmOp = Op<ResultModeVerify, InMemoryDB>;
 

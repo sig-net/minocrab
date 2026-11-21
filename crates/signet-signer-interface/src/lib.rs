@@ -31,7 +31,7 @@
 pub mod notification;
 
 use minocrab::Public;
-use minocrab_std::v3::{b32_newtype, interface, BytesN, CircuitArg, Uint, Vis3};
+use minocrab_std::{b32_newtype, interface, BytesN, CircuitArg, Uint, Vis};
 
 b32_newtype! {
     /// Compact `RequestId = Bytes<32>`.
@@ -40,7 +40,7 @@ b32_newtype! {
 
 /// Compact `struct SignBidirectionalEventNotification { version: Uint<8>, payload: Bytes<128> }`.
 #[derive(Clone, CircuitArg)]
-pub struct SignBidirectionalEventNotification<V: Vis3> {
+pub struct SignBidirectionalEventNotification<V: Vis> {
     pub version: Uint<8, V>,
     pub payload: BytesN<V, 128>,
 }

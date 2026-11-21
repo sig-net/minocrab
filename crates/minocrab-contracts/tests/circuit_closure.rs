@@ -117,7 +117,7 @@ fn every_circuit_attribute_is_listed() {
 // call it themselves. Forgetting either is invisible in the ZKIR while the
 // profile equals the defaults, so it is checked here.
 
-use minocrab::v3::Circuit3;
+use minocrab::Circuit;
 use minocrab_contracts::{
     adts, attest, bounded, bounded_ledger, coins, erc20_vault, hashing, kernel_tokens, manager,
     mint_tokens, nested, opaque, serde_builtin, signet_contract, test_caller, xcall,
@@ -179,7 +179,7 @@ fn every_listed_module_is_a_port_or_minocrab_only() {
 /// lowering is. This list is the one place Rust names the ported contracts;
 /// [`every_ported_contract_is_listed`] checks it against the source, so a
 /// new port's block cannot be left out of it.
-const PORTED_CONTRACTS: [(&str, Option<fn(&mut Circuit3)>); 20] = [
+const PORTED_CONTRACTS: [(&str, Option<fn(&mut Circuit)>); 20] = [
     ("adts", adts::Adts::LOWERING),
     ("attest", attest::Attest::LOWERING),
     ("bounded", bounded::Bounded::LOWERING),
@@ -241,7 +241,7 @@ fn every_ported_contract_is_listed() {
 /// body; `contract_lowering.rs` shows that ordering.)
 #[test]
 fn every_ported_contract_is_lowered_as_compactc_does() {
-    let mut reference = Circuit3::new();
+    let mut reference = Circuit::new();
     minocrab_compat::profile(&mut reference);
     for (module, lowering) in PORTED_CONTRACTS {
         let lowering = lowering.unwrap_or_else(|| {
@@ -251,7 +251,7 @@ fn every_ported_contract_is_lowered_as_compactc_does() {
                  `#[contract(lowering = minocrab_compat::profile)]`"
             )
         });
-        let mut c = Circuit3::new();
+        let mut c = Circuit::new();
         lowering(&mut c);
         assert!(c.lowering_chosen(), "{module}: its lowering function sets nothing");
         assert_eq!(c.lowering(), reference.lowering(), "{module}: not compactc's lowering");
@@ -259,7 +259,7 @@ fn every_ported_contract_is_lowered_as_compactc_does() {
 }
 
 /// A ported module's circuits built by hand (through `entry`, or
-/// `Circuit3::new()`) are outside every `#[contract]` block, so the attribute
+/// `Circuit::new()`) are outside every `#[contract]` block, so the attribute
 /// does not reach them: each must call `minocrab_compat::profile` as the
 /// first statement of what it builds. Textual, like the closure check above.
 #[test]
@@ -273,7 +273,7 @@ fn every_hand_built_port_circuit_calls_the_profile_first() {
             if t.starts_with("//") {
                 continue;
             }
-            let builds = t.contains("Circuit3::new()")
+            let builds = t.contains("Circuit::new()")
                 || t.starts_with("entry(")
                 || t.starts_with("entry_out(");
             if !builds {

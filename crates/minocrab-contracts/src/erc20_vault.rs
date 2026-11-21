@@ -86,12 +86,12 @@
 //! export ledger redeemArgsMap: Map<Uint<64>, RedeemArgs>;                // 36 [2,14]
 //! ```
 
-use minocrab::v3::{Circuit3, FieldT, Wire3};
+use minocrab::{Circuit, FieldT, Wire};
 use minocrab::{Private, Public};
 use minocrab_ledger::XcallCommitment;
-use minocrab_std::v3::hash::upgrade_from_transient;
-use minocrab_std::v3::kernel;
-use minocrab_std::v3::{
+use minocrab_std::hash::upgrade_from_transient;
+use minocrab_std::kernel;
+use minocrab_std::{
     b32_newtype, contract, eq, is_true, label, not, own_public_key, Bool, BoundedUint, Bytes,
     BytesN, CircuitArg, CoinColor, CoinNonce, CoinRecipient, Disclose, Discloses,
     Either, Ledger, LedgerCell, LedgerField, LedgerMap, LedgerRepr, Maybe,
@@ -496,7 +496,7 @@ pub struct Vault {
     pub stata_underlying: LedgerCell<Bytes<20, Public>>,
     pub stata_token: LedgerCell<Bytes<20, Public>>,
     pub allowed_tokens: LedgerMap<Bytes<20, Public>, AllowedTokenConfig>,
-    pub fee_recipient_coin_public_key: LedgerCell<minocrab_std::v3::ZswapCoinPublicKey<Public>>,
+    pub fee_recipient_coin_public_key: LedgerCell<minocrab_std::ZswapCoinPublicKey<Public>>,
     pub fee_recipient_encryption_public_key: LedgerCell<B32<Public>>,
     pub global_last_seen: LedgerCell<Uint<64, Public>>,
     pub vault_account_nonce: LedgerCell<Uint<64, Public>>,
@@ -528,14 +528,14 @@ pub const VAULT: Vault = Vault::new();
 // ---- shared pieces -----------------------------------------------------------------------
 
 /// `requireInitialised()` — `assert(initialised, "Not initialised")`.
-fn require_initialised(c: &mut Circuit3) {
+fn require_initialised(c: &mut Circuit) {
     let init = VAULT.initialised.read(c);
     c.assert(is_true(init).message("Not initialised"));
 }
 
 /// `assert(userCommitment(callerSecretKey()) == deployer, "Not the deployer")`
 /// — the witness, the hash, then the `deployer` read where the source names it.
-fn assert_deployer(c: &mut Circuit3) {
+fn assert_deployer(c: &mut Circuit) {
     c.region("deployer gate", |c| {
         let sk = common::witness_sk(c);
         let mine = user_commitment(c, &sk);
@@ -549,7 +549,7 @@ fn assert_deployer(c: &mut Circuit3) {
 /// MPC's key-derivation PATH of a deposit. The SECRET leads the pad since
 /// `375071b` (the seventeen-circuit vault hashed the pad first), so this is
 /// the vault's own and not `common::commitment_transient`.
-fn user_commitment(c: &mut Circuit3, sk: &common::SecretKey<Private>) -> UserCommitment<Private> {
+fn user_commitment(c: &mut Circuit, sk: &common::SecretKey<Private>) -> UserCommitment<Private> {
     let sk = sk.bytes();
     c.region("identity commitment (transientHash)", |c| {
         let pad = B32::pad(c, USER_PAD);
@@ -562,7 +562,7 @@ fn user_commitment(c: &mut Circuit3, sk: &common::SecretKey<Private>) -> UserCom
 /// `upgradeFromTransient(transientHash([pad(32, "erc20:vault:"),
 /// erc20Address as Field as Bytes<32>]))`; the address's `Bytes<32>`
 /// rendering is `[hi: 0, lo: addr]`.
-fn vault_token_domain_separator(c: &mut Circuit3, erc20_address: Wire3<FieldT, Public>) -> TokenDomainSeparator<Public> {
+fn vault_token_domain_separator(c: &mut Circuit, erc20_address: Wire<FieldT, Public>) -> TokenDomainSeparator<Public> {
     c.region("token domain separator (transientHash)", |c| {
         let pad = B32::pad(c, TOKEN_PAD);
         let zero = c.constant(0u64);
@@ -573,7 +573,7 @@ fn vault_token_domain_separator(c: &mut Circuit3, erc20_address: Wire3<FieldT, P
 
 /// `ownershipCommitment(inIndex, sk)` — `upgradeFromTransient(transientHash([sk,
 /// inIndex, pad(32, "vault:request:")]))`, over a FRESH witness.
-fn ownership_commitment(c: &mut Circuit3, in_index: Wire3<FieldT, Private>) -> RequestOwnership<Private> {
+fn ownership_commitment(c: &mut Circuit, in_index: Wire<FieldT, Private>) -> RequestOwnership<Private> {
     let sk = common::witness_sk(c).bytes();
     c.region("ownership commitment (transientHash)", |c| {
         let pad = B32::pad(c, REQUEST_PAD);
@@ -584,7 +584,7 @@ fn ownership_commitment(c: &mut Circuit3, in_index: Wire3<FieldT, Private>) -> R
 
 /// `requestIndex(entry)` — `upgradeFromTransient(transientHash([pad(32,
 /// "vault:request:index"), entry.evmNonce, entry.argsHash]))`.
-fn request_index(c: &mut Circuit3, evm_nonce: Wire3<FieldT, Public>, args_hash: &ArgsDigest<Public>) -> RequestIndex<Public> {
+fn request_index(c: &mut Circuit, evm_nonce: Wire<FieldT, Public>, args_hash: &ArgsDigest<Public>) -> RequestIndex<Public> {
     c.region("request index (transientHash)", |c| {
         let pad = B32::pad(c, REQUEST_INDEX_PAD);
         let ah = args_hash.bytes();
@@ -595,7 +595,7 @@ fn request_index(c: &mut Circuit3, evm_nonce: Wire3<FieldT, Public>, args_hash: 
 
 /// `<action>ArgsHash(args)` — `upgradeFromTransient(transientHash([pad(32,
 /// tag), args]))` over the args' field-aligned limbs (their ledger limbs).
-fn args_hash<A: LedgerRepr>(c: &mut Circuit3, tag: &str, args: &A) -> ArgsDigest<Public> {
+fn args_hash<A: LedgerRepr>(c: &mut Circuit, tag: &str, args: &A) -> ArgsDigest<Public> {
     c.region("args hash (transientHash)", |c| {
         let pad = B32::pad(c, tag);
         let mut limbs = vec![pad.hi, pad.lo];
@@ -608,7 +608,7 @@ fn args_hash<A: LedgerRepr>(c: &mut Circuit3, tag: &str, args: &A) -> ArgsDigest
 /// `assert(!inputRequestBuffer.member(i) && !<args>Map.member(i), "Index
 /// already in use")` — the `&&` short-circuits, so the second read is
 /// guarded by the first being false, as compactc emits it.
-fn assert_index_free<A: LedgerRepr>(c: &mut Circuit3, in_index: &Uint<64, Public>, args_map: &LedgerMap<Uint<64, Public>, A>) {
+fn assert_index_free<A: LedgerRepr>(c: &mut Circuit, in_index: &Uint<64, Public>, args_map: &LedgerMap<Uint<64, Public>, A>) {
     c.region("index free", |c| {
         let queued = VAULT.input_request_buffer.member(c, in_index);
         let unqueued = c.not(queued.field());
@@ -620,7 +620,7 @@ fn assert_index_free<A: LedgerRepr>(c: &mut Circuit3, in_index: &Uint<64, Public
 /// `GasParams { gasLimit: vaultGasLimits.<action>, maxFeePerGas:
 /// vaultMaxFeePerGas, maxPriorityFeePerGas: vaultMaxPriorityFeePerGas }` —
 /// the vault's three gas reads, in the struct literal's order.
-fn vault_gas(c: &mut Circuit3, pick: impl FnOnce(&VaultGasLimits) -> Uint<64, Public>) -> StoredGas {
+fn vault_gas(c: &mut Circuit, pick: impl FnOnce(&VaultGasLimits) -> Uint<64, Public>) -> StoredGas {
     let limits = VAULT.vault_gas_limits.read(c).stale(c);
     let max_fee_per_gas = VAULT.vault_max_fee_per_gas.read(c).stale(c);
     let max_priority_fee_per_gas = VAULT.vault_max_priority_fee_per_gas.read(c).stale(c);
@@ -636,10 +636,10 @@ fn vault_gas(c: &mut Circuit3, pick: impl FnOnce(&VaultGasLimits) -> Uint<64, Pu
 /// ownershipCommitment(inIndex, callerSecretKey()), argsHash }))` — the
 /// queueing every start ends with.
 fn queue_request(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     action: u64,
     use_next_vault_account_nonce: bool,
-    evm_nonce: Wire3<FieldT, Public>,
+    evm_nonce: Wire<FieldT, Public>,
     in_index: Uint<64, Public>,
     args_hash: ArgsDigest<Public>,
 ) {
@@ -658,7 +658,7 @@ fn queue_request(
 }
 
 /// `EvmCalldata<WORDS> { selector, noWords: WORDS, words }`.
-fn calldata<const WORDS: usize>(c: &mut Circuit3, selector: &[u8; 4], words: [B32<Private>; WORDS]) -> signet_v1::EvmCalldata<Private, WORDS> {
+fn calldata<const WORDS: usize>(c: &mut Circuit, selector: &[u8; 4], words: [B32<Private>; WORDS]) -> signet_v1::EvmCalldata<Private, WORDS> {
     let selector = c.constant(minocrab::Fr::from_le_bytes(selector).unwrap());
     let no_words = c.constant(WORDS as u64);
     signet_v1::EvmCalldata {
@@ -669,7 +669,7 @@ fn calldata<const WORDS: usize>(c: &mut Circuit3, selector: &[u8; 4], words: [B3
 }
 
 /// `none<EvmCalldata<2>>()` — a zero tag, zero selector and count, zero words.
-fn no_calldata<const WORDS: usize>(c: &mut Circuit3) -> signet_v1::EvmCalldata<Private, WORDS> {
+fn no_calldata<const WORDS: usize>(c: &mut Circuit) -> signet_v1::EvmCalldata<Private, WORDS> {
     let zero = c.constant(0u64).private();
     signet_v1::EvmCalldata {
         selector: zero,
@@ -683,10 +683,10 @@ fn no_calldata<const WORDS: usize>(c: &mut Circuit3) -> signet_v1::EvmCalldata<P
 /// accessListEntryCount: 0, accessList: [] }` — the `evmChainId` read is
 /// made HERE, first in the literal, before a `to` that is a cell read.
 fn tx_params<const WORDS: usize>(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     entry: &RequestBufferEntry,
     gas: &StoredGas,
-    to: impl FnOnce(&mut Circuit3) -> Wire3<FieldT, Private>,
+    to: impl FnOnce(&mut Circuit) -> Wire<FieldT, Private>,
     calldata: signet_v1::EvmCalldata<Private, WORDS>,
     calldata_is_some: bool,
 ) -> signet_v1::EvmType2TxParams<Private, WORDS> {
@@ -713,7 +713,7 @@ fn tx_params<const WORDS: usize>(
 /// path))` — the signer read, the caller's own address, the notification and
 /// the cross-contract call. The notification's depth and path bytes ARE the
 /// request map's compiled ledger path, read off the handle.
-fn notify_signet<K, V>(c: &mut Circuit3, request_id: &RequestId<Public>, map: &LedgerMap<K, V>) {
+fn notify_signet<K, V>(c: &mut Circuit, request_id: &RequestId<Public>, map: &LedgerMap<K, V>) {
     c.region("xcall: notify signet", |c| {
         // compactc evaluates a call's RECEIVER before its argument
         // expressions, so the sealed-cell read is pinned FIRST.
@@ -733,19 +733,19 @@ fn notify_signet<K, V>(c: &mut Circuit3, request_id: &RequestId<Public>, map: &L
 /// check, the record, the eviction entry and the notification.
 #[allow(clippy::too_many_arguments)]
 fn send_request<const WORDS: usize, SP, SR, A>(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     out_index: RequestIndex<Private>,
     action: u64,
     args_map: &LedgerMap<Uint<64, Public>, A>,
     request_map: &LedgerMap<RequestId<Public>, EventRecordV1<WORDS, SR>>,
     output_schema: &[u8],
-    build: impl FnOnce(&mut Circuit3, &RequestBufferEntry, &A) -> (signet_v1::EvmType2TxParams<Private, WORDS>, SigningPath<Private>),
+    build: impl FnOnce(&mut Circuit, &RequestBufferEntry, &A) -> (signet_v1::EvmType2TxParams<Private, WORDS>, SigningPath<Private>),
     words_used: usize,
     path_is_const: bool,
 ) where
     SP: SchemaBytes<Private>,
     SR: SchemaBytes<Public>,
-    A: LedgerRepr + minocrab_std::v3::ProofWires,
+    A: LedgerRepr + minocrab_std::ProofWires,
 {
     require_initialised(c);
     let out_index = out_index.disclose_as::<OutIndex>(c);
@@ -784,7 +784,7 @@ fn send_request<const WORDS: usize, SP, SR, A>(
 /// `settleRequest(requestId, action): [RequestBufferEntry, AttestationRecord]`
 /// — the open request and the flushed attestation that settles it, the height
 /// bound, the ownership proof over a FRESH witness, and the three removals.
-fn settle_request(c: &mut Circuit3, request_id: &RequestId<Public>, action: u64) -> (RequestBufferEntry, AttestationRecord) {
+fn settle_request(c: &mut Circuit, request_id: &RequestId<Public>, action: u64) -> (RequestBufferEntry, AttestationRecord) {
     c.region("settle request", |c| {
         let out_index = VAULT.eviction_map.lookup_required(c, request_id, "Request not sent").stale(c);
         let out = VAULT.output_request_buffer.lookup_required(c, &out_index, "Request not open").stale(c);
@@ -805,13 +805,13 @@ fn settle_request(c: &mut Circuit3, request_id: &RequestId<Public>, action: u64)
 }
 
 /// `record.outputKind == OutputKind.executed`.
-fn executed(c: &mut Circuit3, record: &AttestationRecord) -> Wire3<FieldT, Public> {
+fn executed(c: &mut Circuit, record: &AttestationRecord) -> Wire<FieldT, Public> {
     let kind = c.constant(output_kind::EXECUTED);
     c.test_eq(record.output_kind.field(), kind)
 }
 
 /// `outcomeRefunds(outputKind)` — `failed || unviable`.
-fn outcome_refunds(c: &mut Circuit3, record: &AttestationRecord) -> Wire3<FieldT, Public> {
+fn outcome_refunds(c: &mut Circuit, record: &AttestationRecord) -> Wire<FieldT, Public> {
     let failed = c.constant(output_kind::FAILED);
     let unviable = c.constant(output_kind::UNVIABLE);
     let is_failed = c.test_eq(record.output_kind.field(), failed);
@@ -823,7 +823,7 @@ fn outcome_refunds(c: &mut Circuit3, record: &AttestationRecord) -> Wire3<FieldT
 /// `assert(verifyAttestedOutputV1<LEN>(output, record.serializedOutputLength,
 /// record.outputHash), "Output does not match the attestation")` — inside
 /// whatever guard the caller opened.
-fn assert_output_matches<const LEN: usize>(c: &mut Circuit3, record: &AttestationRecord, output_limbs: &[Wire3<FieldT, Public>]) {
+fn assert_output_matches<const LEN: usize>(c: &mut Circuit, record: &AttestationRecord, output_limbs: &[Wire<FieldT, Public>]) {
     let matches = signet_v1::verify_attested_output_v1::<Public, LEN>(
         c,
         output_limbs,
@@ -836,7 +836,7 @@ fn assert_output_matches<const LEN: usize>(c: &mut Circuit3, record: &Attestatio
 /// `deserialize<VaultResponse, 1>(output).success` — the byte must be 0 or 1
 /// (compactc 0.36 lowers the `Boolean` read to `constrain_to_boolean`), and
 /// the field is (byte == 1).
-fn attested_success(c: &mut Circuit3, output: Wire3<FieldT, Public>) -> Wire3<FieldT, Public> {
+fn attested_success(c: &mut Circuit, output: Wire<FieldT, Public>) -> Wire<FieldT, Public> {
     let output = c.assert_boolean(output);
     let one = c.constant(1u64);
     c.test_eq(output, one)
@@ -844,13 +844,13 @@ fn attested_success(c: &mut Circuit3, output: Wire3<FieldT, Public>) -> Wire3<Fi
 
 /// `amount as Uint<64>` on a stored `Uint<128>` — the range check compactc's
 /// cast emits, where the caller's guard holds.
-fn as_u64(c: &mut Circuit3, amount: Uint<128, Public>) -> Uint<64, Public> {
+fn as_u64(c: &mut Circuit, amount: Uint<128, Public>) -> Uint<64, Public> {
     Uint::<64, Public>::from_field_checked(c, amount.field())
 }
 
 /// `mintShieldedToken(vaultTokenDomainSeparator(erc20), amount, disclose(nonce),
 /// left(pk))` to an ALREADY-witnessed key.
-fn mint_to_key(c: &mut Circuit3, erc20: Wire3<FieldT, Public>, amount: Uint<64, Public>, mint_nonce: &CoinNonce<Public>, pk: &minocrab_std::v3::ZswapCoinPublicKey<Public>) {
+fn mint_to_key(c: &mut Circuit, erc20: Wire<FieldT, Public>, amount: Uint<64, Public>, mint_nonce: &CoinNonce<Public>, pk: &minocrab_std::ZswapCoinPublicKey<Public>) {
     let domain_sep = vault_token_domain_separator(c, erc20);
     common::mint_shielded_token_to_key(c, &domain_sep, amount, mint_nonce, pk);
 }
@@ -867,23 +867,23 @@ struct ShieldedCoinArg {
 /// `assert(coin.color == tokenType(vaultTokenDomainSeparator(erc20),
 /// kernel.self()), message)` — the surrendered coin must be THIS vault's
 /// token for `erc20`.
-fn assert_vault_color(c: &mut Circuit3, erc20: Wire3<FieldT, Public>, coin: &ShieldedCoinArg, message: &'static str) {
+fn assert_vault_color(c: &mut Circuit, erc20: Wire<FieldT, Public>, coin: &ShieldedCoinArg, message: &'static str) {
     let domain_sep = vault_token_domain_separator(c, erc20);
     let me = kernel::self_address(c);
-    let color = minocrab_std::v3::token_type(c, &domain_sep, &me.bytes());
+    let color = minocrab_std::token_type(c, &domain_sep, &me.bytes());
     c.assert(coin.color.bytes().equals(color.private().bytes()).message(message));
 }
 
 /// `requireTokenAllowed(erc20Address)` —
 /// `assert(allowedTokens.member(disclose(erc20Address)), "ERC20 not allowed")`.
-fn require_token_allowed(c: &mut Circuit3, erc20: &Bytes<20, Public>) {
+fn require_token_allowed(c: &mut Circuit, erc20: &Bytes<20, Public>) {
     let allowed = VAULT.allowed_tokens.member(c, erc20);
     c.assert(is_true(allowed).message("ERC20 not allowed"));
 }
 
 /// `tokenFees(erc20Address)` — the allowed check, then
 /// `allowedTokens.lookup(disclose(erc20Address)).fees`.
-fn token_fees(c: &mut Circuit3, erc20: &Bytes<20, Public>) -> TokenFees {
+fn token_fees(c: &mut Circuit, erc20: &Bytes<20, Public>) -> TokenFees {
     require_token_allowed(c, erc20);
     VAULT.allowed_tokens.lookup(c, erc20).stale(c).fees
 }
@@ -891,7 +891,7 @@ fn token_fees(c: &mut Circuit3, erc20: &Bytes<20, Public>) -> TokenFees {
 /// `feeMintNonce(coinNonce)` — `upgradeFromTransient(transientHash<Vector<2,
 /// Bytes<32>>>([pad(32, "erc20:vault:fee"), coinNonce]))`: the fee coin's
 /// nonce, fresh per surrendered coin.
-fn fee_mint_nonce(c: &mut Circuit3, coin_nonce: &CoinNonce<Public>) -> CoinNonce<Public> {
+fn fee_mint_nonce(c: &mut Circuit, coin_nonce: &CoinNonce<Public>) -> CoinNonce<Public> {
     c.region("fee mint nonce (transientHash)", |c| {
         let pad = B32::pad(c, FEE_MINT_PAD);
         let n = coin_nonce.bytes();
@@ -906,9 +906,9 @@ fn fee_mint_nonce(c: &mut Circuit3, coin_nonce: &CoinNonce<Public>) -> CoinNonce
 /// vaultTokenDomainSeparator(erc20), fee, feeMintNonce(coin.nonce),
 /// left(feeRecipientCoinPublicKey))`: the whole coin burns and only the fee
 /// is minted back, to the fee recipient.
-fn take_fee(c: &mut Circuit3, erc20: Wire3<FieldT, Public>, coin: ShieldedCoinArg, fee: Uint<64, Public>) {
+fn take_fee(c: &mut Circuit, erc20: Wire<FieldT, Public>, coin: ShieldedCoinArg, fee: Uint<64, Public>) {
     let one = c.constant(1u64);
-    let coin = minocrab_std::v3::ShieldedCoinInfo3 {
+    let coin = minocrab_std::ShieldedCoinInfo {
         nonce: coin.nonce.disclose_as::<SurrenderedCoinNonce>(c),
         color: coin.color.disclose_as::<SurrenderedCoinColor>(c),
         value: coin.value.field().disclose_as::<SurrenderedCoinValue>(c),
@@ -928,7 +928,7 @@ fn take_fee(c: &mut Circuit3, erc20: Wire3<FieldT, Public>, coin: ShieldedCoinAr
 /// `assert(coin.value == (amount + fee) as Uint<128>, message)` — the
 /// surrendered coin is the principal plus the fee. The sum's cast is a range
 /// check, as compactc's downcast is.
-fn assert_coin_covers(c: &mut Circuit3, coin: &ShieldedCoinArg, amount: Wire3<FieldT, Private>, fee: Uint<64, Public>, message: &'static str) {
+fn assert_coin_covers(c: &mut Circuit, coin: &ShieldedCoinArg, amount: Wire<FieldT, Private>, fee: Uint<64, Public>, message: &'static str) {
     let total = c.add(amount, fee.field().private());
     let total = Uint::<128, Private>::from_field_checked(c, total);
     c.assert(eq(coin.value.field(), total.field()).message(message));
@@ -937,7 +937,7 @@ fn assert_coin_covers(c: &mut Circuit3, coin: &ShieldedCoinArg, amount: Wire3<Fi
 /// `queueAttestation(respondBidirectionalEvent)`'s body:
 /// `requireInitialised`, the verify against `mpcResponseKey`, and the
 /// attestation recorded by width and hash.
-fn queue_attestation_body(c: &mut Circuit3, event: &RespondBidirectionalEventV1<Private>) {
+fn queue_attestation_body(c: &mut Circuit, event: &RespondBidirectionalEventV1<Private>) {
     require_initialised(c);
     let mpc_key = VAULT.mpc_response_key.read(c);
     let valid = signet_v1::verify_respond_bidirectional_attestation_v1(c, event, mpc_key.point().private());
@@ -971,7 +971,7 @@ fn queue_attestation_body(c: &mut Circuit3, event: &RespondBidirectionalEventV1<
 
 /// `numericAbiWord(unlimitedAllowance())` — 2^128 − 1 as an ABI word: 16
 /// zero bytes then 16 `0xff` bytes.
-fn unlimited_allowance_word(c: &mut Circuit3) -> B32<Private> {
+fn unlimited_allowance_word(c: &mut Circuit) -> B32<Private> {
     let mut max_word = [0u8; 32];
     max_word[16..].copy_from_slice(&[0xff; 16]);
     B32 {
@@ -982,7 +982,7 @@ fn unlimited_allowance_word(c: &mut Circuit3) -> B32<Private> {
 
 /// `queueApprove(inIndex, approveRequest)` — the deployer gate and the
 /// queueing both approval starts share, after each start's own validation.
-fn queue_approve(c: &mut Circuit3, in_index: Uint<64>, erc20_address: Bytes<20, Public>, spender: Bytes<20, Public>) {
+fn queue_approve(c: &mut Circuit, in_index: Uint<64>, erc20_address: Bytes<20, Public>, spender: Bytes<20, Public>) {
     assert_deployer(c);
     let in_index = in_index.disclose_as::<InIndex>(c);
     assert_index_free(c, &in_index, &VAULT.approve_args_map);
@@ -1059,7 +1059,7 @@ pub struct TokenFeesArg {
 
 impl TokenFeesArg {
     /// `disclose(AllowedTokenConfig { fees })` — the stored value.
-    fn disclosed(self, c: &mut Circuit3) -> AllowedTokenConfig {
+    fn disclosed(self, c: &mut Circuit) -> AllowedTokenConfig {
         AllowedTokenConfig {
             fees: TokenFees {
                 withdraw: self.withdraw.disclose_as::<TokenFeesSet>(c),
@@ -1092,7 +1092,7 @@ impl Vault {
     /// one-shot, deployer-gated post-deploy configuration.
     #[circuit]
     pub fn initialise(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         vault_evm: Bytes<20>,
         swap_router: Bytes<20>,
         stata_underlying_addr: Bytes<20>,
@@ -1103,7 +1103,7 @@ impl Vault {
         evm_height: Uint<64>,
         stata_underlying_fees: TokenFeesArg,
         stata_token_fees: TokenFeesArg,
-        fee_recipient_coin_key: minocrab_std::v3::ZswapCoinPublicKey<Private>,
+        fee_recipient_coin_key: minocrab_std::ZswapCoinPublicKey<Private>,
         fee_recipient_encryption_key: B32<Private>,
     ) -> Discloses<(
         VaultEvmAddress,
@@ -1184,7 +1184,7 @@ impl Vault {
     /// resets the fee envelope and the per-action gas limits.
     #[circuit]
     pub fn set_gas_params(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         new_max_fee_per_gas: Uint<128>,
         new_max_priority_fee_per_gas: Uint<128>,
         new_withdraw_gas_limit: Uint<64>,
@@ -1226,7 +1226,7 @@ impl Vault {
     /// TokenFees): []` — the deployer grows `allowedTokens`; the map only
     /// grows.
     #[circuit]
-    pub fn add_allowed_token(c: &mut Circuit3, erc20_address: Bytes<20>, fees: TokenFeesArg) -> Discloses<(AllowedErc20, TokenFeesSet)> {
+    pub fn add_allowed_token(c: &mut Circuit, erc20_address: Bytes<20>, fees: TokenFeesArg) -> Discloses<(AllowedErc20, TokenFeesSet)> {
         require_initialised(c);
         assert_deployer(c);
         c.assert(erc20_address.ne(0u64).message("ERC20 address cannot be zero"));
@@ -1240,7 +1240,7 @@ impl Vault {
     /// TokenFees): []` — the deployer reprices an allowed token; a request
     /// keeps the fee it was started with.
     #[circuit]
-    pub fn set_token_fees(c: &mut Circuit3, erc20_address: Bytes<20>, fees: TokenFeesArg) -> Discloses<(AllowedErc20, TokenFeesSet)> {
+    pub fn set_token_fees(c: &mut Circuit, erc20_address: Bytes<20>, fees: TokenFeesArg) -> Discloses<(AllowedErc20, TokenFeesSet)> {
         require_initialised(c);
         assert_deployer(c);
         let erc20 = erc20_address.disclose_as::<AllowedErc20>(c);
@@ -1255,8 +1255,8 @@ impl Vault {
     /// recipient.
     #[circuit]
     pub fn set_fee_recipient(
-        c: &mut Circuit3,
-        coin_public_key: minocrab_std::v3::ZswapCoinPublicKey<Private>,
+        c: &mut Circuit,
+        coin_public_key: minocrab_std::ZswapCoinPublicKey<Private>,
         encryption_public_key: B32<Private>,
     ) -> Discloses<(FeeRecipientKey, FeeRecipientEncryptionKey)> {
         require_initialised(c);
@@ -1277,7 +1277,7 @@ impl Vault {
     /// queued attestation out and folding its height into `globalLastSeen`.
     #[circuit]
     pub fn flush_queue(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         slots: [FlushSlot; FLUSH_SLOTS],
     ) -> Discloses<(FlushSlotChannel, FlushSlotInIndex, FlushSlotRequestId)> {
         require_initialised(c);
@@ -1303,7 +1303,7 @@ impl Vault {
     /// Anyone may submit one.
     #[circuit]
     pub fn queue_attestation(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         #[arg(name = "respondBidirectionalEvent")] event: RespondBidirectionalEventV1<Private>,
     ) -> Discloses<(Attestation,)> {
         queue_attestation_body(c, &event);
@@ -1318,7 +1318,7 @@ impl Vault {
     /// off that request's own event. Deployer-gated.
     #[circuit]
     pub fn start_replace_nonce(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         in_index: Uint<64>,
         request_id: RequestId<Private>,
         action: Action<Private>,
@@ -1354,7 +1354,7 @@ impl Vault {
     /// and notifies the MPC. Permissionless.
     #[circuit]
     pub fn send_replace_nonce(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         out_index: RequestIndex<Private>,
     ) -> Discloses<(OutIndex, RequestIdDisclosed, RequestRecord, XcallCommitment)> {
         send_request::<VAULT_WORDS, Bytes<REPLACE_NONCE_SCHEMA_LEN, Private>, Bytes<REPLACE_NONCE_SCHEMA_LEN, Public>, ReplaceNonceArgs>(
@@ -1387,7 +1387,7 @@ impl Vault {
     /// output is checked against the record's digest. Deployer-gated through
     /// the ownership commitment.
     #[circuit]
-    pub fn complete_replace_nonce(c: &mut Circuit3, request_id: RequestId<Private>) -> Discloses<(SettleRequestId,)> {
+    pub fn complete_replace_nonce(c: &mut Circuit, request_id: RequestId<Private>) -> Discloses<(SettleRequestId,)> {
         require_initialised(c);
         let request_id = request_id.disclose_as::<SettleRequestId>(c);
         let (entry, record) = settle_request(c, &request_id, action::REPLACE_NONCE);
@@ -1408,7 +1408,7 @@ impl Vault {
     /// spend `erc20Address`. Deployer-gated.
     #[circuit]
     pub fn start_approve_router(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         in_index: Uint<64>,
         erc20_address: Bytes<20>,
     ) -> Discloses<(AllowedErc20, InIndex, OwnershipCommitment)> {
@@ -1425,7 +1425,7 @@ impl Vault {
     /// vault's approval of the stata wrapper to spend the underlying.
     /// Deployer-gated.
     #[circuit]
-    pub fn start_approve_stata(c: &mut Circuit3, in_index: Uint<64>) -> Discloses<(InIndex, OwnershipCommitment)> {
+    pub fn start_approve_stata(c: &mut Circuit, in_index: Uint<64>) -> Discloses<(InIndex, OwnershipCommitment)> {
         require_initialised(c);
         // ApproveRequest { erc20Address: stataUnderlying, spender: stataToken }
         let underlying = VAULT.stata_underlying.read(c).stale(c);
@@ -1439,7 +1439,7 @@ impl Vault {
     /// the ERC20) and notifies the MPC. Permissionless.
     #[circuit]
     pub fn send_approve(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         out_index: RequestIndex<Private>,
     ) -> Discloses<(OutIndex, RequestIdDisclosed, RequestRecord, XcallCommitment)> {
         send_request::<VAULT_WORDS, BytesN<Private, VAULT_SCHEMA_LEN>, BytesN<Public, VAULT_SCHEMA_LEN>, ApproveArgs>(
@@ -1469,7 +1469,7 @@ impl Vault {
     /// so every verdict only closes the request.
     #[circuit]
     pub fn complete_approve(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         request_id: RequestId<Private>,
         serialized_output: Bytes<1>,
     ) -> Discloses<(SettleRequestId, SerializedOutput)> {
@@ -1496,7 +1496,7 @@ impl Vault {
     /// MPC with the DEPOSITOR's derived account at their own nonce and gas.
     #[circuit]
     pub fn start_deposit(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         in_index: Uint<64>,
         evm_nonce: Uint<64>,
         gas: GasParamsArg,
@@ -1550,7 +1550,7 @@ impl Vault {
     /// from the depositor's path) and notifies the MPC. Permissionless.
     #[circuit]
     pub fn send_deposit(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         out_index: RequestIndex<Private>,
     ) -> Discloses<(OutIndex, RequestIdDisclosed, RequestRecord, XcallCommitment)> {
         send_request::<VAULT_WORDS, BytesN<Private, VAULT_SCHEMA_LEN>, BytesN<Public, VAULT_SCHEMA_LEN>, DepositArgs>(
@@ -1584,11 +1584,11 @@ impl Vault {
     /// must be 0 or 1 on every verdict. Depositor-gated.
     #[circuit]
     pub fn complete_deposit(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         request_id: RequestId<Private>,
         serialized_output: Bytes<1>,
         mint_nonce: CoinNonce<Private>,
-        recipient: Maybe<Either<minocrab_std::v3::ZswapCoinPublicKey<Private>, minocrab_std::v3::ContractAddress<Private>, Private>>,
+        recipient: Maybe<Either<minocrab_std::ZswapCoinPublicKey<Private>, minocrab_std::ContractAddress<Private>, Private>>,
     ) -> Discloses<(
         SettleRequestId,
         SerializedOutput,
@@ -1633,8 +1633,8 @@ impl Vault {
                     let rec_left = recipient.value.left.disclose_as::<ClaimRecipientKey>(c);
                     let rec_right = recipient.value.right.disclose_as::<ClaimRecipientContract>(c);
                     let is_left = c.cond_select(rec_is_some, rec_is_left, one);
-                    let left = minocrab_std::v3::ZswapCoinPublicKey::cond_select(c, rec_is_some, &rec_left, &own_pk);
-                    let right = minocrab_std::v3::ContractAddress(B32 {
+                    let left = minocrab_std::ZswapCoinPublicKey::cond_select(c, rec_is_some, &rec_left, &own_pk);
+                    let right = minocrab_std::ContractAddress(B32 {
                         hi: c.cond_select(rec_is_some, rec_right.bytes().hi, 0u64),
                         lo: c.cond_select(rec_is_some, rec_right.bytes().lo, 0u64),
                     });
@@ -1657,7 +1657,7 @@ impl Vault {
     /// the vault's account under its gas settings.
     #[circuit]
     pub fn start_withdraw(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         in_index: Uint<64>,
         withdraw_request: WithdrawRequest,
         coin: ShieldedCoinArg,
@@ -1710,7 +1710,7 @@ impl Vault {
     /// flushed withdrawal's event and notifies the MPC. Permissionless.
     #[circuit]
     pub fn send_withdraw(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         out_index: RequestIndex<Private>,
     ) -> Discloses<(OutIndex, RequestIdDisclosed, RequestRecord, XcallCommitment)> {
         send_request::<VAULT_WORDS, BytesN<Private, VAULT_SCHEMA_LEN>, BytesN<Public, VAULT_SCHEMA_LEN>, WithdrawArgs>(
@@ -1742,7 +1742,7 @@ impl Vault {
     /// Withdrawer-gated.
     #[circuit]
     pub fn complete_withdraw(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         request_id: RequestId<Private>,
         serialized_output: Bytes<1>,
         mint_nonce: CoinNonce<Private>,
@@ -1789,7 +1789,7 @@ impl Vault {
     /// buying an allowed ERC20 into the vault's account.
     #[circuit]
     pub fn start_swap(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         in_index: Uint<64>,
         swap_request: SwapRequest,
         coin: ShieldedCoinArg,
@@ -1850,7 +1850,7 @@ impl Vault {
     /// account) and notifies the MPC. Permissionless.
     #[circuit]
     pub fn send_swap(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         out_index: RequestIndex<Private>,
     ) -> Discloses<(OutIndex, RequestIdDisclosed, RequestRecord, XcallCommitment)> {
         send_request::<SWAP_WORDS, BytesN<Private, SWAP_SCHEMA_LEN>, BytesN<Public, SWAP_SCHEMA_LEN>, SwapArgs>(
@@ -1894,7 +1894,7 @@ impl Vault {
     /// unviable re-mints the surrendered `amountInMaximum`. Swapper-gated.
     #[circuit]
     pub fn complete_swap(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         request_id: RequestId<Private>,
         serialized_output: B32<Private>,
         mint_nonce: CoinNonce<Private>,
@@ -1944,7 +1944,7 @@ impl Vault {
     /// underlying vault coin and queues `stataToken.deposit(amount, vault)`.
     #[circuit]
     pub fn start_supply(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         in_index: Uint<64>,
         supply_request: SupplyRequest,
         coin: ShieldedCoinArg,
@@ -1991,7 +1991,7 @@ impl Vault {
     /// flushed supply's event and notifies the MPC. Permissionless.
     #[circuit]
     pub fn send_supply(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         out_index: RequestIndex<Private>,
     ) -> Discloses<(OutIndex, RequestIdDisclosed, RequestRecord, XcallCommitment)> {
         send_request::<SUPPLY_WORDS, BytesN<Private, SUPPLY_SCHEMA_LEN>, BytesN<Public, SUPPLY_SCHEMA_LEN>, SupplyArgs>(
@@ -2029,7 +2029,7 @@ impl Vault {
     /// surrendered underlying. Supplier-gated.
     #[circuit]
     pub fn complete_supply(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         request_id: RequestId<Private>,
         serialized_output: B32<Private>,
         mint_nonce: CoinNonce<Private>,
@@ -2072,7 +2072,7 @@ impl Vault {
     /// wrapper vault coin and queues `stataToken.redeem(shares, vault, vault)`.
     #[circuit]
     pub fn start_redeem(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         in_index: Uint<64>,
         redeem_request: RedeemRequest,
         coin: ShieldedCoinArg,
@@ -2119,7 +2119,7 @@ impl Vault {
     /// flushed redeem's event and notifies the MPC. Permissionless.
     #[circuit]
     pub fn send_redeem(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         out_index: RequestIndex<Private>,
     ) -> Discloses<(OutIndex, RequestIdDisclosed, RequestRecord, XcallCommitment)> {
         send_request::<REDEEM_WORDS, BytesN<Private, REDEEM_SCHEMA_LEN>, BytesN<Public, REDEEM_SCHEMA_LEN>, RedeemArgs>(
@@ -2161,7 +2161,7 @@ impl Vault {
     /// surrendered shares. Redeemer-gated.
     #[circuit]
     pub fn complete_redeem(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         request_id: RequestId<Private>,
         serialized_output: B32<Private>,
         mint_nonce: CoinNonce<Private>,
@@ -2203,7 +2203,7 @@ impl Vault {
 /// `flushRequest(inIndex)` — inside the slot's request guard: the queued
 /// entry, the vault nonce it takes (if it signs), its output index, the
 /// twin check, the move into `outputRequestBuffer` under `globalLastSeen`.
-fn flush_request(c: &mut Circuit3, in_index: &Uint<64, Public>) {
+fn flush_request(c: &mut Circuit, in_index: &Uint<64, Public>) {
     let queued = VAULT.input_request_buffer.lookup_required(c, in_index, "Request not queued").stale(c);
     let use_next = queued.use_next_vault_account_nonce.field();
 
@@ -2240,7 +2240,7 @@ fn flush_request(c: &mut Circuit3, in_index: &Uint<64, Public>) {
 /// queued record moves to `outputAttestationBuffer`, and `globalLastSeen` is
 /// raised to its height if higher (the ternary's `else` arm re-reads the
 /// cell, as compactc emits it).
-fn flush_attestation(c: &mut Circuit3, request_id: &RequestId<Public>) {
+fn flush_attestation(c: &mut Circuit, request_id: &RequestId<Public>) {
     let record = VAULT.input_attestation_buffer.lookup_required(c, request_id, "Attestation not queued").stale(c);
     VAULT.input_attestation_buffer.remove(c, request_id);
     let last_seen = VAULT.global_last_seen.read(c).stale(c);
@@ -2257,14 +2257,14 @@ fn flush_attestation(c: &mut Circuit3, request_id: &RequestId<Public>) {
 /// request holds, read from its event in the action's map: an if-chain over
 /// the six vault-signed actions, each arm's member check and lookup guarded
 /// by the action matching, the nonce selected out of the arm that ran.
-fn sent_vault_nonce(c: &mut Circuit3, request_id: &RequestId<Public>, act: &Action<Public>) -> Uint<64, Public> {
+fn sent_vault_nonce(c: &mut Circuit, request_id: &RequestId<Public>, act: &Action<Public>) -> Uint<64, Public> {
     c.assert(act.ne(action::DEPOSIT).message("Deposit has no vault nonce"));
-    let is = |c: &mut Circuit3, which: u64| {
+    let is = |c: &mut Circuit, which: u64| {
         let k = c.constant(which);
         c.test_eq(act.field(), k)
     };
     fn nonce_of<const WORDS: usize, S: SchemaBytes<Public>>(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         map: &LedgerMap<RequestId<Public>, EventRecordV1<WORDS, S>>,
         request_id: &RequestId<Public>,
     ) -> Uint<64, Public> {

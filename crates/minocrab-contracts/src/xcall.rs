@@ -28,13 +28,13 @@
 //! experiment's `base`/`emit1` circuits (same ledger layout, same
 //! `DepositEvent`, same `deposit-0` event name) — see [`target_deposit`].
 
-use minocrab::v3::{Circuit3, Compiled3, FieldT, Wire3};
+use minocrab::{Circuit, Compiled, FieldT, Wire};
 use minocrab::{label, Private, Public};
 use minocrab_experimental::impact::raw::{
     cell_write, counter_increment, emit, map_insert, ImpactElem, LedgerValue,
 };
 use minocrab_ledger::XcallCommitment;
-use minocrab_std::v3::{contract, entry, BytesN, CircuitArg, Disclose, Discloses, Uint, B32};
+use minocrab_std::{contract, entry, BytesN, CircuitArg, Disclose, Discloses, Uint, B32};
 
 use xcall_target_interface::XcallTarget;
 
@@ -66,7 +66,7 @@ label! {
 
 /// The shared disclosure of a [`DepositArgs`]: everything these circuits do
 /// with the pair is public (a ledger write, or a cross-contract call).
-fn disclose_args(c: &mut Circuit3, args: DepositArgs) -> (B32<Public>, Wire3<FieldT, Public>) {
+fn disclose_args(c: &mut Circuit, args: DepositArgs) -> (B32<Public>, Wire<FieldT, Public>) {
     let r = args.recipient.disclose_as::<Recipient>(c);
     let a = args.amount.disclose_as::<Amount>(c).field();
     (r, a)
@@ -98,7 +98,7 @@ impl Xcall {
     /// shared workload performed locally against the caller's own ledger.
     #[circuit]
     pub fn local_base(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         recipient: B32<Private>,
         amount: Uint<128>,
     ) -> Discloses<(Recipient, Amount)> {
@@ -122,7 +122,7 @@ impl Xcall {
     /// in the entry-point constant of the claim.
     #[circuit]
     pub fn call_emit(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         recipient: B32<Private>,
         amount: Uint<128>,
     ) -> Discloses<(Recipient, Amount, XcallCommitment)> {
@@ -140,7 +140,7 @@ impl Xcall {
     /// 256-byte argument (9 FAB limbs).
     #[circuit]
     pub fn call_big(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         data: BytesN<Private, 256>,
     ) -> Discloses<(Data, XcallCommitment)> {
         let data: BytesN<Public, 256> = data.disclose_as::<Data>(c);
@@ -158,7 +158,7 @@ impl Xcall {
     /// counter increment; isolates the cost of moving a large argument across
     /// the contract boundary.
     #[circuit]
-    pub fn target_deposit_big(c: &mut Circuit3, _data: BytesN<Private, 256>) -> Discloses<()> {
+    pub fn target_deposit_big(c: &mut Circuit, _data: BytesN<Private, 256>) -> Discloses<()> {
         // Kept even though guard threading no longer uses it: dropping this
         // `Copy` would renumber every later identifier, moving the ZKIR
         // (notes/edsl-trim.org §B, the removal's zero-movement gate).
@@ -175,20 +175,20 @@ impl Xcall {
 /// call carrying `(Bytes<32>, Uint<128>)`. ([`call_emit`] is the same call
 /// through the interface's other method, `depositEmit`: the same circuit
 /// up to the entry-point constant.)
-pub fn call_once() -> Compiled3 {
+pub fn call_once() -> Compiled {
     call_n_times(1)
 }
 
 /// `export circuit callTwice(recipient, amount): []` — two calls in one
 /// circuit; each call site re-reads the target cell (uncached, like the
 /// first).
-pub fn call_twice() -> Compiled3 {
+pub fn call_twice() -> Compiled {
     call_n_times(2)
 }
 
 /// `callOnce`/`callTwice`, which differ by a Rust value and so are built
 /// through [`entry`] rather than the attribute (see `events`'s note).
-fn call_n_times(n: usize) -> Compiled3 {
+fn call_n_times(n: usize) -> Compiled {
     entry(|c, args: DepositArgs| -> CallDisclosures {
         // Explicit: built through `entry`, outside the `#[contract]` block, so its attribute does not reach it.
         minocrab_compat::profile(c);
@@ -207,12 +207,12 @@ fn call_n_times(n: usize) -> Compiled3 {
 }
 
 /// Target `deposit` — identical to the `events` experiment's `base`.
-pub fn target_deposit() -> Compiled3 {
+pub fn target_deposit() -> Compiled {
     events::base()
 }
 
 /// Target `depositEmit` — identical to the `events` experiment's `emit1`.
-pub fn target_deposit_emit() -> Compiled3 {
+pub fn target_deposit_emit() -> Compiled {
     events::emit_n(1)
 }
 
@@ -222,7 +222,7 @@ pub fn target_deposit_emit() -> Compiled3 {
 #[cfg(test)]
 mod call_n_times_discloses {
     use super::*;
-    use minocrab_std::v3::assert_declared_disclosures;
+    use minocrab_std::assert_declared_disclosures;
 
     #[test]
     fn the_declared_disclosures_are_the_ones_the_family_makes() {

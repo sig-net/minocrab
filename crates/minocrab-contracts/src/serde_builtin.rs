@@ -14,11 +14,11 @@
 //! Mixed layout: flag @0 (1 byte, == 1), amount @1..17 (LE), small @17,
 //! tag @18..50, zero padding to 128.
 
-use minocrab::v3::Circuit3;
+use minocrab::Circuit;
 use minocrab::Private;
 use minocrab_experimental::impact::raw::{counter_increment, emit};
 use minocrab_compat::deserialize::Packed;
-use minocrab_std::v3::{contract, BytesN, Discloses, Serializer};
+use minocrab_std::{contract, BytesN, Discloses, Serializer};
 
 /// Ledger field indices.
 pub const CHECKS: u8 = 0;
@@ -34,7 +34,7 @@ impl SerdeBuiltin {
     /// NOTHING: the roundtrip is checked entirely inside the private domain, and
     /// only the counter increment is public. The generated test says so.
     #[circuit]
-    pub fn check_roundtrip(c: &mut Circuit3, bytes: BytesN<Private, 128>) -> Discloses<()> {
+    pub fn check_roundtrip(c: &mut Circuit, bytes: BytesN<Private, 128>) -> Discloses<()> {
         let data = bytes;
 
         // const v = deserialize<Mixed, 128>(bytes), in compactc's shape: the

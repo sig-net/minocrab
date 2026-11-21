@@ -16,7 +16,7 @@
 //! `Settle`, `Response`, `Commit`) in favour of the typed
 //! [`minocrab_contracts::evm_flow`] slots this file now uses.
 
-use minocrab::v3::Circuit3;
+use minocrab::Circuit;
 use minocrab::{Private, Public};
 use minocrab_contracts::common::{witness_sk, SecretKey, SigningPath};
 use minocrab_contracts::evm::erc20::{self, Erc20};
@@ -24,8 +24,8 @@ use minocrab_contracts::evm::{Envelope, Filing};
 use minocrab_contracts::evm_flow::{Commit, CommitTag, Contract, Failed, Pending, Succeeded};
 use minocrab_contracts::signet_flow::{Requested, Settled, Signet, Signing};
 use minocrab_contracts::signet_v1::schema;
-use minocrab_sim::v3::cost;
-use minocrab_std::v3::{
+use minocrab_sim::cost;
+use minocrab_std::{
     circuit, label, Bytes, Disclose, Discloses, Ledger, LedgerCounter, LedgerRepr, Uint, B32,
 };
 
@@ -103,7 +103,7 @@ label! {
 }
 
 /// The toy's callee and recipient: one constant address each.
-fn toy_address(c: &mut Circuit3, byte: u64) -> Bytes<20, Private> {
+fn toy_address(c: &mut Circuit, byte: u64) -> Bytes<20, Private> {
     Bytes::from_field_unchecked(c.constant(byte).private())
 }
 
@@ -111,7 +111,7 @@ fn toy_address(c: &mut Circuit3, byte: u64) -> Bytes<20, Private> {
 
 #[circuit]
 fn deposit(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     evm_nonce: Uint<64>,
     amount: Uint<64>,
 ) -> Discloses<(Amount, Requested)> {
@@ -123,8 +123,8 @@ fn deposit(
             Contract::<Erc20>::from_address(c, to)
         },
         (
-            |c: &mut Circuit3| toy_address(c, 0x43),
-            |_c: &mut Circuit3| amount.widen::<128>(),
+            |c: &mut Circuit| toy_address(c, 0x43),
+            |_c: &mut Circuit| amount.widen::<128>(),
         ),
         Envelope::fixed(),
         evm_nonce,
@@ -146,7 +146,7 @@ fn deposit(
 
 #[circuit]
 fn withdraw(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     evm_nonce: Uint<64>,
     amount: Uint<64>,
 ) -> Discloses<(Amount, WithdrawerCommitment, Requested)> {
@@ -158,8 +158,8 @@ fn withdraw(
             Contract::<Erc20>::from_address(c, to)
         },
         (
-            |c: &mut Circuit3| toy_address(c, 0x43),
-            |_c: &mut Circuit3| amount.widen::<128>(),
+            |c: &mut Circuit| toy_address(c, 0x43),
+            |_c: &mut Circuit| amount.widen::<128>(),
         ),
         Envelope::fixed(),
         evm_nonce,
@@ -176,7 +176,7 @@ fn withdraw(
 }
 
 #[circuit]
-fn claim(c: &mut Circuit3, ticket: Succeeded<ToyDeposit>) -> Discloses<Settled> {
+fn claim(c: &mut Circuit, ticket: Succeeded<ToyDeposit>) -> Discloses<Settled> {
     // `complete` asserts `erc20::Transfer::succeeded` — the attested
     // flag — so an attested `false` cannot arrive here at all.
     let outcome = TOY.deposits.complete(c, ticket);
@@ -186,7 +186,7 @@ fn claim(c: &mut Circuit3, ticket: Succeeded<ToyDeposit>) -> Discloses<Settled> 
 
 #[circuit]
 fn refund_withdrawal(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     ticket: Failed<ToyWithdrawal>,
 ) -> Discloses<Settled> {
     // Either the MPC's failure kind or a mined transfer that returned
@@ -227,7 +227,7 @@ fn the_block_is_laid_out_by_slot_width() {
 /// laid out like any other field. A tenth field leaves every path of the
 /// first nine unchanged, so a settle on this block is the same circuit.
 mod user {
-    pub type Pending = minocrab_std::v3::LedgerCounter;
+    pub type Pending = minocrab_std::LedgerCounter;
 }
 
 #[derive(Ledger)]
@@ -245,7 +245,7 @@ use minocrab_contracts::signet_flow::Signet as SigConfig;
 const ALIASED: Aliased = Aliased::new();
 
 #[circuit]
-fn claim_aliased(c: &mut Circuit3, ticket: Succeeded<ToyDeposit>) -> Discloses<Settled> {
+fn claim_aliased(c: &mut Circuit, ticket: Succeeded<ToyDeposit>) -> Discloses<Settled> {
     let outcome = ALIASED.deposits.complete(c, ticket);
     let _amount = outcome.env.amount;
     Discloses::of(())

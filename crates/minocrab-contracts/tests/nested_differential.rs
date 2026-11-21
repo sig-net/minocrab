@@ -42,9 +42,9 @@
 mod common;
 use common::*;
 
-use minocrab::v3::Compiled3;
+use minocrab::Compiled;
 use minocrab_contracts::nested::Nested;
-use minocrab_zkir::v3::IrSource;
+use minocrab_zkir::IrSource;
 
 /// compactc's artifact for one fixture circuit.
 fn theirs(name: &str) -> IrSource {
@@ -52,13 +52,13 @@ fn theirs(name: &str) -> IrSource {
         "{}/tests/fixtures/nested/out/zkir/{name}.zkir",
         env!("CARGO_MANIFEST_DIR")
     );
-    minocrab_zkir::v3::read_zkir(&path).expect("the pinned compactc's artifact parses")
+    minocrab_zkir::read_zkir(&path).expect("the pinned compactc's artifact parses")
 }
 
 /// Every circuit of the fixture: compactc's artifact name and our builder.
-fn cases() -> Vec<(&'static str, fn() -> Compiled3)> {
+fn cases() -> Vec<(&'static str, fn() -> Compiled)> {
     vec![
-        ("mapInsert", Nested::map_insert as fn() -> Compiled3),
+        ("mapInsert", Nested::map_insert as fn() -> Compiled),
         ("mapInsertDefault", Nested::map_insert_default),
         ("mapLookup", Nested::map_lookup),
         ("mapMember", Nested::map_member),
@@ -228,10 +228,10 @@ fn the_depth_is_the_opcode_nibble_and_the_ins_operand() {
 /// transcript.
 #[test]
 fn compactc_s_abi_agrees_with_the_arguments() {
-    use minocrab::v3::CircuitAbi;
+    use minocrab::CircuitAbi;
     use minocrab::Public;
     use minocrab_abi::info::ContractInfo;
-    use minocrab_std::v3::{MerkleTreeDigest, Uint, B32};
+    use minocrab_std::{MerkleTreeDigest, Uint, B32};
 
     let text = std::fs::read_to_string(format!(
         "{}/tests/fixtures/nested/out/compiler/contract-info.json",

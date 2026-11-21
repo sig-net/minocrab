@@ -2,7 +2,7 @@
 //! ledger state is byte-for-byte the transcript the vault harness's hand
 //! model writes.
 //!
-//! `minocrab_sim::v3::exec` produces a call's public transcript by running
+//! `minocrab_sim::exec` produces a call's public transcript by running
 //! the ZKIR walk against a live `StateValue` through Midnight's own Impact
 //! VM in `ResultModeGather`. The `erc20_vault_pending` harness produces the
 //! same transcript from a 3.8k-line reference model that knows every read's
@@ -31,8 +31,8 @@
 
 use midnight_transient_crypto::proofs::Zkir;
 use minocrab_contracts::erc20_vault_pending as pending;
-use minocrab_sim::v3::exec::{self, Call, ExecError};
-use minocrab_zkir::v3::IrSource;
+use minocrab_sim::exec::{self, Call, ExecError};
+use minocrab_zkir::IrSource;
 use proptest::prelude::*;
 
 mod vault_pending;

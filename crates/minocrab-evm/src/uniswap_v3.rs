@@ -29,9 +29,9 @@
 //! but it is filed against the TOKEN with the router as the spender, not
 //! against the router.)
 
-use minocrab::v3::Circuit3;
+use minocrab::Circuit;
 use minocrab::Private;
-use minocrab_std::v3::{Check, Uint};
+use minocrab_std::{Check, Uint};
 
 use super::{always, AbiTuple, Address, EvmCall, Interface, U128, U160, U24, U64};
 
@@ -81,9 +81,9 @@ impl EvmCall for ExactInputSingle {
     type Success = Uint<64, Private>;
     const GAS_LIMIT: u64 = SWAP_GAS;
 
-    fn succeeded(c: &mut Circuit3, _out: &Uint<64, Private>) -> Check<Private> {
+    fn succeeded(c: &mut Circuit, _out: &Uint<64, Private>) -> Check<Private> {
         // The constant-true assert this makes is removed by
-        // `drop_true_asserts` in `Builder3::finish`.
+        // `drop_true_asserts` in `Builder::finish`.
         always(c)
     }
 
@@ -114,9 +114,9 @@ impl EvmCall for ExactOutputSingle {
     type Success = Uint<64, Private>;
     const GAS_LIMIT: u64 = SWAP_GAS;
 
-    fn succeeded(c: &mut Circuit3, _out: &Uint<64, Private>) -> Check<Private> {
+    fn succeeded(c: &mut Circuit, _out: &Uint<64, Private>) -> Check<Private> {
         // The constant-true assert this makes is removed by
-        // `drop_true_asserts` in `Builder3::finish`.
+        // `drop_true_asserts` in `Builder::finish`.
         always(c)
     }
 

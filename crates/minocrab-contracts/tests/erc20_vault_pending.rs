@@ -14,7 +14,7 @@
 
 use minocrab_contracts::erc20_vault;
 use minocrab_contracts::erc20_vault_pending as pending;
-use minocrab_sim::v3::{cost, simulate};
+use minocrab_sim::{cost, simulate};
 
 mod vault_pending;
 
@@ -84,7 +84,7 @@ fn the_block_is_segmented_past_fifteen_fields() {
 /// | swap + refund       | 12,379 + 35,578 | 12,379 + 35,651 | 48,806 |
 #[test]
 fn no_pair_costs_more_than_the_modern_lineage() {
-    let m = |ir: &minocrab_zkir::v3::IrSource| cost(ir);
+    let m = |ir: &minocrab_zkir::IrSource| cost(ir);
     let p_init = m(&pending::Vault::initialize().ir);
     let m_init = modern::INITIALIZE;
     let p_dep = m(&pending::Vault::deposit().ir);

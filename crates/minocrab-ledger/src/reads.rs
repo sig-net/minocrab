@@ -2,8 +2,8 @@
 
 use midnight_base_crypto::fab::AlignmentAtom;
 use midnight_onchain_vm::ops::Op;
-use minocrab::v3::{Circuit3, FieldT, Wire3};
-use minocrab::v3::ImpactElem;
+use minocrab::{Circuit, FieldT, Wire};
+use minocrab::ImpactElem;
 use minocrab::{Fr, Public};
 
 use crate::impact::*;
@@ -21,23 +21,23 @@ pub fn popeq(cached: bool, result: &LedgerValue) -> ImpactOp {
 
 /// Emit `ops` as Impact instructions (one per op).
 ///
-/// The guard is AMBIENT (notes/edsl-trim.org §B): [`Circuit3::impact_mixed`]
+/// The guard is AMBIENT (notes/edsl-trim.org §B): [`Circuit::impact_mixed`]
 /// resolves whatever scope the call sits in — the native `1u64` for
 /// straight-line code, which inlines as an immediate rather than naming a
-/// `Copy`, or a branch condition's wire inside [`Circuit3::when`]. There is
+/// `Copy`, or a branch condition's wire inside [`Circuit::when`]. There is
 /// no explicit guard parameter here to thread.
 ///
 /// THE STALE-READ CHECK runs here, before anything is emitted: an op that
 /// stores an author's value (a cell write, a map insert, a list push; see
-/// [`ImpactOp`]) has that value run through [`Circuit3::refuse_stale`],
+/// [`ImpactOp`]) has that value run through [`Circuit::refuse_stale`],
 /// which refuses at build time a value computed from an inline ledger read
-/// not acknowledged with `.stale(c)` (or [`Circuit3::acknowledge_stale`]),
+/// not acknowledged with `.stale(c)` (or [`Circuit::acknowledge_stale`]),
 /// naming the read. This is the one place the check lives: `minocrab-std`'s
 /// typed slots, `minocrab-compat` and hand-written ops all reach it. Keys
 /// are not checked: a key derived from a read adds no assumption the read's
 /// own `popeq` does not make. The check adds no instruction.
 #[track_caller]
-pub fn emit(c: &mut Circuit3, ops: &[ImpactOp]) {
+pub fn emit(c: &mut Circuit, ops: &[ImpactOp]) {
     for op in ops {
         if let Some(stored) = &op.1 {
             c.refuse_stale(&stored.wires, stored.what);
@@ -61,14 +61,14 @@ pub fn emit(c: &mut Circuit3, ops: &[ImpactOp]) {
 /// Mint one `public_input` gate per FAB limb of `atoms`; returns the wires
 /// plus the same wires packaged for a `popeq[c]` embed.
 ///
-/// [`Circuit3::public_transcript_input`] resolves the AMBIENT scope
+/// [`Circuit::public_transcript_input`] resolves the AMBIENT scope
 /// (notes/edsl-trim.org §B): unguarded in straight-line code, or under
-/// whatever [`Circuit3::when`] the call sits inside — compactc puts the SAME
+/// whatever [`Circuit::when`] the call sits inside — compactc puts the SAME
 /// guard on the gates and the op's impact instructions
 /// (completeWithdraw.zkir:292-297).
-pub fn mint_read(c: &mut Circuit3, atoms: Vec<AlignmentAtom>) -> (Vec<Wire3<FieldT, Public>>, LedgerValue) {
+pub fn mint_read(c: &mut Circuit, atoms: Vec<AlignmentAtom>) -> (Vec<Wire<FieldT, Public>>, LedgerValue) {
     let limbs: usize = atoms.iter().map(atom_limbs).sum();
-    let wires: Vec<Wire3<FieldT, Public>> = (0..limbs)
+    let wires: Vec<Wire<FieldT, Public>> = (0..limbs)
         .map(|_| c.public_transcript_input::<FieldT>())
         .collect();
     let value = LedgerValue::new(atoms, wires.iter().map(|&w| ImpactElem::Wire(w)).collect());
@@ -76,10 +76,10 @@ pub fn mint_read(c: &mut Circuit3, atoms: Vec<AlignmentAtom>) -> (Vec<Wire3<Fiel
 }
 
 /// Name the wires of a minted read for the stale-read backstop
-/// (`Circuit3::refuse_stale`, notes/hooks-design.org): `what` is the
+/// (`Circuit::refuse_stale`, notes/hooks-design.org): `what` is the
 /// operation, `path` the slot.
-pub fn label_read(c: &mut Circuit3, value: &LedgerValue, what: &str, path: &[LedgerKey]) {
-    let wires: Vec<Wire3<FieldT, Public>> = value
+pub fn label_read(c: &mut Circuit, value: &LedgerValue, what: &str, path: &[LedgerKey]) {
+    let wires: Vec<Wire<FieldT, Public>> = value
         .elems
         .iter()
         .filter_map(|e| match e {
@@ -103,19 +103,19 @@ pub(crate) const BOOL_ATOM: AlignmentAtom = AlignmentAtom::Bytes { length: 1 };
 /// and the popeq uncached (`f-cached` = #f). `atoms` is the cell type's FAB
 /// alignment; returns one wire per limb, in slot order.
 pub fn cell_read(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     index: u8,
     atoms: Vec<AlignmentAtom>,
-) -> Vec<Wire3<FieldT, Public>> {
+) -> Vec<Wire<FieldT, Public>> {
     cell_read_at(c, &field_path(index), atoms)
 }
 
 /// [`cell_read`] on a general path.
 pub fn cell_read_at(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     path: &[LedgerKey],
     atoms: Vec<AlignmentAtom>,
-) -> Vec<Wire3<FieldT, Public>> {
+) -> Vec<Wire<FieldT, Public>> {
     let (wires, value) = mint_read(c, atoms);
     cell_read_embedded_at(c, path, &value);
     wires
@@ -131,12 +131,12 @@ pub fn cell_read_at(
 /// limbs with an `encode` instruction (claim.zkir:29-33), so the limbs are
 /// computed rather than read and the caller has to build the value itself.
 /// Both end here.
-pub fn cell_read_embedded(c: &mut Circuit3, index: u8, value: &LedgerValue) {
+pub fn cell_read_embedded(c: &mut Circuit, index: u8, value: &LedgerValue) {
     cell_read_embedded_at(c, &field_path(index), value)
 }
 
 /// [`cell_read_embedded`] on a general path.
-pub fn cell_read_embedded_at(c: &mut Circuit3, path: &[LedgerKey], value: &LedgerValue) {
+pub fn cell_read_embedded_at(c: &mut Circuit, path: &[LedgerKey], value: &LedgerValue) {
     label_read(c, value, "a cell read", path);
     emit(
         c,
@@ -147,12 +147,12 @@ pub fn cell_read_embedded_at(c: &mut Circuit3, path: &[LedgerKey], value: &Ledge
 /// `Counter.read()` on field `index` (midnight-ledger.ss:590-594):
 /// `dup 0; idx [field]; popeqc` — the popeq is cached even on the first
 /// access (unlike Cell.read). Returns the u64 counter value.
-pub fn counter_read(c: &mut Circuit3, index: u8) -> Wire3<FieldT, Public> {
+pub fn counter_read(c: &mut Circuit, index: u8) -> Wire<FieldT, Public> {
     counter_read_at(c, &field_path(index))
 }
 
 /// [`counter_read`] on a general path.
-pub fn counter_read_at(c: &mut Circuit3, path: &[LedgerKey]) -> Wire3<FieldT, Public> {
+pub fn counter_read_at(c: &mut Circuit, path: &[LedgerKey]) -> Wire<FieldT, Public> {
     let (wires, value) = mint_read(c, vec![U64_ATOM]);
     label_read(c, &value, "a counter read", path);
     emit(
@@ -165,19 +165,19 @@ pub fn counter_read_at(c: &mut Circuit3, path: &[LedgerKey]) -> Wire3<FieldT, Pu
 /// `Counter.lessThan(threshold)` (midnight-ledger.ss:595-600):
 /// `dup 0; idx [field]; push threshold (u64 cell); lt; popeqc` → Boolean.
 pub fn counter_less_than(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     index: u8,
     threshold: &LedgerValue,
-) -> Wire3<FieldT, Public> {
+) -> Wire<FieldT, Public> {
     counter_less_than_at(c, &field_path(index), threshold)
 }
 
 /// [`counter_less_than`] on a general path.
 pub fn counter_less_than_at(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     path: &[LedgerKey],
     threshold: &LedgerValue,
-) -> Wire3<FieldT, Public> {
+) -> Wire<FieldT, Public> {
     let (wires, value) = mint_read(c, vec![BOOL_ATOM]);
     label_read(c, &value, "a counter comparison", path);
     emit(
@@ -195,16 +195,16 @@ pub fn counter_less_than_at(
 
 /// `Map.member(key)` on field `index` (midnight-ledger.ss:649-655):
 /// `dup 0; idx [field]; push key; member; popeqc` → Boolean.
-pub fn map_member(c: &mut Circuit3, index: u8, key: &LedgerValue) -> Wire3<FieldT, Public> {
+pub fn map_member(c: &mut Circuit, index: u8, key: &LedgerValue) -> Wire<FieldT, Public> {
     map_member_at(c, &field_path(index), key)
 }
 
 /// [`map_member`] on a general path.
 pub fn map_member_at(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     path: &[LedgerKey],
     key: &LedgerValue,
-) -> Wire3<FieldT, Public> {
+) -> Wire<FieldT, Public> {
     let (wires, value) = mint_read(c, vec![BOOL_ATOM]);
     label_read(c, &value, "a map membership read", path);
     emit(
@@ -225,11 +225,11 @@ pub fn map_member_at(
 /// the key descent and the popeq both uncached. `value_atoms` is the value
 /// type's FAB alignment.
 pub fn map_lookup(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     index: u8,
     key: &LedgerValue,
     value_atoms: Vec<AlignmentAtom>,
-) -> Vec<Wire3<FieldT, Public>> {
+) -> Vec<Wire<FieldT, Public>> {
     map_lookup_at(c, &field_path(index), key, value_atoms)
 }
 
@@ -241,11 +241,11 @@ pub fn map_lookup(
 /// `f`; only an INTERMEDIATE `lookup` — the one whose result is another ADT —
 /// does, and that one emits nothing at all.
 pub fn map_lookup_at(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     path: &[LedgerKey],
     key: &LedgerValue,
     value_atoms: Vec<AlignmentAtom>,
-) -> Vec<Wire3<FieldT, Public>> {
+) -> Vec<Wire<FieldT, Public>> {
     let (wires, value) = mint_read(c, value_atoms);
     label_read(c, &value, "a map lookup", path);
     emit(
@@ -262,12 +262,12 @@ pub fn map_lookup_at(
 
 /// `Map.size()` on field `index` (midnight-ledger.ss:728-733):
 /// `dup 0; idx [field]; size; popeqc` → Uint64.
-pub fn map_size(c: &mut Circuit3, index: u8) -> Wire3<FieldT, Public> {
+pub fn map_size(c: &mut Circuit, index: u8) -> Wire<FieldT, Public> {
     map_size_at(c, &field_path(index))
 }
 
 /// [`map_size`] on a general path.
-pub fn map_size_at(c: &mut Circuit3, path: &[LedgerKey]) -> Wire3<FieldT, Public> {
+pub fn map_size_at(c: &mut Circuit, path: &[LedgerKey]) -> Wire<FieldT, Public> {
     let (wires, value) = mint_read(c, vec![U64_ATOM]);
     label_read(c, &value, "a map size read", path);
     emit(
@@ -284,12 +284,12 @@ pub fn map_size_at(c: &mut Circuit3, path: &[LedgerKey]) -> Wire3<FieldT, Public
 
 /// `Map.isEmpty()` on field `index` (midnight-ledger.ss:720-727):
 /// `dup 0; idx [field]; size; push 0 (u64 cell); eq; popeqc` → Boolean.
-pub fn map_is_empty(c: &mut Circuit3, index: u8) -> Wire3<FieldT, Public> {
+pub fn map_is_empty(c: &mut Circuit, index: u8) -> Wire<FieldT, Public> {
     map_is_empty_at(c, &field_path(index))
 }
 
 /// [`map_is_empty`] on a general path.
-pub fn map_is_empty_at(c: &mut Circuit3, path: &[LedgerKey]) -> Wire3<FieldT, Public> {
+pub fn map_is_empty_at(c: &mut Circuit, path: &[LedgerKey]) -> Wire<FieldT, Public> {
     let zero = LedgerValue::bytes(8, vec![ImpactElem::Imm(Fr::from(0u64))]);
     let (wires, value) = mint_read(c, vec![BOOL_ATOM]);
     label_read(c, &value, "a map is-empty read", path);
@@ -309,22 +309,22 @@ pub fn map_is_empty_at(c: &mut Circuit3, path: &[LedgerKey]) -> Wire3<FieldT, Pu
 
 /// `set.size()` / `set.isEmpty()` — the `Map` streams, exactly
 /// ([`set_remove`] carries the argument).
-pub fn set_size(c: &mut Circuit3, index: u8) -> Wire3<FieldT, Public> {
+pub fn set_size(c: &mut Circuit, index: u8) -> Wire<FieldT, Public> {
     map_size(c, index)
 }
 
 /// [`set_size`] on a general path.
-pub fn set_size_at(c: &mut Circuit3, path: &[LedgerKey]) -> Wire3<FieldT, Public> {
+pub fn set_size_at(c: &mut Circuit, path: &[LedgerKey]) -> Wire<FieldT, Public> {
     map_size_at(c, path)
 }
 
 /// See [`set_size`].
-pub fn set_is_empty(c: &mut Circuit3, index: u8) -> Wire3<FieldT, Public> {
+pub fn set_is_empty(c: &mut Circuit, index: u8) -> Wire<FieldT, Public> {
     map_is_empty(c, index)
 }
 
 /// [`set_is_empty`] on a general path.
-pub fn set_is_empty_at(c: &mut Circuit3, path: &[LedgerKey]) -> Wire3<FieldT, Public> {
+pub fn set_is_empty_at(c: &mut Circuit, path: &[LedgerKey]) -> Wire<FieldT, Public> {
     map_is_empty_at(c, path)
 }
 
@@ -332,12 +332,12 @@ pub fn set_is_empty_at(c: &mut Circuit3, path: &[LedgerKey]) -> Wire3<FieldT, Pu
 
 /// `list.length()` on field `index`: `dup 0; idx [field]; idx [2]; popeqc`
 /// → Uint64. The length is a stored cell, not a computed `size`.
-pub fn list_length(c: &mut Circuit3, index: u8) -> Wire3<FieldT, Public> {
+pub fn list_length(c: &mut Circuit, index: u8) -> Wire<FieldT, Public> {
     list_length_at(c, &field_path(index))
 }
 
 /// [`list_length`] on a general path.
-pub fn list_length_at(c: &mut Circuit3, path: &[LedgerKey]) -> Wire3<FieldT, Public> {
+pub fn list_length_at(c: &mut Circuit, path: &[LedgerKey]) -> Wire<FieldT, Public> {
     let (wires, value) = mint_read(c, vec![U64_ATOM]);
     label_read(c, &value, "a list length read", path);
     emit(
@@ -360,12 +360,12 @@ pub fn list_length_at(c: &mut Circuit3, path: &[LedgerKey]) -> Wire3<FieldT, Pub
 /// reads as "the tail is null", which is what an empty list's tail is. See
 /// notes/ledger-adts.org §1, which also disposes of the upstream comment
 /// claiming `1` encodes a cell.
-pub fn list_is_empty(c: &mut Circuit3, index: u8) -> Wire3<FieldT, Public> {
+pub fn list_is_empty(c: &mut Circuit, index: u8) -> Wire<FieldT, Public> {
     list_is_empty_at(c, &field_path(index))
 }
 
 /// [`list_is_empty`] on a general path.
-pub fn list_is_empty_at(c: &mut Circuit3, path: &[LedgerKey]) -> Wire3<FieldT, Public> {
+pub fn list_is_empty_at(c: &mut Circuit, path: &[LedgerKey]) -> Wire<FieldT, Public> {
     let (wires, value) = mint_read(c, vec![BOOL_ATOM]);
     label_read(c, &value, "a list is-empty read", path);
     emit(
@@ -403,19 +403,19 @@ const TYPE_NULL: u8 = 1;
 /// popeqc <Maybe<T>>
 /// ```
 pub fn list_head(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     index: u8,
     elem_atoms: Vec<AlignmentAtom>,
-) -> Vec<Wire3<FieldT, Public>> {
+) -> Vec<Wire<FieldT, Public>> {
     list_head_at(c, &field_path(index), elem_atoms)
 }
 
 /// [`list_head`] on a general path.
 pub fn list_head_at(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     path: &[LedgerKey],
     elem_atoms: Vec<AlignmentAtom>,
-) -> Vec<Wire3<FieldT, Public>> {
+) -> Vec<Wire<FieldT, Public>> {
     let mut maybe_atoms = vec![BOOL_ATOM];
     maybe_atoms.extend(elem_atoms.iter().copied());
     let none = default_value(maybe_atoms.clone());
@@ -472,16 +472,16 @@ pub(crate) fn max_sizeof(atoms: &[AlignmentAtom]) -> u32 {
 /// `mt.isFull()` / `hmt.isFull()` on field `index`: `dup 0; idx [field];
 /// idx [1]; push 2^depth (u64 cell); lt; neg; popeqc` → Boolean, i.e.
 /// `!(next < 2^depth)`.
-pub fn merkle_tree_is_full(c: &mut Circuit3, index: u8, depth: u8) -> Wire3<FieldT, Public> {
+pub fn merkle_tree_is_full(c: &mut Circuit, index: u8, depth: u8) -> Wire<FieldT, Public> {
     merkle_tree_is_full_at(c, &field_path(index), depth)
 }
 
 /// [`merkle_tree_is_full`] on a general path.
 pub fn merkle_tree_is_full_at(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     path: &[LedgerKey],
     depth: u8,
-) -> Wire3<FieldT, Public> {
+) -> Wire<FieldT, Public> {
     let capacity = LedgerValue::bytes(8, vec![ImpactElem::Imm(Fr::from(1u64 << depth))]);
     let (wires, value) = mint_read(c, vec![BOOL_ATOM]);
     label_read(c, &value, "a merkle-tree is-full read", path);
@@ -504,19 +504,19 @@ pub fn merkle_tree_is_full_at(
 /// push rt (field cell); eq; popeqc` → Boolean. `root` is the CURRENT root,
 /// so this is an equality — the historic twin is [`historic_merkle_tree_check_root`].
 pub fn merkle_tree_check_root(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     index: u8,
     root: &LedgerValue,
-) -> Wire3<FieldT, Public> {
+) -> Wire<FieldT, Public> {
     merkle_tree_check_root_at(c, &field_path(index), root)
 }
 
 /// [`merkle_tree_check_root`] on a general path.
 pub fn merkle_tree_check_root_at(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     path: &[LedgerKey],
     root: &LedgerValue,
-) -> Wire3<FieldT, Public> {
+) -> Wire<FieldT, Public> {
     let (wires, value) = mint_read(c, vec![BOOL_ATOM]);
     label_read(c, &value, "a merkle-tree root check", path);
     emit(
@@ -539,19 +539,19 @@ pub fn merkle_tree_check_root_at(
 /// `eq` on the current root — which is the whole difference between the two
 /// tree ADTs at read time.
 pub fn historic_merkle_tree_check_root(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     index: u8,
     root: &LedgerValue,
-) -> Wire3<FieldT, Public> {
+) -> Wire<FieldT, Public> {
     historic_merkle_tree_check_root_at(c, &field_path(index), root)
 }
 
 /// [`historic_merkle_tree_check_root`] on a general path.
 pub fn historic_merkle_tree_check_root_at(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     path: &[LedgerKey],
     root: &LedgerValue,
-) -> Wire3<FieldT, Public> {
+) -> Wire<FieldT, Public> {
     let (wires, value) = mint_read(c, vec![BOOL_ATOM]);
     label_read(c, &value, "a historic-merkle-tree root check", path);
     emit(

@@ -34,9 +34,9 @@
 //! 256-byte event payload. `Misc` is the same tag-10 event as the events
 //! experiment (name(32) ‖ payload(256) = 288 serialized bytes).
 
-use minocrab::v3::{Circuit3, FieldT, Wire3};
+use minocrab::{Circuit, FieldT, Wire};
 use minocrab::{Private, Public};
-use minocrab_std::v3::{contract, event, label, Disclose, Discloses, Serializer, B32};
+use minocrab_std::{contract, event, label, Disclose, Discloses, Serializer, B32};
 use signet_responder_interface::{RespondBidirectionalEventV1, Signature, SignatureRespondedEventV1};
 use signet_signer_interface::{RequestId, SignBidirectionalEventNotification};
 
@@ -73,7 +73,7 @@ label! {
 
 /// `emit (Misc { name: pad(32, name), payload })` — the serializer holds
 /// name ‖ payload bytes, zero-padded to the 288-byte Misc.
-fn emit_misc(c: &mut Circuit3, s: Serializer<Public>) {
+fn emit_misc(c: &mut Circuit, s: Serializer<Public>) {
     // Kept even though guard threading no longer uses it: dropping this
     // `Copy` would renumber every later identifier, moving the ZKIR
     // (notes/edsl-trim.org §B, the removal's zero-movement gate).
@@ -82,7 +82,7 @@ fn emit_misc(c: &mut Circuit3, s: Serializer<Public>) {
     event::emit(c, MISC_VERSION, MISC_TAG, &serialized);
 }
 
-fn misc_name(c: &mut Circuit3, name: &str) -> Serializer<Public> {
+fn misc_name(c: &mut Circuit, name: &str) -> Serializer<Public> {
     let mut padded = [0u8; 32];
     padded[..name.len()].copy_from_slice(name.as_bytes());
     let mut s = Serializer::<Public>::new();
@@ -104,10 +104,10 @@ struct DisclosedSignature {
     x: B32<Public>,
     y: B32<Public>,
     s: B32<Public>,
-    recovery_id: Wire3<FieldT, Public>,
+    recovery_id: Wire<FieldT, Public>,
 }
 
-fn disclose_signature(c: &mut Circuit3, sig: Signature<Private>) -> DisclosedSignature {
+fn disclose_signature(c: &mut Circuit, sig: Signature<Private>) -> DisclosedSignature {
     DisclosedSignature {
         x: sig.big_r.x.disclose_as::<SignatureBigRx>(c),
         y: sig.big_r.y.disclose_as::<SignatureBigRy>(c),
@@ -143,7 +143,7 @@ impl Signer {
     /// checks the whole signature the same way.
     #[circuit]
     pub fn sign_bidirectional(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         request_id: RequestId<Private>,
         notification: SignBidirectionalEventNotification<Private>,
     ) -> Discloses<(EmittedRequestId, NotificationVersion, NotificationPayload)> {
@@ -177,7 +177,7 @@ impl Responder {
     /// field limbs.
     #[circuit]
     pub fn respond(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         signature_responded_event: SignatureRespondedEventV1<Private>,
     ) -> Discloses<(
         EmittedRequestId,
@@ -209,7 +209,7 @@ impl Responder {
     /// emitted as eight little-endian bytes each, Compact's `as Bytes<8>`.
     #[circuit]
     pub fn respond_bidirectional(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         respond_bidirectional_event: RespondBidirectionalEventV1<Private>,
     ) -> Discloses<(
         EmittedRequestId,

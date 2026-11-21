@@ -20,8 +20,8 @@ use midnight_transient_crypto::proofs::{KeyLocation, ProofPreimage};
 use midnight_transient_crypto::repr::FieldRepr;
 use minocrab::Fr;
 use minocrab_contracts::events;
-use minocrab_sim::v3::{assert_call_compatible, simulate};
-use minocrab_zkir::v3::IrSource;
+use minocrab_sim::{assert_call_compatible, simulate};
+use minocrab_zkir::IrSource;
 
 type VmOp = Op<ResultModeVerify, InMemoryDB>;
 
@@ -247,7 +247,7 @@ fn emit1_rejects_tampered_event_payload() {
 // ---- M11 stage 6: the Borsh twin ---------------------------------------------
 
 /// `events_borsh` emits THE SAME BYTES as `events`, built out of declared
-/// [`minocrab_std::v3::borsh`] types instead of hand-rolled `Serializer`
+/// [`minocrab_std::borsh`] types instead of hand-rolled `Serializer`
 /// pushes — and the equality is BYTE-IDENTICAL ZKIR, not merely equal
 /// payloads.
 ///
@@ -260,7 +260,7 @@ fn emit1_rejects_tampered_event_payload() {
 #[test]
 fn borsh_twins_are_byte_identical_to_the_originals() {
     use minocrab_contracts::events_borsh;
-    use minocrab_zkir::v3::to_zkir_string;
+    use minocrab_zkir::to_zkir_string;
     for (name, original, twin) in [
         ("base", events::base(), events_borsh::base()),
         ("emit1", events::emit_n(1), events_borsh::emit_n(1)),

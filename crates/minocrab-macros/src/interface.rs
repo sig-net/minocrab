@@ -35,7 +35,7 @@
 //! stands for.
 //!
 //! THINNESS RULE, as for every macro here: the expansion contains no
-//! `Circuit3` method call — `c` is threaded to `minocrab_ledger::call` and
+//! `Circuit` method call — `c` is threaded to `minocrab_ledger::call` and
 //! nothing else.
 //!
 //! WHAT THE EXPANSION DOES NOT CONTAIN: an address. `at_field` names a
@@ -328,8 +328,8 @@ fn screaming_snake_case(name: &str) -> String {
 /// The handle struct and its inherent impl.
 fn emit(vis: &Visibility, name: &Ident, attrs: &[Attribute], circuits: &[Circuit]) -> TokenStream {
     let ledger = quote!(::minocrab_ledger);
-    let std_v3 = quote!(::minocrab_std::v3);
-    let private = quote!(#std_v3::__private);
+    let std_root = quote!(::minocrab_std);
+    let private = quote!(#std_root::__private);
 
     let consts = circuits.iter().map(|circuit| {
         let const_ident = &circuit.const_ident;
@@ -358,7 +358,7 @@ fn emit(vis: &Visibility, name: &Ident, attrs: &[Attribute], circuits: &[Circuit
             #( #attrs )*
             pub fn #ident(
                 self,
-                c: &mut #private::Circuit3,
+                c: &mut #private::Circuit,
                 #( #names: #types, )*
             ) -> #result {
                 #ledger::call(c, self.callee, Self::#const_ident, (#( #names, )*))
@@ -399,7 +399,7 @@ fn emit(vis: &Visibility, name: &Ident, attrs: &[Attribute], circuits: &[Circuit
             }
 
             /// The callee's address as data.
-            pub fn at(address: #std_v3::ContractAddress<#private::Public>) -> Self {
+            pub fn at(address: #std_root::ContractAddress<#private::Public>) -> Self {
                 Self { callee: #ledger::Callee::Pinned(address.limbs()) }
             }
 
@@ -408,7 +408,7 @@ fn emit(vis: &Visibility, name: &Ident, attrs: &[Attribute], circuits: &[Circuit
             /// compactc's receiver-first evaluation order is visible.
             pub fn pin(
                 self,
-                c: &mut #private::Circuit3,
+                c: &mut #private::Circuit,
             ) -> Self {
                 Self { callee: #ledger::Callee::pin(self.callee, c) }
             }
@@ -452,8 +452,8 @@ mod tests {
         let expanded = expansion(token_fixture());
         assert!(!expanded.contains("c ."), "expansion calls a method on the circuit:\n{expanded}");
         assert!(
-            !expanded.contains("Circuit3 ::"),
-            "expansion calls a Circuit3 associated function:\n{expanded}"
+            !expanded.contains("Circuit ::"),
+            "expansion calls a Circuit associated function:\n{expanded}"
         );
     }
 

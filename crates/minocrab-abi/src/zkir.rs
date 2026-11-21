@@ -7,13 +7,13 @@
 //! flattened argument list at circuit entry). That prefix is therefore the
 //! callee's argument ABI as the PROVER sees it — not as the compiler's JSON
 //! describes it — so comparing it against
-//! [`Prim::constraint`](minocrab::v3::Prim::constraint) run over an
+//! [`Prim::constraint`](minocrab::Prim::constraint) run over an
 //! interface crate's own types checks the interface against the artifact
 //! that will actually be verified.
 
 use midnight_zkir_v3::ir::Operand;
-use minocrab::v3::LimbConstraint;
-use minocrab_zkir::v3::{Instruction, IrSource};
+use minocrab::LimbConstraint;
+use minocrab_zkir::{Instruction, IrSource};
 
 /// One constraint of a circuit's opening prefix: the slot it constrains
 /// (by declared input name) and the constraint itself, keyed for
@@ -63,7 +63,7 @@ impl ZkirFacts {
 
     /// Read a `.zkir` file.
     pub fn read(path: &std::path::Path) -> Result<ZkirFacts, minocrab_zkir::Error> {
-        Ok(ZkirFacts::of(&minocrab_zkir::v3::read_zkir(path)?))
+        Ok(ZkirFacts::of(&minocrab_zkir::read_zkir(path)?))
     }
 }
 

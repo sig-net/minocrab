@@ -25,7 +25,7 @@ use midnight_transient_crypto::fab::{AlignmentExt, ValueReprAlignedValue};
 use midnight_transient_crypto::proofs::ProofPreimage;
 use minocrab::Fr;
 use minocrab_contracts::events::MISC_SIZE;
-use minocrab_zkir::v3::IrSource;
+use minocrab_zkir::IrSource;
 
 use crate::support::signet_call::{call_preimage, scalar_input};
 
@@ -137,5 +137,5 @@ pub fn corpus_signet_zkir(name: &str) -> IrSource {
         "{}/../../corpus/zkir/signet-midnight-integration-v026/packages/{package}/zkir/{name}.zkir",
         env!("CARGO_MANIFEST_DIR")
     );
-    minocrab_zkir::v3::read_zkir(&path).expect("corpus golden parses")
+    minocrab_zkir::read_zkir(&path).expect("corpus golden parses")
 }

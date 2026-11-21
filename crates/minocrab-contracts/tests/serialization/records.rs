@@ -21,7 +21,7 @@ use minocrab::{AlignmentAtom, Public};
 use minocrab_contracts::signet::SignBidirectionalEventV2;
 use minocrab_contracts::signet_v1::ETHEREUM_CAIP2_ID;
 use minocrab_contracts::{erc20_vault, erc20_vault_pending};
-use minocrab_std::v3::LedgerRepr;
+use minocrab_std::LedgerRepr;
 
 use crate::serialization::spec_types;
 use crate::serialization::spec_types::{

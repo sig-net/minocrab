@@ -26,7 +26,7 @@ Fifteen crates, the transitive closure (regular and build dependencies) of the c
 | `signet-responder-interface` | the signet responder's interface (the contract the MPC posts to) | its own version, 0.1.0 |
 | `minocrab-signet` | the Signet protocol for circuits: records, `Pending`, outbox | app crate, semver from 0.1.0 |
 
-`minocrab-sim` is in the set because every contract author needs it: it is the dev-dependency a circuit's tests run under, `#[circuit(max_k = …)]` expands to a test that calls `minocrab_sim::v3::assert_max_k`, and it carries the `minocrab rows` / `minocrab diff` CLI. Its dependencies are all in the set.
+`minocrab-sim` is in the set because every contract author needs it: it is the dev-dependency a circuit's tests run under, `#[circuit(max_k = …)]` expands to a test that calls `minocrab_sim::assert_max_k`, and it carries the `minocrab rows` / `minocrab diff` CLI. Its dependencies are all in the set.
 
 ## Stability
 
@@ -121,7 +121,7 @@ A single-crate `cargo publish --dry-run -p <crate>` only works once the crates b
 - `minocrab-std` is the only crate whose features change the docs (`macros`, default; and `borsh-schema`, off: nothing shipping links borsh). Its `[package.metadata.docs.rs] all-features = true` documents the schema module too. `minocrab-ir` and `minocrab-sim` carry an empty `unstable` feature, kept as an alias a downstream port names; it gates nothing.
 - No `rustdoc-args` are set. Nothing here uses `#[doc(cfg)]`, so `--cfg docsrs` would buy nothing.
 - Intra-doc links only reach a crate's own items and its direct dependencies. Neighbours across the stack that are not dependencies are named in plain backticks in the crate docs, deliberately.
-- Two gotchas worth knowing before writing more docs. **`effects[4]` in prose is a markdown link**: rustdoc reports "unresolved link to `4`"; write `effects\[4\]`. And a `//!` block in a file whose `pub mod` declaration also carries a `///` doc gets resolved in the PARENT module's scope, so such a file spells its header links absolutely (`crate::v3::hash::persistent_hash`).
+- Two gotchas worth knowing before writing more docs. **`effects[4]` in prose is a markdown link**: rustdoc reports "unresolved link to `4`"; write `effects\[4\]`. And a `//!` block in a file whose `pub mod` declaration also carries a `///` doc gets resolved in the PARENT module's scope, so such a file spells its header links absolutely (`crate::hash::persistent_hash`).
 
 ## rust-version
 

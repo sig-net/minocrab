@@ -13,7 +13,7 @@
 //! emits nothing for the rest (the padding included).
 //!
 //! THE LEAN FORM splits once per byte, as one chain down the limb
-//! (`minocrab_std::v3::explode_limb`), stopped at the last byte read. Splitting
+//! (`minocrab_std::explode_limb`), stopped at the last byte read. Splitting
 //! a whole `Bytes<N>` with `BytesN::to_le_bytes` and reading a few of its
 //! bytes is neither: under the compactc profile, which does not delete dead
 //! instructions, every unread split stays in the circuit and is paid for
@@ -26,16 +26,16 @@
 //! and widths are const generics, so a field that does not fit is a compile
 //! error.
 
-use minocrab::v3::{Circuit3, FieldT, Wire3};
-use minocrab_std::v3::{rebuild_limb, BytesN, Vis3, B32};
+use minocrab::{Circuit, FieldT, Wire};
+use minocrab_std::{rebuild_limb, BytesN, Vis, B32};
 
 /// The bytes of a packed struct (`Bytes<N>`, the struct at the start,
 /// zero-padded), read field by field in compactc's shape.
-pub struct Packed<'a, V: Vis3, const N: usize> {
+pub struct Packed<'a, V: Vis, const N: usize> {
     bytes: &'a BytesN<V, N>,
 }
 
-impl<'a, V: Vis3, const N: usize> Packed<'a, V, N> {
+impl<'a, V: Vis, const N: usize> Packed<'a, V, N> {
     pub fn new(bytes: &'a BytesN<V, N>) -> Self {
         Packed { bytes }
     }
@@ -43,7 +43,7 @@ impl<'a, V: Vis3, const N: usize> Packed<'a, V, N> {
     /// `bytes-ref(bytes, at)`: byte `at` of the string, 0 first. Byte `at`
     /// lives in the limb `at / 31` from the END of the slot order (the last
     /// limb holds bytes 0..31), `at % 31` bytes up.
-    fn byte_at(&self, c: &mut Circuit3, at: usize) -> Wire3<FieldT, V> {
+    fn byte_at(&self, c: &mut Circuit, at: usize) -> Wire<FieldT, V> {
         let limbs = self.bytes.limbs();
         let limb = limbs[limbs.len() - 1 - at / 31];
         let (shifted, _) = c.div_mod_power_of_two(limb, 8 * (at % 31) as u32);
@@ -51,7 +51,7 @@ impl<'a, V: Vis3, const N: usize> Packed<'a, V, N> {
         byte
     }
 
-    fn bytes_at(&self, c: &mut Circuit3, at: usize, len: usize) -> Vec<Wire3<FieldT, V>> {
+    fn bytes_at(&self, c: &mut Circuit, at: usize, len: usize) -> Vec<Wire<FieldT, V>> {
         (at..at + len).map(|i| self.byte_at(c, i)).collect()
     }
 
@@ -59,7 +59,7 @@ impl<'a, V: Vis3, const N: usize> Packed<'a, V, N> {
     /// 0.36 also constrains the byte to 0 or 1 (`constrain_to_boolean`), so a
     /// byte above 1 makes the call unprovable rather than reading false; the
     /// byte is then named (`copy`) and compared with 1.
-    pub fn boolean<const AT: usize>(&self, c: &mut Circuit3) -> Wire3<FieldT, V> {
+    pub fn boolean<const AT: usize>(&self, c: &mut Circuit) -> Wire<FieldT, V> {
         const { assert!(AT < N, "a Boolean field must lie inside the Bytes<N>") };
         let byte = self.byte_at(c, AT);
         let byte = c.assert_boolean(byte);
@@ -76,7 +76,7 @@ impl<'a, V: Vis3, const N: usize> Packed<'a, V, N> {
     ///
     /// A `Uint<w>` whose width is not a whole number of bytes casts with a
     /// different check, and is not covered here.
-    pub fn uint<const AT: usize, const LEN: usize>(&self, c: &mut Circuit3) -> Wire3<FieldT, V> {
+    pub fn uint<const AT: usize, const LEN: usize>(&self, c: &mut Circuit) -> Wire<FieldT, V> {
         const {
             assert!(LEN >= 1 && LEN <= 31, "a Uint field here is 1..=31 bytes");
             assert!(AT + LEN <= N, "a Uint field must lie inside the Bytes<N>");
@@ -91,7 +91,7 @@ impl<'a, V: Vis3, const N: usize> Packed<'a, V, N> {
     /// of a `Bytes<32>` in slot order. The high limb is the slice's last
     /// byte (named by a `copy`), the low limb its first 31 bytes folded by
     /// `reconstitute_field`. No range check: the bytes are bytes.
-    pub fn bytes32<const AT: usize>(&self, c: &mut Circuit3) -> B32<V> {
+    pub fn bytes32<const AT: usize>(&self, c: &mut Circuit) -> B32<V> {
         const { assert!(AT + 32 <= N, "a Bytes<32> field must lie inside the Bytes<N>") };
         let bytes = self.bytes_at(c, AT, 32);
         let hi = limb_of(c, &bytes[31..]);
@@ -103,7 +103,7 @@ impl<'a, V: Vis3, const N: usize> Packed<'a, V, N> {
 /// One limb from its bytes (least significant first), as compactc builds a
 /// `Bytes` limb: a lone byte is named by a `copy`, more are folded by
 /// `reconstitute_field` ([`rebuild_limb`]).
-fn limb_of<V: Vis3>(c: &mut Circuit3, bytes: &[Wire3<FieldT, V>]) -> Wire3<FieldT, V> {
+fn limb_of<V: Vis>(c: &mut Circuit, bytes: &[Wire<FieldT, V>]) -> Wire<FieldT, V> {
     match bytes {
         [byte] => c.copy(*byte),
         _ => rebuild_limb(c, bytes),

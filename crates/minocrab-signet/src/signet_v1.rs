@@ -41,12 +41,12 @@
 //! }
 //! ```
 
-use minocrab::v3::{Circuit3, FieldT, Wire3};
+use minocrab::{Circuit, FieldT, Wire};
 use minocrab::{AlignmentAtom, Fr, Public};
-use minocrab_std::v3::hash::upgrade_from_transient;
-use minocrab_std::v3::{
+use minocrab_std::hash::upgrade_from_transient;
+use minocrab_std::{
     bytes_limbs, bytes_literal_limbs, secp256k1_ecdsa_verify, BoundedUint, Bytes, BytesN,
-    CircuitArg, ContractAddress, LedgerRepr, Secp256k1EcdsaSignature, Uint, Vis3, B32,
+    CircuitArg, ContractAddress, LedgerRepr, Secp256k1EcdsaSignature, Uint, Vis, B32,
 };
 use signet_responder_interface::Signature;
 
@@ -71,9 +71,9 @@ fn bytes(length: u32) -> AlignmentAtom {
 /// `struct EvmCalldata<#maxWords>` — selector (`Bytes<4>`), used-word
 /// count (`Uint<16>`), and the canonical big-endian ABI words.
 #[derive(Clone)]
-pub struct EvmCalldata<V: Vis3, const WORDS: usize> {
-    pub selector: Wire3<FieldT, V>,
-    pub no_words: Wire3<FieldT, V>,
+pub struct EvmCalldata<V: Vis, const WORDS: usize> {
+    pub selector: Wire<FieldT, V>,
+    pub no_words: Wire<FieldT, V>,
     pub words: [B32<V>; WORDS],
 }
 
@@ -82,22 +82,22 @@ pub struct EvmCalldata<V: Vis3, const WORDS: usize> {
 /// `Maybe<EvmCalldata<n>>`: the tag is `calldata_is_some`, a `none` value
 /// carries a zeroed calldata.
 #[derive(Clone)]
-pub struct EvmType2TxParams<V: Vis3, const WORDS: usize> {
-    pub chain_id: Wire3<FieldT, V>,
-    pub nonce: Wire3<FieldT, V>,
-    pub max_priority_fee_per_gas: Wire3<FieldT, V>,
-    pub max_fee_per_gas: Wire3<FieldT, V>,
-    pub gas_limit: Wire3<FieldT, V>,
-    pub to: Wire3<FieldT, V>,
-    pub value: Wire3<FieldT, V>,
-    pub calldata_is_some: Wire3<FieldT, V>,
+pub struct EvmType2TxParams<V: Vis, const WORDS: usize> {
+    pub chain_id: Wire<FieldT, V>,
+    pub nonce: Wire<FieldT, V>,
+    pub max_priority_fee_per_gas: Wire<FieldT, V>,
+    pub max_fee_per_gas: Wire<FieldT, V>,
+    pub gas_limit: Wire<FieldT, V>,
+    pub to: Wire<FieldT, V>,
+    pub value: Wire<FieldT, V>,
+    pub calldata_is_some: Wire<FieldT, V>,
     pub calldata: EvmCalldata<V, WORDS>,
-    pub access_list_entry_count: Wire3<FieldT, V>,
+    pub access_list_entry_count: Wire<FieldT, V>,
 }
 
-impl<V: Vis3, const WORDS: usize> EvmType2TxParams<V, WORDS> {
+impl<V: Vis, const WORDS: usize> EvmType2TxParams<V, WORDS> {
     /// FAB limbs, slot order (one per atom except `bytes<32>` words = 2).
-    pub fn limbs(&self) -> Vec<Wire3<FieldT, V>> {
+    pub fn limbs(&self) -> Vec<Wire<FieldT, V>> {
         let mut l = vec![
             self.chain_id,
             self.nonce,
@@ -137,7 +137,7 @@ pub const TX_PARAM_TYPE_EVM_TYPE2: u64 = 0;
 /// never a false accept. NAMED fields, so the two same-shaped halves cannot
 /// be transposed positionally (newtype-survey A7's sub-case).
 #[derive(Clone, Copy)]
-pub struct Secp256k1SigLimbs<V: Vis3> {
+pub struct Secp256k1SigLimbs<V: Vis> {
     pub big_r_x: B32<V>,
     pub s: B32<V>,
 }
@@ -152,12 +152,12 @@ pub struct Secp256k1SigLimbs<V: Vis3> {
 /// two copies of the ECDSA plumbing. The extraction is instruction-for-
 /// instruction identical to the inlined original (row and interface
 /// snapshots, and every vault differential suite, say so).
-pub fn verify_attestation_signature<V: Vis3>(
-    c: &mut Circuit3,
+pub fn verify_attestation_signature<V: Vis>(
+    c: &mut Circuit,
     digest: &B32<V>,
     sig: &Secp256k1SigLimbs<V>,
-    mpc_response_key: minocrab::v3::Wire3<minocrab::v3::Secp256k1PointT, V>,
-) -> Wire3<FieldT, V> {
+    mpc_response_key: minocrab::Wire<minocrab::Secp256k1PointT, V>,
+) -> Wire<FieldT, V> {
     c.region("signet: attestation verify (ecdsa)", |c| {
         let r_typed = sig.big_r_x.to_typed(c);
         let s_typed = sig.s.to_typed(c);
@@ -171,25 +171,25 @@ pub fn verify_attestation_signature<V: Vis3>(
 
 /// `abiWordToUint128(word)` — asserts the leading 16 bytes are zero and
 /// folds the trailing 16 big-endian bytes back into a `Uint<128>`.
-pub fn abi_word_to_uint128<V: Vis3>(c: &mut Circuit3, word: &B32<V>) -> Wire3<FieldT, V> {
+pub fn abi_word_to_uint128<V: Vis>(c: &mut Circuit, word: &B32<V>) -> Wire<FieldT, V> {
     abi_word_to_uint128_with(c, None, word)
 }
 
 /// [`abi_word_to_uint128`] inside a conditional: the canonical-word assert
 /// only binds when the branch is taken.
-pub fn abi_word_to_uint128_guarded<V: Vis3>(
-    c: &mut Circuit3,
-    guard: Wire3<FieldT, V>,
+pub fn abi_word_to_uint128_guarded<V: Vis>(
+    c: &mut Circuit,
+    guard: Wire<FieldT, V>,
     word: &B32<V>,
-) -> Wire3<FieldT, V> {
+) -> Wire<FieldT, V> {
     abi_word_to_uint128_with(c, Some(guard), word)
 }
 
-fn abi_word_to_uint128_with<V: Vis3>(
-    c: &mut Circuit3,
-    guard: Option<Wire3<FieldT, V>>,
+fn abi_word_to_uint128_with<V: Vis>(
+    c: &mut Circuit,
+    guard: Option<Wire<FieldT, V>>,
     word: &B32<V>,
-) -> Wire3<FieldT, V> {
+) -> Wire<FieldT, V> {
     c.region("abi words", |c| {
         // Reversed, the BE value's bytes land at string positions 0..15
         // (LSB first) and the zero head at 16..31: the value is the
@@ -220,7 +220,7 @@ fn abi_word_to_uint128_with<V: Vis3>(
 /// circuit constants this port spells them. The indices are
 /// `signet_protocol::HashDomain`'s (the one definition, shared with the
 /// off-circuit `signet-hashing`); this module only casts them to the `u64`
-/// `Circuit3::constant` takes.
+/// `Circuit::constant` takes.
 pub mod hash_domain {
     use signet_protocol::HashDomain;
     pub const REQUEST_ID: u64 = HashDomain::RequestId as u64;
@@ -270,7 +270,7 @@ pub type ExecutionDest<V> = BytesN<V, EXECUTION_DEST_LEN>;
 /// of ANY `N` — one limb at 31 bytes or fewer ([`Bytes`]), FAB-limbed above
 /// that ([`BytesN`]). The record is generic over the schema TYPE so one
 /// definition serves the vault's 2-, 34-, 36- and 38-byte schemas.
-pub trait SchemaBytes<V: Vis3>: Clone {
+pub trait SchemaBytes<V: Vis>: Clone {
     /// The schema's byte width.
     const LEN: usize;
     /// Its FAB limb count.
@@ -280,46 +280,46 @@ pub trait SchemaBytes<V: Vis3>: Clone {
         vec![bytes(Self::LEN as u32)]
     }
     /// Its limbs in slot order.
-    fn limbs(&self) -> Vec<Wire3<FieldT, V>>;
+    fn limbs(&self) -> Vec<Wire<FieldT, V>>;
     /// The schema as constant limbs, from its string bytes.
-    fn literal(c: &mut Circuit3, bytes: &[u8]) -> Self;
+    fn literal(c: &mut Circuit, bytes: &[u8]) -> Self;
     /// The same limbs at the other visibility (a disclosed record).
-    fn from_limbs(limbs: Vec<Wire3<FieldT, V>>) -> Self;
+    fn from_limbs(limbs: Vec<Wire<FieldT, V>>) -> Self;
 }
 
-impl<V: Vis3, const N: usize> SchemaBytes<V> for Bytes<N, V> {
+impl<V: Vis, const N: usize> SchemaBytes<V> for Bytes<N, V> {
     const LEN: usize = N;
     const LIMBS: usize = 1;
 
-    fn limbs(&self) -> Vec<Wire3<FieldT, V>> {
+    fn limbs(&self) -> Vec<Wire<FieldT, V>> {
         vec![self.field()]
     }
 
-    fn literal(c: &mut Circuit3, bytes: &[u8]) -> Self {
+    fn literal(c: &mut Circuit, bytes: &[u8]) -> Self {
         assert_eq!(bytes.len(), N, "Bytes<{N}> literal length");
         let w = c.constant(Fr::from_le_bytes(bytes).expect("at most 31 bytes fit a limb"));
         Bytes::from_field_unchecked(V::from_public(w))
     }
 
-    fn from_limbs(limbs: Vec<Wire3<FieldT, V>>) -> Self {
+    fn from_limbs(limbs: Vec<Wire<FieldT, V>>) -> Self {
         assert_eq!(limbs.len(), 1, "Bytes<{N}> is one limb");
         Bytes::from_field_unchecked(limbs[0])
     }
 }
 
-impl<V: Vis3, const N: usize> SchemaBytes<V> for BytesN<V, N> {
+impl<V: Vis, const N: usize> SchemaBytes<V> for BytesN<V, N> {
     const LEN: usize = N;
     const LIMBS: usize = BytesN::<V, N>::LIMBS;
 
-    fn limbs(&self) -> Vec<Wire3<FieldT, V>> {
+    fn limbs(&self) -> Vec<Wire<FieldT, V>> {
         BytesN::limbs(self).to_vec()
     }
 
-    fn literal(c: &mut Circuit3, bytes: &[u8]) -> Self {
+    fn literal(c: &mut Circuit, bytes: &[u8]) -> Self {
         BytesN::literal(c, bytes)
     }
 
-    fn from_limbs(limbs: Vec<Wire3<FieldT, V>>) -> Self {
+    fn from_limbs(limbs: Vec<Wire<FieldT, V>>) -> Self {
         BytesN::from_limbs(limbs)
     }
 }
@@ -337,27 +337,27 @@ impl<V: Vis3, const N: usize> SchemaBytes<V> for BytesN<V, N> {
 /// `BytesN<V, 34>` are the same limbs under the same atom — the typed API's
 /// records are byte-identical to the compat port's.
 #[derive(Clone)]
-pub struct SchemaLiteral<V: Vis3, const N: usize> {
+pub struct SchemaLiteral<V: Vis, const N: usize> {
     /// Invariant: `limbs.len() == bytes_limbs(N)`, leftover chunk first.
-    limbs: Vec<Wire3<FieldT, V>>,
+    limbs: Vec<Wire<FieldT, V>>,
 }
 
-impl<V: Vis3, const N: usize> SchemaBytes<V> for SchemaLiteral<V, N> {
+impl<V: Vis, const N: usize> SchemaBytes<V> for SchemaLiteral<V, N> {
     const LEN: usize = N;
     const LIMBS: usize = bytes_limbs(N);
 
-    fn limbs(&self) -> Vec<Wire3<FieldT, V>> {
+    fn limbs(&self) -> Vec<Wire<FieldT, V>> {
         self.limbs.clone()
     }
 
-    fn literal(c: &mut Circuit3, bytes: &[u8]) -> Self {
+    fn literal(c: &mut Circuit, bytes: &[u8]) -> Self {
         assert_eq!(bytes.len(), N, "a Bytes<{N}> schema literal is {N} bytes");
         SchemaLiteral {
             limbs: bytes_literal_limbs(c, bytes),
         }
     }
 
-    fn from_limbs(limbs: Vec<Wire3<FieldT, V>>) -> Self {
+    fn from_limbs(limbs: Vec<Wire<FieldT, V>>) -> Self {
         assert_eq!(limbs.len(), Self::LIMBS, "a Bytes<{N}> schema is {} limbs", Self::LIMBS);
         SchemaLiteral { limbs }
     }
@@ -379,7 +379,7 @@ impl<V: Vis3, const N: usize> SchemaBytes<V> for SchemaLiteral<V, N> {
 /// own five are [`schema`].
 pub trait OutputSchema: 'static {
     /// The schema as a record field at visibility `V`.
-    type At<V: Vis3>: SchemaBytes<V>;
+    type At<V: Vis>: SchemaBytes<V>;
 
     /// The schema's bytes — the JSON the MPC parses, and the literal the
     /// record carries.
@@ -404,7 +404,7 @@ macro_rules! output_schema {
         $vis struct $name;
 
         impl $crate::signet_v1::OutputSchema for $name {
-            type At<V: ::minocrab_std::v3::Vis3> =
+            type At<V: ::minocrab_std::Vis> =
                 $crate::signet_v1::SchemaLiteral<V, { $bytes.len() }>;
             const BYTES: &'static [u8] = $bytes;
         }
@@ -452,15 +452,15 @@ pub mod schema {
 /// `respondSerializationSchema` is `Bytes<0>`: present in the alignment,
 /// absent from the limbs, so it has no field here.
 #[derive(Clone)]
-pub struct SignBidirectionalEventV1<V: Vis3, const WORDS: usize, S: SchemaBytes<V>> {
-    pub key_version: Wire3<FieldT, V>,
+pub struct SignBidirectionalEventV1<V: Vis, const WORDS: usize, S: SchemaBytes<V>> {
+    pub key_version: Wire<FieldT, V>,
     pub sender: ContractAddress<V>,
     pub path: SigningPath<V>,
-    pub algo: Wire3<FieldT, V>,
-    pub tx_param_type: Wire3<FieldT, V>,
+    pub algo: Wire<FieldT, V>,
+    pub tx_param_type: Wire<FieldT, V>,
     pub tx_params: EvmType2TxParams<V, WORDS>,
     pub execution_dest: ExecutionDest<V>,
-    pub signature_dest: Wire3<FieldT, V>,
+    pub signature_dest: Wire<FieldT, V>,
     /// `params: Bytes<64>` — 3 limbs `[2, 31, 31]`, zero-fill.
     pub params: BytesN<V, PARAMS_LEN>,
     pub output_deserialization_schema: S,
@@ -469,7 +469,7 @@ pub struct SignBidirectionalEventV1<V: Vis3, const WORDS: usize, S: SchemaBytes<
 /// The record's FAB slot layout: each field's first slot, by summing the
 /// widths before it — the order [`SignBidirectionalEventV1::limbs`] emits.
 pub mod layout {
-    use minocrab_std::v3::bytes_limbs;
+    use minocrab_std::bytes_limbs;
 
     pub const KEY_VERSION: usize = 0;
     /// `sender: ContractAddress` — `[hi, lo]`.
@@ -522,7 +522,7 @@ pub mod layout {
     }
 }
 
-impl<V: Vis3, const WORDS: usize, S: SchemaBytes<V>> SignBidirectionalEventV1<V, WORDS, S> {
+impl<V: Vis, const WORDS: usize, S: SchemaBytes<V>> SignBidirectionalEventV1<V, WORDS, S> {
     /// The record's FAB limb count.
     pub const LIMBS: usize = layout::limbs(WORDS, S::LIMBS);
 
@@ -558,7 +558,7 @@ impl<V: Vis3, const WORDS: usize, S: SchemaBytes<V>> SignBidirectionalEventV1<V,
     }
 
     /// The record's FAB limbs, slot order ([`Self::LIMBS`] of them).
-    pub fn limbs(&self) -> Vec<Wire3<FieldT, V>> {
+    pub fn limbs(&self) -> Vec<Wire<FieldT, V>> {
         let mut l = vec![
             self.key_version,
             self.sender.bytes().hi,
@@ -581,7 +581,7 @@ impl<V: Vis3, const WORDS: usize, S: SchemaBytes<V>> SignBidirectionalEventV1<V,
 /// What the LEDGER holds a V1 request as: the limbs of
 /// [`SignBidirectionalEventV1`] in slot order, under its atoms. The map that
 /// stores a request and the circuit that reads it back share this one impl.
-pub struct EventRecordV1<const WORDS: usize, S: SchemaBytes<Public>>(Vec<Wire3<FieldT, Public>>, std::marker::PhantomData<S>);
+pub struct EventRecordV1<const WORDS: usize, S: SchemaBytes<Public>>(Vec<Wire<FieldT, Public>>, std::marker::PhantomData<S>);
 
 impl<const WORDS: usize, S: SchemaBytes<Public>> EventRecordV1<WORDS, S> {
     pub const LIMBS: usize = layout::limbs(WORDS, S::LIMBS);
@@ -605,13 +605,13 @@ impl<const WORDS: usize, S: SchemaBytes<Public>> EventRecordV1<WORDS, S> {
     }
 
     /// The raw limbs, slot order.
-    pub fn limbs(&self) -> &[Wire3<FieldT, Public>] {
+    pub fn limbs(&self) -> &[Wire<FieldT, Public>] {
         &self.0
     }
 }
 
-impl<const WORDS: usize, S: SchemaBytes<Public>> minocrab_std::v3::ProofWires for EventRecordV1<WORDS, S> {
-    fn push_wires(&self, out: &mut Vec<minocrab::v3::Val>) {
+impl<const WORDS: usize, S: SchemaBytes<Public>> minocrab_std::ProofWires for EventRecordV1<WORDS, S> {
+    fn push_wires(&self, out: &mut Vec<minocrab::Val>) {
         out.extend(self.0.iter().map(|w| w.val()));
     }
 }
@@ -621,11 +621,11 @@ impl<const WORDS: usize, S: SchemaBytes<Public>> LedgerRepr for EventRecordV1<WO
         SignBidirectionalEventV1::<Public, WORDS, S>::atoms()
     }
 
-    fn push_limbs(&self, _c: &mut Circuit3, limbs: &mut Vec<Wire3<FieldT, Public>>) {
+    fn push_limbs(&self, _c: &mut Circuit, limbs: &mut Vec<Wire<FieldT, Public>>) {
         limbs.extend_from_slice(&self.0);
     }
 
-    fn from_limbs(limbs: Vec<Wire3<FieldT, Public>>) -> Self {
+    fn from_limbs(limbs: Vec<Wire<FieldT, Public>>) -> Self {
         assert_eq!(limbs.len(), Self::LIMBS, "V1 event record takes {} limbs", Self::LIMBS);
         EventRecordV1(limbs, std::marker::PhantomData)
     }
@@ -637,9 +637,9 @@ impl<const WORDS: usize, S: SchemaBytes<Public>> LedgerRepr for EventRecordV1<WO
 /// != pad(32, "midnight response key")`); the other two (`signatureDest ==
 /// unused`, `params == 0`) are over constants here and fold away as they do
 /// in compactc's artifact.
-pub fn construct_sign_bidirectional_event_v1<V: Vis3, const WORDS: usize, S: SchemaBytes<V>>(
-    c: &mut Circuit3,
-    key_version: Wire3<FieldT, V>,
+pub fn construct_sign_bidirectional_event_v1<V: Vis, const WORDS: usize, S: SchemaBytes<V>>(
+    c: &mut Circuit,
+    key_version: Wire<FieldT, V>,
     sender: ContractAddress<V>,
     path: SigningPath<V>,
     tx_params: EvmType2TxParams<V, WORDS>,
@@ -654,9 +654,9 @@ pub fn construct_sign_bidirectional_event_v1<V: Vis3, const WORDS: usize, S: Sch
 /// two constants, which compactc folds away, so it is not emitted here
 /// either — the circuits' leakage surfaces stay twins. A path derived from
 /// an input (a deposit's depositor commitment) takes the checking form.
-pub fn construct_sign_bidirectional_event_v1_const_path<V: Vis3, const WORDS: usize, S: SchemaBytes<V>>(
-    c: &mut Circuit3,
-    key_version: Wire3<FieldT, V>,
+pub fn construct_sign_bidirectional_event_v1_const_path<V: Vis, const WORDS: usize, S: SchemaBytes<V>>(
+    c: &mut Circuit,
+    key_version: Wire<FieldT, V>,
     sender: ContractAddress<V>,
     path: SigningPath<V>,
     tx_params: EvmType2TxParams<V, WORDS>,
@@ -667,9 +667,9 @@ pub fn construct_sign_bidirectional_event_v1_const_path<V: Vis3, const WORDS: us
 }
 
 #[allow(clippy::too_many_arguments)]
-fn construct_sign_bidirectional_event_v1_with<V: Vis3, const WORDS: usize, S: SchemaBytes<V>>(
-    c: &mut Circuit3,
-    key_version: Wire3<FieldT, V>,
+fn construct_sign_bidirectional_event_v1_with<V: Vis, const WORDS: usize, S: SchemaBytes<V>>(
+    c: &mut Circuit,
+    key_version: Wire<FieldT, V>,
     sender: ContractAddress<V>,
     path: SigningPath<V>,
     tx_params: EvmType2TxParams<V, WORDS>,
@@ -733,8 +733,8 @@ fn construct_sign_bidirectional_event_v1_with<V: Vis3, const WORDS: usize, S: Sc
 /// folds the fold's `acc < noWords` against a literal, hashing exactly those
 /// words and no select; `None` is the runtime fold, one `less_than` and one
 /// select per capacity slot.
-pub fn calculate_evm_type2_tx_params_digest_v1<V: Vis3, const WORDS: usize>(
-    c: &mut Circuit3,
+pub fn calculate_evm_type2_tx_params_digest_v1<V: Vis, const WORDS: usize>(
+    c: &mut Circuit,
     tx: &EvmType2TxParams<V, WORDS>,
     words_used: Option<usize>,
 ) -> B32<V> {
@@ -791,12 +791,12 @@ pub fn calculate_evm_type2_tx_params_digest_v1<V: Vis3, const WORDS: usize>(
 /// `struct RequestIdPreimageV1` — the fields of a request that name ONE
 /// execution, in the record's order, with the transaction as its digest.
 #[derive(Clone)]
-pub struct RequestIdPreimageV1<V: Vis3> {
-    pub key_version: Wire3<FieldT, V>,
+pub struct RequestIdPreimageV1<V: Vis> {
+    pub key_version: Wire<FieldT, V>,
     pub sender: ContractAddress<V>,
     pub path: SigningPath<V>,
-    pub algo: Wire3<FieldT, V>,
-    pub tx_param_type: Wire3<FieldT, V>,
+    pub algo: Wire<FieldT, V>,
+    pub tx_param_type: Wire<FieldT, V>,
     pub tx_params_digest: B32<V>,
     pub execution_dest: ExecutionDest<V>,
 }
@@ -804,7 +804,7 @@ pub struct RequestIdPreimageV1<V: Vis3> {
 /// `calculateRequestIdV1(preimage)` —
 /// `upgradeFromTransient(transientHash([HashDomain.requestId, preimage]))`
 /// over the preimage's thirteen field-aligned limbs.
-pub fn calculate_request_id_v1<V: Vis3>(c: &mut Circuit3, p: &RequestIdPreimageV1<V>) -> RequestId<V> {
+pub fn calculate_request_id_v1<V: Vis>(c: &mut Circuit, p: &RequestIdPreimageV1<V>) -> RequestId<V> {
     c.region("signet v1: request id (transientHash)", |c| {
         let tag = V::from_public(c.constant(hash_domain::REQUEST_ID));
         let mut limbs = vec![
@@ -829,8 +829,8 @@ pub fn calculate_request_id_v1<V: Vis3>(c: &mut Circuit3, p: &RequestIdPreimageV
 /// record with its transaction digested, then [`calculate_request_id_v1`].
 /// The source's `txParamType == evmType2` assert is over the constant the
 /// constructor wrote and folds away.
-pub fn calculate_evm_type2_request_id_v1<V: Vis3, const WORDS: usize, S: SchemaBytes<V>>(
-    c: &mut Circuit3,
+pub fn calculate_evm_type2_request_id_v1<V: Vis, const WORDS: usize, S: SchemaBytes<V>>(
+    c: &mut Circuit,
     request: &SignBidirectionalEventV1<V, WORDS, S>,
     words_used: Option<usize>,
 ) -> RequestId<V> {
@@ -865,7 +865,7 @@ pub fn calculate_evm_type2_request_id_v1<V: Vis3, const WORDS: usize, S: SchemaB
 /// held equal by the parity vault's `queueAttestation` differential
 /// (compactc's argument is the module's struct, slot for slot).
 #[derive(Clone, CircuitArg)]
-pub struct RespondBidirectionalEventV1<V: Vis3> {
+pub struct RespondBidirectionalEventV1<V: Vis> {
     pub request_id: RequestId<V>,
     pub block_height: Uint<64, V>,
     pub output_kind: OutputKind<V>,
@@ -880,9 +880,9 @@ pub struct RespondBidirectionalEventV1<V: Vis3> {
 /// serializedOutput]))`. `output_limbs` are the output's FAB limbs (none for
 /// `Bytes<0>`, one for `Bytes<1>`, `[hi, lo]` for `Bytes<32>`); the width is
 /// not in this hash, it is committed beside it in the attestation digest.
-pub fn calculate_attested_output_hash_v1<V: Vis3>(
-    c: &mut Circuit3,
-    output_limbs: &[Wire3<FieldT, V>],
+pub fn calculate_attested_output_hash_v1<V: Vis>(
+    c: &mut Circuit,
+    output_limbs: &[Wire<FieldT, V>],
 ) -> B32<V> {
     c.region("signet v1: attested output hash (transientHash)", |c| {
         let tag = V::from_public(c.constant(hash_domain::ATTESTED_OUTPUT));
@@ -898,12 +898,12 @@ pub fn calculate_attested_output_hash_v1<V: Vis3>(
 /// `[HashDomain.attestationDigest, requestId, blockHeight, outputKind,
 /// serializedOutputLength, outputHash]`, then `upgradeFromTransient`. Every
 /// input is fixed-width, so one digest serves every output width.
-pub fn calculate_attestation_digest_v1<V: Vis3>(
-    c: &mut Circuit3,
+pub fn calculate_attestation_digest_v1<V: Vis>(
+    c: &mut Circuit,
     request_id: &RequestId<V>,
-    block_height: Wire3<FieldT, V>,
-    output_kind: Wire3<FieldT, V>,
-    serialized_output_length: Wire3<FieldT, V>,
+    block_height: Wire<FieldT, V>,
+    output_kind: Wire<FieldT, V>,
+    serialized_output_length: Wire<FieldT, V>,
     output_hash: &B32<V>,
 ) -> B32<V> {
     c.region("signet v1: attestation digest (transientHash)", |c| {
@@ -933,11 +933,11 @@ pub fn calculate_attestation_digest_v1<V: Vis3>(
 /// [`secp256k1_ecdsa_verify`] ASSERTS the key is not the identity instead.
 /// Every caller asserts the result, so both reject the identity key and
 /// accept the same attestations.
-pub fn verify_respond_bidirectional_attestation_v1<V: Vis3>(
-    c: &mut Circuit3,
+pub fn verify_respond_bidirectional_attestation_v1<V: Vis>(
+    c: &mut Circuit,
     event: &RespondBidirectionalEventV1<V>,
-    mpc_response_key: Wire3<minocrab::v3::Secp256k1PointT, V>,
-) -> Wire3<FieldT, V> {
+    mpc_response_key: Wire<minocrab::Secp256k1PointT, V>,
+) -> Wire<FieldT, V> {
     let digest = calculate_attestation_digest_v1(
         c,
         &event.request_id,
@@ -961,12 +961,12 @@ pub fn verify_respond_bidirectional_attestation_v1<V: Vis3>(
 /// attestedOutputHash)` — whether `serializedOutput` is the output an
 /// attestation declares: its width equals `LEN` and its hash equals the
 /// attested hash.
-pub fn verify_attested_output_v1<V: Vis3, const LEN: usize>(
-    c: &mut Circuit3,
-    output_limbs: &[Wire3<FieldT, V>],
-    attested_output_length: Wire3<FieldT, V>,
+pub fn verify_attested_output_v1<V: Vis, const LEN: usize>(
+    c: &mut Circuit,
+    output_limbs: &[Wire<FieldT, V>],
+    attested_output_length: Wire<FieldT, V>,
     attested_output_hash: &B32<V>,
-) -> Wire3<FieldT, V> {
+) -> Wire<FieldT, V> {
     verify_attested_output_v1_at(c, LEN as u64, output_limbs, attested_output_length, attested_output_hash)
 }
 
@@ -975,13 +975,13 @@ pub fn verify_attested_output_v1<V: Vis3, const LEN: usize>(
 /// `<Call::Return as AbiReturn>::LEN`, an associated const, which stable
 /// Rust cannot pass as a const-generic argument. The two forms emit the same
 /// instructions.
-pub fn verify_attested_output_v1_at<V: Vis3>(
-    c: &mut Circuit3,
+pub fn verify_attested_output_v1_at<V: Vis>(
+    c: &mut Circuit,
     len: u64,
-    output_limbs: &[Wire3<FieldT, V>],
-    attested_output_length: Wire3<FieldT, V>,
+    output_limbs: &[Wire<FieldT, V>],
+    attested_output_length: Wire<FieldT, V>,
     attested_output_hash: &B32<V>,
-) -> Wire3<FieldT, V> {
+) -> Wire<FieldT, V> {
     c.region("signet v1: attested output check", |c| {
         let width = V::from_public(c.constant(len));
         let length_matches = c.test_eq(attested_output_length, width);
@@ -997,13 +997,13 @@ pub fn verify_attested_output_v1_at<V: Vis3>(
 /// mpcResponseKey)` — [`verify_attested_output_v1_at`] and
 /// [`verify_respond_bidirectional_attestation_v1`], both: the attestation is
 /// the MPC's AND `serializedOutput` is the output it attests.
-pub fn verify_respond_bidirectional_event_v1_at<V: Vis3>(
-    c: &mut Circuit3,
+pub fn verify_respond_bidirectional_event_v1_at<V: Vis>(
+    c: &mut Circuit,
     len: u64,
-    output_limbs: &[Wire3<FieldT, V>],
+    output_limbs: &[Wire<FieldT, V>],
     event: &RespondBidirectionalEventV1<V>,
-    mpc_response_key: Wire3<minocrab::v3::Secp256k1PointT, V>,
-) -> Wire3<FieldT, V> {
+    mpc_response_key: Wire<minocrab::Secp256k1PointT, V>,
+) -> Wire<FieldT, V> {
     let output_matches = verify_attested_output_v1_at(
         c,
         len,
@@ -1016,7 +1016,7 @@ pub fn verify_respond_bidirectional_event_v1_at<V: Vis3>(
 }
 
 /// `pad(64, "eip155:1")` as the record's `executionDest`.
-pub fn ethereum_caip2_id<V: Vis3>(c: &mut Circuit3) -> ExecutionDest<V> {
+pub fn ethereum_caip2_id<V: Vis>(c: &mut Circuit) -> ExecutionDest<V> {
     let mut padded = [0u8; EXECUTION_DEST_LEN];
     padded[..ETHEREUM_CAIP2_ID.len()].copy_from_slice(ETHEREUM_CAIP2_ID.as_bytes());
     let p = BytesN::<Public, EXECUTION_DEST_LEN>::literal(c, &padded);

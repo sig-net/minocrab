@@ -25,8 +25,8 @@ use midnight_transient_crypto::repr::FieldRepr;
 use minocrab::Fr;
 use minocrab_contracts::{events, xcall};
 use minocrab_ledger::ep_hash;
-use minocrab_sim::v3::{assert_call_compatible, simulate};
-use minocrab_zkir::v3::{to_zkir_string, IrSource};
+use minocrab_sim::{assert_call_compatible, simulate};
+use minocrab_zkir::{to_zkir_string, IrSource};
 
 type VmOp = Op<ResultModeVerify, InMemoryDB>;
 

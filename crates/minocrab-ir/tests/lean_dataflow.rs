@@ -11,8 +11,8 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use minocrab_ir::v3::passes::{defined_identifiers, operands, returned};
-use minocrab_zkir::v3::Operand;
+use minocrab_ir::passes::{defined_identifiers, operands, returned};
+use minocrab_zkir::Operand;
 
 fn collect_zkir(dir: &Path, out: &mut Vec<PathBuf>) {
     let Ok(entries) = std::fs::read_dir(dir) else {
@@ -49,7 +49,7 @@ fn rust_dump(corpus: &Path) -> String {
         if minocrab_zkir::major_version(path).expect("corpus reads") != 3 {
             continue;
         }
-        let ir = minocrab_zkir::v3::read_zkir(path).expect("corpus parses");
+        let ir = minocrab_zkir::read_zkir(path).expect("corpus parses");
         for (idx, ins) in ir.instructions.iter().enumerate() {
             out.push_str(&format!(
                 "{}\t{idx}\t{}\t{}\t{}\n",

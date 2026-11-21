@@ -34,14 +34,14 @@
 //! is a deployment, and none of the addresses, fee tiers or referral codes
 //! mean anything.
 
-use minocrab::v3::Circuit3;
+use minocrab::Circuit;
 use minocrab::{Private, Public};
 use minocrab_contracts::evm::{aave_v3, erc4626, erc721, uniswap_v3, Filed};
 use minocrab_contracts::evm_flow::{Contract, Failed, Owned, Pending, Succeeded};
 use minocrab_contracts::signet_v1::schema;
 use minocrab_contracts::signet_flow::{Requested, Settled, Signet};
-use minocrab_sim::v3::cost;
-use minocrab_std::v3::{
+use minocrab_sim::cost;
+use minocrab_std::{
     circuit, label, Bool, Bytes, CircuitArg, Disclose, Discloses, Ledger, LedgerRepr, Uint, B32,
 };
 
@@ -145,7 +145,7 @@ struct SupplyWithPermitRequest {
 /// anything from [`aave_v3`] or [`erc721`].
 #[circuit]
 fn mint_shares(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     evm_nonce: Uint<64>,
     vault: Contract<erc4626::Erc4626>,
     shares: Uint<64>,
@@ -168,7 +168,7 @@ fn mint_shares(
 /// succeeded — so what `complete` checks is the kind, the signature and the
 /// record, and the attested `assets` is what the mint COST.
 #[circuit]
-fn complete_mint(c: &mut Circuit3, ticket: Succeeded<MintShares>) -> Discloses<Settled> {
+fn complete_mint(c: &mut Circuit, ticket: Succeeded<MintShares>) -> Discloses<Settled> {
     let outcome = POSITIONS.mints.complete(c, ticket);
     let _requested = outcome.env.inner.amount;
     // A narrowed `uint256`: the assets the vault pulled.
@@ -181,7 +181,7 @@ fn complete_mint(c: &mut Circuit3, ticket: Succeeded<MintShares>) -> Discloses<S
 /// back as the recipient.
 #[circuit]
 fn refund_mint(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     ticket: Failed<MintShares>,
 ) -> Discloses<(Settled, Recipient)> {
     let (_owner, env, _assets) = POSITIONS.mints.refund_to_owner::<Recipient>(c, ticket);
@@ -196,7 +196,7 @@ fn refund_mint(
 /// word, so building it emits no instruction.
 #[circuit]
 fn swap_in(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     evm_nonce: Uint<64>,
     router: Contract<uniswap_v3::UniswapV3Router>,
     swap: SwapRequest,
@@ -225,7 +225,7 @@ fn swap_in(
 
 /// SETTLE THE SWAP — the attested `amountOut`, narrowed to `uint64`.
 #[circuit]
-fn complete_swap(c: &mut Circuit3, ticket: Succeeded<SwapIn>) -> Discloses<Settled> {
+fn complete_swap(c: &mut Circuit, ticket: Succeeded<SwapIn>) -> Discloses<Settled> {
     let outcome = POSITIONS.swaps.complete(c, ticket);
     let _amount_out: Uint<64, _> = outcome.output;
     Discloses::of(())
@@ -234,7 +234,7 @@ fn complete_swap(c: &mut Circuit3, ticket: Succeeded<SwapIn>) -> Discloses<Settl
 /// REFUND THE SWAP — the router reverts on slippage, which reaches us as
 /// the MPC's failure kind.
 #[circuit]
-fn refund_swap(c: &mut Circuit3, ticket: Failed<SwapIn>) -> Discloses<Settled> {
+fn refund_swap(c: &mut Circuit, ticket: Failed<SwapIn>) -> Discloses<Settled> {
     let _outcome = POSITIONS.swaps.refund(c, ticket);
     Discloses::of(())
 }
@@ -244,7 +244,7 @@ fn refund_swap(c: &mut Circuit3, ticket: Failed<SwapIn>) -> Discloses<Settled> {
 /// circuit argument here rather than a constant so the encoder runs.
 #[circuit]
 fn supply_to_pool(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     evm_nonce: Uint<64>,
     pool: Contract<aave_v3::AaveV3Pool>,
     supply: SupplyRequest,
@@ -271,7 +271,7 @@ fn supply_to_pool(
 /// `()` and mined IS succeeded — the aTokens minted are the `amount`
 /// argument, one for one, and there is nothing for the MPC to decode.
 #[circuit]
-fn complete_supply(c: &mut Circuit3, ticket: Succeeded<SupplyToPool>) -> Discloses<Settled> {
+fn complete_supply(c: &mut Circuit, ticket: Succeeded<SupplyToPool>) -> Discloses<Settled> {
     let outcome = POSITIONS.supplies.complete(c, ticket);
     let _amount = outcome.env.amount;
     let () = outcome.output;
@@ -281,7 +281,7 @@ fn complete_supply(c: &mut Circuit3, ticket: Succeeded<SupplyToPool>) -> Disclos
 /// REFUND THE SUPPLY — with `succeeded = always`, the only refundable
 /// outcome is the MPC's own failure kind.
 #[circuit]
-fn refund_supply(c: &mut Circuit3, ticket: Failed<SupplyToPool>) -> Discloses<Settled> {
+fn refund_supply(c: &mut Circuit, ticket: Failed<SupplyToPool>) -> Discloses<Settled> {
     let _outcome = POSITIONS.supplies.refund(c, ticket);
     Discloses::of(())
 }
@@ -292,7 +292,7 @@ fn refund_supply(c: &mut Circuit3, ticket: Failed<SupplyToPool>) -> Discloses<Se
 /// notes/evm-interfaces.org §10).
 #[circuit]
 fn supply_with_permit_to_pool(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     evm_nonce: Uint<64>,
     pool: Contract<aave_v3::AaveV3Pool>,
     supply: SupplyWithPermitRequest,
@@ -323,7 +323,7 @@ fn supply_with_permit_to_pool(
 /// `void`, so the attested value is `()` and mined IS succeeded.
 #[circuit]
 fn complete_supply_with_permit(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     ticket: Succeeded<SupplyPermitToPool>,
 ) -> Discloses<Settled> {
     let outcome = POSITIONS.supplies_with_permit.complete(c, ticket);
@@ -337,7 +337,7 @@ fn complete_supply_with_permit(
 /// expired deadline, or an unhealthy position all revert on-chain).
 #[circuit]
 fn refund_supply_with_permit(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     ticket: Failed<SupplyPermitToPool>,
 ) -> Discloses<Settled> {
     let _outcome = POSITIONS.supplies_with_permit.refund(c, ticket);
@@ -349,7 +349,7 @@ fn refund_supply_with_permit(
 /// an `Erc20` and will not be handed one.
 #[circuit]
 fn approve_operator(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     evm_nonce: Uint<64>,
     nft: Contract<erc721::Erc721>,
     operator: Bytes<20>,
@@ -371,7 +371,7 @@ fn approve_operator(
 /// SETTLE THE GRANT. `setApprovalForAll` is `void` — an operator approval
 /// that mined IS granted.
 #[circuit]
-fn complete_operator(c: &mut Circuit3, ticket: Succeeded<ApproveOperator>) -> Discloses<Settled> {
+fn complete_operator(c: &mut Circuit, ticket: Succeeded<ApproveOperator>) -> Discloses<Settled> {
     let outcome = POSITIONS.operators.complete(c, ticket);
     let () = outcome.output;
     Discloses::of(())
@@ -379,7 +379,7 @@ fn complete_operator(c: &mut Circuit3, ticket: Succeeded<ApproveOperator>) -> Di
 
 /// REFUND THE GRANT.
 #[circuit]
-fn refund_operator(c: &mut Circuit3, ticket: Failed<ApproveOperator>) -> Discloses<Settled> {
+fn refund_operator(c: &mut Circuit, ticket: Failed<ApproveOperator>) -> Discloses<Settled> {
     let _outcome = POSITIONS.operators.refund(c, ticket);
     Discloses::of(())
 }

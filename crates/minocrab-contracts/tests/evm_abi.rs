@@ -27,7 +27,7 @@
 use std::borrow::Cow;
 
 use midnight_transient_crypto::proofs::{KeyLocation, ProofPreimage};
-use minocrab::v3::{Circuit3, FieldT, Wire3};
+use minocrab::{Circuit, FieldT, Wire};
 use minocrab::{Fr, Private};
 use minocrab_contracts::erc20_vault::{
     APPROVE_SELECTOR, DEPOSIT_SELECTOR, EXACT_OUTPUT_SINGLE_SELECTOR, REDEEM_SELECTOR,
@@ -44,9 +44,9 @@ use minocrab_contracts::evm_flow::Contract;
 use minocrab_contracts::signet::EvmCalldata;
 use minocrab_contracts::signet_flow::EvmTx;
 use minocrab_contracts::signet_v1::schema;
-use minocrab_sim::v3::simulate;
-use minocrab_std::v3::{Bool as BoolWire, Bytes, Check, Uint, B32};
-use minocrab_zkir::v3::IrValue;
+use minocrab_sim::simulate;
+use minocrab_std::{Bool as BoolWire, Bytes, Check, Uint, B32};
+use minocrab_zkir::IrValue;
 
 mod vault;
 
@@ -55,11 +55,11 @@ use vault::prims::{abi_addr_word, abi_num_word, b20, b32_slots, u128_limb};
 // ---- harness -----------------------------------------------------------------
 
 /// A circuit's serialized ZKIR — the house twin pattern
-/// (`minocrab-std/tests/v3_guard_scope.rs`).
-fn zkir(build: impl FnOnce(&mut Circuit3)) -> String {
-    let mut c = Circuit3::new();
+/// (`minocrab-std/tests/guard_scope.rs`).
+fn zkir(build: impl FnOnce(&mut Circuit)) -> String {
+    let mut c = Circuit::new();
     build(&mut c);
-    minocrab_zkir::v3::to_zkir_string(&c.finish(true).ir).expect("serializes")
+    minocrab_zkir::to_zkir_string(&c.finish(true).ir).expect("serializes")
 }
 
 fn preimage(inputs: &[Fr]) -> ProofPreimage {
@@ -78,10 +78,10 @@ fn preimage(inputs: &[Fr]) -> ProofPreimage {
 /// back the word's `[hi, lo]` slot pair as the simulator computed it.
 fn run_word(
     inputs: &[Fr],
-    build: impl FnOnce(&mut Circuit3, &[Wire3<FieldT, Private>]) -> B32<Private>,
+    build: impl FnOnce(&mut Circuit, &[Wire<FieldT, Private>]) -> B32<Private>,
 ) -> (Fr, Fr) {
-    let mut c = Circuit3::new();
-    let args: Vec<Wire3<FieldT, Private>> = (0..inputs.len())
+    let mut c = Circuit::new();
+    let args: Vec<Wire<FieldT, Private>> = (0..inputs.len())
         .map(|i| c.arg::<FieldT>(&format!("a{i}")))
         .collect();
     let word = build(&mut c, &args);
@@ -148,7 +148,7 @@ fn the_hash_is_not_circular() {
         type Success = B32<Private>;
         const GAS_LIMIT: u64 = 30_000;
 
-        fn succeeded(c: &mut Circuit3, _out: &B32<Private>) -> Check<Private> {
+        fn succeeded(c: &mut Circuit, _out: &B32<Private>) -> Check<Private> {
             always(c)
         }
     }
@@ -170,7 +170,7 @@ fn the_struct_wrapping_changes_the_selector() {
         const GAS_LIMIT: u64 = 0;
         // no `signature()` override — the flat join
 
-        fn succeeded(c: &mut Circuit3, _out: &Uint<64, Private>) -> Check<Private> {
+        fn succeeded(c: &mut Circuit, _out: &Uint<64, Private>) -> Check<Private> {
             always(c)
         }
     }
@@ -339,7 +339,7 @@ mod reference {
     use super::*;
 
     /// `FixedGas::<LIMIT>::wires` — the contract-FIXED gas envelope.
-    fn fixed_gas(c: &mut Circuit3, limit: u64) -> [Wire3<FieldT, Private>; 3] {
+    fn fixed_gas(c: &mut Circuit, limit: u64) -> [Wire<FieldT, Private>; 3] {
         let priority_fee = c.constant(FIXED_PRIORITY_FEE);
         let max_fee = c.constant(FIXED_MAX_FEE);
         let gas = c.constant(limit);
@@ -348,12 +348,12 @@ mod reference {
 
     /// `erc20_call` — a two-word ERC-20 call as an `EvmTx`.
     fn erc20_call(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         selector: &[u8; 4],
-        to: Wire3<FieldT, Private>,
+        to: Wire<FieldT, Private>,
         words: [B32<Private>; 2],
-        nonce: Wire3<FieldT, Private>,
-        gas: [Wire3<FieldT, Private>; 3],
+        nonce: Wire<FieldT, Private>,
+        gas: [Wire<FieldT, Private>; 3],
     ) -> EvmTx<2> {
         let zero = c.constant(0u64).private();
         let one = c.constant(1u64).private();
@@ -379,11 +379,11 @@ mod reference {
 
     /// The vault's `withdraw` body, from the words to the transaction.
     pub fn transfer_tx(
-        c: &mut Circuit3,
-        to: Wire3<FieldT, Private>,
-        dest: Wire3<FieldT, Private>,
-        amount: Wire3<FieldT, Private>,
-        nonce: Wire3<FieldT, Private>,
+        c: &mut Circuit,
+        to: Wire<FieldT, Private>,
+        dest: Wire<FieldT, Private>,
+        amount: Wire<FieldT, Private>,
+        nonce: Wire<FieldT, Private>,
     ) -> EvmTx<2> {
         let word0 = address_word(c, dest);
         let word1 = numeric_word(c, amount);
@@ -395,7 +395,7 @@ mod reference {
 /// Publish every wire of an `EvmTx<2>`, so the ZKIR comparison is over the
 /// transaction the two constructions BUILD, not merely over what they
 /// happened to emit on the way.
-fn publish_tx(c: &mut Circuit3, tx: EvmTx<2>) {
+fn publish_tx(c: &mut Circuit, tx: EvmTx<2>) {
     let fields = [
         ("nonce", tx.nonce),
         ("maxPriorityFeePerGas", tx.max_priority_fee_per_gas),
@@ -454,7 +454,7 @@ fn build_tx_is_the_vaults_erc20_call() {
 /// two.
 #[test]
 fn build_tx_carries_the_declared_envelope() {
-    let mut c = Circuit3::new();
+    let mut c = Circuit::new();
     let to = c.arg::<FieldT>("to");
     let dest = c.arg::<FieldT>("dest");
     let amount = c.arg::<FieldT>("amount");
@@ -531,7 +531,7 @@ fn build_tx_filed_reads_the_filings_gas_limit_override() {
         "the override has to actually differ for this test to prove anything"
     );
 
-    let mut c = Circuit3::new();
+    let mut c = Circuit::new();
     let to = c.arg::<FieldT>("to");
     let dest = c.arg::<FieldT>("dest");
     let amount = c.arg::<FieldT>("amount");
@@ -595,7 +595,7 @@ fn ops_of(zkir: &str) -> Vec<String> {
 /// they emit the same instructions: `always` lowers to an `assert` on a copy
 /// of the immediate 1, `fold_immediate_copies` rewrites the operand to the
 /// immediate and `drop_true_asserts` deletes the instruction — both inside
-/// `Builder3::finish`, so nothing downstream ever sees it. (The identifier
+/// `Builder::finish`, so nothing downstream ever sees it. (The identifier
 /// NUMBERS still shift by one: the folded `Copy` consumed its name on the
 /// way past. Nothing reads those, and the row cost is what the `k` gate
 /// measures.)
@@ -624,7 +624,7 @@ fn is_true_on_a_wire_is_not_folded() {
     let with = zkir(|c| {
         let w = c.arg::<FieldT>("ok");
         let flag = BoolWire::<Private>::from_field_checked(c, w);
-        c.assert(minocrab_std::v3::is_true(flag));
+        c.assert(minocrab_std::is_true(flag));
     });
     let without = zkir(|c| {
         let w = c.arg::<FieldT>("ok");
@@ -684,7 +684,7 @@ fn a_flag_return_is_checked_and_a_number_is_not() {
 /// and neither projection emits an instruction.
 #[test]
 fn a_checked_flag_maps_to_nothing_and_a_number_maps_to_itself() {
-    let mut c = Circuit3::new();
+    let mut c = Circuit::new();
     let ok = BoolWire::<Private>::from_field_unchecked(c.arg::<FieldT>("ok"));
     // The projection of a flag IS `()` — a TYPE equality, which is the
     // whole claim: this line does not compile if `Success` is anything else.
@@ -999,12 +999,12 @@ fn u8_words_match_the_oracle() {
 /// payable call made with no ether (Solidity's own meaning of payable).
 #[test]
 fn a_payable_call_carries_its_value() {
-    fn value_of(tx: EvmTx<0>, c: &mut Circuit3) {
+    fn value_of(tx: EvmTx<0>, c: &mut Circuit) {
         let v = c.disclose(tx.value, "value");
         c.output(v, "value");
     }
 
-    let mut c = Circuit3::new();
+    let mut c = Circuit::new();
     let callee = c.arg::<FieldT>("callee");
     let amount = c.arg::<FieldT>("amount");
     let nonce = c.arg::<FieldT>("nonce");
@@ -1027,7 +1027,7 @@ fn a_payable_call_carries_its_value() {
         other => panic!("not native: {other:?}"),
     }
 
-    let mut c = Circuit3::new();
+    let mut c = Circuit::new();
     let callee = c.arg::<FieldT>("callee");
     let nonce = c.arg::<FieldT>("nonce");
     let tx = build_tx::<weth::Deposit, 0>(

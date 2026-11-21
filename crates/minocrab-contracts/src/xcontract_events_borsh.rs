@@ -19,15 +19,15 @@
 //! it would be a byte-for-byte copy of a circuit this stage has no opinion
 //! about, and the harness would learn nothing from it.
 
-use minocrab::v3::Circuit3;
+use minocrab::Circuit;
 use minocrab::{Private, Public};
 use minocrab_experimental::impact::raw::{
     cell_write, counter_increment, counter_read, emit, set_insert, ImpactElem,
     LedgerValue,
 };
 // `CircuitBorsh` names both the trait and the derive macro.
-use minocrab_std::v3::borsh::{self, CircuitBorsh};
-use minocrab_std::v3::{contract, event, BytesN, ContractAddress, Disclose, Discloses, Uint, Vis3, B32};
+use minocrab_std::borsh::{self, CircuitBorsh};
+use minocrab_std::{contract, event, BytesN, ContractAddress, Disclose, Discloses, Uint, Vis, B32};
 
 use crate::events::{MISC_SIZE, MISC_TAG, MISC_VERSION};
 use crate::events_borsh::DepositEvent;
@@ -41,7 +41,7 @@ use crate::xcontract_events::{
 /// fixed-width payload slot, whose CONTENTS are `borsh(DepositEvent)`
 /// followed by the payload's own zero pad.
 #[derive(CircuitBorsh)]
-pub struct Misc<V: Vis3> {
+pub struct Misc<V: Vis> {
     pub name: B32<V>,
     pub payload: BytesN<V, PAYLOAD_SIZE>,
 }
@@ -60,7 +60,7 @@ impl XcontractEventsBorsh {
     /// declared types.
     #[circuit(output = "event hash")]
     pub fn token_deposit(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         amount: Uint<128>,
         caller: ContractAddress<Private>,
     ) -> Discloses<(Amount, Caller), B32<Public>> {
@@ -84,8 +84,8 @@ impl XcontractEventsBorsh {
         // `events_borsh`'s note; the bytes are pinned against compactc's artifact
         // in tests/xcontract_events_differential.rs.
         let event = DepositEvent {
-            amount: minocrab_std::v3::Uint::from_field_unchecked(a),
-            sequence: minocrab_std::v3::Uint::from_field_unchecked(sequence),
+            amount: minocrab_std::Uint::from_field_unchecked(a),
+            sequence: minocrab_std::Uint::from_field_unchecked(sequence),
             recipient: cal,
         };
         let payload = borsh::to_bytes::<PAYLOAD_SIZE, Public, _>(c, &event);

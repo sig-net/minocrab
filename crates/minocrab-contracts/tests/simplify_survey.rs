@@ -18,12 +18,12 @@
 
 mod support;
 
-use minocrab::v3::{Compiled3, DisclosedWire};
-use minocrab_ir::v3::passes::{native_inputs, simplify, simplify_with, Rules};
-use minocrab_zkir::v3::{Identifier, Instruction, IrSource};
+use minocrab::{Compiled, DisclosedWire};
+use minocrab_ir::passes::{native_inputs, simplify, simplify_with, Rules};
+use minocrab_zkir::{Identifier, Instruction, IrSource};
 
 /// The names a circuit's disclosure records read the run's memory by.
-fn observed(compiled: &Compiled3) -> Vec<Identifier> {
+fn observed(compiled: &Compiled) -> Vec<Identifier> {
     compiled
         .disclosures
         .iter()
@@ -76,7 +76,7 @@ fn every_circuit_keeps_its_effects_under_the_pass() {
         assert_eq!(effects(&after), effects(&before), "{name}: an effect moved");
         for id in &seen {
             let defined = ir.inputs.iter().any(|t| serde_json::to_value(t).unwrap()["name"] == id.0)
-                || after.iter().any(|i| minocrab_ir::v3::passes::defined_identifiers(i).contains(id));
+                || after.iter().any(|i| minocrab_ir::passes::defined_identifiers(i).contains(id));
             assert!(defined, "{name}: disclosed {id:?} is no longer defined");
         }
         assert_eq!(simplify(after.clone(), &natives, &seen), after, "{name}: not idempotent");
@@ -105,9 +105,9 @@ fn simplify_row_table() {
         if both.len() == base.len() {
             continue;
         }
-        let price = |stream: Vec<Instruction>| minocrab_sim::v3::cost(&with(ir, stream)).1 as i64;
-        let (k0, r0) = minocrab_sim::v3::cost(ir);
-        let (k1, r1) = minocrab_sim::v3::cost(&with(ir, both.clone()));
+        let price = |stream: Vec<Instruction>| minocrab_sim::cost(&with(ir, stream)).1 as i64;
+        let (k0, r0) = minocrab_sim::cost(ir);
+        let (k1, r1) = minocrab_sim::cost(&with(ir, both.clone()));
         let r0i = r0 as i64;
         // Each rule alone, then all of them (the parts need not sum to the
         // whole: a merge can leave a value for the dead-code rule).
@@ -150,13 +150,13 @@ fn simplify_row_table() {
 // ---- rule 3 (constant-operand algebra), measured before deciding -------------------
 
 /// Rows of a circuit built by `build`, as `backend_folding.rs` measures.
-fn rows(build: impl FnOnce(&mut minocrab::v3::Circuit3)) -> usize {
-    let mut c = minocrab::v3::Circuit3::new();
+fn rows(build: impl FnOnce(&mut minocrab::Circuit)) -> usize {
+    let mut c = minocrab::Circuit::new();
     // The builder's own stream, with the M48 C step 3 lean defaults (the
     // simplification and the range dedup) off: this measures what is emitted.
-    c.set_lowering(minocrab::v3::Lowering { simplify: false, dedup_range_constraints: false, ..c.lowering() });
+    c.set_lowering(minocrab::Lowering { simplify: false, dedup_range_constraints: false, ..c.lowering() });
     build(&mut c);
-    minocrab_sim::v3::cost(&c.finish(true).ir).1
+    minocrab_sim::cost(&c.finish(true).ir).1
 }
 
 const N: usize = 5;
@@ -166,7 +166,7 @@ const N: usize = 5;
 /// if this is at least a row per instance (notes/ir-passes.org §14).
 #[test]
 fn constant_operand_selects_cost_what_this_says() {
-    use minocrab::v3::FieldT;
+    use minocrab::FieldT;
     let base = rows(|c| {
         let (x, y) = (c.arg::<FieldT>("x"), c.arg::<FieldT>("y"));
         let mut acc = c.mul(x, y);
@@ -230,7 +230,7 @@ fn simplify_fingerprints() {
         let changed = simplify(ir.instructions.to_vec(), &native_inputs(ir), &[]).len() < ir.instructions.len();
         println!(
             "FP {:016x} {} {name}",
-            minocrab_sim::v3::simplify_check::fingerprint(ir),
+            minocrab_sim::simplify_check::fingerprint(ir),
             if changed { "changed" } else { "unchanged" }
         );
     }

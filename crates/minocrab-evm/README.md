@@ -5,10 +5,10 @@
 The library's calls live one module per interface: `erc20`, `erc4626`, `erc721`, `uniswap_v3`, `aave_v3`, `weth` and `usdt`. Nothing here knows about Signet; how a deployment files a call, and the ledger slot that tracks it, are in `minocrab-signet`.
 
 ```rust
-use minocrab::v3::Circuit3;
+use minocrab::Circuit;
 use minocrab::Private;
 use minocrab_evm::{always, erc20, Address, EvmCall, U64};
-use minocrab_std::v3::{Check, Uint};
+use minocrab_std::{Check, Uint};
 
 struct Balance;
 impl EvmCall for Balance {
@@ -18,7 +18,7 @@ impl EvmCall for Balance {
     type Return = U64;
     type Success = Uint<64, Private>;
     const GAS_LIMIT: u64 = 50_000;
-    fn succeeded(c: &mut Circuit3, _out: &Uint<64, Private>) -> Check<Private> {
+    fn succeeded(c: &mut Circuit, _out: &Uint<64, Private>) -> Check<Private> {
         always(c)
     }
 }

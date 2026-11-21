@@ -14,7 +14,7 @@ use std::path::PathBuf;
 
 use minocrab::Public;
 use minocrab_abi::{circuit_schema, Artifact, Pin};
-use minocrab_std::v3::{BytesN, Uint, B32};
+use minocrab_std::{BytesN, Uint, B32};
 use xcall_target_interface::XcallTarget;
 
 const SOURCE: &str = "corpus/zkir/signet-midnight-experiments/experiments/xcall/contract/src/target";

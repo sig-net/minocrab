@@ -8,7 +8,7 @@
 //! unwarranted serializer. So this regenerator (the house `--ignored`
 //! pattern of `row_snapshot.rs` / `interface_snapshot.rs`) reads each dumped
 //! preimage, names the `.zkir` it was proved against, runs the Rust oracle
-//! (`minocrab_sim::v3::simulate`, CROSS-CHECKED against upstream
+//! (`minocrab_sim::simulate`, CROSS-CHECKED against upstream
 //! `IrSource::check`), and writes one record per (circuit, variant) under
 //! `crates/minocrab-zkir/lean/differential/`.
 //!
@@ -18,7 +18,7 @@
 //! compactc's output and our Lean rather than between two of ours. That is
 //! sound because the differential suites assert PI-equality of our artifact
 //! and the corpus twin on exactly these preimages
-//! (`minocrab_sim::v3::assert_call_compatible`).
+//! (`minocrab_sim::assert_call_compatible`).
 //!
 //! REGENERATE (two steps, both from the repo root):
 //!
@@ -49,8 +49,8 @@ use midnight_zkir_v3::ir_instructions::from_bytes::from_bytes_offcircuit;
 use midnight_zkir_v3::ir_instructions::to_bytes::to_bytes_offcircuit;
 use midnight_zkir_v3::ir_instructions::into_coordinates::into_coordinates_offcircuit;
 use minocrab::Fr;
-use minocrab_sim::v3::{simulate, Run3};
-use minocrab_zkir::v3::{IrSource, IrType, IrValue};
+use minocrab_sim::{simulate, Run};
+use minocrab_zkir::{IrSource, IrType, IrValue};
 use sha2::{Digest as _, Sha256};
 use sha3::Keccak256;
 
@@ -297,7 +297,7 @@ fn wrapped(key: &str, values: &[String]) -> String {
 /// (notes/zkir-semantics.org §10 I2: `decode_offcircuit`'s `assert_eq!` on a
 /// `Bytes<32>` limb), so a panic there is caught and read as "not accept" —
 /// which is the disposition that note already records for this rung.
-fn oracle(ir: &IrSource, pi: &ProofPreimage) -> Option<Run3> {
+fn oracle(ir: &IrSource, pi: &ProofPreimage) -> Option<Run> {
     let ours = simulate(ir, pi).ok();
     let theirs: Option<Vec<Option<usize>>> =
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| ir.check(pi)))
@@ -316,7 +316,7 @@ fn oracle(ir: &IrSource, pi: &ProofPreimage) -> Option<Run3> {
 }
 
 /// Render one record.
-fn record(artifact: &str, variant: &str, pi: &ProofPreimage, run: Option<&Run3>) -> String {
+fn record(artifact: &str, variant: &str, pi: &ProofPreimage, run: Option<&Run>) -> String {
     let mut out = String::new();
     out.push_str(
         "# ZKIR v3 RUN RECORD — GENERATED, do not edit.\n\
@@ -350,7 +350,7 @@ fn record(artifact: &str, variant: &str, pi: &ProofPreimage, run: Option<&Run3>)
 }
 
 /// The expected block — `zkir-run`'s entire stdout for this record.
-fn expected_block(run: Option<&Run3>) -> String {
+fn expected_block(run: Option<&Run>) -> String {
     let Some(run) = run else {
         return "result reject\n".to_string();
     };
@@ -707,7 +707,7 @@ fn regenerate_lean_run_records() {
             pi_path.display()
         );
         let pi = read_preimage(&pi_path);
-        let ir = minocrab_zkir::v3::read_zkir(root.join(&artifact)).unwrap_or_else(|e| {
+        let ir = minocrab_zkir::read_zkir(root.join(&artifact)).unwrap_or_else(|e| {
             panic!("corpus artifact {artifact} does not parse: {e}");
         });
 
@@ -796,7 +796,7 @@ fn the_run_records_agree_with_the_rust_oracle() {
     for path in files {
         let text = std::fs::read_to_string(&path).expect("record reads");
         let (artifact, pi, expected) = parse_record(&text);
-        let ir = minocrab_zkir::v3::read_zkir(root.join(&artifact)).expect("artifact parses");
+        let ir = minocrab_zkir::read_zkir(root.join(&artifact)).expect("artifact parses");
         let run = oracle(&ir, &pi);
         assert_eq!(
             expected_block(run.as_ref()),

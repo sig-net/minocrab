@@ -4,7 +4,7 @@
 //! Every "optimisation" we might do above ZKIR is either duplicating the
 //! backend's work or doing something it does not do, and the difference is
 //! not guessable — it is Midnight's own cost model
-//! (`minocrab_sim::v3::cost`, the same one `row_snapshot` and the benchmark
+//! (`minocrab_sim::cost`, the same one `row_snapshot` and the benchmark
 //! harness use). This file measures it directly: build a baseline circuit,
 //! build it again with a redundancy added, and price the difference.
 //!
@@ -23,7 +23,7 @@
 //! - Constant folding above ZKIR buys ZERO rows. Every API contortion we
 //!   have made to avoid emitting a `copy` of an immediate — M9 phase 7's
 //!   operand positions, M9 phase 8's inlined guard, M16's
-//!   `AnyWire3::immediate`, M17's `UnshieldedToken` — was bought for
+//!   `AnyWire::immediate`, M17's `UnshieldedToken` — was bought for
 //!   DIFFERENTIAL FIDELITY with compactc, not for cost. Worth knowing
 //!   before paying for a fifth.
 //! - Dead code and common subexpressions are NOT folded, so they are real
@@ -39,23 +39,23 @@
 //! If a toolchain bump changes any of these, this test fails and the
 //! reasoning above has to be redone rather than quietly inherited.
 
-use minocrab::v3::{Circuit3, FieldT};
-use minocrab_sim::v3::cost;
+use minocrab::{Circuit, FieldT};
+use minocrab_sim::cost;
 
 /// Rows of a circuit built by `build`, with OUR passes off
 /// (`minocrab_compat::profile`: no simplification, no range dedup), so what
 /// is measured is the backend alone. The lean defaults (M48 C step 3) delete
 /// the dead and repeated instructions and the repeated range constraint
 /// below before the backend sees them.
-fn rows(build: impl FnOnce(&mut Circuit3)) -> usize {
-    let mut c = Circuit3::new();
+fn rows(build: impl FnOnce(&mut Circuit)) -> usize {
+    let mut c = Circuit::new();
     minocrab_compat::profile(&mut c);
     build(&mut c);
     cost(&c.finish(true).ir).1
 }
 
 /// The baseline every case below adds to: two arguments and one multiply.
-fn baseline(c: &mut Circuit3) -> (minocrab::v3::Wire3<FieldT, minocrab::Private>, minocrab::v3::Wire3<FieldT, minocrab::Private>) {
+fn baseline(c: &mut Circuit) -> (minocrab::Wire<FieldT, minocrab::Private>, minocrab::Wire<FieldT, minocrab::Private>) {
     (c.arg::<FieldT>("x"), c.arg::<FieldT>("y"))
 }
 

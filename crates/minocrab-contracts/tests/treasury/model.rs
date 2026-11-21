@@ -17,7 +17,7 @@ use minocrab::Fr;
 use minocrab_contracts::erc20_vault::{TRANSFER_SELECTOR, VAULT_PATH};
 use minocrab_contracts::evm_flow::REFUND_PAD;
 use minocrab_contracts::signet_v1::{output_kind, schema, OutputSchema};
-use minocrab_zkir::v3::IrValue;
+use minocrab_zkir::IrValue;
 
 use super::ops;
 use super::prims::*;

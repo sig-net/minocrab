@@ -24,7 +24,7 @@
 //! IT IS A TEST-ONLY CONTRACT, like `tests/evm_no_return.rs`'s: it exercises
 //! the API without adding circuits to the crate's frozen snapshots.
 
-use minocrab::v3::Circuit3;
+use minocrab::Circuit;
 use minocrab::{Fr, Public};
 use minocrab_contracts::evm::{erc20, Filed};
 use minocrab_contracts::evm_flow::{
@@ -33,11 +33,11 @@ use minocrab_contracts::evm_flow::{
 use minocrab_contracts::signet_flow::{Settled, Signet};
 use minocrab_contracts::signet_v1::schema;
 use minocrab_ledger::{idx_path, ImpactElem, LedgerKey};
-use minocrab_sim::v3::cost;
-use minocrab_std::v3::{
+use minocrab_sim::cost;
+use minocrab_std::{
     circuit, label, Bytes, Disclose, Discloses, Ledger, LedgerRepr, LedgerWidth, Uint,
 };
-use minocrab_zkir::v3::{Instruction as I, Operand};
+use minocrab_zkir::{Instruction as I, Operand};
 
 mod leakage;
 
@@ -93,7 +93,7 @@ label! {
 /// this files is complete except for the number the ledger assigns blind.
 #[circuit]
 fn call(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     token: Contract<erc20::Erc20>,
     to: Bytes<20>,
     amount: Uint<64>,
@@ -112,7 +112,7 @@ fn call(
 
 /// EMIT: one request, one record, one notification; anyone may prove it.
 #[circuit]
-fn emit(c: &mut Circuit3, handle: Handle) -> Discloses<Emitted> {
+fn emit(c: &mut Circuit, handle: Handle) -> Discloses<Emitted> {
     BLOCK.calls.emit(c, handle);
     Discloses::of(())
 }
@@ -123,7 +123,7 @@ fn emit(c: &mut Circuit3, handle: Handle) -> Discloses<Emitted> {
 /// settle itself (`Settled` carries `BlockHeightSettled`), which is why
 /// neither circuit here declares a height label of its own any more.
 #[circuit]
-fn complete(c: &mut Circuit3, ticket: Succeeded<Heighted>) -> Discloses<Settled> {
+fn complete(c: &mut Circuit, ticket: Succeeded<Heighted>) -> Discloses<Settled> {
     let outcome = BLOCK.calls.complete(c, ticket);
     let _amount = outcome.env.env.inner.amount;
     BLOCK.calls.raise_seen(c, &outcome);
@@ -133,7 +133,7 @@ fn complete(c: &mut Circuit3, ticket: Succeeded<Heighted>) -> Discloses<Settled>
 /// REFUND TO THE REQUESTER — the commitment opens against the HANDLE the
 /// requester kept, not against the request id the emit minted — then C3.
 #[circuit]
-fn refund(c: &mut Circuit3, ticket: Failed<Heighted>) -> Discloses<(Settled, Recipient)> {
+fn refund(c: &mut Circuit, ticket: Failed<Heighted>) -> Discloses<(Settled, Recipient)> {
     let (_owner, outcome) = BLOCK.calls.refund_to_owner::<Recipient>(c, ticket);
     let Amount { amount: _amount } = outcome.env.env.inner;
     BLOCK.calls.raise_seen(c, &outcome);
@@ -143,7 +143,7 @@ fn refund(c: &mut Circuit3, ticket: Failed<Heighted>) -> Discloses<(Settled, Rec
 // ---- the audit --------------------------------------------------------------------
 
 /// Every Impact instruction's elements, immediates decoded, wires as `None`.
-fn impact_ops(ir: &minocrab_zkir::v3::IrSource) -> Vec<Vec<Option<Fr>>> {
+fn impact_ops(ir: &minocrab_zkir::IrSource) -> Vec<Vec<Option<Fr>>> {
     ir.instructions
         .iter()
         .filter_map(|i| match i {
@@ -182,7 +182,7 @@ fn field_read(field: u8) -> Vec<Option<Fr>> {
 /// How many CHECKED reads of `field`: an `idx [field]` immediately followed
 /// by a `popeq`. A bare `idx [field]` with no `popeq` after it is the blind
 /// snapshot's fetch, which is the point.
-fn reads_of(ir: &minocrab_zkir::v3::IrSource, field: u8) -> usize {
+fn reads_of(ir: &minocrab_zkir::IrSource, field: u8) -> usize {
     let pattern = field_read(field);
     let ops = impact_ops(ir);
     ops.windows(2)
@@ -190,11 +190,11 @@ fn reads_of(ir: &minocrab_zkir::v3::IrSource, field: u8) -> usize {
         .count()
 }
 
-fn popeqs(ir: &minocrab_zkir::v3::IrSource) -> usize {
+fn popeqs(ir: &minocrab_zkir::IrSource) -> usize {
     impact_ops(ir).iter().filter(|op| is_popeq(op)).count()
 }
 
-fn asserts_saying(compiled: &minocrab::v3::Compiled3, message: &str) -> usize {
+fn asserts_saying(compiled: &minocrab::Compiled, message: &str) -> usize {
     compiled
         .assert_messages
         .iter()
@@ -202,7 +202,7 @@ fn asserts_saying(compiled: &minocrab::v3::Compiled3, message: &str) -> usize {
         .count()
 }
 
-fn disclosures_labelled(compiled: &minocrab::v3::Compiled3, label: &str) -> usize {
+fn disclosures_labelled(compiled: &minocrab::Compiled, label: &str) -> usize {
     compiled
         .disclosures
         .iter()
@@ -357,5 +357,5 @@ fn the_leakage_walk_runs_over_the_outbox() {
 /// A handle is one field slot: the emit argument declares one wire.
 #[test]
 fn a_handle_is_one_field_slot() {
-    assert_eq!(<Handle as minocrab_std::v3::CircuitAbi>::SLOTS, 1);
+    assert_eq!(<Handle as minocrab_std::CircuitAbi>::SLOTS, 1);
 }

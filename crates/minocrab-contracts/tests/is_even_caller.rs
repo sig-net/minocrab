@@ -33,14 +33,14 @@
 //! §7 table listed as hand-synchronised (kind, version, path bytes, the
 //! map/env/nonce triple, the verify→kind→lookup→remove order) is gone.
 
-use minocrab::v3::Circuit3;
+use minocrab::Circuit;
 use minocrab::{Private, Public};
 use minocrab_contracts::common::SigningPath;
 use minocrab_contracts::evm::{Envelope, EvmCall, Filing, Interface, U256};
 use minocrab_contracts::evm_flow::{Contract, Pending, Succeeded};
 use minocrab_contracts::signet_flow::{Requested, Settled, Signet, Signing};
-use minocrab_sim::v3::cost;
-use minocrab_std::v3::{
+use minocrab_sim::cost;
+use minocrab_std::{
     circuit, is_true, label, Bool, Bytes, Check, Disclose, Discloses, Ledger, LedgerCounter,
     LedgerRepr, Secp256k1Point, Uint, B32,
 };
@@ -68,7 +68,7 @@ impl EvmCall for IsEven {
     type Success = Bool<Private>;
     const GAS_LIMIT: u64 = 100_000;
 
-    fn succeeded(_c: &mut Circuit3, ok: &Bool<Private>) -> Check<Private> {
+    fn succeeded(_c: &mut Circuit, ok: &Bool<Private>) -> Check<Private> {
         is_true(*ok)
     }
 }
@@ -133,7 +133,7 @@ label! {
 /// caught; the typed API gives it the checked one.
 const IS_EVEN_SELECTOR: [u8; 4] = [0x2a, 0x2e, 0x13, 0x20];
 
-fn assert_initialised(c: &mut Circuit3) {
+fn assert_initialised(c: &mut Circuit) {
     let n = CALLER.initialised.read(c);
     c.assert(n.gt(0u64).message("Not initialised"));
 }
@@ -146,7 +146,7 @@ fn assert_initialised(c: &mut Circuit3) {
 /// why `submitIsEvenRequest` below no longer takes one.
 #[circuit]
 fn initialise(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     response_key: Secp256k1Point,
     key_version: Uint<8>,
     chain_id: Uint<64>,
@@ -165,7 +165,7 @@ fn initialise(
 /// `isEven(argWord)` to `to`, under a fixed gas envelope.
 #[circuit]
 fn submit_is_even_request(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     evm_nonce: Uint<64>,
     to: Bytes<20>,
     arg_word: B32<Private>,
@@ -175,7 +175,7 @@ fn submit_is_even_request(
     CALLER.is_even.request_with(
         c,
         |c| Contract::<SignetEvmTarget>::from_address(c, to),
-        (|_c: &mut Circuit3| arg_word,),
+        (|_c: &mut Circuit| arg_word,),
         Envelope::fixed(),
         evm_nonce,
         |c| {
@@ -190,7 +190,7 @@ fn submit_is_even_request(
 /// `verifyResponse`: settle, and publish the attested result.
 #[circuit]
 fn verify_response(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     ticket: Succeeded<IsEvenResult>,
 ) -> Discloses<(Settled, Outcome)> {
     assert_initialised(c);

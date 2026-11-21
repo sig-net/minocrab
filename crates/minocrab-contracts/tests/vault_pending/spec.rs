@@ -2,7 +2,7 @@
 //! total function from a scenario to an [`Outcome`] — the `Pending`-based
 //! twin of `tests/vault/spec.rs`. No compactc comparator exists for this
 //! lineage (notes/signet-async.org "Rung C as built"), so the oracle here
-//! is this spec alone, checked against `minocrab_sim::v3::simulate` and
+//! is this spec alone, checked against `minocrab_sim::simulate` and
 //! against the real ledger VM (`exec::run`) via [`check_effects`].
 
 use midnight_base_crypto::fab::AlignedValue;

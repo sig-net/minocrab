@@ -14,7 +14,7 @@
 //! of them is wrong about Midnight rather than about each other.
 //!
 //! The contract side runs on the on-chain VM through the executor
-//! (`minocrab_sim::v3::exec`), so the registry lookup reads real state and the
+//! (`minocrab_sim::exec`), so the registry lookup reads real state and the
 //! memo lands in a real post-state.
 
 use group::Group;
@@ -31,12 +31,12 @@ use midnight_storage::storage::Array;
 use midnight_transient_crypto::fab::{AlignmentExt, ValueReprAlignedValue};
 use midnight_zkir_v3::ir_instructions::ec_mul::ec_mul_offcircuit;
 use midnight_zkir_v3::ir_instructions::encode::{encode_offcircuit, native_to_jubjub_scalar};
-use minocrab::v3::{Compiled3, DisclosedWire};
+use minocrab::{Compiled, DisclosedWire};
 use minocrab::{Alignment, AlignmentAtom, AlignmentSegment, Fr};
 use minocrab_contracts::disclosure::{self, Disclosure};
-use minocrab_sim::v3::exec::{self, Call, ExecError, Executed};
-use minocrab_sim::v3::{cost, Run3};
-use minocrab_zkir::v3::{IrType, IrValue};
+use minocrab_sim::exec::{self, Call, ExecError, Executed};
+use minocrab_sim::{cost, Run};
+use minocrab_zkir::{IrType, IrValue};
 use sha2::{Digest, Sha256};
 
 // ---- the recipient's side, natively -----------------------------------------------
@@ -75,7 +75,7 @@ fn encode_point(p: JubjubSubgroup) -> [Fr; 2] {
 
 /// `persistentHash` over a FAB-aligned preimage: `Sha256(binary_repr)`, which
 /// is what the ZKIR `persistent_hash` instruction computes
-/// (`minocrab_sim::v3`, the `I::PersistentHash` arm).
+/// (`minocrab_sim`, the `I::PersistentHash` arm).
 fn persistent_hash(alignment: &Alignment, slots: &[Fr]) -> [u8; 32] {
     let value = alignment
         .parse_field_repr(slots)
@@ -182,7 +182,7 @@ fn empty_state() -> StateValue<InMemoryDB> {
 }
 
 fn run(
-    compiled: &Compiled3,
+    compiled: &Compiled,
     st: StateValue<InMemoryDB>,
     inputs: &[Fr],
 ) -> Result<Executed, ExecError> {
@@ -192,7 +192,7 @@ fn run(
 /// [`run`] with a private transcript. `register` witnesses the native scalar
 /// behind the key it publishes, so its proof of possession needs one.
 fn run_wit(
-    compiled: &Compiled3,
+    compiled: &Compiled,
     st: StateValue<InMemoryDB>,
     inputs: &[Fr],
     wit: &[Fr],
@@ -213,7 +213,7 @@ fn run_wit(
 /// `disclose` instructions under one label (that is what "one label for both
 /// limbs" means in the `label!` block), so the ephemeral key is two records of
 /// one wire rather than one record of two.
-fn disclosed(compiled: &Compiled3, run: &Run3, label: &str) -> Vec<Fr> {
+fn disclosed(compiled: &Compiled, run: &Run, label: &str) -> Vec<Fr> {
     let matching: Vec<_> = compiled
         .disclosures
         .iter()
@@ -518,14 +518,14 @@ fn the_row_and_k_table() {
     println!("| circuit | k | rows |");
     println!("|---------+---+------|");
     for (name, build) in [
-        ("register", Disclosure::register as fn() -> Compiled3),
+        ("register", Disclosure::register as fn() -> Compiled),
         ("discloseTo", Disclosure::disclose_to),
     ] {
         let (k, rows) = cost(&build().ir);
         println!("| {name} | {k} | {rows} |");
     }
     println!();
-    println!("{}", minocrab_sim::v3::profile(&Disclosure::disclose_to()));
+    println!("{}", minocrab_sim::profile(&Disclosure::disclose_to()));
 }
 
 /// WHY `encrypt` TAKES A `Uint<128>` (upstream PR #913). The 248-bit `kdf` pad
@@ -619,19 +619,19 @@ fn the_identity_point_encodes_to_zero_one() {
 /// mistake upstream PR #1110 is undoing.
 #[test]
 fn the_marginal_cost_of_an_extra_recipient() {
-    use minocrab::v3::{Circuit3, JubjubPointT, JubjubScalarT};
-    use minocrab_std::v3::{JubjubPoint, Uint};
+    use minocrab::{Circuit, JubjubPointT, JubjubScalarT};
+    use minocrab_std::{JubjubPoint, Uint};
 
     /// A bare circuit encrypting one value to `n` recipients under a shared
     /// ephemeral scalar — the shape, with no ledger and no argument plumbing,
     /// so the difference between two of these is the marginal cost alone.
     fn rows_for(n: usize) -> usize {
-        let mut c = Circuit3::new();
+        let mut c = Circuit::new();
         // Every argument is declared before the first instruction.
         let pks: Vec<_> = (0..n)
             .map(|i| JubjubPoint::from_point(c.arg::<JubjubPointT>(&format!("pk{i}"))))
             .collect();
-        let value = Uint::<128>::from_field_unchecked(c.arg::<minocrab::v3::FieldT>("value"));
+        let value = Uint::<128>::from_field_unchecked(c.arg::<minocrab::FieldT>("value"));
         let e = c.arg::<JubjubScalarT>("e");
         for pk in pks {
             let _memo = disclosure::encrypt(&mut c, pk, value, e);

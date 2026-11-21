@@ -2,8 +2,8 @@
 
 use midnight_base_crypto::fab::AlignmentAtom;
 use midnight_onchain_vm::ops::{Key, Op};
-use minocrab::v3::{Circuit3, FieldT, Wire3};
-use minocrab::v3::ImpactElem;
+use minocrab::{Circuit, FieldT, Wire};
+use minocrab::ImpactElem;
 use minocrab::{Fr, Public};
 
 use crate::impact::*;
@@ -46,11 +46,11 @@ pub enum BalanceCmp {
 /// the START of execution — the effect accumulator's entries do not feed back
 /// into it, which is the caveat Compact's own stdlib comment carries.
 pub fn kernel_balance(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     token_type: &LedgerValue,
     cmp: BalanceCmp,
     amount: Option<&LedgerValue>,
-) -> Wire3<FieldT, Public> {
+) -> Wire<FieldT, Public> {
     let result_atom = if cmp == BalanceCmp::Value {
         U128_ATOM
     } else {
@@ -107,10 +107,10 @@ pub fn kernel_balance(
 /// The `dup 3` rather than `dup 2` in the greater-than form is the pushed `t`
 /// sitting on the stack already.
 pub fn kernel_block_time(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     time: &LedgerValue,
     greater: bool,
-) -> Wire3<FieldT, Public> {
+) -> Wire<FieldT, Public> {
     let (wires, value) = mint_read(c, vec![BOOL_ATOM]);
     label_read(c, &value, "a kernel block-time comparison", &[]);
     let block_time = ImpactOp::constant(&Op::Idx {
@@ -142,7 +142,7 @@ pub fn kernel_block_time(
 /// `kernel.self()` (midnight-ledger.ss:256-260): `dup 2` to reach the
 /// context array, `idxc [0]` (cached, path not remembered), `popeqc` →
 /// the contract's own address as `Bytes<32>` `[hi, lo]` wires.
-pub fn kernel_self(c: &mut Circuit3) -> [Wire3<FieldT, Public>; 2] {
+pub fn kernel_self(c: &mut Circuit) -> [Wire<FieldT, Public>; 2] {
     let (wires, value) = mint_read(c, vec![AlignmentAtom::Bytes { length: 32 }]);
     label_read(c, &value, "the kernel self read", &[]);
     let idx_context = ImpactOp::constant(&Op::Idx {
@@ -346,7 +346,7 @@ pub fn kernel_claim_contract_call(addr_ep_comm: &LedgerValue) -> Vec<ImpactOp> {
 /// The ledger authenticates this read at admission (the caller is whoever
 /// actually called), so it is never a private witness — a contract that
 /// wants "only contract X may call me" compares THIS value, not an argument.
-pub fn kernel_caller(c: &mut Circuit3) -> [Wire3<FieldT, Public>; 6] {
+pub fn kernel_caller(c: &mut Circuit) -> [Wire<FieldT, Public>; 6] {
     let atoms = vec![
         BOOL_ATOM,
         BOOL_ATOM,

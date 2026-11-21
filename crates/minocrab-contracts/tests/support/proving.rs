@@ -18,7 +18,7 @@ use midnight_transient_crypto::curve::Fr;
 use midnight_transient_crypto::proofs::{
     KeyLocation, Proof, ProofPreimage, ProvingKeyMaterial, ProvingProvider, Resolver, Zkir,
 };
-use minocrab_zkir::v3::IrSource;
+use minocrab_zkir::IrSource;
 use rand::{CryptoRng, Rng};
 
 /// Key material keyed by `KeyLocation` — which

@@ -5,10 +5,10 @@
 //! immediate where the builder inlines them. The rename has no rows, no
 //! public-input effect and no semantic content, so the comparison is made
 //! modulo it. THE LEAN FORM needs no normaliser: it is what
-//! `Builder3::finish` already emits.
+//! `Builder::finish` already emits.
 
-use minocrab_ir::v3::passes::fold_immediate_copies;
-use minocrab_zkir::v3::IrSource;
+use minocrab_ir::passes::fold_immediate_copies;
+use minocrab_zkir::IrSource;
 
 /// [`fold_immediate_copies`] over a whole [`IrSource`] — the form the
 /// instruction-for-instruction differentials need, because they must run the
@@ -21,7 +21,7 @@ use minocrab_zkir::v3::IrSource;
 /// constant that either side NAMES for an output slot is still named on both.
 ///
 /// THE COPY FOLD ONLY, deliberately: `drop_true_asserts` also runs in
-/// `Builder3::finish`, and is NOT part of this normalisation. It deletes an
+/// `Builder::finish`, and is NOT part of this normalisation. It deletes an
 /// instruction rather than renaming one, and no compactc artifact we hold
 /// contains an `assert` on an immediate (measured 2026-09-06: all 332 asserts
 /// in the 211 workspace dumps, and all 251 in the 209 v3 `.zkir` files under

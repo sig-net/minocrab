@@ -19,7 +19,7 @@
 //! construction rather than by judgement. See
 //! notes/interface-crates.org §"Versioning and publishing".
 
-use minocrab::v3::{CallArgs, Decode, LimbConstraint, Prim};
+use minocrab::{CallArgs, Decode, LimbConstraint, Prim};
 use minocrab::Public;
 
 use minocrab_ledger::EntryPoint;

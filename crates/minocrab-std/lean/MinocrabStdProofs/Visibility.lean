@@ -1,8 +1,8 @@
 /-
 The Lean warrant for the visibility system — M25's construct-loop row 3
 (design of record: notes/lean-port.org §3). The Rust constructs it
-warrants live in the `minocrab` crate (`Meet`'s four impls, `Wire3`'s
-`V` parameter, `Circuit3::disclose` as the single Private→Public gate)
+warrants live in the `minocrab` crate (`Meet`'s four impls, `Wire`'s
+`V` parameter, `Circuit::disclose` as the single Private→Public gate)
 and are re-exported and consumed by every `minocrab-std` leaf; the
 proofs ship here because this crate is where circuit code is WRITTEN
 against them.
@@ -92,7 +92,7 @@ theorem le_meet {a b c : Vis} (hca : le c a) (hcb : le c b) :
 
 A tiny expression model: leaves carry a visibility (a constant or
 transcript input is `pub`; a witness is `priv`), every combining
-operation meets (which is what `Circuit3`'s arithmetic does through the
+operation meets (which is what `Circuit`'s arithmetic does through the
 `Meet` bounds), and `disclose` — the ONLY constructor producing `pub`
 from anything — is the gate. `CircuitOut` being Public-only means a
 circuit output is an expression whose `vis` is `pub`; the theorem says
@@ -118,7 +118,7 @@ def undisclosedPriv : Expr → Bool
   | .disclose _ => false
 
 /-- THE THEOREM: an expression types as `Public` IFF every private leaf
-in it sits under a `disclose`. Forward: a `Wire3<_, Public>` cannot
+in it sits under a `disclose`. Forward: a `Wire<_, Public>` cannot
 carry undisclosed witness data — the "single, greppable gate" claim as
 a proof. Backward: the discipline is not conservative — disclosing
 every witness a value uses always suffices to publish it. -/

@@ -198,7 +198,7 @@ state.
   and AUTO-WARNS on any net instruction drop even when the pass is silent.
   =FoldImmediateCopies= / =DedupRangeConstraints= wrap the two reference
   passes; =run_pipeline= composes; =by_name= / =builtin_names= are the
-  registry. Tests in tests/v3_passes.rs pin the wrapper≡free-function
+  registry. Tests in tests/passes.rs pin the wrapper≡free-function
   equality, the drop-warning (and its absence on a no-op), and the
   registry. The trait is exposed by default (stable-ish tier); the
   =unstable= internals sweep is NOT done — step 3.

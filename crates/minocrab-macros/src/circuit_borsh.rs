@@ -5,7 +5,7 @@
 //! ```ignore
 //! #[derive(CircuitBorsh)]
 //! #[borsh(spec = spec_types::RespondMisc)]
-//! struct RespondPayload<V: Vis3> {
+//! struct RespondPayload<V: Vis> {
 //!     request_id: B32<V>,
 //!     recovery_id: Uint<8, V>,
 //! }
@@ -28,7 +28,7 @@
 //!   where the two structs name a field differently.
 //!
 //! THINNESS RULE, as for every derive here: the expansion contains no
-//! `Circuit3` method call at all — `c` is passed along and nothing else.
+//! `Circuit` method call at all — `c` is passed along and nothing else.
 
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
@@ -36,7 +36,7 @@ use syn::spanned::Spanned;
 use syn::{Attribute, Data, DeriveInput, Fields, GenericParam, Ident, LitStr, Path, Type};
 
 use crate::circuit_arg::{
-    arg_fields, bounded_by_vis3, impl_arg_traits_for, skipped_fields, ArgBounds, ArgField, Target,
+    arg_fields, bounded_by_vis, impl_arg_traits_for, skipped_fields, ArgBounds, ArgField, Target,
 };
 
 pub fn expand(input: DeriveInput) -> syn::Result<TokenStream> {
@@ -64,7 +64,7 @@ pub fn expand(input: DeriveInput) -> syn::Result<TokenStream> {
     }
 
     let name = &input.ident;
-    let root = quote!(::minocrab_std::v3);
+    let root = quote!(::minocrab_std);
     let vis = visibility_param(&input)?;
 
     // `CircuitBorsh<V>` for the visibility the struct is written in, and the
@@ -78,7 +78,7 @@ pub fn expand(input: DeriveInput) -> syn::Result<TokenStream> {
     // usable in both directions of a cross-contract call for free.
     let (borsh_generics, borsh_vis, self_ty, private_self_ty, bounds) = match &vis {
         Some(param) => (
-            quote!(<#param: #root::Vis3>),
+            quote!(<#param: #root::Vis>),
             quote!(#param),
             quote!(#name<#param>),
             quote!(#name<#root::__private::Private>),
@@ -157,7 +157,7 @@ fn impl_borsh(
                 )*
             }
 
-            fn constrain_canonical(&self, c: &mut #root::__private::Circuit3) {
+            fn constrain_canonical(&self, c: &mut #root::__private::Circuit) {
                 #(
                     <#types as #root::borsh::CircuitBorsh<#vis>>::constrain_canonical(
                         &self.#idents, c,
@@ -166,7 +166,7 @@ fn impl_borsh(
             }
 
             fn read<__R: #root::borsh::BorshReader<#vis>>(
-                c: &mut #root::__private::Circuit3,
+                c: &mut #root::__private::Circuit,
                 r: &mut __R,
             ) -> Self {
                 Self {
@@ -217,7 +217,7 @@ fn spec_check(
     }
 }
 
-/// The struct's visibility parameter, if it has one: `struct Payload<V: Vis3>`
+/// The struct's visibility parameter, if it has one: `struct Payload<V: Vis>`
 /// serializes at every visibility, a plain struct at `Private`. Unlike
 /// `#[derive(Value)]`, which takes any generic parameters, a serialized
 /// record has nothing else to be generic IN — so anything else is an error
@@ -226,11 +226,11 @@ fn visibility_param(input: &DeriveInput) -> syn::Result<Option<Ident>> {
     let params: Vec<&GenericParam> = input.generics.params.iter().collect();
     match params.as_slice() {
         [] => Ok(None),
-        [GenericParam::Type(param)] if bounded_by_vis3(param) => Ok(Some(param.ident.clone())),
+        [GenericParam::Type(param)] if bounded_by_vis(param) => Ok(Some(param.ident.clone())),
         _ => Err(syn::Error::new(
             input.generics.span(),
             "CircuitBorsh derives for a plain struct or one generic in a \
-             single visibility parameter (`struct Payload<V: Vis3>`): a wire \
+             single visibility parameter (`struct Payload<V: Vis>`): a wire \
              type carries its visibility, and there is nothing else for a \
              serialized record to be generic in",
         )),
@@ -375,8 +375,8 @@ mod tests {
         });
         assert!(!expanded.contains("c ."), "expansion calls a method on the circuit:\n{expanded}");
         assert!(
-            !expanded.contains("Circuit3 ::"),
-            "expansion calls a Circuit3 associated function:\n{expanded}"
+            !expanded.contains("Circuit ::"),
+            "expansion calls a Circuit associated function:\n{expanded}"
         );
     }
 
@@ -399,16 +399,16 @@ mod tests {
     #[test]
     fn a_visibility_parameter_is_carried_into_the_impl() {
         let expanded = expansion(syn::parse_quote! {
-            struct Payload<V: Vis3> {
+            struct Payload<V: Vis> {
                 version: Uint<8, V>,
             }
         });
-        assert!(expanded.contains("impl < V : :: minocrab_std :: v3 :: Vis3 >"), "{expanded}");
+        assert!(expanded.contains("impl < V : :: minocrab_std :: Vis >"), "{expanded}");
         assert!(expanded.contains("CircuitBorsh < V > for Payload < V >"), "{expanded}");
         // The argument impls apply only where every field is an argument —
         // which is at Private, stated as a where-clause.
         assert!(
-            expanded.contains("CircuitArg for Payload < V > where for < '__w > Uint < 8 , V > : :: minocrab_std :: v3 :: CircuitArg"),
+            expanded.contains("CircuitArg for Payload < V > where for < '__w > Uint < 8 , V > : :: minocrab_std :: CircuitArg"),
             "{expanded}"
         );
     }

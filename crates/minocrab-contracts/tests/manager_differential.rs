@@ -25,8 +25,8 @@ use midnight_transient_crypto::proofs::{KeyLocation, ProofPreimage};
 use midnight_transient_crypto::repr::FieldRepr;
 use minocrab::Fr;
 use minocrab_contracts::manager;
-use minocrab_sim::v3::{assert_call_compatible, simulate};
-use minocrab_zkir::v3::IrSource;
+use minocrab_sim::{assert_call_compatible, simulate};
+use minocrab_zkir::IrSource;
 use sha2::{Digest, Sha256};
 
 mod support;
@@ -951,7 +951,7 @@ use midnight_zkir_v3::ir_instructions::ec_mul::ec_mul_offcircuit;
 use midnight_zkir_v3::ir_instructions::to_bytes::to_bytes_offcircuit;
 use midnight_zkir_v3::ir_instructions::into_coordinates::into_coordinates_offcircuit;
 use midnight_curves::k256;
-use minocrab_zkir::v3::IrValue;
+use minocrab_zkir::IrValue;
 use vault::prims::{coin_commitment_of, coin_nullifier_of, evolved_nonce, natives, scalar, sign};
 
 fn keccak(data: &[u8]) -> [u8; 32] {
@@ -1315,7 +1315,7 @@ fn evm_sig_inputs(digest: &[u8; 32], d: u64) -> (Vec<Fr>, [u8; 20]) {
     let k = scalar(0x517e_c0de_u64);
     let (r_le, s_le, pk) = sign(digest, &d, &k);
     use midnight_zkir_v3::ir_instructions::from_bytes::from_bytes_offcircuit;
-    use minocrab_zkir::v3::IrType;
+    use minocrab_zkir::IrType;
     let r = from_bytes_offcircuit(&IrType::Secp256k1Scalar, &r_le).unwrap();
     let s = from_bytes_offcircuit(&IrType::Secp256k1Scalar, &s_le).unwrap();
     let mut v = natives(&r);

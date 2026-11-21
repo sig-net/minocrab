@@ -36,11 +36,11 @@
 
 use core::marker::PhantomData;
 
-use minocrab::v3::Circuit3;
+use minocrab::Circuit;
 use minocrab::{Private, Public};
 use minocrab_ledger::XcallCommitment;
-use minocrab_std::v3::blind::{Add, Max};
-use minocrab_std::v3::{
+use minocrab_std::blind::{Add, Max};
+use minocrab_std::{
     label, own_public_key, Disclose, DisclosureLabel, FieldPath, LedgerRepr,
     LedgerWidth, ProofWires, Stream, StreamSpec, Uint, Value, ZswapCoinPublicKey,
 };
@@ -81,9 +81,9 @@ impl<Env: LedgerRepr, const WORDS: usize> StreamSpec for OutboxSpec<Env, WORDS> 
     type State = (Uint<64, Public>, Uint<64, Public>);
     type Step = (Add, Max);
 
-    fn head(_c: &mut Circuit3, _body: &Self::Body) {}
+    fn head(_c: &mut Circuit, _body: &Self::Body) {}
 
-    fn delta(c: &mut Circuit3, _head: &()) -> Self::State {
+    fn delta(c: &mut Circuit, _head: &()) -> Self::State {
         (
             Uint::constant(c, 1),
             Uint::constant(c, 0),
@@ -111,13 +111,13 @@ pub struct Outstanding<Env> {
 /// A ticket for another filing, as for `Pending`:
 ///
 /// ```compile_fail,E0308
-/// use minocrab::v3::Circuit3;
+/// use minocrab::Circuit;
 /// use minocrab_evm::erc20;
 /// use minocrab_signet::filing::Filed;
 /// use minocrab_signet::evm_flow::{Outbox, Succeeded};
 /// use minocrab_signet::signet_flow::Signet;
 /// use minocrab_signet::signet_v1::schema;
-/// use minocrab_std::v3::{Ledger, LedgerRepr, Uint};
+/// use minocrab_std::{Ledger, LedgerRepr, Uint};
 /// use minocrab::Public;
 ///
 /// #[derive(LedgerRepr)] struct Amount { amount: Uint<64, Public> }
@@ -133,7 +133,7 @@ pub struct Outstanding<Env> {
 /// }
 /// const BLOCK: Block = Block::new();
 ///
-/// fn settle(c: &mut Circuit3, ticket: Succeeded<Approve>) {
+/// fn settle(c: &mut Circuit, ticket: Succeeded<Approve>) {
 ///     // ERROR: expected `Succeeded<Filed<Transfer, Success>>`
 ///     BLOCK.transfers.complete(c, ticket);
 /// }
@@ -193,10 +193,10 @@ where
     /// not-member check on the handle: per key, never shared.
     pub fn call(
         &self,
-        c: &mut Circuit3,
+        c: &mut Circuit,
         callee: Contract<impl Extends<Callee<F>>>,
         args: <<Called<F> as EvmCall>::Args as AbiTuple>::Wires<Private>,
-        env: impl FnOnce(&mut Circuit3, Handle<Public>) -> Env,
+        env: impl FnOnce(&mut Circuit, Handle<Public>) -> Env,
     ) -> Handle<Public> {
         let words = <<Called<F> as EvmCall>::Args as AbiTuple>::words(c, args);
         let pre = PreRecord::<WORDS>::file(c, callee.address(), &words);
@@ -219,7 +219,7 @@ where
     /// PERMISSIONLESS and per key: the two stream reads are of entries
     /// written once at the call. (The Signet request nonce read inside
     /// `file_request` is the protocol record's, see the module docs.)
-    pub fn emit(&self, c: &mut Circuit3, handle: Handle) -> RequestId<Public> {
+    pub fn emit(&self, c: &mut Circuit, handle: Handle) -> RequestId<Public> {
         let handle = handle.disclose_as::<HandleEmitted>(c);
         // Both entries were written once at the call and are removed here;
         // the environment and the last seen re-enter the ledger under the
@@ -254,7 +254,7 @@ where
     /// own record and outstanding maps. Follow it with [`Self::raise_seen`].
     pub fn complete(
         &self,
-        c: &mut Circuit3,
+        c: &mut Circuit,
         ticket: Succeeded<F>,
     ) -> Outcome<Outstanding<Env>, <Called<F> as EvmCall>::Success> {
         self.pending.complete(c, ticket)
@@ -264,7 +264,7 @@ where
     /// [`Self::raise_seen`].
     pub fn refund(
         &self,
-        c: &mut Circuit3,
+        c: &mut Circuit,
         ticket: Failed<F>,
     ) -> Outcome<Outstanding<Env>, Ret<Called<F>>> {
         self.pending.refund(c, ticket)
@@ -282,7 +282,7 @@ where
     /// last seen past a height the MPC did not sign. Before V1 the attested
     /// payload carried no height and the reference contract had to attest one
     /// as the call's return word (`HeightedTransfer`, now gone).
-    pub fn raise_seen<R>(&self, c: &mut Circuit3, outcome: &Outcome<Outstanding<Env>, R>) {
+    pub fn raise_seen<R>(&self, c: &mut Circuit, outcome: &Outcome<Outstanding<Env>, R>) {
         let height = outcome.block_height;
         c.assert(
             height
@@ -304,10 +304,10 @@ where
     /// public).
     pub fn call_owned<L: DisclosureLabel>(
         &self,
-        c: &mut Circuit3,
+        c: &mut Circuit,
         callee: Contract<impl Extends<Callee<F>>>,
         args: <<Called<F> as EvmCall>::Args as AbiTuple>::Wires<Private>,
-        inner: impl FnOnce(&mut Circuit3, Handle<Public>) -> E,
+        inner: impl FnOnce(&mut Circuit, Handle<Public>) -> E,
     ) -> Handle<Public> {
         let sk = common::witness_sk(c);
         self.call(c, callee, args, |c, handle| HandleOwned {
@@ -324,7 +324,7 @@ where
     /// [`Outbox::raise_seen`].
     pub fn refund_to_owner<L: DisclosureLabel>(
         &self,
-        c: &mut Circuit3,
+        c: &mut Circuit,
         ticket: Failed<F>,
     ) -> (
         ZswapCoinPublicKey<Public>,

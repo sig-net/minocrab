@@ -27,7 +27,7 @@ minocrab-zkir.workspace = true
 
 [dev-dependencies]
 # tests/same_as_std.rs: each lean std gadget and its compactc-shaped twin here
-# are run on the same inputs through the executor (`minocrab_sim::v3::exec`,
+# are run on the same inputs through the executor (`minocrab_sim::exec`,
 # Midnight's on-chain VM) and must agree on accept/reject, outputs, the
 # public-input vector, the transcript and the call's effects. The state
 # tree's own types seed the ledger; proptest draws the inputs; the zkir and

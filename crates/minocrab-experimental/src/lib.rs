@@ -18,7 +18,7 @@
 //! [`impact`] is the escape hatch beneath `minocrab-std`'s typed ledger
 //! slots. A typed slot knows its field index and its value's layout; an op
 //! written by hand knows neither. Both kinds of write go through the
-//! stale-read backstop, which [`minocrab_ledger::emit`] runs. The primitives themselves (`Circuit3::impact_mixed`,
+//! stale-read backstop, which [`minocrab_ledger::emit`] runs. The primitives themselves (`Circuit::impact_mixed`,
 //! [`minocrab_ledger::emit`] and the builders) stay public in the crates
 //! they live in, because `minocrab-std` and `minocrab-compat` are other
 //! crates and lower to them. What this crate gives a contract author is the

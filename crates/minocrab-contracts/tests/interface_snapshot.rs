@@ -21,9 +21,9 @@
 //!   - `wit <type>` — one line per `PrivateInput` instruction, i.e. per
 //!     private-transcript read, in execution order; `(guarded)` marks a
 //!     conditional read. Witnesses are not entry-point arguments, and
-//!     `Compiled3` only counts them, so the list is recovered from the
+//!     `Compiled` only counts them, so the list is recovered from the
 //!     instruction stream (the count is cross-checked against
-//!     `Compiled3::witnesses`).
+//!     `Compiled::witnesses`).
 //!
 //! To regenerate after an INTENTIONAL interface change (a toolchain bump
 //! that moves a schema is one — notes/version-bump.org):
@@ -34,9 +34,9 @@
 
 mod support;
 
-use minocrab::v3::Compiled3;
+use minocrab::Compiled;
 use minocrab::DisclosureKind;
-use minocrab_zkir::v3::{Instruction, IrType};
+use minocrab_zkir::{Instruction, IrType};
 use support::{circuits, diff, rewrite_generated_region, test_source};
 
 /// `(circuit, interface)` — frozen at "M9 phase 0: freeze every circuit's
@@ -2592,7 +2592,7 @@ fn type_name(ty: &IrType) -> String {
 }
 
 /// `%evmNonce.3` → `evmNonce`. The `%` prefix and the `.index` suffix are
-/// `Builder3`'s uniquifiers, not part of the declared name; anything that
+/// `Builder`'s uniquifiers, not part of the declared name; anything that
 /// does not have that exact shape is kept verbatim.
 fn label(name: &str) -> &str {
     let name = name.strip_prefix('%').unwrap_or(name);
@@ -2605,7 +2605,7 @@ fn label(name: &str) -> &str {
 }
 
 /// One circuit's interface, one line per argument / output / witness read.
-fn interface(c: &Compiled3) -> Vec<String> {
+fn interface(c: &Compiled) -> Vec<String> {
     let mut lines = Vec::new();
 
     let inputs = serde_json::to_value(&c.ir.inputs).expect("inputs serialize");
@@ -2615,7 +2615,7 @@ fn interface(c: &Compiled3) -> Vec<String> {
         lines.push(format!("in  {}: {ty}", label(name)));
     }
 
-    // The IR's output signature is types only; `Circuit3::output` records one
+    // The IR's output signature is types only; `Circuit::output` records one
     // `Output` disclosure per queued output, in the same order.
     let out_labels: Vec<&str> = c
         .disclosures

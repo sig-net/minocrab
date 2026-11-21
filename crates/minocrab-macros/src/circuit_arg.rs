@@ -57,7 +57,7 @@ pub(crate) enum ArgBounds {
     Plain,
     /// Every impl holds exactly where every FIELD's impl of the same trait
     /// holds, so rustc decides which apply. This is how one declaration of a
-    /// `Notification<V: Vis3>` serves the callee's arguments at `Private`
+    /// `Notification<V: Vis>` serves the callee's arguments at `Private`
     /// and a caller's cross-contract call at `Public`, and how a record
     /// generic over its payload (`Owned<E>`) is a ledger value exactly where
     /// `E` is. Each bound is written `for<'__w> Field: Trait`: a bound with
@@ -97,7 +97,7 @@ impl Target<'_> {
         let mut generics = self.generics.clone();
         generics
             .params
-            .push(parse_quote!(__V: ::minocrab_std::v3::__private::Visibility));
+            .push(parse_quote!(__V: ::minocrab_std::__private::Visibility));
         let (impl_generics, _, _) = generics.split_for_impl();
         quote!(#impl_generics)
     }
@@ -120,16 +120,16 @@ pub fn expand(input: DeriveInput) -> syn::Result<TokenStream> {
     crate::value::expand_checked(input, crate::value::Check::CircuitArg)
 }
 
-/// Whether a type parameter is the struct's visibility (`V: Vis3`). Shared
+/// Whether a type parameter is the struct's visibility (`V: Vis`). Shared
 /// with `#[derive(CircuitBorsh)]`, which serializes such a struct at every
 /// `V`.
-pub(crate) fn bounded_by_vis3(param: &syn::TypeParam) -> bool {
+pub(crate) fn bounded_by_vis(param: &syn::TypeParam) -> bool {
     param.bounds.iter().any(|bound| match bound {
         syn::TypeParamBound::Trait(t) => t
             .path
             .segments
             .last()
-            .is_some_and(|segment| segment.ident == "Vis3"),
+            .is_some_and(|segment| segment.ident == "Vis" || segment.ident == crate::OLD_VIS),
         _ => false,
     })
 }
@@ -167,10 +167,10 @@ pub(crate) fn impl_arg_traits_for(target: &Target) -> TokenStream {
         .collect();
 
     // Every path the expansion names is fully qualified, and none of them is
-    // a `Circuit3` method: `c` is only ever passed along (THINNESS RULE,
+    // a `Circuit` method: `c` is only ever passed along (THINNESS RULE,
     // notes/contract-api.org §macros).
     let skipped = target.skipped_init();
-    let root = quote!(::minocrab_std::v3);
+    let root = quote!(::minocrab_std);
     let abi_where = target.clause(&quote!(#root::CircuitAbi), false);
     let encode_where = target.clause(&quote!(#root::Encode<__V>), true);
     let arg_where = target.clause(&quote!(#root::CircuitArg), false);
@@ -180,7 +180,7 @@ pub(crate) fn impl_arg_traits_for(target: &Target) -> TokenStream {
             #[automatically_derived]
             impl #impl_generics_v #root::Decode<__V> for #self_ty #decode_where {
                 fn decode(
-                    slots: &[#root::__private::Wire3<#root::__private::FieldT, __V>],
+                    slots: &[#root::__private::Wire<#root::__private::FieldT, __V>],
                 ) -> Self {
                     // Struct-literal fields are evaluated in written order,
                     // which is the slot order, so the running offset is the
@@ -223,7 +223,7 @@ pub(crate) fn impl_arg_traits_for(target: &Target) -> TokenStream {
         impl #impl_generics_v #root::Encode<__V> for #self_ty #encode_where {
             fn encode(
                 &self,
-                slots: &mut ::std::vec::Vec<#root::__private::Wire3<#root::__private::FieldT, __V>>,
+                slots: &mut ::std::vec::Vec<#root::__private::Wire<#root::__private::FieldT, __V>>,
             ) {
                 #( <#types as #root::Encode<__V>>::encode(&self.#idents, slots); )*
             }
@@ -234,7 +234,7 @@ pub(crate) fn impl_arg_traits_for(target: &Target) -> TokenStream {
         #[automatically_derived]
         impl #impl_generics #root::CircuitArg for #self_ty #arg_where {
             fn declare(
-                c: &mut #root::__private::Circuit3,
+                c: &mut #root::__private::Circuit,
                 path: &#root::ArgPath,
             ) -> Self {
                 Self {
@@ -253,7 +253,7 @@ pub(crate) fn impl_arg_traits_for(target: &Target) -> TokenStream {
         impl #impl_generics #root::CircuitArgs for #self_ty #arg_where {
             const SLOTS: usize = <Self as #root::CircuitAbi>::SLOTS;
 
-            fn declare(c: &mut #root::__private::Circuit3) -> Self {
+            fn declare(c: &mut #root::__private::Circuit) -> Self {
                 Self {
                     #(
                         #idents: <#types as #root::CircuitArg>::declare(
@@ -265,7 +265,7 @@ pub(crate) fn impl_arg_traits_for(target: &Target) -> TokenStream {
                 }
             }
 
-            fn constrain(&self, c: &mut #root::__private::Circuit3) {
+            fn constrain(&self, c: &mut #root::__private::Circuit) {
                 <Self as #root::CircuitArg>::constrain(self, c)
             }
 
@@ -428,8 +428,8 @@ mod tests {
         });
         assert!(!expanded.contains("c ."), "expansion calls a method on the circuit:\n{expanded}");
         assert!(
-            !expanded.contains("Circuit3 ::"),
-            "expansion calls a Circuit3 associated function:\n{expanded}"
+            !expanded.contains("Circuit ::"),
+            "expansion calls a Circuit associated function:\n{expanded}"
         );
     }
 

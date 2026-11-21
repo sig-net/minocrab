@@ -7,17 +7,17 @@
 use std::borrow::Cow;
 
 use midnight_transient_crypto::proofs::{KeyLocation, ProofPreimage};
-use minocrab::v3::{Circuit3, Compiled3};
+use minocrab::{Circuit, Compiled};
 use minocrab::{Fr, Private};
 use minocrab_compat::deserialize::Packed;
-use minocrab_std::v3::BytesN;
-use minocrab_zkir::v3::IrValue;
+use minocrab_std::BytesN;
+use minocrab_zkir::IrValue;
 
 /// `Bytes<64>` read as `{ flag: Boolean, a: Uint<128>, b: Uint<8>,
 /// tag: Bytes<32>, c: Uint<64> @50 }`, plus `Uint<64>` at 25..33, which
 /// spans the limb boundary at byte 31. Every value is returned.
-fn circuit() -> Compiled3 {
-    let mut c = Circuit3::new();
+fn circuit() -> Compiled {
+    let mut c = Circuit::new();
     minocrab_compat::profile(&mut c);
     let bytes = BytesN::<Private, 64>::arg(&mut c, "bytes");
     bytes.constrain_input(&mut c);
@@ -42,7 +42,7 @@ fn limbs(bytes: &[u8; 64]) -> Vec<Fr> {
     [&bytes[62..64], &bytes[31..62], &bytes[0..31]].iter().map(|l| Fr::from_le_bytes(l).unwrap()).collect()
 }
 
-fn run(compiled: &Compiled3, bytes: &[u8; 64]) -> Option<Vec<Fr>> {
+fn run(compiled: &Compiled, bytes: &[u8; 64]) -> Option<Vec<Fr>> {
     let pi = ProofPreimage {
         inputs: limbs(bytes),
         private_transcript: vec![],
@@ -52,7 +52,7 @@ fn run(compiled: &Compiled3, bytes: &[u8; 64]) -> Option<Vec<Fr>> {
         communications_commitment: None,
         key_location: KeyLocation(Cow::Borrowed("minocrab-compat-test")),
     };
-    let run = minocrab_sim::v3::simulate(&compiled.ir, &pi).ok()?;
+    let run = minocrab_sim::simulate(&compiled.ir, &pi).ok()?;
     Some(
         run.outputs
             .iter()

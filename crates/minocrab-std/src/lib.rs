@@ -8,8 +8,8 @@
 //! in notes/builtin-lowering.org; each ported item is differential-tested
 //! against compactc's compilation of the original.
 //!
-//! Everything lives under [`v3`] (ZKIR v3, the only target): the typed
-//! leaves ([`v3::Uint`], [`v3::Bytes`], [`v3::B32`]), the ledger block, the
+//! Everything is at the crate root (ZKIR v3 is the only target): the typed
+//! leaves ([`Uint`], [`Bytes`], [`B32`]), the ledger block, the
 //! kernel ADT, Borsh, and the `secp256k1`/keccak circuits. Values above a
 //! single field element are typed leaves whose slots flatten in declaration
 //! order beside the type's FAB alignment atoms — compactc's own
@@ -18,8 +18,8 @@
 //! # Where this sits
 //!
 //! The top of the library stack: [`minocrab`] (L2) supplies the eDSL and
-//! [`minocrab_ledger`] (L2.5) the Impact op emission that [`v3::LedgerMap`]
-//! and [`v3::kernel`] wrap, and with the default `macros` feature the
+//! [`minocrab_ledger`] (L2.5) the Impact op emission that [`LedgerMap`]
+//! and [`kernel`] wrap, and with the default `macros` feature the
 //! `minocrab-macros` decorators are re-exported from here beside the traits
 //! they implement. A contract crate normally depends on this crate alone, and
 //! on `minocrab-sim` as a dev-dependency to run its circuits under
@@ -27,17 +27,17 @@
 //!
 //! # Start here
 //!
-//! - [`v3::Uint`], [`v3::Bytes`], [`v3::B32`], [`v3::Bool`] — the typed
+//! - [`Uint`], [`Bytes`], [`B32`], [`Bool`] — the typed
 //!   leaves; an argument's type *is* its range constraint
-//! - [`v3::hash`] — the two hash flavors, always called module-qualified
+//! - [`hash`] — the two hash flavors, always called module-qualified
 //!   because which bytes get hashed is a decision
-//! - [`v3::borsh`] — canonical Borsh over the fixed-width subset a circuit
+//! - [`borsh`] — canonical Borsh over the fixed-width subset a circuit
 //!   can emit
-//! - [`v3::LedgerMap`], [`v3::LedgerCell`], [`v3::LedgerCounter`] — the
+//! - [`LedgerMap`], [`LedgerCell`], [`LedgerCounter`] — the
 //!   ledger block as types, carrying Compact's own method names
-//! - [`v3::kernel`] — mint/send/receive/claim, `blockTime*`,
+//! - [`kernel`] — mint/send/receive/claim, `blockTime*`,
 //!   `unshieldedBalance*`
-//! - [`macro@v3::circuit`] and [`macro@v3::Value`] — the decorators
+//! - [`macro@circuit`] and [`macro@Value`] — the decorators
 //!   (default `macros` feature)
 //!
 //! # Stability (M24 tier boundary)
@@ -49,5 +49,61 @@
 //! promise: the tier line inside this crate is drawn deliberately small
 //! while users are few, and widens by decision.
 
-pub mod v3;
+mod leaves;
+mod slots;
+mod disclose;
+mod entry;
+mod ledger;
+
+/// Blind accumulators (M40): the steps the ledger applies itself — `Add`,
+/// `Max`, `Min`, `And`, `Or`, `Last`, `First` and tuples of them — with a
+/// blind snapshot into a per-key map. Written module-qualified
+/// (`blind::Max`) except for the two traits.
+mod assumed;
+pub mod blind;
+mod hook;
+mod stream;
+mod vector;
+
+/// Compact's `kernel` ADT and the token stdlib built on it (M17) — always
+/// written module-qualified (`kernel::balance(c, &t)`), because a kernel
+/// operation is an EFFECT on the transaction and the call site should say so.
+pub mod kernel;
+mod predicate;
+
+/// Compact's `emit <event>` — always written module-qualified
+/// (`event::emit(c, version, tag, &payload)`): an event is public output
+/// appended to the transaction's log, and the call site should say so.
+pub mod event;
+
+/// Canonical Borsh, restricted to the fixed-width subset a circuit can emit
+/// — the serialization layer (M11, notes/borsh-format.org). Read its module
+/// docs first: **this is Borsh, not a format of ours**, and the subset exists
+/// because a circuit cannot have data-dependent layout.
+pub mod borsh;
+
+/// The two hash FLAVORS — `persistent_hash`/`transient_hash` over a value's
+/// Borsh encoding (the default) and the `_compact` pair over Compact's FAB
+/// representation (Compact-interop digest agreement only). Always written
+/// module-qualified (`hash::persistent_hash(c, &v)`), never re-exported bare:
+/// which bytes get hashed is a decision, and it should be visible at the call
+/// site.
+pub mod hash;
+pub use leaves::*;
+
+// rename-v3: begin shim (tools/rename-v3.sh never rewrites this block)
+/// The pre-rename path: everything that was `minocrab_std::v3::X` is `minocrab_std::X`.
+/// Kept for the downstream pins only; nothing in this workspace uses it.
+#[doc(hidden)]
+#[deprecated(note = "`minocrab_std::v3` is gone: the items are at the crate root \
+                     (`minocrab_std::X`) and lose the `3` suffix; this module is removed in the next release")]
+pub mod v3 {
+    pub use crate::*;
+    pub use crate::Vis as Vis3;
+    #[deprecated(note = "renamed to `minocrab_std::ShieldedCoinInfo`")]
+    pub type ShieldedCoinInfo3<V> = crate::ShieldedCoinInfo<V>;
+    #[deprecated(note = "renamed to `minocrab_std::QualifiedShieldedCoinInfo`")]
+    pub type QualifiedShieldedCoinInfo3<V> = crate::QualifiedShieldedCoinInfo<V>;
+}
+// rename-v3: end shim
 

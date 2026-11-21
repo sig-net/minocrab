@@ -15,7 +15,7 @@
 //! the byte ourselves: `bounded_differential`'s own ABI check
 //! (`compactc_s_abi_agrees_with_the_leafs`) reads compactc's own `maxval`
 //! out of `contract-info.json` and reconstructs the FAB alignment with
-//! `minocrab::v3::uint_atom_bytes` — the SAME formula this crate's
+//! `minocrab::uint_atom_bytes` — the SAME formula this crate's
 //! lowering uses to build the circuit in the first place — so a wrong
 //! formula agrees with itself and that check can never see it
 //! (notes/version-bump.org, decision list item 3). This differential
@@ -46,8 +46,8 @@ use midnight_transient_crypto::proofs::{KeyLocation, ProofPreimage};
 use midnight_transient_crypto::repr::FieldRepr;
 use minocrab::Fr;
 use minocrab_contracts::bounded_ledger::BoundedLedger;
-use minocrab_sim::v3::assert_call_compatible;
-use minocrab_zkir::v3::IrSource;
+use minocrab_sim::assert_call_compatible;
+use minocrab_zkir::IrSource;
 
 type VmOp = Op<ResultModeVerify, InMemoryDB>;
 
@@ -57,7 +57,7 @@ fn theirs(name: &str) -> IrSource {
         "{}/tests/fixtures/bounded_ledger/out/zkir/{name}.zkir",
         env!("CARGO_MANIFEST_DIR")
     );
-    minocrab_zkir::v3::read_zkir(&path).expect("the pinned compactc's artifact parses")
+    minocrab_zkir::read_zkir(&path).expect("the pinned compactc's artifact parses")
 }
 
 fn bytes1_value(v: u8) -> AlignedValue {
@@ -169,10 +169,10 @@ fn the_write_is_call_compatible() {
 /// this check structurally cannot.
 #[test]
 fn compactc_s_abi_agrees_with_the_leaf() {
-    use minocrab::v3::CircuitAbi;
+    use minocrab::CircuitAbi;
     use minocrab::Public;
     use minocrab_abi::info::ContractInfo;
-    use minocrab_std::v3::BoundedUint;
+    use minocrab_std::BoundedUint;
 
     let text = std::fs::read_to_string(format!(
         "{}/tests/fixtures/bounded_ledger/out/compiler/contract-info.json",

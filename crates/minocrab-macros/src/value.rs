@@ -12,7 +12,7 @@
 //!
 //! So `struct Env { amount: Uint<64, Public> }` is a ledger value and a
 //! call argument and not a circuit argument; `struct Args { amount:
-//! Uint<64> }` is the reverse; `struct Notification<V: Vis3>` is each at its
+//! Uint<64> }` is the reverse; `struct Notification<V: Vis>` is each at its
 //! own visibility; and `struct Owned<E> { owner: Commit, inner: E }` is a
 //! ledger value exactly where `E` is. Visibility is never decided here: a
 //! leaf implements each trait at the visibilities it may cross, and a
@@ -27,7 +27,7 @@
 //! field in an argument, or a `Private` field in a stored record, stays at
 //! the definition.
 //!
-//! THINNESS RULE: the expansion calls no `Circuit3` method; `c` is threaded
+//! THINNESS RULE: the expansion calls no `Circuit` method; `c` is threaded
 //! to the fields' own impls.
 
 use proc_macro2::TokenStream;
@@ -84,7 +84,7 @@ pub(crate) fn expand_checked(input: DeriveInput, check: Check) -> syn::Result<To
 
 /// `ProofWires` and `LedgerRepr`, field by field.
 fn impl_ledger_traits(target: &Target) -> TokenStream {
-    let root = quote!(::minocrab_std::v3::__derive);
+    let root = quote!(::minocrab_std::__derive);
     let self_ty = &target.self_ty;
     let impl_generics = target.impl_generics();
     let wires_where = target.clause(&quote!(#root::ProofWires), true);
@@ -111,14 +111,14 @@ fn impl_ledger_traits(target: &Target) -> TokenStream {
 
             fn push_limbs(
                 &self,
-                c: &mut #root::Circuit3,
-                limbs: &mut ::std::vec::Vec<#root::Wire3<#root::FieldT, #root::Public>>,
+                c: &mut #root::Circuit,
+                limbs: &mut ::std::vec::Vec<#root::Wire<#root::FieldT, #root::Public>>,
             ) {
                 #( <#types as #root::LedgerRepr>::push_limbs(&self.#idents, c, limbs); )*
             }
 
             fn from_limbs(
-                limbs: ::std::vec::Vec<#root::Wire3<#root::FieldT, #root::Public>>,
+                limbs: ::std::vec::Vec<#root::Wire<#root::FieldT, #root::Public>>,
             ) -> Self {
                 let mut limbs = limbs.into_iter();
                 let value = Self {
@@ -148,9 +148,9 @@ fn definition_check(input: &DeriveInput, check: Check) -> TokenStream {
     let name = &input.ident;
     let bound = match check {
         Check::None => return quote!(),
-        Check::CircuitArg => quote!(::minocrab_std::v3::CircuitArg),
+        Check::CircuitArg => quote!(::minocrab_std::CircuitArg),
         Check::LedgerRepr => {
-            quote!(::minocrab_std::v3::__derive::LedgerRepr + ::minocrab_std::v3::__derive::ProofWires)
+            quote!(::minocrab_std::__derive::LedgerRepr + ::minocrab_std::__derive::ProofWires)
         }
     };
     quote_spanned! {name.span()=>
@@ -177,7 +177,7 @@ mod tests {
             struct Env { a: B32<Public>, b: Uint<64, Public> }
         });
         assert!(!expanded.contains("c ."), "{expanded}");
-        assert!(!expanded.contains("Circuit3 ::"), "{expanded}");
+        assert!(!expanded.contains("Circuit ::"), "{expanded}");
         assert!(expanded.contains("repr_limbs :: < B32 < Public > >"), "{expanded}");
     }
 
@@ -198,7 +198,7 @@ mod tests {
             "LedgerRepr",
         ] {
             for field in ["B32 < Public >", "Uint < 64 , Public >"] {
-                let clause = format!("for < '__w > {field} : :: minocrab_std :: v3 ::");
+                let clause = format!("for < '__w > {field} : :: minocrab_std ::");
                 assert!(
                     expanded.contains(&clause) && expanded.contains(bound),
                     "no `{clause} {bound}` in\n{expanded}"
@@ -221,16 +221,16 @@ mod tests {
         });
         assert!(
             expanded.contains(
-                "impl < E : Clone , const N : usize > :: minocrab_std :: v3 :: __derive :: LedgerRepr for Owned < E , N >"
+                "impl < E : Clone , const N : usize > :: minocrab_std :: __derive :: LedgerRepr for Owned < E , N >"
             ),
             "{expanded}"
         );
         assert!(
-            expanded.contains("impl < E : Clone , const N : usize , __V : :: minocrab_std :: v3 :: __private :: Visibility > :: minocrab_std :: v3 :: Encode < __V > for Owned < E , N >"),
+            expanded.contains("impl < E : Clone , const N : usize , __V : :: minocrab_std :: __private :: Visibility > :: minocrab_std :: Encode < __V > for Owned < E , N >"),
             "{expanded}"
         );
         assert!(
-            expanded.contains("for < '__w > E : :: minocrab_std :: v3 :: __derive :: LedgerRepr"),
+            expanded.contains("for < '__w > E : :: minocrab_std :: __derive :: LedgerRepr"),
             "{expanded}"
         );
         assert!(expanded.contains("E : Copy"), "the user's where-clause is kept:\n{expanded}");
@@ -241,13 +241,13 @@ mod tests {
     #[test]
     fn a_visibility_generic_record_is_written_once() {
         let expanded = expansion(syn::parse_quote! {
-            struct Notification<V: Vis3> { version: Uint<8, V>, payload: BytesN<V, 128> }
+            struct Notification<V: Vis> { version: Uint<8, V>, payload: BytesN<V, 128> }
         });
         assert!(
-            expanded.contains(":: minocrab_std :: v3 :: CircuitArg for Notification < V >"),
+            expanded.contains(":: minocrab_std :: CircuitArg for Notification < V >"),
             "{expanded}"
         );
-        assert!(expanded.contains("for < '__w > Uint < 8 , V > : :: minocrab_std :: v3 :: Encode < __V >"), "{expanded}");
+        assert!(expanded.contains("for < '__w > Uint < 8 , V > : :: minocrab_std :: Encode < __V >"), "{expanded}");
     }
 
     /// A skipped type-state field is in no bound and no slot list, and is
@@ -270,7 +270,7 @@ mod tests {
         )
         .expect("expands")
         .to_string();
-        assert!(arg.contains("fn __is < T : :: minocrab_std :: v3 :: CircuitArg > ()"), "{arg}");
+        assert!(arg.contains("fn __is < T : :: minocrab_std :: CircuitArg > ()"), "{arg}");
         assert!(arg.contains("__is :: < Args > ()"), "{arg}");
 
         let repr = expand_checked(
@@ -279,6 +279,6 @@ mod tests {
         )
         .expect("expands")
         .to_string();
-        assert!(repr.contains("LedgerRepr + :: minocrab_std :: v3 :: __derive :: ProofWires"), "{repr}");
+        assert!(repr.contains("LedgerRepr + :: minocrab_std :: __derive :: ProofWires"), "{repr}");
     }
 }

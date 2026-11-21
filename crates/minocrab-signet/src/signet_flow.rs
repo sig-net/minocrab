@@ -88,7 +88,7 @@
 //!
 //! ```compile_fail,E0277
 //! use minocrab::{Private, Public};
-//! use minocrab_std::v3::{LedgerRepr, Uint, B32};
+//! use minocrab_std::{LedgerRepr, Uint, B32};
 //!
 //! #[derive(LedgerRepr)]
 //! struct Env { amount: Uint<64, Public>, secret: B32<Private> }
@@ -98,17 +98,17 @@
 //!
 //! ```
 //! use minocrab::Public;
-//! use minocrab_std::v3::{LedgerRepr, Uint, B32};
+//! use minocrab_std::{LedgerRepr, Uint, B32};
 //!
 //! #[derive(LedgerRepr)]
 //! struct Env { amount: Uint<64, Public>, secret: B32<Public> }
 //! ```
 
-use minocrab::v3::{Circuit3, FieldT, Wire3};
+use minocrab::{Circuit, FieldT, Wire};
 use minocrab::{Private, Public};
 use minocrab_ledger::XcallCommitment;
-use minocrab_std::v3::Assumed;
-use minocrab_std::v3::{
+use minocrab_std::Assumed;
+use minocrab_std::{
     is_true, kernel, label, not, Disclose, LedgerCell, LedgerField, LedgerMap, LedgerRepr,
     LedgerWidth, Secp256k1Point, Uint,
 };
@@ -173,7 +173,7 @@ impl Signet {
     /// and set at deployment.
     pub fn initialize(
         &self,
-        c: &mut Circuit3,
+        c: &mut Circuit,
         mpc_response_key: &Secp256k1Point<Public>,
         mpc_key_version: &Uint<8, Public>,
         evm_chain_id: &Uint<64, Public>,
@@ -204,15 +204,15 @@ impl LedgerWidth for Signet {
 /// `file_request`, so a request cannot name another chain than the one the
 /// contract is configured for.
 pub struct EvmTx<const WORDS: usize> {
-    pub nonce: Wire3<FieldT, Private>,
-    pub max_priority_fee_per_gas: Wire3<FieldT, Private>,
-    pub max_fee_per_gas: Wire3<FieldT, Private>,
-    pub gas_limit: Wire3<FieldT, Private>,
-    pub to: Wire3<FieldT, Private>,
-    pub value: Wire3<FieldT, Private>,
+    pub nonce: Wire<FieldT, Private>,
+    pub max_priority_fee_per_gas: Wire<FieldT, Private>,
+    pub max_fee_per_gas: Wire<FieldT, Private>,
+    pub gas_limit: Wire<FieldT, Private>,
+    pub to: Wire<FieldT, Private>,
+    pub value: Wire<FieldT, Private>,
     /// `Maybe<EvmCalldata>`: the flag then the (always-present, zero-filled
     /// when absent) calldata.
-    pub calldata_is_some: Wire3<FieldT, Private>,
+    pub calldata_is_some: Wire<FieldT, Private>,
     pub calldata: signet_v1::EvmCalldata<Private, WORDS>,
 }
 
@@ -244,7 +244,7 @@ pub enum Signing {
 impl Signing {
     /// THE CONTRACT'S OWN KEY — `pad(32, "")`, the path
     /// [`SigningPath::contract_path`] names.
-    pub fn contract(c: &mut Circuit3) -> Self {
+    pub fn contract(c: &mut Circuit) -> Self {
         Signing::Constant(SigningPath::contract_path(c).private())
     }
 
@@ -322,12 +322,12 @@ pub struct Outcome<Env, R> {
 /// those words with no per-slot select
 /// ([`signet_v1::calculate_evm_type2_tx_params_digest_v1`]).
 pub(crate) fn file_request<const WORDS: usize, S: OutputSchema>(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     signet: &Signet,
     records: &LedgerMap<RequestId<Public>, EventRecordV1<WORDS, S::At<Public>>>,
     req: SignRequest<WORDS>,
     words_used: usize,
-    after_insert: impl FnOnce(&mut Circuit3, RequestId<Public>),
+    after_insert: impl FnOnce(&mut Circuit, RequestId<Public>),
 ) -> RequestId<Public> {
     let zero = c.constant(0u64);
     let me = kernel::cache_self_address(c);

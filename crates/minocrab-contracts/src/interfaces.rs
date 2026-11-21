@@ -25,7 +25,7 @@
 //! `minocrab-interface-gen`). Both are ordinary dependencies of this crate.
 
 use minocrab::Public;
-use minocrab_std::v3::{interface, ContractAddress, ShieldedCoinInfo3, Uint, B32};
+use minocrab_std::{interface, ContractAddress, ShieldedCoinInfo, Uint, B32};
 
 /// The `xcontract-events` token — the one callee in the corpus with a
 /// RETURN VALUE, and so the one that exercises `Decode<Public>`:
@@ -51,6 +51,6 @@ pub trait Token {
 /// ```
 #[interface]
 pub trait PaymentTarget {
-    fn notify(coin: ShieldedCoinInfo3<Public>);
+    fn notify(coin: ShieldedCoinInfo<Public>);
     fn confirm_request(request_id: B32<Public>);
 }

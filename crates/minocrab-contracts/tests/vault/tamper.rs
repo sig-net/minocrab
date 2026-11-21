@@ -15,8 +15,8 @@
 
 use midnight_transient_crypto::proofs::ProofPreimage;
 use minocrab::Fr;
-use minocrab_sim::v3::simulate;
-use minocrab_zkir::v3::IrSource;
+use minocrab_sim::simulate;
+use minocrab_zkir::IrSource;
 
 /// Which part of a preimage a sweep perturbs.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

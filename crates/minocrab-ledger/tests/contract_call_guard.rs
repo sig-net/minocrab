@@ -8,12 +8,12 @@
 //! resolves the AMBIENT scope, so the one way to guard a call is
 //! `c.when(g, |c| contract_call(c, ..))`.
 
-use minocrab::v3::{Circuit3, FieldT, LimbConstraint};
+use minocrab::{Circuit, FieldT, LimbConstraint};
 use minocrab_ledger::{contract_call, EntryPoint};
-use minocrab_zkir::v3::to_zkir_string;
+use minocrab_zkir::to_zkir_string;
 
-fn zkir(build: impl FnOnce(&mut Circuit3)) -> String {
-    let mut c = Circuit3::new();
+fn zkir(build: impl FnOnce(&mut Circuit)) -> String {
+    let mut c = Circuit::new();
     build(&mut c);
     to_zkir_string(&c.finish(true).ir).expect("serializes")
 }

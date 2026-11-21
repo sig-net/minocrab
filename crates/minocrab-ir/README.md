@@ -13,9 +13,9 @@
 This layer knows nothing about wires, visibility or disclosure — that is L2, and it is what contract code should be written against. Reach for this crate to emit ZKIR directly, or to run a pass over it.
 
 ```rust
-use minocrab_ir::v3::{Arg, Builder3, IrType};
+use minocrab_ir::{Arg, Builder, IrType};
 
-let mut b = Builder3::new();
+let mut b = Builder::new();
 let x = b.input("x", IrType::Native);
 let x_plus_3 = b.add(x, 3u64);          // immediates are inline operands in v3
 let hashed = b.transient_hash(&[Arg::from(x_plus_3)]);
@@ -23,7 +23,7 @@ b.output(&[Arg::from(hashed)]);
 let ir = b.finish(false);               // false: no communications commitment
 ```
 
-`v3::Builder3` is the builder (named, typed values, every operand type-checked against the instruction's table). `v3::passes` holds the normalisations both sides of a differential test are run through.
+`Builder` is the builder (named, typed values, every operand type-checked against the instruction's table). `passes` holds the normalisations both sides of a differential test are run through.
 
 [Repository README](https://github.com/sig-net/minocrab#readme) · [VERIFICATION.md](https://github.com/sig-net/minocrab/blob/main/VERIFICATION.md) · [BENCHMARK.md](https://github.com/sig-net/minocrab/blob/main/BENCHMARK.md)
 

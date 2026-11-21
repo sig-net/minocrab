@@ -17,13 +17,13 @@
 
 use midnight_base_crypto::fab::{AlignedValue, Alignment, AlignmentAtom, AlignmentSegment, Value, ValueAtom};
 use minocrab::Fr;
-use minocrab_zkir::v3::{to_zkir_string, IrSource};
+use minocrab_zkir::{to_zkir_string, IrSource};
 
 /// A compactc artifact from the pinned corpus:
 /// `corpus/zkir/{dir}/{name}.zkir`.
 pub fn corpus_zkir(dir: &str, name: &str) -> IrSource {
     let path = format!("{}/../../corpus/zkir/{dir}/{name}.zkir", env!("CARGO_MANIFEST_DIR"));
-    minocrab_zkir::v3::read_zkir(&path).expect("corpus golden parses")
+    minocrab_zkir::read_zkir(&path).expect("corpus golden parses")
 }
 
 /// A circuit's serialized ZKIR with every `%identifier` renamed to `%k` in

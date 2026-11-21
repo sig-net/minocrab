@@ -23,9 +23,9 @@
 //! (executed is succeeded — see [`Deposit`]) and why a settle circuit must
 //! read the return to learn what actually moved.
 
-use minocrab::v3::Circuit3;
+use minocrab::Circuit;
 use minocrab::Private;
-use minocrab_std::v3::{Check, Uint};
+use minocrab_std::{Check, Uint};
 
 use super::erc20::Erc20;
 use super::{always, Address, EvmCall, Extends, Interface, U128, U64};
@@ -68,9 +68,9 @@ impl EvmCall for Deposit {
     type Success = Uint<64, Private>;
     const GAS_LIMIT: u64 = CALL_GAS;
 
-    fn succeeded(c: &mut Circuit3, _out: &Uint<64, Private>) -> Check<Private> {
+    fn succeeded(c: &mut Circuit, _out: &Uint<64, Private>) -> Check<Private> {
         // The constant-true assert this makes is removed by
-        // `drop_true_asserts` in `Builder3::finish`.
+        // `drop_true_asserts` in `Builder::finish`.
         always(c)
     }
 }
@@ -98,7 +98,7 @@ impl EvmCall for Mint {
     type Success = Uint<64, Private>;
     const GAS_LIMIT: u64 = CALL_GAS;
 
-    fn succeeded(c: &mut Circuit3, _out: &Uint<64, Private>) -> Check<Private> {
+    fn succeeded(c: &mut Circuit, _out: &Uint<64, Private>) -> Check<Private> {
         always(c)
     }
 }
@@ -128,7 +128,7 @@ impl EvmCall for Withdraw {
     type Success = Uint<64, Private>;
     const GAS_LIMIT: u64 = CALL_GAS;
 
-    fn succeeded(c: &mut Circuit3, _out: &Uint<64, Private>) -> Check<Private> {
+    fn succeeded(c: &mut Circuit, _out: &Uint<64, Private>) -> Check<Private> {
         always(c)
     }
 }
@@ -148,7 +148,7 @@ impl EvmCall for Redeem {
     type Success = Uint<64, Private>;
     const GAS_LIMIT: u64 = CALL_GAS;
 
-    fn succeeded(c: &mut Circuit3, _out: &Uint<64, Private>) -> Check<Private> {
+    fn succeeded(c: &mut Circuit, _out: &Uint<64, Private>) -> Check<Private> {
         always(c)
     }
 }

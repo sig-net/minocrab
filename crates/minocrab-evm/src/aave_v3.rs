@@ -32,9 +32,9 @@
 //! still a word on the wire, so [`U16`] exists for it — and the spelling is
 //! load-bearing, because `uint16` and `uint256` are different selectors.
 
-use minocrab::v3::Circuit3;
+use minocrab::Circuit;
 use minocrab::Private;
-use minocrab_std::v3::{Check, Uint};
+use minocrab_std::{Check, Uint};
 
 use super::erc4626;
 use super::{always, Address, Bytes32, EvmCall, Interface, Unit, U128, U16, U256, U64, U8};
@@ -84,9 +84,9 @@ impl EvmCall for Supply {
     type Success = ();
     const GAS_LIMIT: u64 = CALL_GAS;
 
-    fn succeeded(c: &mut Circuit3, _out: &()) -> Check<Private> {
+    fn succeeded(c: &mut Circuit, _out: &()) -> Check<Private> {
         // The constant-true assert this makes is removed by
-        // `drop_true_asserts` in `Builder3::finish`.
+        // `drop_true_asserts` in `Builder::finish`.
         always(c)
     }
 }
@@ -129,9 +129,9 @@ impl EvmCall for SupplyWithPermit {
     type Success = ();
     const GAS_LIMIT: u64 = CALL_GAS;
 
-    fn succeeded(c: &mut Circuit3, _out: &()) -> Check<Private> {
+    fn succeeded(c: &mut Circuit, _out: &()) -> Check<Private> {
         // The constant-true assert this makes is removed by
-        // `drop_true_asserts` in `Builder3::finish`.
+        // `drop_true_asserts` in `Builder::finish`.
         always(c)
     }
 }
@@ -160,7 +160,7 @@ impl EvmCall for Withdraw {
     type Success = Uint<64, Private>;
     const GAS_LIMIT: u64 = CALL_GAS;
 
-    fn succeeded(c: &mut Circuit3, _out: &Uint<64, Private>) -> Check<Private> {
+    fn succeeded(c: &mut Circuit, _out: &Uint<64, Private>) -> Check<Private> {
         always(c)
     }
 }
@@ -193,7 +193,7 @@ impl EvmCall for Borrow {
     type Success = ();
     const GAS_LIMIT: u64 = CALL_GAS;
 
-    fn succeeded(c: &mut Circuit3, _out: &()) -> Check<Private> {
+    fn succeeded(c: &mut Circuit, _out: &()) -> Check<Private> {
         always(c)
     }
 }
@@ -219,7 +219,7 @@ impl EvmCall for Repay {
     type Success = Uint<64, Private>;
     const GAS_LIMIT: u64 = CALL_GAS;
 
-    fn succeeded(c: &mut Circuit3, _out: &Uint<64, Private>) -> Check<Private> {
+    fn succeeded(c: &mut Circuit, _out: &Uint<64, Private>) -> Check<Private> {
         always(c)
     }
 }

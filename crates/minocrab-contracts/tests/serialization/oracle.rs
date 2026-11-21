@@ -12,11 +12,11 @@
 use borsh::BorshSerialize;
 use serde::Serialize;
 
-/// The schema walk itself now lives in `minocrab_std::v3::borsh::schema`
+/// The schema walk itself now lives in `minocrab_std::borsh::schema`
 /// (M11 stage 3), so the derive's generated `#[borsh(spec = …)]` cross-check
 /// and this suite use ONE walker rather than two. Re-exported here because
 /// the stage-0 tests were written against these names.
-pub use minocrab_std::v3::borsh::schema::{layout_rows, schema_len, Row};
+pub use minocrab_std::borsh::schema::{layout_rows, schema_len, Row};
 
 /// Oracle 1: canonical Borsh.
 pub fn borsh_bytes<T: BorshSerialize>(value: &T) -> Vec<u8> {

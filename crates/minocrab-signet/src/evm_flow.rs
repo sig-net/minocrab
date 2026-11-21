@@ -98,14 +98,14 @@
 //! directions are compile errors:
 //!
 //! ```compile_fail,E0277
-//! use minocrab::v3::Circuit3;
+//! use minocrab::Circuit;
 //! use minocrab::{Private, Public};
 //! use minocrab_evm::{erc20, erc721};
 //! use minocrab_signet::filing::Filed;
 //! use minocrab_signet::signet_v1::schema;
 //! use minocrab_signet::evm_flow::{Contract, Pending};
 //! use minocrab_signet::signet_flow::Signet;
-//! use minocrab_std::v3::{Bytes, Ledger, LedgerRepr, Uint};
+//! use minocrab_std::{Bytes, Ledger, LedgerRepr, Uint};
 //!
 //! #[derive(LedgerRepr)] struct Amount { amount: Uint<64, Public> }
 //!
@@ -117,7 +117,7 @@
 //! const BLOCK: Block = Block::new();
 //!
 //! fn pull(
-//!     c: &mut Circuit3,
+//!     c: &mut Circuit,
 //!     // AN NFT, whose `transferFrom` returns nothing …
 //!     callee: Contract<erc721::Erc721>,
 //!     from: Bytes<20, Private>,
@@ -136,14 +136,14 @@
 //! and the other way round, where the flag would be discarded:
 //!
 //! ```compile_fail,E0277
-//! use minocrab::v3::Circuit3;
+//! use minocrab::Circuit;
 //! use minocrab::{Private, Public};
 //! use minocrab_evm::{erc20, erc721};
 //! use minocrab_signet::filing::Filed;
 //! use minocrab_signet::signet_v1::schema;
 //! use minocrab_signet::evm_flow::{Contract, Pending};
 //! use minocrab_signet::signet_flow::Signet;
-//! use minocrab_std::v3::{Bytes, Ledger, LedgerRepr, Uint, B32};
+//! use minocrab_std::{Bytes, Ledger, LedgerRepr, Uint, B32};
 //!
 //! #[derive(LedgerRepr)] struct Amount { amount: Uint<64, Public> }
 //!
@@ -155,7 +155,7 @@
 //! const BLOCK: Block = Block::new();
 //!
 //! fn pull(
-//!     c: &mut Circuit3,
+//!     c: &mut Circuit,
 //!     // A FUNGIBLE TOKEN, whose `transferFrom` returns a flag …
 //!     callee: Contract<erc20::Erc20>,
 //!     from: Bytes<20, Private>,
@@ -175,14 +175,14 @@
 //! whose interface it names, in one block:
 //!
 //! ```
-//! use minocrab::v3::Circuit3;
+//! use minocrab::Circuit;
 //! use minocrab::{Private, Public};
 //! use minocrab_evm::{erc20, erc721};
 //! use minocrab_signet::filing::Filed;
 //! use minocrab_signet::signet_v1::schema;
 //! use minocrab_signet::evm_flow::{Contract, Pending};
 //! use minocrab_signet::signet_flow::Signet;
-//! use minocrab_std::v3::{Bytes, Ledger, LedgerRepr, Uint, B32};
+//! use minocrab_std::{Bytes, Ledger, LedgerRepr, Uint, B32};
 //!
 //! #[derive(LedgerRepr)] struct Amount { amount: Uint<64, Public> }
 //!
@@ -196,7 +196,7 @@
 //!
 //! #[allow(clippy::too_many_arguments)]
 //! fn pull_both(
-//!     c: &mut Circuit3,
+//!     c: &mut Circuit,
 //!     token: Contract<erc20::Erc20>,
 //!     nft: Contract<erc721::Erc721>,
 //!     from: Bytes<20, Private>,
@@ -223,14 +223,14 @@
 //! `Erc20`, and a Uniswap router is not one, so there is no `Extends` impl:
 //!
 //! ```compile_fail,E0277
-//! use minocrab::v3::Circuit3;
+//! use minocrab::Circuit;
 //! use minocrab::{Private, Public};
 //! use minocrab_evm::{erc20, uniswap_v3};
 //! use minocrab_signet::filing::Filed;
 //! use minocrab_signet::signet_v1::schema;
 //! use minocrab_signet::evm_flow::{Contract, Pending};
 //! use minocrab_signet::signet_flow::Signet;
-//! use minocrab_std::v3::{Bytes, Ledger, LedgerRepr, Uint};
+//! use minocrab_std::{Bytes, Ledger, LedgerRepr, Uint};
 //!
 //! #[derive(LedgerRepr)] struct Amount { amount: Uint<64, Public> }
 //!
@@ -242,7 +242,7 @@
 //! const BLOCK: Block = Block::new();
 //!
 //! fn send(
-//!     c: &mut Circuit3,
+//!     c: &mut Circuit,
 //!     // ERROR: the trait bound `UniswapV3Router: Extends<Erc20>` is not satisfied
 //!     callee: Contract<uniswap_v3::UniswapV3Router>,
 //!     to: Bytes<20, Private>,
@@ -258,14 +258,14 @@
 //! interface is the only difference, so the rejection is the interface:
 //!
 //! ```
-//! use minocrab::v3::Circuit3;
+//! use minocrab::Circuit;
 //! use minocrab::{Private, Public};
 //! use minocrab_evm::erc20;
 //! use minocrab_signet::filing::Filed;
 //! use minocrab_signet::signet_v1::schema;
 //! use minocrab_signet::evm_flow::{Contract, Pending};
 //! use minocrab_signet::signet_flow::Signet;
-//! use minocrab_std::v3::{Bytes, Ledger, LedgerRepr, Uint};
+//! use minocrab_std::{Bytes, Ledger, LedgerRepr, Uint};
 //!
 //! #[derive(LedgerRepr)] struct Amount { amount: Uint<64, Public> }
 //!
@@ -277,7 +277,7 @@
 //! const BLOCK: Block = Block::new();
 //!
 //! fn send(
-//!     c: &mut Circuit3,
+//!     c: &mut Circuit,
 //!     callee: Contract<erc20::Erc20>,
 //!     to: Bytes<20, Private>,
 //!     amount: Uint<128, Private>,
@@ -293,13 +293,13 @@
 //! the deployed vault has (`transfer` as a claim and as a withdrawal):
 //!
 //! ```compile_fail,E0308
-//! use minocrab::v3::Circuit3;
+//! use minocrab::Circuit;
 //! use minocrab_evm::erc20;
 //! use minocrab_signet::filing::Filed;
 //! use minocrab_signet::signet_v1::schema;
 //! use minocrab_signet::evm_flow::{Owned, Pending, Succeeded};
 //! use minocrab_signet::signet_flow::Signet;
-//! use minocrab_std::v3::{Ledger, LedgerRepr, Uint};
+//! use minocrab_std::{Ledger, LedgerRepr, Uint};
 //! use minocrab::Public;
 //!
 //! #[derive(LedgerRepr)] struct Amount { amount: Uint<64, Public> }
@@ -311,7 +311,7 @@
 //! }
 //! const BLOCK: Block = Block::new();
 //!
-//! fn settle(c: &mut Circuit3, ticket: Succeeded<Filed<erc20::Transfer, schema::NoReturn>>) {
+//! fn settle(c: &mut Circuit, ticket: Succeeded<Filed<erc20::Transfer, schema::NoReturn>>) {
 //!     // ERROR: expected `Succeeded<Filed<Transfer, Success>>`,
 //!     //        found `Succeeded<Filed<Transfer, NoReturn>>`
 //!     BLOCK.transfers.complete(c, ticket);
@@ -321,13 +321,13 @@
 //! THE SAME CODE WITH THE ONE CHANGE REVERTED compiles:
 //!
 //! ```
-//! use minocrab::v3::Circuit3;
+//! use minocrab::Circuit;
 //! use minocrab_evm::erc20;
 //! use minocrab_signet::filing::Filed;
 //! use minocrab_signet::signet_v1::schema;
 //! use minocrab_signet::evm_flow::{Owned, Pending, Succeeded};
 //! use minocrab_signet::signet_flow::Signet;
-//! use minocrab_std::v3::{Ledger, LedgerRepr, Uint};
+//! use minocrab_std::{Ledger, LedgerRepr, Uint};
 //! use minocrab::Public;
 //!
 //! #[derive(LedgerRepr)] struct Amount { amount: Uint<64, Public> }
@@ -339,7 +339,7 @@
 //! }
 //! const BLOCK: Block = Block::new();
 //!
-//! fn settle(c: &mut Circuit3, ticket: Succeeded<Filed<erc20::Transfer, schema::Success>>) {
+//! fn settle(c: &mut Circuit, ticket: Succeeded<Filed<erc20::Transfer, schema::Success>>) {
 //!     BLOCK.transfers.complete(c, ticket);
 //! }
 //! ```
@@ -353,7 +353,7 @@
 //! use minocrab_signet::signet_v1::schema;
 //! use minocrab_signet::evm_flow::{Owned, Pending};
 //! use minocrab_signet::signet_flow::Signet;
-//! use minocrab_std::v3::{Ledger, LedgerRepr, Uint};
+//! use minocrab_std::{Ledger, LedgerRepr, Uint};
 //! use minocrab::Public;
 //!
 //! #[derive(LedgerRepr)] struct Amount { amount: Uint<64, Public> }
@@ -380,13 +380,13 @@
 //! `AbiReturn` impl, so a call declaring it as a return cannot be filed:
 //!
 //! ```compile_fail,E0277
-//! use minocrab::v3::Circuit3;
+//! use minocrab::Circuit;
 //! use minocrab_evm::{erc20, always, Address, EvmCall};
 //! use minocrab_signet::filing::Filed;
 //! use minocrab_signet::evm_flow::{Owned, Pending, Succeeded};
 //! use minocrab_signet::signet_flow::Signet;
 //! use minocrab_signet::signet_v1::schema;
-//! use minocrab_std::v3::{Bytes, Check, Ledger, LedgerRepr, Uint};
+//! use minocrab_std::{Bytes, Check, Ledger, LedgerRepr, Uint};
 //! use minocrab::{Private, Public};
 //!
 //! #[derive(LedgerRepr)] struct Amount { amount: Uint<64, Public> }
@@ -400,7 +400,7 @@
 //!     type Return = Address;
 //!     type Success = Bytes<20, Private>;
 //!     const GAS_LIMIT: u64 = erc20::CALL_GAS;
-//!     fn succeeded(c: &mut Circuit3, _: &Bytes<20, Private>) -> Check<Private> {
+//!     fn succeeded(c: &mut Circuit, _: &Bytes<20, Private>) -> Check<Private> {
 //!         always(c)
 //!     }
 //! }
@@ -413,7 +413,7 @@
 //! const BLOCK: Block = Block::new();
 //!
 //! // ERROR: the trait bound `Address: AbiReturn` is not satisfied
-//! fn settle(c: &mut Circuit3, ticket: Succeeded<Filed<WhoOwnsIt, schema::Success>>) {
+//! fn settle(c: &mut Circuit, ticket: Succeeded<Filed<WhoOwnsIt, schema::Success>>) {
 //!     BLOCK.owners.complete(c, ticket);
 //! }
 //! ```
@@ -422,13 +422,13 @@
 //! bytes and the narrowing is written once, in [`AbiReturn`]:
 //!
 //! ```
-//! use minocrab::v3::Circuit3;
+//! use minocrab::Circuit;
 //! use minocrab_evm::{erc20, always, EvmCall, U256};
 //! use minocrab_signet::filing::Filed;
 //! use minocrab_signet::evm_flow::{Owned, Pending, Succeeded};
 //! use minocrab_signet::signet_flow::Signet;
 //! use minocrab_signet::signet_v1::schema;
-//! use minocrab_std::v3::{Check, Ledger, LedgerRepr, Uint, B32};
+//! use minocrab_std::{Check, Ledger, LedgerRepr, Uint, B32};
 //! use minocrab::{Private, Public};
 //!
 //! #[derive(LedgerRepr)] struct Amount { amount: Uint<64, Public> }
@@ -441,7 +441,7 @@
 //!     type Return = U256;
 //!     type Success = B32<Private>;
 //!     const GAS_LIMIT: u64 = erc20::CALL_GAS;
-//!     fn succeeded(c: &mut Circuit3, _: &B32<Private>) -> Check<Private> {
+//!     fn succeeded(c: &mut Circuit, _: &B32<Private>) -> Check<Private> {
 //!         always(c)
 //!     }
 //! }
@@ -453,7 +453,7 @@
 //! }
 //! const BLOCK: Block = Block::new();
 //!
-//! fn settle(c: &mut Circuit3, ticket: Succeeded<Filed<WhatIsItWorth, schema::AmountIn>>) {
+//! fn settle(c: &mut Circuit, ticket: Succeeded<Filed<WhatIsItWorth, schema::AmountIn>>) {
 //!     BLOCK.prices.complete(c, ticket);
 //! }
 //! ```
@@ -467,7 +467,7 @@
 //! use minocrab_signet::filing::Filed;
 //! use minocrab_signet::signet_v1::schema;
 //! use minocrab_signet::evm_flow::{Owned, Pending};
-//! use minocrab_std::v3::{Ledger, LedgerCounter, LedgerRepr, Uint};
+//! use minocrab_std::{Ledger, LedgerCounter, LedgerRepr, Uint};
 //! use minocrab::Public;
 //!
 //! #[derive(LedgerRepr)] struct Amount { amount: Uint<64, Public> }
@@ -488,7 +488,7 @@
 //! use minocrab_signet::signet_v1::schema;
 //! use minocrab_signet::evm_flow::{Owned, Pending};
 //! use minocrab_signet::signet_flow::Signet;
-//! use minocrab_std::v3::{Ledger, LedgerRepr, Uint};
+//! use minocrab_std::{Ledger, LedgerRepr, Uint};
 //! use minocrab::Public;
 //!
 //! #[derive(LedgerRepr)] struct Amount { amount: Uint<64, Public> }
@@ -508,14 +508,14 @@
 //! ignore it and leave the ether with the contract (M38 rung B):
 //!
 //! ```compile_fail,E0277
-//! use minocrab::v3::Circuit3;
+//! use minocrab::Circuit;
 //! use minocrab::{Private, Public};
 //! use minocrab_evm::erc20;
 //! use minocrab_signet::filing::Filed;
 //! use minocrab_signet::signet_v1::schema;
 //! use minocrab_signet::evm_flow::{Contract, Pending};
 //! use minocrab_signet::signet_flow::Signet;
-//! use minocrab_std::v3::{Bytes, Ledger, LedgerRepr, Uint};
+//! use minocrab_std::{Bytes, Ledger, LedgerRepr, Uint};
 //!
 //! #[derive(LedgerRepr)] struct Amount { amount: Uint<64, Public> }
 //!
@@ -527,7 +527,7 @@
 //! const BLOCK: Block = Block::new();
 //!
 //! fn send(
-//!     c: &mut Circuit3,
+//!     c: &mut Circuit,
 //!     callee: Contract<erc20::Erc20>,
 //!     to: Bytes<20, Private>,
 //!     amount: Uint<128, Private>,
@@ -546,14 +546,14 @@
 //! slot's `WORDS` is zero):
 //!
 //! ```
-//! use minocrab::v3::Circuit3;
+//! use minocrab::Circuit;
 //! use minocrab::{Private, Public};
 //! use minocrab_evm::weth;
 //! use minocrab_signet::filing::Filed;
 //! use minocrab_signet::signet_v1::schema;
 //! use minocrab_signet::evm_flow::{Contract, Pending};
 //! use minocrab_signet::signet_flow::Signet;
-//! use minocrab_std::v3::{Ledger, LedgerRepr, Uint};
+//! use minocrab_std::{Ledger, LedgerRepr, Uint};
 //!
 //! #[derive(LedgerRepr)] struct Amount { amount: Uint<64, Public> }
 //!
@@ -565,7 +565,7 @@
 //! const BLOCK: Block = Block::new();
 //!
 //! fn wrap(
-//!     c: &mut Circuit3,
+//!     c: &mut Circuit,
 //!     callee: Contract<weth::Weth>,
 //!     amount: Uint<128, Private>,
 //!     nonce: Uint<64>,
@@ -586,14 +586,14 @@
 //! (notes/evm-calls.org §3.1, the dangerous direction):
 //!
 //! ```compile_fail,E0277
-//! use minocrab::v3::Circuit3;
+//! use minocrab::Circuit;
 //! use minocrab::{Private, Public};
 //! use minocrab_evm::{erc20, usdt};
 //! use minocrab_signet::filing::Filed;
 //! use minocrab_signet::signet_v1::schema;
 //! use minocrab_signet::evm_flow::{Contract, Pending};
 //! use minocrab_signet::signet_flow::Signet;
-//! use minocrab_std::v3::{Bytes, Ledger, LedgerRepr, Uint};
+//! use minocrab_std::{Bytes, Ledger, LedgerRepr, Uint};
 //!
 //! #[derive(LedgerRepr)] struct Amount { amount: Uint<64, Public> }
 //!
@@ -605,7 +605,7 @@
 //! const BLOCK: Block = Block::new();
 //!
 //! fn send(
-//!     c: &mut Circuit3,
+//!     c: &mut Circuit,
 //!     // ERROR: the trait bound `Erc20: Extends<UsdtLike>` is not satisfied
 //!     callee: Contract<erc20::Erc20>,
 //!     to: Bytes<20, Private>,
@@ -618,14 +618,14 @@
 //! ```
 //!
 //! ```compile_fail,E0277
-//! use minocrab::v3::Circuit3;
+//! use minocrab::Circuit;
 //! use minocrab::{Private, Public};
 //! use minocrab_evm::{erc20, usdt};
 //! use minocrab_signet::filing::Filed;
 //! use minocrab_signet::signet_v1::schema;
 //! use minocrab_signet::evm_flow::{Contract, Pending};
 //! use minocrab_signet::signet_flow::Signet;
-//! use minocrab_std::v3::{Bytes, Ledger, LedgerRepr, Uint};
+//! use minocrab_std::{Bytes, Ledger, LedgerRepr, Uint};
 //!
 //! #[derive(LedgerRepr)] struct Amount { amount: Uint<64, Public> }
 //!
@@ -637,7 +637,7 @@
 //! const BLOCK: Block = Block::new();
 //!
 //! fn send(
-//!     c: &mut Circuit3,
+//!     c: &mut Circuit,
 //!     // ERROR: the trait bound `UsdtLike: Extends<Erc20>` is not satisfied
 //!     callee: Contract<usdt::UsdtLike>,
 //!     to: Bytes<20, Private>,
@@ -654,14 +654,14 @@
 //! entirely in what the MPC is asked to decode:
 //!
 //! ```
-//! use minocrab::v3::Circuit3;
+//! use minocrab::Circuit;
 //! use minocrab::{Private, Public};
 //! use minocrab_evm::{erc20, usdt};
 //! use minocrab_signet::filing::Filed;
 //! use minocrab_signet::signet_v1::schema;
 //! use minocrab_signet::evm_flow::{Contract, Pending};
 //! use minocrab_signet::signet_flow::Signet;
-//! use minocrab_std::v3::{Bytes, Ledger, LedgerRepr, Uint};
+//! use minocrab_std::{Bytes, Ledger, LedgerRepr, Uint};
 //!
 //! #[derive(LedgerRepr)] struct Amount { amount: Uint<64, Public> }
 //!
@@ -674,7 +674,7 @@
 //! const BLOCK: Block = Block::new();
 //!
 //! fn send(
-//!     c: &mut Circuit3,
+//!     c: &mut Circuit,
 //!     token: Contract<erc20::Erc20>,
 //!     tether: Contract<usdt::UsdtLike>,
 //!     to: Bytes<20, Private>,
@@ -692,13 +692,13 @@
 //! the same twenty bytes and do not unify:
 //!
 //! ```compile_fail,E0308
-//! use minocrab::v3::{Circuit3, FieldT};
+//! use minocrab::{Circuit, FieldT};
 //! use minocrab::Private;
 //! use minocrab_evm::erc20;
 //! use minocrab_signet::evm_flow::Contract;
-//! use minocrab_std::v3::Bytes;
+//! use minocrab_std::Bytes;
 //!
-//! fn f(c: &mut Circuit3, callee: Contract<erc20::Erc20>) -> Bytes<20, Private> {
+//! fn f(c: &mut Circuit, callee: Contract<erc20::Erc20>) -> Bytes<20, Private> {
 //!     // ERROR: expected `Bytes<20>`, found `Contract<Erc20>`
 //!     callee
 //! }
@@ -706,15 +706,15 @@
 
 use core::marker::PhantomData;
 
-use minocrab::v3::{Circuit3, FieldT, Wire3};
+use minocrab::{Circuit, FieldT, Wire};
 use minocrab::{Private, Public};
-use minocrab_std::v3::hash::transient_hash_compact;
-use minocrab_std::v3::{
+use minocrab_std::hash::transient_hash_compact;
+use minocrab_std::{
     eq, is_true, label, not, own_public_key, ArgPath, Bool, Bytes, CircuitAbi,
     CircuitArg, Assumed, Disclose, DisclosureLabel, Encode, FieldPath, LedgerMap, LedgerRepr, LedgerWidth,
-    Prim, ProofWires, Uint, Value, Vis3, ZswapCoinPublicKey, B32,
+    Prim, ProofWires, Uint, Value, Vis, ZswapCoinPublicKey, B32,
 };
-use minocrab::v3::Val;
+use minocrab::Val;
 use signet_signer_interface::RequestId;
 
 use minocrab_evm::{AbiArgs, AbiReturn, AbiTuple, AbiType, EvmCall, Extends, Interface, Payable};
@@ -801,7 +801,7 @@ impl<I: Interface> Contract<I> {
     /// `c` is taken and unused: reinterpreting a limb emits nothing, and the
     /// parameter is here so that adding a check (a non-zero assert, an
     /// allow-list membership) later does not move every call site.
-    pub fn from_address<V: Vis3>(_c: &mut Circuit3, address: Bytes<20, V>) -> Self {
+    pub fn from_address<V: Vis>(_c: &mut Circuit, address: Bytes<20, V>) -> Self {
         Contract {
             address: Bytes::from_field_unchecked(address.field().private()),
             _interface: PhantomData,
@@ -827,13 +827,13 @@ impl<I: Interface> CircuitAbi for Contract<I> {
 }
 
 impl<I: Interface> Encode<Private> for Contract<I> {
-    fn encode(&self, slots: &mut Vec<Wire3<FieldT, Private>>) {
+    fn encode(&self, slots: &mut Vec<Wire<FieldT, Private>>) {
         self.address.encode(slots);
     }
 }
 
 impl<I: Interface> CircuitArg for Contract<I> {
-    fn declare(c: &mut Circuit3, path: &ArgPath) -> Self {
+    fn declare(c: &mut Circuit, path: &ArgPath) -> Self {
         Contract {
             address: <Bytes<20, Private>>::declare(c, path),
             _interface: PhantomData,
@@ -940,11 +940,11 @@ impl CommitTag for OwnerTag {
 /// Opening a commitment under another tag — the two are different types:
 ///
 /// ```compile_fail,E0308
-/// use minocrab::v3::Circuit3;
+/// use minocrab::Circuit;
 /// use minocrab_signet::common::{witness_sk, SecretKey};
 /// use minocrab_signet::evm_flow::{Commit, CommitTag};
 /// use minocrab::Private;
-/// use minocrab_std::v3::label;
+/// use minocrab_std::label;
 ///
 /// struct Owner;
 /// impl CommitTag for Owner { const PAD: &'static str = "a:"; }
@@ -952,7 +952,7 @@ impl CommitTag for OwnerTag {
 /// impl CommitTag for Beneficiary { const PAD: &'static str = "b:"; }
 /// label! { Digest = "digest"; }
 ///
-/// fn f(c: &mut Circuit3, id: signet_signer_interface::RequestId<minocrab::Public>) {
+/// fn f(c: &mut Circuit, id: signet_signer_interface::RequestId<minocrab::Public>) {
 ///     let sk = witness_sk(c);
 ///     let made: Commit<SecretKey<Private>, Owner> = Commit::to::<Digest, _>(c, &sk, id);
 ///     // ERROR: expected `Commit<_, Beneficiary>`, found `Commit<_, Owner>`
@@ -989,11 +989,11 @@ impl<T, Tag> Copy for Commit<T, Tag> {}
 /// are different types.
 pub trait CommitBinding {
     /// The limbs this binding contributes to the commitment's preimage.
-    fn push_binding(&self, inputs: &mut Vec<Wire3<FieldT, Private>>);
+    fn push_binding(&self, inputs: &mut Vec<Wire<FieldT, Private>>);
 }
 
 impl CommitBinding for RequestId<Public> {
-    fn push_binding(&self, inputs: &mut Vec<Wire3<FieldT, Private>>) {
+    fn push_binding(&self, inputs: &mut Vec<Wire<FieldT, Private>>) {
         let id = self.bytes();
         inputs.push(id.hi.private());
         inputs.push(id.lo.private());
@@ -1001,13 +1001,13 @@ impl CommitBinding for RequestId<Public> {
 }
 
 impl CommitBinding for Handle<Public> {
-    fn push_binding(&self, inputs: &mut Vec<Wire3<FieldT, Private>>) {
+    fn push_binding(&self, inputs: &mut Vec<Wire<FieldT, Private>>) {
         inputs.push(self.value().private());
     }
 }
 
 impl<T: CircuitArg, Tag: CommitTag> Commit<T, Tag> {
-    fn digest_of<B: CommitBinding>(c: &mut Circuit3, value: &T, bind: B) -> B32<Private> {
+    fn digest_of<B: CommitBinding>(c: &mut Circuit, value: &T, bind: B) -> B32<Private> {
         c.region("signet flow: commitment", |c| {
             let pad = B32::pad(c, Tag::PAD);
             let mut inputs = vec![pad.hi.private(), pad.lo.private()];
@@ -1023,7 +1023,7 @@ impl<T: CircuitArg, Tag: CommitTag> Commit<T, Tag> {
     /// (it is stored, so it is public — the label names it in the disclosure
     /// inventory).
     pub fn to<L: DisclosureLabel, B: CommitBinding>(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         value: &T,
         bind: B,
     ) -> Self {
@@ -1038,7 +1038,7 @@ impl<T: CircuitArg, Tag: CommitTag> Commit<T, Tag> {
     /// commitment was made to, for this request.
     pub fn open<B: CommitBinding>(
         &self,
-        c: &mut Circuit3,
+        c: &mut Circuit,
         value: &T,
         bind: B,
         message: &'static str,
@@ -1181,12 +1181,12 @@ impl<F: Filing, const WORDS: usize> Fired<F, WORDS> {
     /// the circuit reads it, and `signer` answers whose key signs.
     pub fn request_with<I: Extends<Callee<F>>>(
         &self,
-        c: &mut Circuit3,
-        callee: impl FnOnce(&mut Circuit3) -> Contract<I>,
+        c: &mut Circuit,
+        callee: impl FnOnce(&mut Circuit) -> Contract<I>,
         args: impl AbiArgs<<Called<F> as EvmCall>::Args>,
         envelope: Envelope,
         nonce: Uint<64>,
-        signer: impl FnOnce(&mut Circuit3) -> Signing,
+        signer: impl FnOnce(&mut Circuit) -> Signing,
     ) -> RequestId<Public> {
         let tx = build_tx_with::<Called<F>, WORDS>(
             c,
@@ -1238,11 +1238,11 @@ where
     /// notes/evm-calls.org §7 was looking for.
     pub fn request(
         &self,
-        c: &mut Circuit3,
+        c: &mut Circuit,
         callee: Contract<impl Extends<Callee<F>>>,
         args: <<Called<F> as EvmCall>::Args as AbiTuple>::Wires<Private>,
         nonce: Uint<64>,
-        env: impl FnOnce(&mut Circuit3, RequestId<Public>) -> Env,
+        env: impl FnOnce(&mut Circuit, RequestId<Public>) -> Env,
     ) -> RequestId<Public> {
         let tx = build_tx_filed::<F, WORDS>(c, callee.address, args, nonce.field());
         self.file(c, tx, env)
@@ -1272,12 +1272,12 @@ where
     #[allow(clippy::too_many_arguments)]
     pub fn request_payable(
         &self,
-        c: &mut Circuit3,
+        c: &mut Circuit,
         callee: Contract<impl Extends<Callee<F>>>,
         args: <<Called<F> as EvmCall>::Args as AbiTuple>::Wires<Private>,
         value: Uint<128, Private>,
         nonce: Uint<64>,
-        env: impl FnOnce(&mut Circuit3, RequestId<Public>) -> Env,
+        env: impl FnOnce(&mut Circuit, RequestId<Public>) -> Env,
     ) -> RequestId<Public>
     where
         Called<F>: Payable,
@@ -1291,9 +1291,9 @@ where
     /// output schema, and the environment stored beside it.
     fn file(
         &self,
-        c: &mut Circuit3,
+        c: &mut Circuit,
         tx: EvmTx<WORDS>,
-        env: impl FnOnce(&mut Circuit3, RequestId<Public>) -> Env,
+        env: impl FnOnce(&mut Circuit, RequestId<Public>) -> Env,
     ) -> RequestId<Public> {
         let signing = Signing::contract(c);
         file_request::<WORDS, F::Schema>(
@@ -1340,13 +1340,13 @@ where
     #[allow(clippy::too_many_arguments)]
     pub fn request_with<S, I: Extends<Callee<F>>>(
         &self,
-        c: &mut Circuit3,
-        callee: impl FnOnce(&mut Circuit3) -> Contract<I>,
+        c: &mut Circuit,
+        callee: impl FnOnce(&mut Circuit) -> Contract<I>,
         args: impl AbiArgs<<Called<F> as EvmCall>::Args>,
         envelope: Envelope,
         nonce: Uint<64>,
-        signer: impl FnOnce(&mut Circuit3) -> (Signing, S),
-        env: impl FnOnce(&mut Circuit3, RequestId<Public>, &S) -> Env,
+        signer: impl FnOnce(&mut Circuit) -> (Signing, S),
+        env: impl FnOnce(&mut Circuit, RequestId<Public>, &S) -> Env,
     ) -> RequestId<Public> {
         let tx = build_tx_with::<Called<F>, WORDS>(
             c,
@@ -1396,7 +1396,7 @@ where
     /// witnessed. Discloses `signet_flow::Settled`.
     pub fn complete(
         &self,
-        c: &mut Circuit3,
+        c: &mut Circuit,
         ticket: Succeeded<F>,
     ) -> Outcome<Env, <Called<F> as EvmCall>::Success> {
         let request_id = ticket.respond.request_id.disclose_as::<RequestIdSettled>(c);
@@ -1452,7 +1452,7 @@ where
     /// circuit has one instruction stream: a prover whose request failed
     /// supplies zeros, which satisfy the narrowing's range checks, and those
     /// bytes are outside the signed digest either way.
-    pub fn refund(&self, c: &mut Circuit3, ticket: Failed<F>) -> Outcome<Env, Ret<Called<F>>> {
+    pub fn refund(&self, c: &mut Circuit, ticket: Failed<F>) -> Outcome<Env, Ret<Called<F>>> {
         let request_id = ticket.respond.request_id.disclose_as::<RequestIdSettled>(c);
         let block_height = ticket.respond.block_height.disclose_as::<BlockHeightSettled>(c);
         let output = ticket.output;
@@ -1523,7 +1523,7 @@ where
     /// that this slot's own record map holds its id, and that the attestation
     /// verified under a digest that commits to that id. A ticket for a
     /// request another slot filed finds nothing to consume.
-    fn consume(&self, c: &mut Circuit3, request_id: RequestId<Public>) -> Assumed<Env> {
+    fn consume(&self, c: &mut Circuit, request_id: RequestId<Public>) -> Assumed<Env> {
         c.region("signet flow: consume", |c| {
             let found = self.records.member(c, &request_id);
             c.assert(is_true(found).message("Request not found"));
@@ -1548,11 +1548,11 @@ where
     /// so it is public).
     pub fn request_owned<L: DisclosureLabel>(
         &self,
-        c: &mut Circuit3,
+        c: &mut Circuit,
         callee: Contract<impl Extends<Callee<F>>>,
         args: <<Called<F> as EvmCall>::Args as AbiTuple>::Wires<Private>,
         nonce: Uint<64>,
-        inner: impl FnOnce(&mut Circuit3, RequestId<Public>) -> E,
+        inner: impl FnOnce(&mut Circuit, RequestId<Public>) -> E,
     ) -> RequestId<Public> {
         let sk = common::witness_sk(c);
         self.request(c, callee, args, nonce, |c, request_id| Owned {
@@ -1570,7 +1570,7 @@ where
     /// witnesses a secret.
     pub fn refund_to_owner<L: DisclosureLabel>(
         &self,
-        c: &mut Circuit3,
+        c: &mut Circuit,
         ticket: Failed<F>,
     ) -> (ZswapCoinPublicKey<Public>, Assumed<E>, Ret<Called<F>>) {
         let outcome = self.refund(c, ticket);
@@ -1615,18 +1615,18 @@ pub type Inserted = (QueuedRecordFiled,);
 /// an `emit` circuit takes a `Handle` argument and discloses it; the ledger
 /// keys on `Handle<Public>`.
 #[derive(Clone, Copy)]
-pub struct Handle<V: Vis3 = Private>(Wire3<FieldT, V>);
+pub struct Handle<V: Vis = Private>(Wire<FieldT, V>);
 
-impl<V: Vis3> Handle<V> {
+impl<V: Vis> Handle<V> {
     /// The hash, as a field element.
-    pub fn value(self) -> Wire3<FieldT, V> {
+    pub fn value(self) -> Wire<FieldT, V> {
         self.0
     }
 
     /// A handle from a field element already in hand. UNCHECKED: nothing
     /// ties it to a pre-record; [`PreRecord::handle`] is the constructor
     /// that does.
-    pub fn from_field_unchecked(w: Wire3<FieldT, V>) -> Self {
+    pub fn from_field_unchecked(w: Wire<FieldT, V>) -> Self {
         Handle(w)
     }
 }
@@ -1642,17 +1642,17 @@ impl LedgerRepr for Handle<Public> {
         vec![minocrab::AlignmentAtom::Field]
     }
 
-    fn push_limbs(&self, _c: &mut Circuit3, limbs: &mut Vec<Wire3<FieldT, Public>>) {
+    fn push_limbs(&self, _c: &mut Circuit, limbs: &mut Vec<Wire<FieldT, Public>>) {
         limbs.push(self.0);
     }
 
-    fn from_limbs(limbs: Vec<Wire3<FieldT, Public>>) -> Self {
+    fn from_limbs(limbs: Vec<Wire<FieldT, Public>>) -> Self {
         assert_eq!(limbs.len(), 1, "a handle is one field limb");
         Handle(limbs[0])
     }
 }
 
-impl<V: Vis3> CircuitAbi for Handle<V> {
+impl<V: Vis> CircuitAbi for Handle<V> {
     const SLOTS: usize = 1;
 
     fn push_atoms(atoms: &mut Vec<minocrab::AlignmentAtom>) {
@@ -1665,13 +1665,13 @@ impl<V: Vis3> CircuitAbi for Handle<V> {
 }
 
 impl Encode<Private> for Handle<Private> {
-    fn encode(&self, slots: &mut Vec<Wire3<FieldT, Private>>) {
+    fn encode(&self, slots: &mut Vec<Wire<FieldT, Private>>) {
         slots.push(self.0);
     }
 }
 
 impl CircuitArg for Handle<Private> {
-    fn declare(c: &mut Circuit3, path: &ArgPath) -> Self {
+    fn declare(c: &mut Circuit, path: &ArgPath) -> Self {
         Handle(c.arg::<FieldT>(path.as_str()))
     }
 }
@@ -1679,7 +1679,7 @@ impl CircuitArg for Handle<Private> {
 impl Disclose for Handle<Private> {
     type Public = Handle<Public>;
 
-    fn disclose_as<L: DisclosureLabel>(self, c: &mut Circuit3) -> Handle<Public> {
+    fn disclose_as<L: DisclosureLabel>(self, c: &mut Circuit) -> Handle<Public> {
         Handle(self.0.disclose_as::<L>(c))
     }
 }
@@ -1700,7 +1700,7 @@ impl Disclose for Handle<Private> {
 /// THE KEY VERSION WENT IN M44 RUNG D, with the argument that carried it: it
 /// is `Signet::mpc_key_version`, a cell, read at the emit like the chain id.
 /// So a pre-record is one limb shorter and a call one argument shorter.
-pub struct PreRecord<const WORDS: usize>(Vec<Wire3<FieldT, Public>>);
+pub struct PreRecord<const WORDS: usize>(Vec<Wire<FieldT, Public>>);
 
 impl<const WORDS: usize> PreRecord<WORDS> {
     /// One limb for the callee, two per word.
@@ -1708,7 +1708,7 @@ impl<const WORDS: usize> PreRecord<WORDS> {
 
     /// Assemble and DISCLOSE the pre-record: it is about to be stored, so
     /// every limb is public, and the label names them in the inventory.
-    fn file(c: &mut Circuit3, callee: Bytes<20, Private>, words: &[B32<Private>]) -> Self {
+    fn file(c: &mut Circuit, callee: Bytes<20, Private>, words: &[B32<Private>]) -> Self {
         let mut limbs = vec![callee.field()];
         for word in words {
             limbs.push(word.hi);
@@ -1719,7 +1719,7 @@ impl<const WORDS: usize> PreRecord<WORDS> {
 
     /// The [`Handle`]: a Poseidon hash over the disclosed limbs, computed
     /// once at the call (it has no k pressure) and again by whoever emits.
-    pub fn handle(&self, c: &mut Circuit3) -> Handle<Public> {
+    pub fn handle(&self, c: &mut Circuit) -> Handle<Public> {
         Handle(transient_hash_compact(c, &self.0))
     }
 
@@ -1750,11 +1750,11 @@ impl<const WORDS: usize> LedgerRepr for PreRecord<WORDS> {
         atoms
     }
 
-    fn push_limbs(&self, _c: &mut Circuit3, limbs: &mut Vec<Wire3<FieldT, Public>>) {
+    fn push_limbs(&self, _c: &mut Circuit, limbs: &mut Vec<Wire<FieldT, Public>>) {
         limbs.extend_from_slice(&self.0);
     }
 
-    fn from_limbs(limbs: Vec<Wire3<FieldT, Public>>) -> Self {
+    fn from_limbs(limbs: Vec<Wire<FieldT, Public>>) -> Self {
         assert_eq!(
             limbs.len(),
             Self::LIMBS,

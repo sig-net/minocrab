@@ -36,15 +36,15 @@
 //!   chosen by the value type's `LedgerSlot` family rather than by the call
 //!   site (`outer_insert_default` below is the differential for it).
 
-use minocrab::v3::{Circuit3, Compiled3};
+use minocrab::{Circuit, Compiled};
 use minocrab::{Private, Public};
 use minocrab_contracts::nested::Nested;
-use minocrab_std::v3::{
+use minocrab_std::{
     contract, label, Bool, Disclose, Discloses, Ledger, LedgerCounter,
     LedgerHistoricMerkleTree, LedgerList, LedgerMap, LedgerMerkleTree, LedgerSet, Maybe,
     MerkleTreeDigest, Uint, B32,
 };
-use minocrab_zkir::v3::to_zkir_string;
+use minocrab_zkir::to_zkir_string;
 
 label! {
     Key = "key";
@@ -92,7 +92,7 @@ impl NestedTyped {
 
     #[circuit]
     pub fn map_insert(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         k: B32<Private>,
         k2: B32<Private>,
         v: Uint<64, Private>,
@@ -106,7 +106,7 @@ impl NestedTyped {
 
     #[circuit]
     pub fn map_insert_default(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         k: B32<Private>,
         k2: B32<Private>,
     ) -> Discloses<(Key, Key2)> {
@@ -118,7 +118,7 @@ impl NestedTyped {
 
     #[circuit(output = "value")]
     pub fn map_lookup(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         k: B32<Private>,
         k2: B32<Private>,
     ) -> Discloses<(Key, Key2), Uint<64, Public>> {
@@ -129,7 +129,7 @@ impl NestedTyped {
 
     #[circuit(output = "member")]
     pub fn map_member(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         k: B32<Private>,
         k2: B32<Private>,
     ) -> Discloses<(Key, Key2), Bool<Public>> {
@@ -140,7 +140,7 @@ impl NestedTyped {
 
     #[circuit]
     pub fn map_remove(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         k: B32<Private>,
         k2: B32<Private>,
     ) -> Discloses<(Key, Key2)> {
@@ -151,19 +151,19 @@ impl NestedTyped {
     }
 
     #[circuit(output = "size")]
-    pub fn map_size(c: &mut Circuit3, k: B32<Private>) -> Discloses<(Key,), Uint<64, Public>> {
+    pub fn map_size(c: &mut Circuit, k: B32<Private>) -> Discloses<(Key,), Uint<64, Public>> {
         let k = k.disclose_as::<Key>(c);
         Discloses::of(*NESTED.mm.at_key(c, &k).size(c))
     }
 
     #[circuit(output = "empty")]
-    pub fn map_is_empty(c: &mut Circuit3, k: B32<Private>) -> Discloses<(Key,), Bool<Public>> {
+    pub fn map_is_empty(c: &mut Circuit, k: B32<Private>) -> Discloses<(Key,), Bool<Public>> {
         let k = k.disclose_as::<Key>(c);
         Discloses::of(*NESTED.mm.at_key(c, &k).is_empty(c))
     }
 
     #[circuit]
-    pub fn map_reset(c: &mut Circuit3, k: B32<Private>) -> Discloses<(Key,)> {
+    pub fn map_reset(c: &mut Circuit, k: B32<Private>) -> Discloses<(Key,)> {
         let k = k.disclose_as::<Key>(c);
         NESTED.mm.at_key(c, &k).reset_to_default(c);
         Discloses::of(())
@@ -173,7 +173,7 @@ impl NestedTyped {
     /// pushed constant is the empty map and not a cell of zeros, and NOTHING
     /// at this call site says so. The `LedgerSlot` impl for `LedgerMap` does.
     #[circuit]
-    pub fn outer_insert_default(c: &mut Circuit3, k: B32<Private>) -> Discloses<(Key,)> {
+    pub fn outer_insert_default(c: &mut Circuit, k: B32<Private>) -> Discloses<(Key,)> {
         let k = k.disclose_as::<Key>(c);
         NESTED.mm.insert_default(c, &k);
         Discloses::of(())
@@ -183,7 +183,7 @@ impl NestedTyped {
 
     #[circuit]
     pub fn list_push_front(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         k: B32<Private>,
         v: B32<Private>,
     ) -> Discloses<(Key, Val)> {
@@ -194,21 +194,21 @@ impl NestedTyped {
     }
 
     #[circuit]
-    pub fn list_pop_front(c: &mut Circuit3, k: B32<Private>) -> Discloses<(Key,)> {
+    pub fn list_pop_front(c: &mut Circuit, k: B32<Private>) -> Discloses<(Key,)> {
         let k = k.disclose_as::<Key>(c);
         NESTED.ml.at_key(c, &k).pop_front(c);
         Discloses::of(())
     }
 
     #[circuit(output = "length")]
-    pub fn list_length(c: &mut Circuit3, k: B32<Private>) -> Discloses<(Key,), Uint<64, Public>> {
+    pub fn list_length(c: &mut Circuit, k: B32<Private>) -> Discloses<(Key,), Uint<64, Public>> {
         let k = k.disclose_as::<Key>(c);
         Discloses::of(*NESTED.ml.at_key(c, &k).length(c))
     }
 
     #[circuit(output = "head")]
     pub fn list_head(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         k: B32<Private>,
     ) -> Discloses<(Key,), Maybe<B32<Public>, Public>> {
         let k = k.disclose_as::<Key>(c);
@@ -216,13 +216,13 @@ impl NestedTyped {
     }
 
     #[circuit(output = "empty")]
-    pub fn list_is_empty(c: &mut Circuit3, k: B32<Private>) -> Discloses<(Key,), Bool<Public>> {
+    pub fn list_is_empty(c: &mut Circuit, k: B32<Private>) -> Discloses<(Key,), Bool<Public>> {
         let k = k.disclose_as::<Key>(c);
         Discloses::of(*NESTED.ml.at_key(c, &k).is_empty(c))
     }
 
     #[circuit]
-    pub fn list_reset(c: &mut Circuit3, k: B32<Private>) -> Discloses<(Key,)> {
+    pub fn list_reset(c: &mut Circuit, k: B32<Private>) -> Discloses<(Key,)> {
         let k = k.disclose_as::<Key>(c);
         NESTED.ml.at_key(c, &k).reset_to_default(c);
         Discloses::of(())
@@ -232,7 +232,7 @@ impl NestedTyped {
 
     #[circuit]
     pub fn set_insert(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         k: B32<Private>,
         e: B32<Private>,
     ) -> Discloses<(Key, Elem)> {
@@ -244,7 +244,7 @@ impl NestedTyped {
 
     #[circuit]
     pub fn set_remove(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         k: B32<Private>,
         e: B32<Private>,
     ) -> Discloses<(Key, Elem)> {
@@ -256,7 +256,7 @@ impl NestedTyped {
 
     #[circuit(output = "member")]
     pub fn set_member(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         k: B32<Private>,
         e: B32<Private>,
     ) -> Discloses<(Key, Elem), Bool<Public>> {
@@ -266,7 +266,7 @@ impl NestedTyped {
     }
 
     #[circuit]
-    pub fn set_reset(c: &mut Circuit3, k: B32<Private>) -> Discloses<(Key,)> {
+    pub fn set_reset(c: &mut Circuit, k: B32<Private>) -> Discloses<(Key,)> {
         let k = k.disclose_as::<Key>(c);
         NESTED.ms.at_key(c, &k).reset_to_default(c);
         Discloses::of(())
@@ -275,20 +275,20 @@ impl NestedTyped {
     // ---- Map<K, Counter> ----------------------------------------------------
 
     #[circuit]
-    pub fn counter_increment(c: &mut Circuit3, k: B32<Private>) -> Discloses<(Key,)> {
+    pub fn counter_increment(c: &mut Circuit, k: B32<Private>) -> Discloses<(Key,)> {
         let k = k.disclose_as::<Key>(c);
         NESTED.mc.at_key(c, &k).increment(c, 1);
         Discloses::of(())
     }
 
     #[circuit(output = "count")]
-    pub fn counter_read(c: &mut Circuit3, k: B32<Private>) -> Discloses<(Key,), Uint<64, Public>> {
+    pub fn counter_read(c: &mut Circuit, k: B32<Private>) -> Discloses<(Key,), Uint<64, Public>> {
         let k = k.disclose_as::<Key>(c);
         Discloses::of(*NESTED.mc.at_key(c, &k).read(c))
     }
 
     #[circuit]
-    pub fn counter_reset(c: &mut Circuit3, k: B32<Private>) -> Discloses<(Key,)> {
+    pub fn counter_reset(c: &mut Circuit, k: B32<Private>) -> Discloses<(Key,)> {
         let k = k.disclose_as::<Key>(c);
         NESTED.mc.at_key(c, &k).reset_to_default(c);
         Discloses::of(())
@@ -298,7 +298,7 @@ impl NestedTyped {
 
     #[circuit]
     pub fn mt_insert(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         k: B32<Private>,
         item: B32<Private>,
     ) -> Discloses<(Key, Elem)> {
@@ -310,7 +310,7 @@ impl NestedTyped {
 
     #[circuit(output = "ok")]
     pub fn mt_check_root(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         k: B32<Private>,
         rt: MerkleTreeDigest<Private>,
     ) -> Discloses<(Key, Root), Bool<Public>> {
@@ -320,7 +320,7 @@ impl NestedTyped {
     }
 
     #[circuit]
-    pub fn mt_reset(c: &mut Circuit3, k: B32<Private>) -> Discloses<(Key,)> {
+    pub fn mt_reset(c: &mut Circuit, k: B32<Private>) -> Discloses<(Key,)> {
         let k = k.disclose_as::<Key>(c);
         NESTED.mt.at_key(c, &k).reset_to_default(c);
         Discloses::of(())
@@ -328,7 +328,7 @@ impl NestedTyped {
 
     #[circuit]
     pub fn hmt_insert(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         k: B32<Private>,
         item: B32<Private>,
     ) -> Discloses<(Key, Elem)> {
@@ -339,14 +339,14 @@ impl NestedTyped {
     }
 
     #[circuit]
-    pub fn hmt_reset_history(c: &mut Circuit3, k: B32<Private>) -> Discloses<(Key,)> {
+    pub fn hmt_reset_history(c: &mut Circuit, k: B32<Private>) -> Discloses<(Key,)> {
         let k = k.disclose_as::<Key>(c);
         NESTED.mh.at_key(c, &k).reset_history(c);
         Discloses::of(())
     }
 
     #[circuit]
-    pub fn hmt_reset(c: &mut Circuit3, k: B32<Private>) -> Discloses<(Key,)> {
+    pub fn hmt_reset(c: &mut Circuit, k: B32<Private>) -> Discloses<(Key,)> {
         let k = k.disclose_as::<Key>(c);
         NESTED.mh.at_key(c, &k).reset_to_default(c);
         Discloses::of(())
@@ -356,7 +356,7 @@ impl NestedTyped {
 
     #[circuit]
     pub fn deep_insert(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         k: B32<Private>,
         k2: B32<Private>,
         k3: B32<Private>,
@@ -372,7 +372,7 @@ impl NestedTyped {
 
     #[circuit(output = "value")]
     pub fn deep_lookup(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         k: B32<Private>,
         k2: B32<Private>,
         k3: B32<Private>,
@@ -385,9 +385,9 @@ impl NestedTyped {
 }
 
 /// Every circuit, typed spelling against raw spelling.
-fn pairs() -> Vec<(&'static str, fn() -> Compiled3, fn() -> Compiled3)> {
+fn pairs() -> Vec<(&'static str, fn() -> Compiled, fn() -> Compiled)> {
     vec![
-        ("map_insert", NestedTyped::map_insert as fn() -> Compiled3, Nested::map_insert as fn() -> Compiled3),
+        ("map_insert", NestedTyped::map_insert as fn() -> Compiled, Nested::map_insert as fn() -> Compiled),
         ("map_insert_default", NestedTyped::map_insert_default, Nested::map_insert_default),
         ("map_lookup", NestedTyped::map_lookup, Nested::map_lookup),
         ("map_member", NestedTyped::map_member, Nested::map_member),

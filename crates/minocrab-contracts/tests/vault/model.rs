@@ -23,7 +23,7 @@ use midnight_zkir_v3::ir_instructions::ec_mul::ec_mul_offcircuit;
 use minocrab::Fr;
 use minocrab_contracts::erc20_vault as v;
 use minocrab_contracts::signet_v1::output_kind;
-use minocrab_zkir::v3::IrValue;
+use minocrab_zkir::IrValue;
 
 use super::exec::PreState;
 use super::ops::{self, key20, key32, key_u64};

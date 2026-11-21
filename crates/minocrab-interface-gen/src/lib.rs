@@ -164,7 +164,7 @@ enum Item {
     /// therefore does not move `artifact/interface-schema.txt` (slots,
     /// alignment, constraints and the entry-point hash are all `B32`'s).
     B32Newtype { name: String, doc: String },
-    /// `pub struct Name<V: Vis3> { … }`
+    /// `pub struct Name<V: Vis> { … }`
     Struct { name: String, fields: Vec<(String, String)>, doc: String },
     /// `ts_type!(Name = "ts-name");` — the marker type for one distinct
     /// `Opaque<'ts-name'>` the interface mentions. One line per name, so the
@@ -189,7 +189,7 @@ impl Item {
 /// `pascal` everywhere except `"string"`, whose `pascal` is `String` — and a
 /// generated crate that declares its own `String` shadowing
 /// `std::string::String` is a genuinely nasty import to inherit. `Str` matches
-/// `minocrab_std::v3::ts::Str`, and `TsType::TS_NAME` carries `"string"`
+/// `minocrab_std::ts::Str`, and `TsType::TS_NAME` carries `"string"`
 /// verbatim either way, so nothing is lost (notes/opaque-bridging.org §8 Q2).
 fn ts_marker(ts_type: &str) -> String {
     if ts_type == "string" {
@@ -429,7 +429,7 @@ impl Registry {
         }
         let name = pascal(name);
         self.std_imports.insert("CircuitArg");
-        self.std_imports.insert("Vis3");
+        self.std_imports.insert("Vis");
         self.declare(Item::Struct {
             doc: format!(
                 "Compact `struct {name} {{ {} }}`.",
@@ -465,7 +465,7 @@ impl Registry {
 }
 
 /// `2^k − 1` → `k`; anything else is a bound no SIZED leaf type carries, and
-/// becomes a [`minocrab_std::v3::BoundedUint`] instead (M14).
+/// becomes a [`minocrab_std::BoundedUint`] instead (M14).
 ///
 /// `Err` here is not a rejection any more, it is the fork in
 /// [`Gen::rust_type`]: the error text survives only as the reason a bound
@@ -641,7 +641,7 @@ pub fn generate(info: &ContractInfo, options: &Options) -> Result<String, Error>
     out.push('\n');
     out.push_str("use minocrab::Public;\n");
     out.push_str(&format!(
-        "use minocrab_std::v3::{{{}}};\n",
+        "use minocrab_std::{{{}}};\n",
         import_list(&registry.std_imports)
     ));
 
@@ -656,7 +656,7 @@ pub fn generate(info: &ContractInfo, options: &Options) -> Result<String, Error>
             }
             Item::Struct { name, fields, doc } => {
                 out.push_str(&format!(
-                    "/// {doc}\n#[derive(Clone, CircuitArg)]\npub struct {name}<V: Vis3> {{\n"
+                    "/// {doc}\n#[derive(Clone, CircuitArg)]\npub struct {name}<V: Vis> {{\n"
                 ));
                 for (field, ty) in fields {
                     out.push_str(&format!("    pub {field}: {ty},\n"));
@@ -761,7 +761,7 @@ fn compact_signature(circuit: &Declared) -> String {
 /// reproducibility depend on a toolchain version).
 ///
 /// Three groups, each alphabetical: names with no uppercase letter
-/// (`interface`), then mixed-case names (`BytesN`, `Vis3`), then names with
+/// (`interface`), then mixed-case names (`BytesN`, `Vis`), then names with
 /// no lowercase letter (`B32`) — which is why `B32` lands last rather than
 /// first.
 fn import_list(names: &BTreeSet<&'static str>) -> String {

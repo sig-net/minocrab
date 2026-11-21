@@ -12,7 +12,7 @@
 //! the `Meet`/`disclose` visibility system.
 
 use minocrab_ir::lean_proof;
-use minocrab_ir::v3::passes::ProofRef;
+use minocrab_ir::passes::ProofRef;
 
 /// The numeric leaves' warrant: `BoundedUint`'s bound arithmetic (the
 /// `add`/`mul` const asserts sound AND minimal), the subtraction guard

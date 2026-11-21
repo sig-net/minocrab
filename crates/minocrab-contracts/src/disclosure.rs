@@ -118,12 +118,12 @@
 //! limbs decode back into a point (`decode_offcircuit`), which is all the
 //! recipient's wallet needs.
 
-use minocrab::v3::{Circuit3, FieldT, JubjubScalarT, Val, Wire3};
+use minocrab::{Circuit, FieldT, JubjubScalarT, Val, Wire};
 use minocrab::{label, Alignment, AlignmentAtom, AlignmentSegment, Fr, Private, Public};
-use minocrab_std::v3::hash;
-use minocrab_std::v3::{
+use minocrab_std::hash;
+use minocrab_std::{
     contract, is_true, not, CircuitAbi, Disclose, Discloses, JubjubPoint, Ledger, LedgerList,
-    LedgerMap, LedgerRepr, Prim, ProofWires, Uint, Vis3, B32,
+    LedgerMap, LedgerRepr, Prim, ProofWires, Uint, Vis, B32,
 };
 
 /// The domain-separation tag this contract's KDF is keyed with — the
@@ -152,17 +152,17 @@ label! {
 /// the ledger as. The `Public` instantiation is a ledger shape; the `Private`
 /// one only ever appears between the `encode` and the `disclose`.
 #[derive(Clone, Copy)]
-pub struct PointLimbs<V: Vis3 = Private> {
+pub struct PointLimbs<V: Vis = Private> {
     /// The affine x coordinate.
-    pub x: Wire3<FieldT, V>,
+    pub x: Wire<FieldT, V>,
     /// The affine y coordinate.
-    pub y: Wire3<FieldT, V>,
+    pub y: Wire<FieldT, V>,
 }
 
-impl<V: Vis3> PointLimbs<V> {
+impl<V: Vis> PointLimbs<V> {
     /// `encode(point)` — the instruction, and the only constructor that ties
     /// these limbs to a point.
-    pub fn of(c: &mut Circuit3, point: JubjubPoint<V>) -> Self {
+    pub fn of(c: &mut Circuit, point: JubjubPoint<V>) -> Self {
         let limbs = c.encode(point.point());
         assert_eq!(limbs.len(), 2, "a Jubjub point encodes to two field limbs");
         PointLimbs {
@@ -172,7 +172,7 @@ impl<V: Vis3> PointLimbs<V> {
     }
 
     /// The limbs in slot order, for a hash preimage.
-    pub fn slots(self) -> [Wire3<FieldT, V>; 2] {
+    pub fn slots(self) -> [Wire<FieldT, V>; 2] {
         [self.x, self.y]
     }
 }
@@ -180,9 +180,9 @@ impl<V: Vis3> PointLimbs<V> {
 impl Disclose for PointLimbs<Private> {
     type Public = PointLimbs<Public>;
 
-    fn disclose_as<L: minocrab_std::v3::DisclosureLabel>(
+    fn disclose_as<L: minocrab_std::DisclosureLabel>(
         self,
-        c: &mut Circuit3,
+        c: &mut Circuit,
     ) -> PointLimbs<Public> {
         PointLimbs {
             x: self.x.disclose_as::<L>(c),
@@ -203,12 +203,12 @@ impl LedgerRepr for PointLimbs<Public> {
         vec![AlignmentAtom::Field, AlignmentAtom::Field]
     }
 
-    fn push_limbs(&self, _c: &mut Circuit3, limbs: &mut Vec<Wire3<FieldT, Public>>) {
+    fn push_limbs(&self, _c: &mut Circuit, limbs: &mut Vec<Wire<FieldT, Public>>) {
         limbs.push(self.x);
         limbs.push(self.y);
     }
 
-    fn from_limbs(limbs: Vec<Wire3<FieldT, Public>>) -> Self {
+    fn from_limbs(limbs: Vec<Wire<FieldT, Public>>) -> Self {
         assert_eq!(limbs.len(), 2, "a point is two field limbs");
         PointLimbs {
             x: limbs[0],
@@ -217,7 +217,7 @@ impl LedgerRepr for PointLimbs<Public> {
     }
 }
 
-impl<V: Vis3> CircuitAbi for PointLimbs<V> {
+impl<V: Vis> CircuitAbi for PointLimbs<V> {
     const SLOTS: usize = 2;
 
     fn push_atoms(atoms: &mut Vec<AlignmentAtom>) {
@@ -234,11 +234,11 @@ impl<V: Vis3> CircuitAbi for PointLimbs<V> {
 /// The ciphertext as the ledger stores it: `{ ephemeralPk, ct }`, with the
 /// point flattened to its `encode` limbs (see the module docs).
 #[derive(Clone, Copy)]
-pub struct Memo<V: Vis3 = Private> {
+pub struct Memo<V: Vis = Private> {
     /// `encode(E)`, `E = g^e`.
     pub ephemeral: PointLimbs<V>,
     /// `value + KDF(pk^e, DOMAIN)`.
-    pub ct: Wire3<FieldT, V>,
+    pub ct: Wire<FieldT, V>,
 }
 
 impl ProofWires for Memo<Public> {
@@ -257,12 +257,12 @@ impl LedgerRepr for Memo<Public> {
         ]
     }
 
-    fn push_limbs(&self, c: &mut Circuit3, limbs: &mut Vec<Wire3<FieldT, Public>>) {
+    fn push_limbs(&self, c: &mut Circuit, limbs: &mut Vec<Wire<FieldT, Public>>) {
         self.ephemeral.push_limbs(c, limbs);
         limbs.push(self.ct);
     }
 
-    fn from_limbs(mut limbs: Vec<Wire3<FieldT, Public>>) -> Self {
+    fn from_limbs(mut limbs: Vec<Wire<FieldT, Public>>) -> Self {
         assert_eq!(limbs.len(), 3, "a memo is three field limbs");
         let ct = limbs.pop().expect("three limbs");
         Memo {
@@ -300,7 +300,7 @@ fn point_alignment() -> Alignment {
 /// has to be upgrade-stable. `degradeToTransient` truncates the 32-byte digest
 /// to its low 31 bytes, which is where the hiding margin comes from — the mask
 /// is uniform over `[0, 2^248)` while the value is `< 2^128`.
-pub fn kdf(c: &mut Circuit3, shared: SharedSecret) -> Wire3<FieldT, Private> {
+pub fn kdf(c: &mut Circuit, shared: SharedSecret) -> Wire<FieldT, Private> {
     c.region("ecdh kdf", |c| {
         let [x, y] = shared.0.slots();
         let point_hash = hash::persistent_hash_compact(c, point_alignment(), &[x.erase(), y.erase()]);
@@ -335,10 +335,10 @@ pub fn kdf(c: &mut Circuit3, shared: SharedSecret) -> Wire3<FieldT, Private> {
 /// `notes/disclosure-model.org` §5 records this as the sharpest edge in the
 /// whole design.
 pub fn ephemeral_scalar(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     seed: &B32<Private>,
     tag: &B32<Public>,
-) -> Wire3<JubjubScalarT, Private> {
+) -> Wire<JubjubScalarT, Private> {
     c.region("expand randomness", |c| {
         let expanded = hash::persistent_hash_compact(
             c,
@@ -389,7 +389,7 @@ pub struct SharedSecret(PointLimbs<Private>);
 /// account id equal a value already public elsewhere, linking the two
 /// contracts for anyone holding the same `sk`. The shape is reused, per the
 /// reuse rule; the domain is not, and must not be.
-fn account_of_caller(c: &mut Circuit3) -> B32<Private> {
+fn account_of_caller(c: &mut Circuit) -> B32<Private> {
     c.region("caller account id", |c| {
         let sk = B32 {
             hi: c.witness::<FieldT>(),
@@ -425,9 +425,9 @@ fn account_of_caller(c: &mut Circuit3) -> B32<Private> {
 /// out the two values that break the scheme for everyone; it cannot tell a
 /// high-entropy witness from a counter.
 pub fn derive_shared(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     recipient_pk: JubjubPoint<Private>,
-    e: Wire3<JubjubScalarT, Private>,
+    e: Wire<JubjubScalarT, Private>,
 ) -> (PointLimbs<Private>, SharedSecret) {
     c.region("ecdh derive shared", |c| {
         // The identity's encode limbs as CONSTANTS, which is the one place
@@ -483,10 +483,10 @@ pub fn derive_shared(
 /// written — and `notes/disclosure-model.org` §6 says what breaks if either
 /// half of that stops being true.
 pub fn encrypt(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     recipient_pk: JubjubPoint<Private>,
     value: Uint<128>,
-    e: Wire3<JubjubScalarT, Private>,
+    e: Wire<JubjubScalarT, Private>,
 ) -> Memo<Private> {
     let (ephemeral, shared) = derive_shared(c, recipient_pk, e);
     c.region("ecdh mask", |c| {
@@ -499,11 +499,11 @@ pub fn encrypt(
 /// Two points are equal iff both `encode` limbs are — the only equality a
 /// `JubjubPoint` has in ZKIR, since `test_eq` is a field-and-`Bytes<32>`
 /// instruction and a point is neither.
-fn point_is<V: Vis3>(c: &mut Circuit3, a: PointLimbs<V>, b: PointLimbs<V>) -> minocrab_std::v3::Check<V> {
+fn point_is<V: Vis>(c: &mut Circuit, a: PointLimbs<V>, b: PointLimbs<V>) -> minocrab_std::Check<V> {
     let x = c.test_eq(a.x, b.x);
     let y = c.test_eq(a.y, b.y);
-    is_true(minocrab_std::v3::Bool::from_field_unchecked(x))
-        .and(is_true(minocrab_std::v3::Bool::from_field_unchecked(y)))
+    is_true(minocrab_std::Bool::from_field_unchecked(x))
+        .and(is_true(minocrab_std::Bool::from_field_unchecked(y)))
 }
 
 // ---- the contract -----------------------------------------------------------------
@@ -570,7 +570,7 @@ impl Disclosure {
     /// [`ephemeral_scalar`].
     #[circuit]
     pub fn register(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         pk: JubjubPoint<Private>,
     ) -> Discloses<(RegisteredAccount, RegisteredKey)> {
         // WHOSE account this is, derived rather than claimed. The witness
@@ -618,7 +618,7 @@ impl Disclosure {
     /// witness the key — neither of which is free.
     #[circuit]
     pub fn disclose_to(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         account: B32<Private>,
         pk: JubjubPoint<Private>,
         value: Uint<128>,

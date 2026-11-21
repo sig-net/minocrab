@@ -18,13 +18,13 @@
 //! `Misc` is event tag 10, version 1, serialized size 288 = name ‖ payload
 //! (compiler/midnight-events.ss:71).
 
-use minocrab::v3::{Circuit3, Compiled3, FieldT, Wire3};
+use minocrab::{Circuit, Compiled, FieldT, Wire};
 use minocrab::{label, Private, Public};
 use minocrab_experimental::impact::raw::{
     cell_write, counter_increment, counter_read, emit, map_insert, ImpactElem,
     LedgerValue,
 };
-use minocrab_std::v3::{entry, event, CircuitArg, Disclose, Discloses, Serializer, Uint, B32};
+use minocrab_std::{entry, event, CircuitArg, Disclose, Discloses, Serializer, Uint, B32};
 
 /// Ledger field indices, in declaration order.
 pub const CALL_COUNT: u8 = 0;
@@ -61,7 +61,7 @@ pub(crate) type DepositDisclosures = Discloses<(Amount, Recipient)>;
 
 /// The shared workload: `callCount.increment(1); lastAmount = a;
 /// balances.insert(r, a)`.
-fn workload(c: &mut Circuit3, r: &B32<Public>, a: Wire3<FieldT, Public>) {
+fn workload(c: &mut Circuit, r: &B32<Public>, a: Wire<FieldT, Public>) {
     let amount_val = LedgerValue::bytes(16, vec![ImpactElem::Wire(a)]);
     let recipient_val = LedgerValue::bytes(32, vec![ImpactElem::Wire(r.hi), ImpactElem::Wire(r.lo)]);
     let mut ops = counter_increment(CALL_COUNT, 1);
@@ -87,7 +87,7 @@ struct DepositArgs {
 /// one — only the entry point's spelling differs. The DECLARATION is the
 /// same one too: `entry` takes any `CircuitOut` of zero slots, and
 /// [`DepositDisclosures`] is one (see [`Discloses`]).
-fn base_with_emits(emits: usize) -> Compiled3 {
+fn base_with_emits(emits: usize) -> Compiled {
     entry(|c, args: DepositArgs| -> DepositDisclosures {
         // Explicit: built through `entry`, outside a `#[contract]` block, so no attribute reaches it.
         minocrab_compat::profile(c);
@@ -130,12 +130,12 @@ fn base_with_emits(emits: usize) -> Compiled3 {
 }
 
 /// `export circuit base(recipient, amount): []` — the control.
-pub fn base() -> Compiled3 {
+pub fn base() -> Compiled {
     base_with_emits(0)
 }
 
 /// `export circuit emit1/2/4(recipient, amount): []`.
-pub fn emit_n(n: usize) -> Compiled3 {
+pub fn emit_n(n: usize) -> Compiled {
     assert!(n >= 1);
     base_with_emits(n)
 }
@@ -144,13 +144,13 @@ pub fn emit_n(n: usize) -> Compiled3 {
 /// because this family has no attribute to generate it from — one assertion
 /// per INSTANTIATION, over the same [`DepositDisclosures`] the entry point
 /// returns and through the same public
-/// [`assert_declared_disclosures`](minocrab_std::v3::assert_declared_disclosures)
+/// [`assert_declared_disclosures`](minocrab_std::assert_declared_disclosures)
 /// the expansion calls. Nothing about the machinery is macro-only; the
 /// attribute's version of this is these four lines with the loop unrolled.
 #[cfg(test)]
 mod discloses {
     use super::*;
-    use minocrab_std::v3::assert_declared_disclosures;
+    use minocrab_std::assert_declared_disclosures;
 
     #[test]
     fn the_declared_disclosures_are_the_ones_the_family_makes() {

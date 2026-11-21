@@ -53,7 +53,7 @@
 //!
 //! ```compile_fail,E0046
 //! use minocrab_evm::{erc20, Address, EvmCall, U64};
-//! use minocrab_std::v3::Uint;
+//! use minocrab_std::Uint;
 //! use minocrab::Private;
 //!
 //! struct Balance;
@@ -75,10 +75,10 @@
 //! `Unit::word`, notes/evm-calls.org §10 item 3):
 //!
 //! ```compile_fail,E0277
-//! use minocrab::v3::Circuit3;
+//! use minocrab::Circuit;
 //! use minocrab::Private;
 //! use minocrab_evm::{always, erc20, EvmCall, Unit};
-//! use minocrab_std::v3::Check;
+//! use minocrab_std::Check;
 //!
 //! struct Nothing;
 //! impl EvmCall for Nothing {
@@ -89,7 +89,7 @@
 //!     type Return = Unit;
 //!     type Success = ();
 //!     const GAS_LIMIT: u64 = 21_000;
-//!     fn succeeded(c: &mut Circuit3, _out: &()) -> Check<Private> {
+//!     fn succeeded(c: &mut Circuit, _out: &()) -> Check<Private> {
 //!         always(c)
 //!     }
 //! }
@@ -100,10 +100,10 @@
 //! it were written in the wrong place:
 //!
 //! ```compile_fail,E0277
-//! use minocrab::v3::Circuit3;
+//! use minocrab::Circuit;
 //! use minocrab::Private;
 //! use minocrab_evm::{always, erc20, Address, EvmCall, Unit};
-//! use minocrab_std::v3::Check;
+//! use minocrab_std::Check;
 //!
 //! struct Nothing;
 //! impl EvmCall for Nothing {
@@ -114,7 +114,7 @@
 //!     type Return = Unit;
 //!     type Success = ();
 //!     const GAS_LIMIT: u64 = 21_000;
-//!     fn succeeded(c: &mut Circuit3, _out: &()) -> Check<Private> {
+//!     fn succeeded(c: &mut Circuit, _out: &()) -> Check<Private> {
 //!         always(c)
 //!     }
 //! }
@@ -125,10 +125,10 @@
 //! actually has (ERC-2612 `permit`, WETH `deposit`, a USDT `transfer`):
 //!
 //! ```
-//! use minocrab::v3::Circuit3;
+//! use minocrab::Circuit;
 //! use minocrab::Private;
 //! use minocrab_evm::{always, erc20, Address, EvmCall, Unit};
-//! use minocrab_std::v3::Check;
+//! use minocrab_std::Check;
 //!
 //! struct Nothing;
 //! impl EvmCall for Nothing {
@@ -138,7 +138,7 @@
 //!     type Return = Unit;
 //!     type Success = ();
 //!     const GAS_LIMIT: u64 = 21_000;
-//!     fn succeeded(c: &mut Circuit3, _out: &()) -> Check<Private> {
+//!     fn succeeded(c: &mut Circuit, _out: &()) -> Check<Private> {
 //!         always(c)
 //!     }
 //! }
@@ -150,10 +150,10 @@
 //! quietly throw its answer away:
 //!
 //! ```compile_fail,E0277
-//! use minocrab::v3::Circuit3;
+//! use minocrab::Circuit;
 //! use minocrab::Private;
 //! use minocrab_evm::{always, erc20, Address, EvmCall, U64};
-//! use minocrab_std::v3::{Check, Uint};
+//! use minocrab_std::{Check, Uint};
 //!
 //! struct Balance;
 //! impl EvmCall for Balance {
@@ -164,7 +164,7 @@
 //!     // ERROR: the trait bound `(): FromReturn<Uint<64>>` is not satisfied
 //!     type Success = ();
 //!     const GAS_LIMIT: u64 = 50_000;
-//!     fn succeeded(c: &mut Circuit3, _out: &Uint<64, Private>) -> Check<Private> {
+//!     fn succeeded(c: &mut Circuit, _out: &Uint<64, Private>) -> Check<Private> {
 //!         always(c)
 //!     }
 //! }
@@ -174,10 +174,10 @@
 //! above is the missing item and the mapping rather than a typo:
 //!
 //! ```
-//! use minocrab::v3::Circuit3;
+//! use minocrab::Circuit;
 //! use minocrab::Private;
 //! use minocrab_evm::{always, erc20, Address, EvmCall, U64};
-//! use minocrab_std::v3::{Check, Uint};
+//! use minocrab_std::{Check, Uint};
 //!
 //! struct Balance;
 //! impl EvmCall for Balance {
@@ -187,7 +187,7 @@
 //!     type Return = U64;
 //!     type Success = Uint<64, Private>;
 //!     const GAS_LIMIT: u64 = 50_000;
-//!     fn succeeded(c: &mut Circuit3, _out: &Uint<64, Private>) -> Check<Private> {
+//!     fn succeeded(c: &mut Circuit, _out: &Uint<64, Private>) -> Check<Private> {
 //!         always(c)
 //!     }
 //! }
@@ -201,10 +201,10 @@
 //! [`AbiTuple`] is over `AbiArg`:
 //!
 //! ```compile_fail,E0277
-//! use minocrab::v3::Circuit3;
+//! use minocrab::Circuit;
 //! use minocrab::Private;
 //! use minocrab_evm::{erc20, Address, Bool, EvmCall, Unit};
-//! use minocrab_std::v3::{is_true, Bool as BoolWire, Check};
+//! use minocrab_std::{is_true, Bool as BoolWire, Check};
 //!
 //! struct Poke;
 //! impl EvmCall for Poke {
@@ -215,7 +215,7 @@
 //!     type Return = Bool;
 //!     type Success = ();
 //!     const GAS_LIMIT: u64 = 50_000;
-//!     fn succeeded(_c: &mut Circuit3, ok: &BoolWire<Private>) -> Check<Private> {
+//!     fn succeeded(_c: &mut Circuit, ok: &BoolWire<Private>) -> Check<Private> {
 //!         is_true(*ok)
 //!     }
 //! }
@@ -224,10 +224,10 @@
 //! …and alone, where the tuple is nothing else:
 //!
 //! ```compile_fail,E0277
-//! use minocrab::v3::Circuit3;
+//! use minocrab::Circuit;
 //! use minocrab::Private;
 //! use minocrab_evm::{erc20, Bool, EvmCall, Unit};
-//! use minocrab_std::v3::{is_true, Bool as BoolWire, Check};
+//! use minocrab_std::{is_true, Bool as BoolWire, Check};
 //!
 //! struct Poke;
 //! impl EvmCall for Poke {
@@ -238,7 +238,7 @@
 //!     type Return = Bool;
 //!     type Success = ();
 //!     const GAS_LIMIT: u64 = 50_000;
-//!     fn succeeded(_c: &mut Circuit3, ok: &BoolWire<Private>) -> Check<Private> {
+//!     fn succeeded(_c: &mut Circuit, ok: &BoolWire<Private>) -> Check<Private> {
 //!         is_true(*ok)
 //!     }
 //! }
@@ -250,10 +250,10 @@
 //! other, with no runtime check anywhere:
 //!
 //! ```
-//! use minocrab::v3::Circuit3;
+//! use minocrab::Circuit;
 //! use minocrab::Private;
 //! use minocrab_evm::{always, erc20, Address, Bool, EvmCall, Unit};
-//! use minocrab_std::v3::{is_true, Bool as BoolWire, Check};
+//! use minocrab_std::{is_true, Bool as BoolWire, Check};
 //!
 //! struct Poke;
 //! impl EvmCall for Poke {
@@ -263,7 +263,7 @@
 //!     type Return = Bool;
 //!     type Success = ();
 //!     const GAS_LIMIT: u64 = 50_000;
-//!     fn succeeded(_c: &mut Circuit3, ok: &BoolWire<Private>) -> Check<Private> {
+//!     fn succeeded(_c: &mut Circuit, ok: &BoolWire<Private>) -> Check<Private> {
 //!         is_true(*ok)
 //!     }
 //! }
@@ -276,17 +276,17 @@
 //!     type Return = Unit;               // the position `Unit` is FOR
 //!     type Success = ();
 //!     const GAS_LIMIT: u64 = 50_000;
-//!     fn succeeded(c: &mut Circuit3, _out: &()) -> Check<Private> {
+//!     fn succeeded(c: &mut Circuit, _out: &()) -> Check<Private> {
 //!         always(c)
 //!     }
 //! }
 //! assert_eq!(Shout::signature(), "shout(address)");
 //! ```
 
-use minocrab::v3::{Circuit3, FieldT, Wire3};
+use minocrab::{Circuit, FieldT, Wire};
 use minocrab::Private;
-use minocrab_std::v3::{
-    is_true, pow2_const, Bool as BoolWire, Bytes, Bytes0, Check, CircuitArg, Uint, Vis3, B32,
+use minocrab_std::{
+    is_true, pow2_const, Bool as BoolWire, Bytes, Bytes0, Check, CircuitArg, Uint, Vis, B32,
 };
 use sha3::{Digest as _, Keccak256};
 
@@ -306,7 +306,7 @@ pub mod weth;
 /// The untyped-limb encoder; [`Address::word`] is the typed spelling, and
 /// the Signet module ports name this one `evm_address_abi_word`.
 /// Byte-for-byte the same instructions in all of them.
-pub fn address_word<V: Vis3>(c: &mut Circuit3, addr: Wire3<FieldT, V>) -> B32<V> {
+pub fn address_word<V: Vis>(c: &mut Circuit, addr: Wire<FieldT, V>) -> B32<V> {
     c.region("abi words", |c| {
         // The word is addr·2^96 (a 12-byte shift), so split the 160-bit
         // limb at bit 152: hi byte = addr >> 152, lo = the rest shifted.
@@ -324,7 +324,7 @@ pub fn address_word<V: Vis3>(c: &mut Circuit3, addr: Wire3<FieldT, V>) -> B32<V>
 /// [`U128::word`], which differ only in the RANGE their wire type claims:
 /// the encoding is the same reversal for all of them, and correct for any
 /// limb below `2^248`.
-pub fn numeric_word<V: Vis3>(c: &mut Circuit3, value: Wire3<FieldT, V>) -> B32<V> {
+pub fn numeric_word<V: Vis>(c: &mut Circuit, value: Wire<FieldT, V>) -> B32<V> {
     c.region("abi words", |c| {
         // value's 16 LE bytes sit at string positions 0..15 of
         // `B32 { lo: value, hi: 0 }`; the native reversal moves them,
@@ -339,7 +339,7 @@ pub fn numeric_word<V: Vis3>(c: &mut Circuit3, value: Wire3<FieldT, V>) -> B32<V
 /// are big-endian, the scalar casts read little-endian). ZKIR's native
 /// `Reverse` instruction (~150 rows) replaces the Compact stdlib's
 /// explode/rebuild chain (~4600 rows, what compactc emits).
-pub fn reverse_bytes32<V: Vis3>(c: &mut Circuit3, b: &B32<V>) -> B32<V> {
+pub fn reverse_bytes32<V: Vis>(c: &mut Circuit, b: &B32<V>) -> B32<V> {
     let typed = b.to_typed(c);
     let rev = c.reverse_bytes(typed);
     B32::from_typed(c, rev)
@@ -350,7 +350,7 @@ pub fn reverse_bytes32<V: Vis3>(c: &mut Circuit3, b: &B32<V>) -> B32<V> {
 /// (the source's "seems pointless but is important" check — without it the
 /// `as Uint<128>` cast of a 32-byte string reads a value mod the field),
 /// then the low 31 bytes are range-checked to 128 bits.
-pub fn checked_truncation_u128<V: Vis3>(c: &mut Circuit3, x: &B32<V>) -> Uint<128, V> {
+pub fn checked_truncation_u128<V: Vis>(c: &mut Circuit, x: &B32<V>) -> Uint<128, V> {
     let zero = V::from_public(c.constant(0u64));
     let top_zero = c.test_eq(x.hi, zero);
     c.assert_with(top_zero, Some("Value exceeds Uint<128>"));
@@ -384,7 +384,7 @@ pub trait AbiType {
     const RESPOND: &'static str;
 
     /// The circuit value that stands for this leaf.
-    type Wire<V: Vis3>;
+    type Wire<V: Vis>;
 }
 
 /// A LEAF THAT CAN STAND IN AN ARGUMENT LIST — an [`AbiType`] that HAS an
@@ -405,7 +405,7 @@ pub trait AbiType {
 /// keep prescriptive.
 pub trait AbiArg: AbiType {
     /// The canonical big-endian ABI word for a value of this leaf.
-    fn word<V: Vis3>(c: &mut Circuit3, w: &Self::Wire<V>) -> B32<V>;
+    fn word<V: Vis>(c: &mut Circuit, w: &Self::Wire<V>) -> B32<V>;
 }
 
 /// Solidity `address` — a `Bytes<20>` limb, left-padded into the word.
@@ -414,11 +414,11 @@ pub struct Address;
 impl AbiType for Address {
     const SOLIDITY: &'static str = "address";
     const RESPOND: &'static str = "address";
-    type Wire<V: Vis3> = Bytes<20, V>;
+    type Wire<V: Vis> = Bytes<20, V>;
 }
 
 impl AbiArg for Address {
-    fn word<V: Vis3>(c: &mut Circuit3, w: &Self::Wire<V>) -> B32<V> {
+    fn word<V: Vis>(c: &mut Circuit, w: &Self::Wire<V>) -> B32<V> {
         address_word(c, w.field())
     }
 }
@@ -429,11 +429,11 @@ pub struct Bool;
 impl AbiType for Bool {
     const SOLIDITY: &'static str = "bool";
     const RESPOND: &'static str = "bool";
-    type Wire<V: Vis3> = BoolWire<V>;
+    type Wire<V: Vis> = BoolWire<V>;
 }
 
 impl AbiArg for Bool {
-    fn word<V: Vis3>(c: &mut Circuit3, w: &Self::Wire<V>) -> B32<V> {
+    fn word<V: Vis>(c: &mut Circuit, w: &Self::Wire<V>) -> B32<V> {
         numeric_word(c, w.field())
     }
 }
@@ -445,11 +445,11 @@ pub struct Bytes32;
 impl AbiType for Bytes32 {
     const SOLIDITY: &'static str = "bytes32";
     const RESPOND: &'static str = "bytes32";
-    type Wire<V: Vis3> = B32<V>;
+    type Wire<V: Vis> = B32<V>;
 }
 
 impl AbiArg for Bytes32 {
-    fn word<V: Vis3>(_c: &mut Circuit3, w: &Self::Wire<V>) -> B32<V> {
+    fn word<V: Vis>(_c: &mut Circuit, w: &Self::Wire<V>) -> B32<V> {
         *w
     }
 }
@@ -482,7 +482,7 @@ pub struct Unit;
 impl AbiType for Unit {
     const SOLIDITY: &'static str = "";
     const RESPOND: &'static str = "";
-    type Wire<V: Vis3> = ();
+    type Wire<V: Vis> = ();
 }
 
 /// Solidity `uint8` — ERC-2612 `permit`'s signature parity byte `v`, the
@@ -496,11 +496,11 @@ pub struct U8;
 impl AbiType for U8 {
     const SOLIDITY: &'static str = "uint8";
     const RESPOND: &'static str = "uint8";
-    type Wire<V: Vis3> = Uint<8, V>;
+    type Wire<V: Vis> = Uint<8, V>;
 }
 
 impl AbiArg for U8 {
-    fn word<V: Vis3>(c: &mut Circuit3, w: &Self::Wire<V>) -> B32<V> {
+    fn word<V: Vis>(c: &mut Circuit, w: &Self::Wire<V>) -> B32<V> {
         numeric_word(c, w.field())
     }
 }
@@ -518,11 +518,11 @@ pub struct U16;
 impl AbiType for U16 {
     const SOLIDITY: &'static str = "uint16";
     const RESPOND: &'static str = "uint16";
-    type Wire<V: Vis3> = Uint<16, V>;
+    type Wire<V: Vis> = Uint<16, V>;
 }
 
 impl AbiArg for U16 {
-    fn word<V: Vis3>(c: &mut Circuit3, w: &Self::Wire<V>) -> B32<V> {
+    fn word<V: Vis>(c: &mut Circuit, w: &Self::Wire<V>) -> B32<V> {
         numeric_word(c, w.field())
     }
 }
@@ -534,11 +534,11 @@ pub struct U24;
 impl AbiType for U24 {
     const SOLIDITY: &'static str = "uint24";
     const RESPOND: &'static str = "uint24";
-    type Wire<V: Vis3> = Uint<24, V>;
+    type Wire<V: Vis> = Uint<24, V>;
 }
 
 impl AbiArg for U24 {
-    fn word<V: Vis3>(c: &mut Circuit3, w: &Self::Wire<V>) -> B32<V> {
+    fn word<V: Vis>(c: &mut Circuit, w: &Self::Wire<V>) -> B32<V> {
         numeric_word(c, w.field())
     }
 }
@@ -551,11 +551,11 @@ pub struct U64;
 impl AbiType for U64 {
     const SOLIDITY: &'static str = "uint256";
     const RESPOND: &'static str = "uint64";
-    type Wire<V: Vis3> = Uint<64, V>;
+    type Wire<V: Vis> = Uint<64, V>;
 }
 
 impl AbiArg for U64 {
-    fn word<V: Vis3>(c: &mut Circuit3, w: &Self::Wire<V>) -> B32<V> {
+    fn word<V: Vis>(c: &mut Circuit, w: &Self::Wire<V>) -> B32<V> {
         numeric_word(c, w.field())
     }
 }
@@ -571,11 +571,11 @@ pub struct U128;
 impl AbiType for U128 {
     const SOLIDITY: &'static str = "uint256";
     const RESPOND: &'static str = "uint128";
-    type Wire<V: Vis3> = Uint<128, V>;
+    type Wire<V: Vis> = Uint<128, V>;
 }
 
 impl AbiArg for U128 {
-    fn word<V: Vis3>(c: &mut Circuit3, w: &Self::Wire<V>) -> B32<V> {
+    fn word<V: Vis>(c: &mut Circuit, w: &Self::Wire<V>) -> B32<V> {
         numeric_word(c, w.field())
     }
 }
@@ -591,11 +591,11 @@ pub struct U160;
 impl AbiType for U160 {
     const SOLIDITY: &'static str = "uint160";
     const RESPOND: &'static str = "uint160";
-    type Wire<V: Vis3> = B32<V>;
+    type Wire<V: Vis> = B32<V>;
 }
 
 impl AbiArg for U160 {
-    fn word<V: Vis3>(_c: &mut Circuit3, w: &Self::Wire<V>) -> B32<V> {
+    fn word<V: Vis>(_c: &mut Circuit, w: &Self::Wire<V>) -> B32<V> {
         *w
     }
 }
@@ -611,11 +611,11 @@ pub struct U256;
 impl AbiType for U256 {
     const SOLIDITY: &'static str = "uint256";
     const RESPOND: &'static str = "uint256";
-    type Wire<V: Vis3> = B32<V>;
+    type Wire<V: Vis> = B32<V>;
 }
 
 impl AbiArg for U256 {
-    fn word<V: Vis3>(_c: &mut Circuit3, w: &Self::Wire<V>) -> B32<V> {
+    fn word<V: Vis>(_c: &mut Circuit, w: &Self::Wire<V>) -> B32<V> {
         *w
     }
 }
@@ -659,11 +659,11 @@ pub trait AbiReturn: AbiType {
     type Serialized: CircuitArg + Copy;
 
     /// Its FAB limbs, in slot order — the tail of the signed preimage.
-    fn limbs(out: &Self::Serialized) -> Vec<Wire3<FieldT, Private>>;
+    fn limbs(out: &Self::Serialized) -> Vec<Wire<FieldT, Private>>;
 
     /// The decoded value an [`EvmCall::succeeded`] predicate reads, with
     /// whatever range check the narrowing owes.
-    fn decode(c: &mut Circuit3, out: &Self::Serialized) -> Self::Wire<Private>;
+    fn decode(c: &mut Circuit, out: &Self::Serialized) -> Self::Wire<Private>;
 }
 
 /// Nothing attested: zero bytes, zero limbs, nothing to decode.
@@ -671,11 +671,11 @@ impl AbiReturn for Unit {
     const LEN: usize = 0;
     type Serialized = Bytes0<Private>;
 
-    fn limbs(_out: &Bytes0<Private>) -> Vec<Wire3<FieldT, Private>> {
+    fn limbs(_out: &Bytes0<Private>) -> Vec<Wire<FieldT, Private>> {
         Vec::new()
     }
 
-    fn decode(_c: &mut Circuit3, _out: &Bytes0<Private>) {}
+    fn decode(_c: &mut Circuit, _out: &Bytes0<Private>) {}
 }
 
 /// A Borsh `bool`: one byte, which must be 0 or 1, true iff it is `1`.
@@ -687,11 +687,11 @@ impl AbiReturn for Bool {
     const LEN: usize = 1;
     type Serialized = Bytes<1, Private>;
 
-    fn limbs(out: &Bytes<1, Private>) -> Vec<Wire3<FieldT, Private>> {
+    fn limbs(out: &Bytes<1, Private>) -> Vec<Wire<FieldT, Private>> {
         vec![out.field()]
     }
 
-    fn decode(c: &mut Circuit3, out: &Bytes<1, Private>) -> BoolWire<Private> {
+    fn decode(c: &mut Circuit, out: &Bytes<1, Private>) -> BoolWire<Private> {
         let byte = c.assert_boolean(out.field());
         let one = c.constant(1u64).private();
         BoolWire::from_field_unchecked(c.test_eq(byte, one))
@@ -706,11 +706,11 @@ impl AbiReturn for U64 {
     const LEN: usize = 32;
     type Serialized = B32<Private>;
 
-    fn limbs(out: &B32<Private>) -> Vec<Wire3<FieldT, Private>> {
+    fn limbs(out: &B32<Private>) -> Vec<Wire<FieldT, Private>> {
         vec![out.hi, out.lo]
     }
 
-    fn decode(c: &mut Circuit3, out: &B32<Private>) -> Uint<64, Private> {
+    fn decode(c: &mut Circuit, out: &B32<Private>) -> Uint<64, Private> {
         let narrowed = checked_truncation_u128(c, out);
         Uint::<64, Private>::from_field_checked(c, narrowed.field())
     }
@@ -722,11 +722,11 @@ impl AbiReturn for U128 {
     const LEN: usize = 32;
     type Serialized = B32<Private>;
 
-    fn limbs(out: &B32<Private>) -> Vec<Wire3<FieldT, Private>> {
+    fn limbs(out: &B32<Private>) -> Vec<Wire<FieldT, Private>> {
         vec![out.hi, out.lo]
     }
 
-    fn decode(c: &mut Circuit3, out: &B32<Private>) -> Uint<128, Private> {
+    fn decode(c: &mut Circuit, out: &B32<Private>) -> Uint<128, Private> {
         checked_truncation_u128(c, out)
     }
 }
@@ -738,11 +738,11 @@ impl AbiReturn for U256 {
     const LEN: usize = 32;
     type Serialized = B32<Private>;
 
-    fn limbs(out: &B32<Private>) -> Vec<Wire3<FieldT, Private>> {
+    fn limbs(out: &B32<Private>) -> Vec<Wire<FieldT, Private>> {
         vec![out.hi, out.lo]
     }
 
-    fn decode(_c: &mut Circuit3, out: &B32<Private>) -> B32<Private> {
+    fn decode(_c: &mut Circuit, out: &B32<Private>) -> B32<Private> {
         *out
     }
 }
@@ -764,7 +764,7 @@ pub trait AbiTuple {
     const WORDS: usize;
 
     /// The tuple of circuit values, one [`AbiType::Wire`] per element.
-    type Wires<V: Vis3>;
+    type Wires<V: Vis>;
 
     /// The comma-joined [`AbiType::SOLIDITY`] spellings — the inside of the
     /// selector signature's parentheses. Built at CIRCUIT-BUILD TIME, in
@@ -772,18 +772,18 @@ pub trait AbiTuple {
     fn signature() -> String;
 
     /// The words, in argument order. The length is always [`Self::WORDS`].
-    fn words<V: Vis3>(c: &mut Circuit3, wires: Self::Wires<V>) -> Vec<B32<V>>;
+    fn words<V: Vis>(c: &mut Circuit, wires: Self::Wires<V>) -> Vec<B32<V>>;
 }
 
 impl AbiTuple for () {
     const WORDS: usize = 0;
-    type Wires<V: Vis3> = ();
+    type Wires<V: Vis> = ();
 
     fn signature() -> String {
         String::new()
     }
 
-    fn words<V: Vis3>(_c: &mut Circuit3, _wires: ()) -> Vec<B32<V>> {
+    fn words<V: Vis>(_c: &mut Circuit, _wires: ()) -> Vec<B32<V>> {
         Vec::new()
     }
 }
@@ -792,13 +792,13 @@ macro_rules! abi_tuple {
     ($n:literal; $($t:ident => $idx:tt),+) => {
         impl<$($t: AbiArg),+> AbiTuple for ($($t,)+) {
             const WORDS: usize = $n;
-            type Wires<V: Vis3> = ($(<$t as AbiType>::Wire<V>,)+);
+            type Wires<V: Vis> = ($(<$t as AbiType>::Wire<V>,)+);
 
             fn signature() -> String {
                 [$(<$t as AbiType>::SOLIDITY),+].join(",")
             }
 
-            fn words<V: Vis3>(c: &mut Circuit3, wires: Self::Wires<V>) -> Vec<B32<V>> {
+            fn words<V: Vis>(c: &mut Circuit, wires: Self::Wires<V>) -> Vec<B32<V>> {
                 // Left to right, which is argument order, which is word order.
                 vec![$(<$t as AbiArg>::word(c, &wires.$idx)),+]
             }
@@ -833,15 +833,15 @@ abi_tuple!(8; A => 0, B => 1, C => 2, D => 3, E => 4, F => 5, G => 6, H => 7);
 /// they emit in is the order the words come out.
 ///
 /// ```
-/// # use minocrab::v3::{Circuit3, FieldT};
+/// # use minocrab::{Circuit, FieldT};
 /// # use minocrab::Private;
 /// # use minocrab_evm::{AbiArgs, Address, U128};
-/// # use minocrab_std::v3::{Bytes, Uint};
-/// let mut c = Circuit3::new();
+/// # use minocrab_std::{Bytes, Uint};
+/// let mut c = Circuit::new();
 /// let to = Bytes::<20, Private>::from_field_unchecked(c.arg::<FieldT>("to"));
 /// let amount = Uint::<128, Private>::from_field_unchecked(c.arg::<FieldT>("amount"));
 /// let words = AbiArgs::<(Address, U128)>::words(
-///     (|_c: &mut Circuit3| to, |_c: &mut Circuit3| amount),
+///     (|_c: &mut Circuit| to, |_c: &mut Circuit| amount),
 ///     &mut c,
 /// );
 /// assert_eq!(words.len(), 2);
@@ -849,21 +849,21 @@ abi_tuple!(8; A => 0, B => 1, C => 2, D => 3, E => 4, F => 5, G => 6, H => 7);
 pub trait AbiArgs<T: AbiTuple> {
     /// The words, in argument order, each argument built just before it is
     /// encoded. The length is always `T::WORDS`.
-    fn words(self, c: &mut Circuit3) -> Vec<B32<Private>>;
+    fn words(self, c: &mut Circuit) -> Vec<B32<Private>>;
 }
 
 impl AbiArgs<()> for () {
-    fn words(self, _c: &mut Circuit3) -> Vec<B32<Private>> {
+    fn words(self, _c: &mut Circuit) -> Vec<B32<Private>> {
         Vec::new()
     }
 }
 
 macro_rules! abi_args {
     ($($t:ident / $f:ident => $idx:tt),+) => {
-        impl<$($t: AbiArg,)+ $($f: FnOnce(&mut Circuit3) -> <$t as AbiType>::Wire<Private>,)+>
+        impl<$($t: AbiArg,)+ $($f: FnOnce(&mut Circuit) -> <$t as AbiType>::Wire<Private>,)+>
             AbiArgs<($($t,)+)> for ($($f,)+)
         {
-            fn words(self, c: &mut Circuit3) -> Vec<B32<Private>> {
+            fn words(self, c: &mut Circuit) -> Vec<B32<Private>> {
                 // Build, encode, move on: the emission order a request
                 // circuit's ledger reads interleave with.
                 vec![$({
@@ -1024,10 +1024,10 @@ pub trait EvmCall {
     /// achieved nothing:
     ///
     /// ```
-    /// # use minocrab::v3::Circuit3;
+    /// # use minocrab::Circuit;
     /// # use minocrab::Private;
     /// # use minocrab_evm::{erc4626, Address, AbiType, EvmCall, U128, U64};
-    /// # use minocrab_std::v3::{Check, Uint};
+    /// # use minocrab_std::{Check, Uint};
     /// struct StrictDeposit;
     /// impl EvmCall for StrictDeposit {
     ///     type Callee = erc4626::Erc4626;
@@ -1037,7 +1037,7 @@ pub trait EvmCall {
     ///     type Success = Uint<64, Private>;
     ///     const GAS_LIMIT: u64 = 500_000;
     ///
-    ///     fn succeeded(_c: &mut Circuit3, shares: &Uint<64, Private>) -> Check<Private> {
+    ///     fn succeeded(_c: &mut Circuit, shares: &Uint<64, Private>) -> Check<Private> {
     ///         shares.gt(0u64)
     ///     }
     /// }
@@ -1047,7 +1047,7 @@ pub trait EvmCall {
     /// semantics are that, and tightening them is a protocol change rather
     /// than a refactor.
     fn succeeded(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         output: &<Self::Return as AbiType>::Wire<Private>,
     ) -> Check<Private>;
 
@@ -1055,7 +1055,7 @@ pub trait EvmCall {
     /// The default is [`Self::Success`]'s own [`FromReturn`]; override it
     /// for a projection that needs the circuit (a decode, a range check).
     fn map(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         output: <Self::Return as AbiType>::Wire<Private>,
     ) -> Self::Success {
         Self::Success::from_return(c, output)
@@ -1092,12 +1092,12 @@ pub trait Payable: EvmCall {}
 /// whose return carries no failure signal of its own.
 ///
 /// It lowers to `assert` on the IMMEDIATE 1, which
-/// `minocrab_ir::v3::passes::drop_true_asserts` removes in
-/// `Builder3::finish` (notes/ir-passes.org §11). So "executed is succeeded"
+/// `minocrab_ir::passes::drop_true_asserts` removes in
+/// `Builder::finish` (notes/ir-passes.org §11). So "executed is succeeded"
 /// costs exactly nothing in the artifact, and it costs it by FOLDING rather
 /// than by a branch in this API that an author could take wrongly (dmd,
 /// 2026-09-05: *"I'm inclined to just use the fold"*).
-pub fn always(c: &mut Circuit3) -> Check<Private> {
+pub fn always(c: &mut Circuit) -> Check<Private> {
     is_true(BoolWire::from_field_unchecked(c.constant(1u64).private()))
 }
 
@@ -1117,19 +1117,19 @@ pub fn always(c: &mut Circuit3) -> Check<Private> {
 /// [`EvmCall::map`].
 pub trait FromReturn<W> {
     /// Build the projection from the attested wire.
-    fn from_return(c: &mut Circuit3, w: W) -> Self;
+    fn from_return(c: &mut Circuit, w: W) -> Self;
 }
 
 /// THE IDENTITY: hand back exactly what the MPC attested.
 impl<W> FromReturn<W> for W {
-    fn from_return(_c: &mut Circuit3, w: W) -> W {
+    fn from_return(_c: &mut Circuit, w: W) -> W {
         w
     }
 }
 
 /// A `bool` return that `succeeded` has already asserted says nothing more.
-impl<V: Vis3> FromReturn<BoolWire<V>> for () {
-    fn from_return(_c: &mut Circuit3, _w: BoolWire<V>) {}
+impl<V: Vis> FromReturn<BoolWire<V>> for () {
+    fn from_return(_c: &mut Circuit, _w: BoolWire<V>) {}
 }
 
 #[cfg(test)]
@@ -1164,7 +1164,7 @@ mod tests {
             type Success = ();
             const GAS_LIMIT: u64 = 21_000;
 
-            fn succeeded(_c: &mut Circuit3, ok: &BoolWire<Private>) -> Check<Private> {
+            fn succeeded(_c: &mut Circuit, ok: &BoolWire<Private>) -> Check<Private> {
                 is_true(*ok)
             }
         }

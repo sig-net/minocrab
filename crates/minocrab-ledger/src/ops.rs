@@ -10,7 +10,7 @@ use midnight_storage::arena::Sp;
 use midnight_storage::db::InMemoryDB;
 use midnight_storage::storage::HashMap as StorageHashMap;
 use midnight_transient_crypto::merkle_tree::MerkleTree as VmMerkleTree;
-use minocrab::v3::ImpactElem;
+use minocrab::ImpactElem;
 use minocrab::Fr;
 
 use crate::impact::*;
@@ -929,7 +929,7 @@ pub fn emit_event(version: u32, tag: u8, payload: &LedgerValue) -> Vec<ImpactOp>
 //
 // None of these is expressible in Compact, so there is no compactc
 // differential; the gate is the on-chain VM itself
-// (minocrab-std/tests/v3_blind.rs runs every transcript through
+// (minocrab-std/tests/blind.rs runs every transcript through
 // `midnight_onchain_vm::vm::run_program` on a seeded state).
 //
 // Stack discipline, from onchain-vm `vm.rs`: `idxp f` leaves the `(container,
@@ -1169,7 +1169,7 @@ pub fn cell_write_first_at(
 
 // --- the branch-and-compare ops the hooks compose ---------------------------
 //
-// `minocrab_std::v3::hook` builds `if_absent` / `if_below` / `if_unset` out
+// `minocrab_std::hook` builds `if_absent` / `if_below` / `if_unset` out
 // of these and the writes above; they are named here so the stdlib never
 // spells an opcode itself and the encoding stays `Op::field_repr`'s.
 

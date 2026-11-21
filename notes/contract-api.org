@@ -33,7 +33,7 @@ settled unless dmd reopens them.
   (#[near_bindgen]: per-method struct whose fields are the fn params).
 
 * The design
-** Typed v3 leaves (minocrab-std/src/v3.rs)
+** Typed v3 leaves (minocrab-std/src/leaves.rs)
 #+begin_src rust
 #[repr(transparent)] pub struct Uint<const BITS: u32, V: Vis3 = Private>(Wire3<FieldT, V>);
 #[repr(transparent)] pub struct Bool<V: Vis3 = Private>(Wire3<FieldT, V>);
@@ -115,7 +115,7 @@ fn deposit(c, ...) -> Discloses<(DepositorCommitment, RequestId, RequestRecord),
 - Also generated (feature-gated, needs preimage): a valued disclosure
   report golden via minocrab-sim v3 report.
 - Prerequisites: v3 Disclosure must carry the Identifier (today index: 0,
-  crates/minocrab/src/v3.rs:572) and minocrab-sim needs a v3 report()
+  crates/minocrab/src/circuit.rs:572) and minocrab-sim needs a v3 report()
   twin (~30 lines).
 - Rejected: const-assertion variant (circuits are built at runtime;
   nothing const to assert) — do not re-litigate.
@@ -263,7 +263,7 @@ than the phasing bullet assumed):
 Failure output: a line-level LCS diff per changed circuit (`-` frozen,
 `+` built), so a reorder reads as one moved line and a rename as one
 -/+ pair. The diff renderer has its own unit test.
-** Phase 1 — typed v3 leaves (crates/minocrab-std/src/v3.rs)
+** Phase 1 — typed v3 leaves (crates/minocrab-std/src/leaves.rs)
 Uint<BITS, V = Private> / Bool<V = Private> / Bytes<N ≤ 31, V = Private>:
 #[repr(transparent)] newtypes over one Wire3<FieldT, V>, with
 .field() / from_field() (no instructions) and, mirroring types.rs's v2
@@ -287,13 +287,13 @@ block, so phase 2's CircuitArg::constrain just calls it.
   leaves are reachable only as minocrab_std::v3::{Uint, Bool, Bytes}
   and are NOT added to the crate-root re-export list (which still
   exports the v2 Bool/BytesN).
-Tests (crates/minocrab-std/tests/v3_leaves.rs): each leaf's circuit is
+Tests (crates/minocrab-std/tests/leaves.rs): each leaf's circuit is
 compared as serialized ZKIR against the same circuit hand-written over
 raw wires — equality is the zero-cost claim, stronger than an
 instruction count — plus a 0-instruction check for .field(), the
 range-check panic, and the BITS >= 64 no-overflow path. No circuit was
 converted (phase 2), and both snapshots stayed bit-identical.
-** Phase 2 — the entry-point core (crates/minocrab-std/src/v3/entry.rs)
+** Phase 2 — the entry-point core (crates/minocrab-std/src/entry.rs)
 Placement: minocrab-std, next to the leaves — the core needs both the
 leaves and Circuit3/Compiled3, and minocrab-std is the only crate that
 already has both (minocrab has no leaves; minocrab-contracts is the
@@ -353,7 +353,7 @@ Deviations from the phasing bullet, all deliberate:
 - entry() hard-codes finish(true). All 32 finish() calls in
   minocrab-contracts pass true; when a circuit needs false, that becomes
   a parameter (and the differential that needs it will say so).
-Tests (crates/minocrab-std/tests/v3_entry.rs): a five-argument list
+Tests (crates/minocrab-std/tests/entry.rs): a five-argument list
 (Uint<64>, Bool, a nested struct of Bytes<20>+Uint<128>, B32,
 BytesN<128> = 11 slots) built through entry() is compared as serialized
 ZKIR against the same circuit hand-written over raw wires — byte equality
@@ -410,7 +410,7 @@ needs only `minocrab_std` in scope and the macro crate stays a leaf.
 THINNESS RULE, enforced two ways: a unit test in the macro crate asserts
 the expansion's token string contains no method call on the circuit
 (`"c ."`) and no `Circuit3 ::` associated call; and the real gate,
-crates/minocrab-std/tests/v3_derive.rs, builds a derived argument list
+crates/minocrab-std/tests/derive.rs, builds a derived argument list
 through entry() and compares serialized ZKIR byte-for-byte against (a) the
 hand-written impl and (b) a raw `c.arg` block spelling every label out —
 which pins the camelCase rule and the `#[arg(name)]` override, since
@@ -526,7 +526,7 @@ alias.
 Gates: the thinness unit test now covers the attribute (the scaffolding
 contains no `c .` and no `Circuit3 ::`; the fixture body is empty, since the
 author's body is copied verbatim and is naturally full of circuit calls),
-and the real one is crates/minocrab-std/tests/v3_circuit.rs — the same
+and the real one is crates/minocrab-std/tests/circuit.rs — the same
 circuit written twice, attributed and as an explicit struct + entry call,
 compared as serialized ZKIR (which pins the labels), plus the entry_out
 shape and the argument-free circuit. syn gained its "full" feature (item
@@ -621,7 +621,7 @@ wires, and a `Point<Secp256k1>` slot has none to hand back.
   to be zipped against, and everything a slot list is used for (constraints,
   FAB hashing) is native-field work. It lives in the ONE provided
   `constrain`, so no impl gets an opinion about it.
-- Gate: `crates/minocrab-std/tests/v3_entry.rs`, a three-argument list with
+- Gate: `crates/minocrab-std/tests/entry.rs`, a three-argument list with
   the point in the MIDDLE, compared as serialized ZKIR against the
   hand-written `c.arg::<Secp256k1PointT>` circuit (so the slot's POSITION is
   pinned, not just its absence of constraint), plus the atom table.
@@ -724,7 +724,7 @@ pub fn disclose_slice<T: IrTy>(
 still records one wire. A disclosure of ZERO wires records NOTHING (see the
 gotchas).
 
-*** The vocabulary (crates/minocrab/src/v3/disclose.rs)
+*** The vocabulary (crates/minocrab/src/disclose.rs)
 #+begin_src rust
 pub trait DisclosureLabel: 'static { const LABEL: &'static str; }
 label!(RequestId = "request id");            // macro_rules!, #[macro_export]
@@ -751,7 +751,7 @@ depend on minocrab-std. Those labels have to be nameable in the CALLER's
 declaration, so they are now `minocrab_ledger::{XcallEntryPointHash,
 XcallCommitment, XcallResult}`, written with the same `label!`.
 minocrab-std keeps the half that needs its types
-(crates/minocrab-std/src/v3/disclose.rs): `Disclose` impls for `Uint<BITS>`,
+(crates/minocrab-std/src/disclose.rs): `Disclose` impls for `Uint<BITS>`,
 `Bool`, `Bytes<N>`, `B32`, `ContractAddress`, `Secp256k1Point`, `BytesN<N>`
 and `ShieldedCoinInfo3` (the whole coin under one label), plus
 `impl<D, R: CircuitOut> CircuitOut for Discloses<D, R>` — `CircuitOut` is
@@ -836,7 +836,7 @@ belongs in it.
 with `.disclose_as::<L>(c)`, where L is the label type whose LABEL is …, or
 drop L from the declaration".)
 
-*** v3 report() (crates/minocrab-sim/src/v3.rs)
+*** v3 report() (crates/minocrab-sim/src/vm.rs)
 `Report3` / `DisclosedValue3 { label, kind, values: Vec<String> }`, plus
 `report(&Run3, &[Disclosure3])` and `simulate_compiled(&Compiled3,
 &ProofPreimage)` — the v3 twins of v2's, serde-serializable like them. A
@@ -934,7 +934,7 @@ nothing but the borsh fork owes the opt fork byte-identity on five
 circuits, so the three files are edited by one script). The three files
 lost 297 lines net across the phase.
 
-*** Piece 1 — rusty maps (crates/minocrab-std/src/v3/ledger.rs)
+*** Piece 1 — rusty maps (crates/minocrab-std/src/ledger.rs)
 The ledger block is a struct, and the field index is its declaration order:
 #+begin_src rust
 pub trait LedgerRepr: Sized {                     // key/value types
@@ -987,7 +987,7 @@ signatures — the key is the `B32<Public>` itself). Cells and counters have
 typed methods and are gated, but their call sites still use the explicit
 `cell_read`/`counter_read` (the vault's cell reads are inside helpers shared
 with other contracts); porting them is phase 8's showcase business.
-Gate: crates/minocrab-std/tests/v3_ledger.rs builds every method twice —
+Gate: crates/minocrab-std/tests/ledger.rs builds every method twice —
 typed, and as the explicit `minocrab_ledger` call with a hand-written index
 and hand-written atoms — and compares serialized ZKIR byte for byte. Plus
 the derive's own unit tests (declaration-order indices; the thinness rule:
@@ -995,7 +995,7 @@ no `c .`, no `Circuit3 ::`). Zero movement: all 78 circuits' serialized ZKIR
 dumped before and after, 78 of 78 byte-identical.
 
 *** Piece 2 — inline-immediate literals, and the delta review
-`Operand<T, V>` (crates/minocrab/src/v3.rs) is what every operand position
+`Operand<T, V>` (crates/minocrab/src/circuit.rs) is what every operand position
 now takes: `add`, `mul`, `neg`, `inv`, `not`, `test_eq`, `less_than`,
 `cond_select`, `assert_eq` are all `impl Into<Operand<T, V>>`. A wire
 converts; so do `u64` / `u32` / `u8` / `bool` / `Fr`, at `FieldT` and
@@ -1034,12 +1034,12 @@ snapshot cannot see this piece and why there is nothing for the benchmark to
 report. `nix run .#bench` was therefore NOT re-run: dmd's standing note asks
 for a refresh when a piece moves MEASURED performance, and the measurement
 did not move by construction (0 rows × 47 instructions).
-Gate beyond the review: crates/minocrab-std/tests/v3_literals.rs — each
+Gate beyond the review: crates/minocrab-std/tests/literals.rs — each
 operand-taking method costs one instruction with a literal and two with a
 named constant, the immediate is inline in the serialized stream with no
 `copy` beside it, and the visibility annotations compile.
 
-*** Piece 3 — assertion predicates (crates/minocrab-std/src/v3/predicate.rs)
+*** Piece 3 — assertion predicates (crates/minocrab-std/src/predicate.rs)
 #+begin_src rust
 #[must_use] pub struct Check<V: Vis3>;            // an INERT descriptor
 pub fn less_than<A: CheckOperand, B: CheckOperand>(a: A, b: B) -> Check<Joined<A, B>>;
@@ -1126,7 +1126,7 @@ zero", "Not initialized", "Request already exists", "Withdrawal not found",
 "Swap not found", "Not the withdrawer". Guards whose Compact message the
 port never recorded (deposit's numeric bounds) carry none — inventing one
 would be putting words in the contract's mouth.
-Gate: crates/minocrab-std/tests/v3_predicates.rs — every comparison, every
+Gate: crates/minocrab-std/tests/predicates.rs — every comparison, every
 combinator, `eval`, and the literal operand each compared as serialized ZKIR
 against the hand-written form; the message costs nothing and is recorded;
 an unasserted predicate emits nothing; and the three soundness panics
@@ -1302,7 +1302,7 @@ THE PRICE, recorded because phase 7 named it: "building a `LedgerValue` is
 free" is no longer true by construction. What replaces it is narrower and
 still checkable — a repr emits exactly the instructions the call site would
 have emitted itself, immediately before the op — and it is what
-`tests/v3_ledger.rs`'s byte-equality against the explicit form asserts.
+`tests/ledger.rs`'s byte-equality against the explicit form asserts.
 One honest wart: `Secp256k1Point::from_limbs` is `unreachable!`, because ZKIR
 has `encode` and no inverse. It is unreachable through `LedgerCell` (which
 goes through `witness_read`), and reachable only by declaring a
@@ -1352,7 +1352,7 @@ changes that MOVE their streams.
    point can bypass it; `#[track_caller]` through `impact`,
    `impact_mixed` and both `public_transcript_input*`, so it blames the
    user's line. Message: disclose the condition first and use `when`, or
-   move the effect out. Gates: `minocrab-std/tests/v3_guard_scope.rs` —
+   move the effect out. Gates: `minocrab-std/tests/guard_scope.rs` —
    byte-identity of the scope against the hand-threaded private guard
    (assert and witness), the conjunction with a nested public `when`, and
    three `should_panic` refusals (an op, a public read, an op inside a
@@ -1573,7 +1573,7 @@ the declaration has to be legible where the arguments are.
 NO MACRO WAS WRITTEN, which is the standing principle landing right side up
 — the "generated test machinery" turned out to be one public function and a
 type alias, both hand-writable, and the extension is the module docs in
-crates/minocrab/src/v3/disclose.rs that now say so.
+crates/minocrab/src/disclose.rs that now say so.
 Three families, three tests, ten instantiations asserted.
 
 *** Blocked family (b), STILL OUT: hashing's `Bytes<len>` sweep (16)
@@ -1718,12 +1718,12 @@ notes:
 | trait | file | what it now says |
 |-------+------+------------------|
 | =Meet= | minocrab/src/lib.rs | visibility is a two-point lattice; bound the generic |
-| =Disclose= | minocrab/src/v3/disclose.rs | implemented at =Private= only; a record has no impl by design |
-| =Vis3= | minocrab-std/src/v3.rs | two impls; the leaves take visibility LAST, =B32=/=BytesN= first |
-| =CircuitArg= | minocrab-std/src/v3/entry.rs | arguments are witness data: =Private= leaves only |
-| =CircuitOut= | minocrab-std/src/v3/entry.rs | returning DISCLOSES: =Public= only, so =disclose_as= first |
-| =LedgerRepr= | minocrab-std/src/v3/ledger.rs | the ledger is public; the two point types are =Cell=-only |
-| =CoinArm= | minocrab-std/src/v3/ledger.rs | NEW — see below |
+| =Disclose= | minocrab/src/disclose.rs | implemented at =Private= only; a record has no impl by design |
+| =Vis3= | minocrab-std/src/leaves.rs | two impls; the leaves take visibility LAST, =B32=/=BytesN= first |
+| =CircuitArg= | minocrab-std/src/entry.rs | arguments are witness data: =Private= leaves only |
+| =CircuitOut= | minocrab-std/src/entry.rs | returning DISCLOSES: =Public= only, so =disclose_as= first |
+| =LedgerRepr= | minocrab-std/src/ledger.rs | the ledger is public; the two point types are =Cell=-only |
+| =CoinArm= | minocrab-std/src/ledger.rs | NEW — see below |
 
 THE COIN ARM NEEDED A TRAIT TO EXIST. The gate was three inherent impls on
 =LedgerMap<K, QualifiedShieldedCoinInfo3<Public>>= /

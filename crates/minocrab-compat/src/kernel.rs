@@ -7,30 +7,30 @@
 //! passed in explicitly is resolved against the ambient scope once PER
 //! OP, not once on entering a scope; and `sendShielded` hashes the sent
 //! coin's commitment twice, once per `coinCommitment` call in the Compact
-//! source. THE LEAN FORM is `Circuit3::not`, a `mul`, one `when` scope, and
+//! source. THE LEAN FORM is `Circuit::not`, a `mul`, one `when` scope, and
 //! one commitment reused (each repeated commitment is about 5,640 rows,
 //! notes/vault-optimization.org).
 //!
 //! The kernel PRIMITIVES these compose (`kernel.self()`, the claims, the
 //! balance reads) are the ledger's own and stay in
-//! [`minocrab_std::v3::kernel`]; only the compositions live here. Each
+//! [`minocrab_std::kernel`]; only the compositions live here. Each
 //! function carries the Compact it is a port of, and its body stays as
 //! close to it as Rust allows, so it can be checked against the source
 //! line by line.
 
-use minocrab::v3::{AnyWire3, Circuit3, FieldT, Wire3};
+use minocrab::{AnyWire, Circuit, FieldT, Wire};
 use minocrab::{AlignmentAtom, Fr, Public};
 use minocrab_ledger::{ImpactElem, LedgerValue};
-use minocrab_std::v3::kernel::{
+use minocrab_std::kernel::{
     balance, balance_greater_than, balance_less_than, block_time_greater_than,
     block_time_less_than, claim_unshielded_coin_spend, claim_zswap_coin_receive,
     claim_zswap_coin_spend, claim_zswap_nullifier, inc_unshielded_inputs, inc_unshielded_outputs,
     mint_unshielded, self_address, unshielded, UnshieldedRecipient,
 };
-use minocrab_std::v3::{
+use minocrab_std::{
     coin_commitment_to, coin_commitment_to_contract, coin_nullifier_contract, hash, is_true,
     token_type, Assumed, Bool, CoinColor, CoinNonce, CoinRecipient, LedgerRepr, Maybe,
-    QualifiedShieldedCoinInfo3, ShieldedCoinInfo3, ShieldedSendResult, TokenDomainSeparator,
+    QualifiedShieldedCoinInfo, ShieldedCoinInfo, ShieldedSendResult, TokenDomainSeparator,
     Uint, B32,
 };
 
@@ -42,14 +42,14 @@ use minocrab_std::v3::{
 /// `circuit blockTimeLt(time): Boolean { return kernel.blockTimeLessThan(time); }`
 ///
 /// The primitive itself; here so a port reads every stdlib name from one place.
-pub fn block_time_lt(c: &mut Circuit3, time: Uint<64, Public>) -> Assumed<Bool<Public>> {
+pub fn block_time_lt(c: &mut Circuit, time: Uint<64, Public>) -> Assumed<Bool<Public>> {
     block_time_less_than(c, time)
 }
 
 /// `circuit blockTimeGte(time): Boolean { return !blockTimeLt(time); }`
 ///
-/// compactc's `!` (see `not`); the lean form negates with `Circuit3::not`.
-pub fn block_time_gte(c: &mut Circuit3, time: Uint<64, Public>) -> Assumed<Bool<Public>> {
+/// compactc's `!` (see `not`); the lean form negates with `Circuit::not`.
+pub fn block_time_gte(c: &mut Circuit, time: Uint<64, Public>) -> Assumed<Bool<Public>> {
     let lt = block_time_lt(c, time);
     Assumed::of_read(not(c, *lt))
 }
@@ -57,14 +57,14 @@ pub fn block_time_gte(c: &mut Circuit3, time: Uint<64, Public>) -> Assumed<Bool<
 /// `circuit blockTimeGt(time): Boolean { return kernel.blockTimeGreaterThan(time); }`
 ///
 /// The primitive itself; here so a port reads every stdlib name from one place.
-pub fn block_time_gt(c: &mut Circuit3, time: Uint<64, Public>) -> Assumed<Bool<Public>> {
+pub fn block_time_gt(c: &mut Circuit, time: Uint<64, Public>) -> Assumed<Bool<Public>> {
     block_time_greater_than(c, time)
 }
 
 /// `circuit blockTimeLte(time): Boolean { return !blockTimeGt(time); }`
 ///
-/// compactc's `!` (see `not`); the lean form negates with `Circuit3::not`.
-pub fn block_time_lte(c: &mut Circuit3, time: Uint<64, Public>) -> Assumed<Bool<Public>> {
+/// compactc's `!` (see `not`); the lean form negates with `Circuit::not`.
+pub fn block_time_lte(c: &mut Circuit, time: Uint<64, Public>) -> Assumed<Bool<Public>> {
     let gt = block_time_gt(c, time);
     Assumed::of_read(not(c, *gt))
 }
@@ -72,7 +72,7 @@ pub fn block_time_lte(c: &mut Circuit3, time: Uint<64, Public>) -> Assumed<Bool<
 /// Compact's `!b` on a Boolean, which compactc lowers to
 /// `cond_select(b, 0, 1)` (one row) where the lean form is the `not`
 /// instruction — the shape the fixture's `sBlockTimeGte` shows.
-fn not(c: &mut Circuit3, b: Bool<Public>) -> Bool<Public> {
+fn not(c: &mut Circuit, b: Bool<Public>) -> Bool<Public> {
     Bool::from_field_unchecked(c.cond_select(b.field(), 0u64, 1u64))
 }
 
@@ -80,7 +80,7 @@ fn not(c: &mut Circuit3, b: Bool<Public>) -> Bool<Public> {
 ///
 /// The primitive over `left(color)`; here so a port reads every stdlib name
 /// from one place.
-pub fn unshielded_balance(c: &mut Circuit3, color: CoinColor<Public>) -> Assumed<Uint<128, Public>> {
+pub fn unshielded_balance(c: &mut Circuit, color: CoinColor<Public>) -> Assumed<Uint<128, Public>> {
     let token = unshielded(c, color);
     balance(c, &token)
 }
@@ -90,7 +90,7 @@ pub fn unshielded_balance(c: &mut Circuit3, color: CoinColor<Public>) -> Assumed
 /// The primitive over `left(color)`; here so a port reads every stdlib name
 /// from one place.
 pub fn unshielded_balance_lt(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     color: CoinColor<Public>,
     amount: Uint<128, Public>,
 ) -> Assumed<Bool<Public>> {
@@ -100,9 +100,9 @@ pub fn unshielded_balance_lt(
 
 /// `circuit unshieldedBalanceGte(color, amount): Boolean { return !…Lt(…); }`
 ///
-/// compactc's `!` (see `not`); the lean form negates with `Circuit3::not`.
+/// compactc's `!` (see `not`); the lean form negates with `Circuit::not`.
 pub fn unshielded_balance_gte(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     color: CoinColor<Public>,
     amount: Uint<128, Public>,
 ) -> Assumed<Bool<Public>> {
@@ -115,7 +115,7 @@ pub fn unshielded_balance_gte(
 /// The primitive over `left(color)`; here so a port reads every stdlib name
 /// from one place.
 pub fn unshielded_balance_gt(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     color: CoinColor<Public>,
     amount: Uint<128, Public>,
 ) -> Assumed<Bool<Public>> {
@@ -125,9 +125,9 @@ pub fn unshielded_balance_gt(
 
 /// `circuit unshieldedBalanceLte(color, amount): Boolean { return !…Gt(…); }`
 ///
-/// compactc's `!` (see `not`); the lean form negates with `Circuit3::not`.
+/// compactc's `!` (see `not`); the lean form negates with `Circuit::not`.
 pub fn unshielded_balance_lte(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     color: CoinColor<Public>,
     amount: Uint<128, Public>,
 ) -> Assumed<Bool<Public>> {
@@ -142,7 +142,7 @@ pub fn unshielded_balance_lte(
 /// ```
 ///
 /// One effect; here so a port reads every stdlib name from one place.
-pub fn receive_unshielded(c: &mut Circuit3, color: CoinColor<Public>, amount: Uint<128, Public>) {
+pub fn receive_unshielded(c: &mut Circuit, color: CoinColor<Public>, amount: Uint<128, Public>) {
     let token = unshielded(c, color);
     inc_unshielded_inputs(c, &token, amount);
 }
@@ -155,7 +155,7 @@ pub fn receive_unshielded(c: &mut Circuit3, color: CoinColor<Public>, amount: Ui
 /// user recipient never needs the address, so its `public_input` gates
 /// yield the default), and both `&&`s are `cond_select`s, where the lean
 /// form is a `mul` for each.
-fn is_self(c: &mut Circuit3, recipient: &UnshieldedRecipient<Public>) -> Wire3<FieldT, Public> {
+fn is_self(c: &mut Circuit, recipient: &UnshieldedRecipient<Public>) -> Wire<FieldT, Public> {
     let is_left = recipient.is_left.field();
     let me = guarded_kernel_self(c, is_left);
     let me = never_stale(c, me);
@@ -168,8 +168,8 @@ fn is_self(c: &mut Circuit3, recipient: &UnshieldedRecipient<Public>) -> Wire3<F
 
 /// The kernel's self read is a `popeq` on a value no transaction can change,
 /// so it is acknowledged at the read and never wears `Assumed` (M42 B).
-/// The same two lines as `minocrab_std::v3::kernel`'s private helper.
-fn never_stale(c: &mut Circuit3, wires: [Wire3<FieldT, Public>; 2]) -> [Wire3<FieldT, Public>; 2] {
+/// The same two lines as `minocrab_std::kernel`'s private helper.
+fn never_stale(c: &mut Circuit, wires: [Wire<FieldT, Public>; 2]) -> [Wire<FieldT, Public>; 2] {
     c.acknowledge_stale(&[wires[0].val(), wires[1].val()]);
     wires
 }
@@ -183,10 +183,10 @@ fn never_stale(c: &mut Circuit3, wires: [Wire3<FieldT, Public>; 2]) -> [Wire3<Fi
 /// `manager.compact`'s `execute`). The lean form is
 /// `c.when(is_left, |c| kernel_self(c)).or_default()`, which conjoins once on
 /// entry and so emits fewer rows.
-fn guarded_kernel_self(c: &mut Circuit3, guard: Wire3<FieldT, Public>) -> [Wire3<FieldT, Public>; 2] {
+fn guarded_kernel_self(c: &mut Circuit, guard: Wire<FieldT, Public>) -> [Wire<FieldT, Public>; 2] {
     let atoms = vec![AlignmentAtom::Bytes { length: 32 }];
     let limbs: usize = atoms.iter().map(minocrab_ledger::atom_limbs).sum();
-    let wires: Vec<Wire3<FieldT, Public>> = (0..limbs)
+    let wires: Vec<Wire<FieldT, Public>> = (0..limbs)
         .map(|_| c.public_transcript_input_guarded::<FieldT, Public>(guard))
         .collect();
     let value = LedgerValue::new(atoms, wires.iter().map(|&w| ImpactElem::Wire(w)).collect());
@@ -201,9 +201,9 @@ fn guarded_kernel_self(c: &mut Circuit3, guard: Wire3<FieldT, Public>) -> [Wire3
 }
 
 /// Emit `ops` under an EXPLICIT guard, resolved against the ambient scope
-/// PER OP ([`Circuit3::impact_mixed`] once per op) — compactc's, for the
+/// PER OP ([`Circuit::impact_mixed`] once per op) — compactc's, for the
 /// reason [`guarded_kernel_self`] gives; the lean form is one `c.when`.
-fn emit_guarded(c: &mut Circuit3, guard: Wire3<FieldT, Public>, ops: &[minocrab_ledger::ImpactOp]) {
+fn emit_guarded(c: &mut Circuit, guard: Wire<FieldT, Public>, ops: &[minocrab_ledger::ImpactOp]) {
     for op in ops {
         c.impact_mixed(guard, &op.0);
     }
@@ -223,7 +223,7 @@ fn emit_guarded(c: &mut Circuit3, guard: Wire3<FieldT, Public>, ops: &[minocrab_
 /// compactc's in the auto-receive guard (`is_self`) and its per-op
 /// resolution (`emit_guarded`).
 pub fn send_unshielded(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     color: CoinColor<Public>,
     amount: Uint<128, Public>,
     recipient: &UnshieldedRecipient<Public>,
@@ -255,7 +255,7 @@ pub fn send_unshielded(
 /// `Uint<64>` at the mint and a `Uint<128>` at the claim; Compact widens
 /// it, and so does this.
 pub fn mint_unshielded_token(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     domain_sep: &TokenDomainSeparator<Public>,
     amount: Uint<64, Public>,
     recipient: &UnshieldedRecipient<Public>,
@@ -297,15 +297,15 @@ fn short_literal_imm(bytes: &[u8]) -> Fr {
 /// `upgradeFromTransient(transientHash<Vector<2, Field>>([<domain> as Field,
 /// degradeToTransient(nonce)]))` — the nonce of a coin derived from another,
 /// in the two-element form `sendShielded` and `mergeCoin` write inline.
-fn derived_nonce(c: &mut Circuit3, domain: &[u8], nonce: &CoinNonce<Public>) -> CoinNonce<Public> {
+fn derived_nonce(c: &mut Circuit, domain: &[u8], nonce: &CoinNonce<Public>) -> CoinNonce<Public> {
     let degraded = hash::degrade_to_transient(c, &nonce.bytes());
-    let h = c.transient_hash(&[AnyWire3::immediate(short_literal_imm(domain)), degraded.erase()]);
+    let h = c.transient_hash(&[AnyWire::immediate(short_literal_imm(domain)), degraded.erase()]);
     CoinNonce(hash::upgrade_from_transient(c, h))
 }
 
 /// `a == b` on `Bytes<32>`, as compactc lowers it: a `test_eq` per limb and
 /// a `cond_select` for the `&&`, where the lean form (`B32::eq`) is a `mul`.
-fn bytes_eq(c: &mut Circuit3, a: &B32<Public>, b: &B32<Public>) -> Wire3<FieldT, Public> {
+fn bytes_eq(c: &mut Circuit, a: &B32<Public>, b: &B32<Public>) -> Wire<FieldT, Public> {
     let hi = c.test_eq(a.hi, b.hi);
     let lo = c.test_eq(a.lo, b.lo);
     c.cond_select(hi, lo, 0u64)
@@ -315,7 +315,7 @@ fn bytes_eq(c: &mut Circuit3, a: &B32<Public>, b: &B32<Public>) -> Wire3<FieldT,
 /// there is one. compactc's: the underflow test negated by a `cond_select`
 /// ([`not`]) before it is asserted; the lean form asserts the comparison
 /// with no select.
-fn checked_sub(c: &mut Circuit3, a: Wire3<FieldT, Public>, b: Wire3<FieldT, Public>) -> Wire3<FieldT, Public> {
+fn checked_sub(c: &mut Circuit, a: Wire<FieldT, Public>, b: Wire<FieldT, Public>) -> Wire<FieldT, Public> {
     let underflow = c.less_than(a, b, 128);
     let ok = not(c, Bool::from_field_unchecked(underflow));
     c.assert(is_true(ok).message("subtraction would underflow"));
@@ -326,7 +326,7 @@ fn checked_sub(c: &mut Circuit3, a: Wire3<FieldT, Public>, b: Wire3<FieldT, Publ
 /// Compact's `x as Uint<128>` on a value just computed: the range constraint,
 /// then the `Copy` the cast names its result with. The `Copy` is compactc's
 /// (it costs no rows); the lean form names the checked wire itself.
-fn as_uint128(c: &mut Circuit3, w: Wire3<FieldT, Public>) -> Wire3<FieldT, Public> {
+fn as_uint128(c: &mut Circuit, w: Wire<FieldT, Public>) -> Wire<FieldT, Public> {
     // Inside a `when` the checked value is the selected one; that is the
     // value the cast names and everything downstream (the commitment, the
     // ledger op) consumes — compactc's branch semantics, and what keeps the
@@ -361,10 +361,10 @@ fn as_uint128(c: &mut Circuit3, w: Wire3<FieldT, Public>) -> Wire3<FieldT, Publi
 /// (`as_uint128`). `createZswapInput` / `createZswapOutput` are Void
 /// witness natives and emit nothing here.
 pub fn merge_coin(
-    c: &mut Circuit3,
-    a: &QualifiedShieldedCoinInfo3<Public>,
-    b: &QualifiedShieldedCoinInfo3<Public>,
-) -> ShieldedCoinInfo3<Public> {
+    c: &mut Circuit,
+    a: &QualifiedShieldedCoinInfo<Public>,
+    b: &QualifiedShieldedCoinInfo<Public>,
+) -> ShieldedCoinInfo<Public> {
     merge(c, &a.downcast(), &b.downcast())
 }
 
@@ -379,15 +379,15 @@ pub fn merge_coin(
 /// `sMergeCoin` minus `b`'s `mt_index` constraint, instruction for
 /// instruction.
 pub fn merge_coin_immediate(
-    c: &mut Circuit3,
-    a: &QualifiedShieldedCoinInfo3<Public>,
-    b: &ShieldedCoinInfo3<Public>,
-) -> ShieldedCoinInfo3<Public> {
+    c: &mut Circuit,
+    a: &QualifiedShieldedCoinInfo<Public>,
+    b: &ShieldedCoinInfo<Public>,
+) -> ShieldedCoinInfo<Public> {
     merge(c, &a.downcast(), b)
 }
 
 /// Everything both merges do, once the coins are downcast.
-fn merge(c: &mut Circuit3, a: &ShieldedCoinInfo3<Public>, b: &ShieldedCoinInfo3<Public>) -> ShieldedCoinInfo3<Public> {
+fn merge(c: &mut Circuit, a: &ShieldedCoinInfo<Public>, b: &ShieldedCoinInfo<Public>) -> ShieldedCoinInfo<Public> {
     let me = self_address(c).bytes();
     let nul_a = coin_nullifier_contract(c, a, &me);
     claim_zswap_nullifier(c, &nul_a);
@@ -401,7 +401,7 @@ fn merge(c: &mut Circuit3, a: &ShieldedCoinInfo3<Public>, b: &ShieldedCoinInfo3<
     // before the sum.
     let nonce = derived_nonce(c, NONCE_EVOLVE, &a.nonce);
     let sum = c.add(a.value, b.value);
-    let new_coin = ShieldedCoinInfo3 { nonce, color: a.color, value: as_uint128(c, sum) };
+    let new_coin = ShieldedCoinInfo { nonce, color: a.color, value: as_uint128(c, sum) };
     let cm = coin_commitment_to_contract(c, &new_coin, &me);
     claim_zswap_coin_spend(c, &cm);
     claim_zswap_coin_receive(c, &cm);
@@ -433,12 +433,12 @@ fn merge(c: &mut Circuit3, a: &ShieldedCoinInfo3<Public>, b: &ShieldedCoinInfo3<
 /// where the lean form hashes it once and reuses it; and `!`, `&&` and the
 /// change test are `cond_select`s (`not`, `bytes_eq`, `checked_sub`).
 /// The `if (change == 0)` is written out rather than through
-/// [`Circuit3::when_value`] because compactc folds the `Maybe`'s tag into the
+/// [`Circuit::when_value`] because compactc folds the `Maybe`'s tag into the
 /// guard it already has: the tag IS the guard here, named once, and only the
 /// five payload slots are selected.
 pub fn send_shielded(
-    c: &mut Circuit3,
-    input: &QualifiedShieldedCoinInfo3<Public>,
+    c: &mut Circuit,
+    input: &QualifiedShieldedCoinInfo<Public>,
     recipient: &CoinRecipient<Public>,
     value: Uint<128, Public>,
 ) -> ShieldedSendResult<Public> {
@@ -449,7 +449,7 @@ pub fn send_shielded(
 
     let change = checked_sub(c, input.value, value.field());
 
-    let output = ShieldedCoinInfo3 {
+    let output = ShieldedCoinInfo {
         nonce: derived_nonce(c, NONCE_EVOLVE, &input.nonce),
         color: input.color,
         value: value.field(),
@@ -469,7 +469,7 @@ pub fn send_shielded(
 
     let spent_it_all = c.test_eq(change, 0u64);
     let has_change = not(c, Bool::from_field_unchecked(spent_it_all)).field();
-    let change_coin = ShieldedCoinInfo3 {
+    let change_coin = ShieldedCoinInfo {
         nonce: derived_nonce(c, NONCE_EVOLVE_CHANGE, &input.nonce),
         color: input.color,
         value: change,
@@ -482,8 +482,8 @@ pub fn send_shielded(
 
     // `none<ShieldedCoinInfo>()` is the default coin, so the payload is the
     // change coin selected against zero — the tag is `has_change` above.
-    let none_unless = |c: &mut Circuit3, w| c.cond_select(spent_it_all, 0u64, w);
-    let change_value = ShieldedCoinInfo3 {
+    let none_unless = |c: &mut Circuit, w| c.cond_select(spent_it_all, 0u64, w);
+    let change_value = ShieldedCoinInfo {
         nonce: CoinNonce(B32 {
             hi: none_unless(c, change_coin.nonce.bytes().hi),
             lo: none_unless(c, change_coin.nonce.bytes().lo),

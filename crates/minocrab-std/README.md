@@ -14,7 +14,7 @@
 **This is the crate a contract depends on.** It re-exports the eDSL and, with the default `macros` feature, the decorators. Add `minocrab-sim` as a dev-dependency to run circuits under `cargo test`.
 
 ```rust
-use minocrab_std::v3::{circuit, hash, Circuit3, CircuitArg, Bytes, Uint};
+use minocrab_std::{circuit, hash, Circuit, CircuitArg, Bytes, Uint};
 
 #[derive(CircuitArg)]
 struct DepositRequest {
@@ -23,7 +23,7 @@ struct DepositRequest {
 }
 
 #[circuit]
-fn deposit(c: &mut Circuit3, request: DepositRequest) {
+fn deposit(c: &mut Circuit, request: DepositRequest) {
     // The argument's type IS its range constraint: Uint<128> is assert_bits(w, 128).
     c.assert(request.amount.gt(0u64));
     let _digest = hash::persistent_hash(c, &request.erc20_address);

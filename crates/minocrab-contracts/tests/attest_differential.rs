@@ -30,8 +30,8 @@ use midnight_zkir_v3::ir_instructions::inv::inv_offcircuit;
 use midnight_zkir_v3::ir_instructions::mul::mul_offcircuit;
 use minocrab::Fr;
 use minocrab_contracts::attest;
-use minocrab_sim::v3::{assert_call_compatible, simulate, simulate_compiled};
-use minocrab_zkir::v3::{IrSource, IrType, IrValue};
+use minocrab_sim::{assert_call_compatible, simulate, simulate_compiled};
+use minocrab_zkir::{IrSource, IrType, IrValue};
 
 type VmOp = Op<ResultModeVerify, InMemoryDB>;
 
@@ -305,7 +305,7 @@ fn check_hash_verify(ours: &IrSource, theirs: &IrSource, digest_of: impl Fn(&[u8
 /// compactc's, instruction for instruction up to naming: our region
 /// against the same number of instructions of compactc's stream from its
 /// first split of the output's low limb (input 6, bytes 0..31).
-fn assert_deserialize_is_compactcs(ours: &minocrab::v3::Compiled3, theirs: &IrSource) {
+fn assert_deserialize_is_compactcs(ours: &minocrab::Compiled, theirs: &IrSource) {
     let region = ours.regions.iter().find(|r| r.label == "deserialize RespondOutput").expect("the region");
     let len = region.end - region.start + 1;
     let at = first_reading_input(theirs, "div_mod_power_of_two", 6);

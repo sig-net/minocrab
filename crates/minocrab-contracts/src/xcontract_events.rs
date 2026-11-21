@@ -35,15 +35,15 @@
 //! }
 //! ```
 
-use minocrab::v3::Circuit3;
+use minocrab::Circuit;
 use minocrab::{label, Private, Public};
 use minocrab_experimental::impact::raw::{
     cell_write, counter_increment, counter_read, emit, set_insert, ImpactElem,
     LedgerValue,
 };
 use minocrab_ledger::{XcallCommitment, XcallResult};
-use minocrab_std::v3::kernel;
-use minocrab_std::v3::{
+use minocrab_std::kernel;
+use minocrab_std::{
     contract, event, BytesN, ContractAddress, Disclose, Discloses, Serializer, Uint, B32,
 };
 
@@ -92,7 +92,7 @@ impl XcontractEvents {
     /// hand-written labels, unchanged.
     #[circuit(output = "event hash")]
     pub fn deposit_via_vault(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         amount: Uint<128>,
     ) -> Discloses<(Amount, XcallCommitment, XcallResult), B32<Public>> {
         let a = amount.disclose_as::<Amount>(c).field();
@@ -120,7 +120,7 @@ impl XcontractEvents {
     /// machinery is all vault-side).
     #[circuit(output = "event hash")]
     pub fn token_deposit(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         amount: Uint<128>,
         caller: ContractAddress<Private>,
     ) -> Discloses<(Amount, Caller), B32<Public>> {

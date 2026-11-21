@@ -33,12 +33,12 @@ minocrab-zkir.workspace = true
 # (M24 point 4); a regular dependency since then, not just the tests'.
 minocrab-ir.workspace = true
 # v3 simulator: reuse zkir-v3's public off-circuit helpers and the same
-# crypto crates its interpreter calls (see src/v3.rs).
+# crypto crates its interpreter calls (see src/vm.rs).
 midnight-zkir-v3.workspace = true
 midnight-transient-crypto.workspace = true
 midnight-base-crypto.workspace = true
 midnight-curves.workspace = true
-# The EXECUTOR (`v3::exec`): Midnight's own Impact VM, run in
+# The EXECUTOR (`exec`): Midnight's own Impact VM, run in
 # `ResultModeGather` against a live `StateValue`. See notes/executor.org.
 midnight-onchain-vm.workspace = true
 midnight-onchain-state.workspace = true

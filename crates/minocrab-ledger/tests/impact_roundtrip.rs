@@ -2,7 +2,7 @@
 //! circuit's public transcript decodes back to the op it came from.
 //!
 //! `minocrab-ledger` encodes Impact ops into field elements (`ImpactOp`,
-//! `Op::field_repr`); `minocrab_sim::v3::exec::decode_program` reads them
+//! `Op::field_repr`); `minocrab_sim::exec::decode_program` reads them
 //! back, which is what lets the executor run a circuit's ledger reads
 //! against real state. Upstream has no decoder — the ops travel beside the
 //! proof in production — so the inverse is ours, and this file is where the
@@ -24,7 +24,7 @@ use midnight_transient_crypto::fab::AlignmentExt;
 use midnight_transient_crypto::repr::FieldRepr;
 use minocrab::Fr;
 use minocrab_ledger::*;
-use minocrab_sim::v3::exec::decode_program;
+use minocrab_sim::exec::decode_program;
 
 type VmOp = Op<ResultModeVerify, InMemoryDB>;
 type GatherOp = Op<ResultModeGather, InMemoryDB>;

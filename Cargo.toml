@@ -53,7 +53,7 @@ edition = "2021"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/sig-net/minocrab"
 # THE FLOOR IS THE DEPENDENCIES', NOT OURS. Our own code needs 1.79 (inline
-# `const { assert!(..) }` blocks — minocrab-std/src/v3.rs and the contract
+# `const { assert!(..) }` blocks — minocrab-std/src/leaves.rs and the contract
 # suites). Every pinned `midnight-*` crate is edition 2024 (base-crypto,
 # transient-crypto, zkir, serialize, onchain-vm, storage, …), which rustc
 # accepts from 1.85, so nothing here can build below that. Declaring 1.79

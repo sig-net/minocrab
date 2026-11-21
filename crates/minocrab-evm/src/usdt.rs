@@ -40,9 +40,9 @@
 //! attested-output schema and the outcome rule, which is where the hazard
 //! lives.
 
-use minocrab::v3::Circuit3;
+use minocrab::Circuit;
 use minocrab::Private;
-use minocrab_std::v3::Check;
+use minocrab_std::Check;
 
 use super::{always, Address, EvmCall, Interface, Unit, U128, U256};
 
@@ -78,9 +78,9 @@ impl EvmCall for Transfer {
     type Success = ();
     const GAS_LIMIT: u64 = CALL_GAS;
 
-    fn succeeded(c: &mut Circuit3, _out: &()) -> Check<Private> {
+    fn succeeded(c: &mut Circuit, _out: &()) -> Check<Private> {
         // The constant-true assert this makes is removed by
-        // `drop_true_asserts` in `Builder3::finish`.
+        // `drop_true_asserts` in `Builder::finish`.
         always(c)
     }
 }
@@ -102,7 +102,7 @@ impl EvmCall for Approve {
     type Success = ();
     const GAS_LIMIT: u64 = CALL_GAS;
 
-    fn succeeded(c: &mut Circuit3, _out: &()) -> Check<Private> {
+    fn succeeded(c: &mut Circuit, _out: &()) -> Check<Private> {
         always(c)
     }
 }
@@ -119,7 +119,7 @@ impl EvmCall for TransferFrom {
     type Success = ();
     const GAS_LIMIT: u64 = CALL_GAS;
 
-    fn succeeded(c: &mut Circuit3, _out: &()) -> Check<Private> {
+    fn succeeded(c: &mut Circuit, _out: &()) -> Check<Private> {
         always(c)
     }
 }

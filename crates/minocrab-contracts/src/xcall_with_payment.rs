@@ -10,12 +10,12 @@
 
 use crate::common::{receive_shielded, write_coin_to_self};
 use crate::interfaces::PaymentTarget;
-use minocrab::v3::Circuit3;
+use minocrab::Circuit;
 use minocrab::{label, Private, Public};
 use minocrab_experimental::impact::raw::{emit, set_insert, ImpactElem, LedgerValue};
 use minocrab_ledger::XcallCommitment;
-use minocrab_std::v3::{
-    contract, CircuitArg, Disclose, Discloses, ShieldedCoinInfo3, Uint, B32,
+use minocrab_std::{
+    contract, CircuitArg, Disclose, Discloses, ShieldedCoinInfo, Uint, B32,
 };
 
 /// Caller ledger: the sealed target reference.
@@ -41,13 +41,13 @@ label! {
 }
 
 /// `struct ShieldedCoinInfo { nonce: Bytes<32>, color: Bytes<32>, value:
-/// Uint<128> }` as an argument — the typed twin of [`ShieldedCoinInfo3`],
+/// Uint<128> }` as an argument — the typed twin of [`ShieldedCoinInfo`],
 /// whose fields are raw wires because the body handles the coin after
 /// disclosing it (as `erc20_vault`'s `ShieldedCoinArg` is).
 #[derive(CircuitArg)]
 struct CoinArg {
-    nonce: minocrab_std::v3::CoinNonce<Private>,
-    color: minocrab_std::v3::CoinColor<Private>,
+    nonce: minocrab_std::CoinNonce<Private>,
+    color: minocrab_std::CoinColor<Private>,
     value: Uint<128>,
 }
 
@@ -57,11 +57,11 @@ const TARGET_CONTRACT: PaymentTarget = PaymentTarget::at_field(TARGET);
 /// Disclose a coin argument — three labels, one per field, as the
 /// hand-written calls named them (the whole-coin
 /// [`Disclose`] impl would fold them into one).
-fn disclose_coin(c: &mut Circuit3, coin: CoinArg) -> ShieldedCoinInfo3<Public> {
+fn disclose_coin(c: &mut Circuit, coin: CoinArg) -> ShieldedCoinInfo<Public> {
     let nonce = coin.nonce.disclose_as::<CoinNonce>(c);
     let color = coin.color.disclose_as::<CoinColor>(c);
     let value = coin.value.disclose_as::<CoinValue>(c).field();
-    ShieldedCoinInfo3 { nonce, color, value }
+    ShieldedCoinInfo { nonce, color, value }
 }
 
 /// `xcall-with-payment` — the caller (`call_once`, `request`) and the
@@ -83,7 +83,7 @@ impl XcallWithPayment {
     /// compactc's (notes/ledger-abi.org §6).
     #[circuit]
     pub fn call_once(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         coin: CoinArg,
     ) -> Discloses<(Nonce, Color, Value, XcallCommitment)> {
         let nonce = coin.nonce.disclose_as::<Nonce>(c);
@@ -95,7 +95,7 @@ impl XcallWithPayment {
         let _ = c.constant(1u64);
         TARGET_CONTRACT.notify(
             c,
-            ShieldedCoinInfo3 {
+            ShieldedCoinInfo {
                 nonce,
                 color,
                 value,
@@ -108,7 +108,7 @@ impl XcallWithPayment {
     /// `target.confirmRequest(disclose(requestId))`.
     #[circuit]
     pub fn request(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         request_id: B32<Private>,
     ) -> Discloses<(RequestId, XcallCommitment)> {
         let request_id = request_id.disclose_as::<RequestId>(c);
@@ -124,7 +124,7 @@ impl XcallWithPayment {
     /// `receiveShielded(disclose(coin)); treasury.writeCoin(disclose(coin),
     /// right(kernel.self()))`. Root-call only (pinned limitation upstream).
     #[circuit]
-    pub fn notify(c: &mut Circuit3, coin: CoinArg) -> Discloses<(CoinNonce, CoinColor, CoinValue)> {
+    pub fn notify(c: &mut Circuit, coin: CoinArg) -> Discloses<(CoinNonce, CoinColor, CoinValue)> {
         let coin = disclose_coin(c, coin);
         // Kept even though guard threading no longer uses it: dropping this
         // `Copy` would renumber every later identifier, moving the ZKIR
@@ -140,7 +140,7 @@ impl XcallWithPayment {
     /// `paidRequests.insert(disclose(requestId))`.
     #[circuit]
     pub fn pay(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         request_id: B32<Private>,
         coin: CoinArg,
     ) -> Discloses<(RequestId, CoinNonce, CoinColor, CoinValue)> {
@@ -164,7 +164,7 @@ impl XcallWithPayment {
     /// `requests.insert(disclose(requestId))`.
     #[circuit]
     pub fn confirm_request(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         request_id: B32<Private>,
     ) -> Discloses<(RequestId,)> {
         let request_id = request_id.disclose_as::<RequestId>(c);

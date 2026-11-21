@@ -1,10 +1,10 @@
 //! A frozen `(k, rows)` snapshot of every circuit in this crate.
 //!
 //! The const-generic refactor of M7 is a TYPE-level change: the sequence,
-//! order and arguments of the `Circuit3` builder calls must not move, so
+//! order and arguments of the `Circuit` builder calls must not move, so
 //! every circuit's cost must stay bit-identical. This test is the guard —
 //! it prices each circuit with the same cost model the benchmark harness
-//! uses (`minocrab_sim::v3::cost`, i.e. Midnight's own model) and compares
+//! uses (`minocrab_sim::cost`, i.e. Midnight's own model) and compares
 //! against the table below, generated at the commit that introduced it.
 //!
 //! The twelve benchmark circuits agree with the published numbers in
@@ -283,7 +283,7 @@ fn every_circuit_matches_its_frozen_cost() {
     let mut moved: Vec<Circuit> = Vec::new();
     for ((name, build), &(snap_name, k, rows)) in circuits.iter().zip(SNAPSHOT) {
         assert_eq!(*name, snap_name, "snapshot table out of order");
-        let (got_k, got_rows) = minocrab_sim::v3::cost(&build().ir);
+        let (got_k, got_rows) = minocrab_sim::cost(&build().ir);
         if (got_k, got_rows) != (k, rows) {
             failures.push(format!(
                 "  {name}: expected k={k} rows={rows}, got k={got_k} rows={got_rows} \
@@ -382,7 +382,7 @@ fn the_instruction_diff_keeps_only_the_movement_and_caps_it() {
 fn regenerate_row_snapshot() {
     let mut body = String::new();
     for (name, build) in circuits() {
-        let (k, rows) = minocrab_sim::v3::cost(&build().ir);
+        let (k, rows) = minocrab_sim::cost(&build().ir);
         body.push_str(&format!("    (\"{name}\", {k}, {rows}),\n"));
     }
     rewrite_generated_region(&test_source("row_snapshot.rs"), &body);

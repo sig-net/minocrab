@@ -2,18 +2,18 @@
 //! typed tree into the native slots a ZKIR circuit actually declares.
 //!
 //! This is the artifact side of the agreement check. The MinoCrab side is a
-//! [`CircuitAbi`](minocrab::v3::CircuitAbi) impl, which reports the same two
-//! lists ([`atoms`](minocrab::v3::CircuitAbi::atoms) and
-//! [`prims`](minocrab::v3::CircuitAbi::prims)); agreement is those lists
+//! [`CircuitAbi`](minocrab::CircuitAbi) impl, which reports the same two
+//! lists ([`atoms`](minocrab::CircuitAbi::atoms) and
+//! [`prims`](minocrab::CircuitAbi::prims)); agreement is those lists
 //! being equal.
 //!
 //! THE FLATTENING RULES ARE NOT INVENTED HERE — each is the rule the leaf
-//! types in `minocrab_std::v3` already implement, written once more against
+//! types in `minocrab_std` already implement, written once more against
 //! compactc's own vocabulary so the two can be compared. Where a rule was
 //! not already implied by a leaf it is justified from a compiled artifact
 //! (see [`CompactType::flatten`]).
 
-use minocrab::v3::Prim;
+use minocrab::Prim;
 use minocrab::AlignmentAtom;
 use serde::Deserialize;
 
@@ -165,7 +165,7 @@ pub enum CurvePoint {
 
 impl CurvePoint {
     /// The FAB atoms the point's `encode` produces (notes/ledger-abi.org §3),
-    /// matching `minocrab_std::v3::{Secp256k1Point, JubjubPoint}`'s
+    /// matching `minocrab_std::{Secp256k1Point, JubjubPoint}`'s
     /// `CircuitAbi::push_atoms` one for one.
     pub fn atoms(self) -> Vec<AlignmentAtom> {
         match self {
@@ -286,7 +286,7 @@ pub struct Element {
 ///
 /// The two lists have different lengths on purpose — a `Bytes<32>` is one
 /// atom (`bytes 32`) across two slots — which is the same split
-/// [`CircuitAbi`](minocrab::v3::CircuitAbi) makes.
+/// [`CircuitAbi`](minocrab::CircuitAbi) makes.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Flattened {
     pub atoms: Vec<AlignmentAtom>,
@@ -322,7 +322,7 @@ pub enum TypeError {
     #[error("a `Contract` value (`{name}`) cannot cross a contract boundary: an interface names circuits, not handles")]
     ContractValue { name: String },
     /// A Compact type that IS a native ZKIR value but has no
-    /// `minocrab_std::v3` leaf yet, so nothing can name its slot.
+    /// `minocrab_std` leaf yet, so nothing can name its slot.
     ///
     /// The three curve scalar/base types. They are modelled as
     /// [`CompactType`] variants — a `JubjubScalar` circuit argument compiles,
@@ -343,7 +343,7 @@ impl CompactType {
     ///
     /// - `Bytes<n>` → one `bytes n` atom over `⌈n/31⌉` slots, the first
     ///   holding the leftover `n mod 31` bytes and the rest 31 each
-    ///   (`minocrab_std::v3::BytesN`; `Bytes<32>` is the familiar
+    ///   (`minocrab_std::BytesN`; `Bytes<32>` is the familiar
     ///   `[8, 248]`).
     /// - `Uint<0..maxval + 1>` → one slot, [`Prim::unsigned`] — compactc's
     ///   own partition of the bound — over a `bytes ⌈bits/8⌉` atom. The
@@ -533,7 +533,7 @@ pub fn flatten_all<'a>(
 }
 
 /// Bytes per native slot of a `Bytes<len>`, slot order (the leftover chunk
-/// first). Mirrors `minocrab_std::v3`'s limbing rule, which is compactc's.
+/// first). Mirrors `minocrab_std`'s limbing rule, which is compactc's.
 pub fn bytes_limb_lens(len: usize) -> Vec<usize> {
     if len <= 31 {
         return vec![len];
@@ -554,12 +554,12 @@ pub fn bytes_limb_lens(len: usize) -> Vec<usize> {
 }
 
 /// The FAB byte width of a `(tunsigned maxval)` slot — `⌈bits/8⌉`, matching
-/// `minocrab_std::v3::Uint<BITS>`'s and `BoundedUint<BOUND>`'s atoms.
+/// `minocrab_std::Uint<BITS>`'s and `BoundedUint<BOUND>`'s atoms.
 ///
 /// One statement of the rule, in the frontend beside the constraint table
 /// it belongs with (notes/bounded-integers.org §2).
 fn uint_bytes(maxval: u128) -> u32 {
-    minocrab::v3::uint_atom_bytes(maxval)
+    minocrab::uint_atom_bytes(maxval)
 }
 
 #[cfg(test)]
@@ -632,7 +632,7 @@ mod tests {
         assert_eq!(flat.prims, vec![Prim::UintMax { maxval: 2 }]);
         assert_eq!(
             flat.prims[0].constraint(),
-            minocrab::v3::LimbConstraint::Bounded { bound: 3, bits: 2 }
+            minocrab::LimbConstraint::Bounded { bound: 3, bits: 2 }
         );
     }
 
@@ -649,7 +649,7 @@ mod tests {
         let flat = ty.flatten().unwrap();
         assert_eq!(flat.atoms, vec![AlignmentAtom::Compress]);
         assert_eq!(flat.prims, vec![Prim::Opaque]);
-        assert_eq!(flat.prims[0].constraint(), minocrab::v3::LimbConstraint::None);
+        assert_eq!(flat.prims[0].constraint(), minocrab::LimbConstraint::None);
 
         // The ts-type does not enter the layout: two opaques of different TS
         // types flatten identically, and it is the Rust type parameter that

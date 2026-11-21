@@ -39,18 +39,18 @@
 //! transcriptions, the semantic commitment) emit no artifact and are ported
 //! only where a provable circuit calls them.
 
-use minocrab::v3::{Circuit3, FieldT, Wire3};
+use minocrab::{Circuit, FieldT, Wire};
 use minocrab::{Alignment, AlignmentAtom, AlignmentSegment, Fr, Private, Public};
 use minocrab_compat as compat;
-use minocrab_std::v3::kernel;
-use minocrab_std::v3::kernel::SelfAddress;
-use minocrab_std::v3::{
+use minocrab_std::kernel;
+use minocrab_std::kernel::SelfAddress;
+use minocrab_std::{
     Assumed,
     CoinColor, CoinNonce,
     contract, coin_commitment_to_contract, coin_nullifier_contract, ge, greater_than as gt, is_true, label, le,
     Bool, Bytes, CircuitArg, CoinRecipient, ContractAddress, Disclose, Discloses, Either, Ledger,
-    LedgerCell, LedgerMap, LedgerRepr, LedgerSet, QualifiedShieldedCoinInfo3, Secp256k1Point, Secp256k1Scalar,
-    ShieldedCoinInfo3, Uint, UserAddress, B32,
+    LedgerCell, LedgerMap, LedgerRepr, LedgerSet, QualifiedShieldedCoinInfo, Secp256k1Point, Secp256k1Scalar,
+    ShieldedCoinInfo, Uint, UserAddress, B32,
 };
 
 use crate::common;
@@ -70,7 +70,7 @@ label! {
 /// Compact `export ledger` block one for one.
 #[derive(Ledger)]
 pub struct Manager {
-    pub pools: LedgerMap<CoinColor<Public>, QualifiedShieldedCoinInfo3<Public>>,
+    pub pools: LedgerMap<CoinColor<Public>, QualifiedShieldedCoinInfo<Public>>,
     pub accounts: LedgerSet<B32<Public>>,
     pub shielded_balances: LedgerMap<B32<Public>, Uint<128, Public>>,
     pub unshielded_balances: LedgerMap<B32<Public>, Uint<128, Public>>,
@@ -161,7 +161,7 @@ fn atom(n: u32) -> AlignmentSegment {
 }
 
 /// A frozen 32-byte constant as a `B32<Public>` (two constant limbs).
-fn b32_const(c: &mut Circuit3, bytes: &[u8; 32]) -> B32<Public> {
+fn b32_const(c: &mut Circuit, bytes: &[u8; 32]) -> B32<Public> {
     B32 {
         hi: c.constant(Fr::from(u64::from(bytes[31]))),
         lo: c.constant(Fr::from_le_bytes(&bytes[..31]).expect("31 bytes fit")),
@@ -169,7 +169,7 @@ fn b32_const(c: &mut Circuit3, bytes: &[u8; 32]) -> B32<Public> {
 }
 
 /// `b == default<Bytes<32>>` — both limbs zero.
-fn b32_is_zero<V: minocrab_std::v3::Vis3>(c: &mut Circuit3, b: &B32<V>) -> Wire3<FieldT, V> {
+fn b32_is_zero<V: minocrab_std::Vis>(c: &mut Circuit, b: &B32<V>) -> Wire<FieldT, V> {
     let hi0 = c.test_eq(b.hi, 0u64);
     let lo0 = c.test_eq(b.lo, 0u64);
     c.mul(hi0, lo0)
@@ -177,11 +177,11 @@ fn b32_is_zero<V: minocrab_std::v3::Vis3>(c: &mut Circuit3, b: &B32<V>) -> Wire3
 
 /// `right<ZswapCoinPublicKey, ContractAddress>(addr)` as the tag-and-arms
 /// shape the coin gadgets select over.
-fn contract_recipient(c: &mut Circuit3, me: SelfAddress) -> CoinRecipient<Public> {
+fn contract_recipient(c: &mut Circuit, me: SelfAddress) -> CoinRecipient<Public> {
     let zero = c.constant(0u64);
     CoinRecipient {
         is_left: zero,
-        left: minocrab_std::v3::ZswapCoinPublicKey(B32 { hi: zero, lo: zero }),
+        left: minocrab_std::ZswapCoinPublicKey(B32 { hi: zero, lo: zero }),
         right: me.address(),
     }
 }
@@ -189,7 +189,7 @@ fn contract_recipient(c: &mut Circuit3, me: SelfAddress) -> CoinRecipient<Public
 /// `persistentHash<Vector<3, Bytes<32>>>([acct, colour, tag])` — the
 /// family-scoped storage key with the tag already selected.
 fn family_key(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     acct: &B32<Public>,
     colour: &CoinColor<Public>,
     tag: &B32<Public>,
@@ -210,13 +210,13 @@ fn family_key(
 }
 
 /// `shieldedKey(acct, colour)`.
-fn shielded_key(c: &mut Circuit3, acct: &B32<Public>, colour: &CoinColor<Public>) -> B32<Public> {
+fn shielded_key(c: &mut Circuit, acct: &B32<Public>, colour: &CoinColor<Public>) -> B32<Public> {
     let tag = B32::pad(c, SHIELDED_FAMILY_TAG);
     family_key(c, acct, colour, &tag)
 }
 
 /// `unshieldedKey(acct, colour)`.
-fn unshielded_key(c: &mut Circuit3, acct: &B32<Public>, colour: &CoinColor<Public>) -> B32<Public> {
+fn unshielded_key(c: &mut Circuit, acct: &B32<Public>, colour: &CoinColor<Public>) -> B32<Public> {
     let tag = B32::pad(c, UNSHIELDED_FAMILY_TAG);
     family_key(c, acct, colour, &tag)
 }
@@ -230,16 +230,16 @@ fn unshielded_key(c: &mut Circuit3, acct: &B32<Public>, colour: &CoinColor<Publi
 /// Not spelled as `c.when(member, |c| map.lookup(c, k)).or_default()`: this
 /// call NESTS under an outer `c.when` at its one non-straight-line call site
 /// (`custody_dispatch`'s debit read), and the scope conjoins once on entry
-/// (`Circuit3::when`'s doc) where the old `_guarded` primitives conjoined
-/// PER EFFECT (`Circuit3::effect_guard`, once per read and once for the
+/// (`Circuit::when`'s doc) where the old `_guarded` primitives conjoined
+/// PER EFFECT (`Circuit::effect_guard`, once per read and once for the
 /// Impact op) — fewer rows, so not zero-movement. This calls the same core
 /// primitives the deleted `LedgerMap::lookup_guarded` did, so the row count
 /// is unchanged whether or not an outer scope is active.
 fn balance_at(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     map: &LedgerMap<B32<Public>, Uint<128, Public>>,
     k: &B32<Public>,
-) -> Assumed<Wire3<FieldT, Public>> {
+) -> Assumed<Wire<FieldT, Public>> {
     let member = map.member(c, k).field();
     let key = k.ledger_value(c);
     let atoms = <Uint<128, Public> as LedgerRepr>::atoms();
@@ -247,21 +247,21 @@ fn balance_at(
 }
 
 /// The one Impact op [`LedgerMap::lookup`] emits, under an EXPLICIT guard
-/// resolved against the ambient scope PER EFFECT — [`Circuit3::
-/// public_transcript_input_guarded`] for each limb, [`Circuit3::impact_mixed`]
+/// resolved against the ambient scope PER EFFECT — [`Circuit::
+/// public_transcript_input_guarded`] for each limb, [`Circuit::impact_mixed`]
 /// for the op — exactly what the deleted `map_lookup_guarded_at` did. Kept
 /// as the one caller ([`balance_at`]) that nests an explicit data-dependent
 /// guard under another scope and needs the per-effect conjunction, not the
 /// once-on-entry one `c.when` gives.
 fn guarded_map_lookup_field(
-    c: &mut Circuit3,
-    guard: Wire3<FieldT, Public>,
+    c: &mut Circuit,
+    guard: Wire<FieldT, Public>,
     index: u8,
     key: &minocrab_experimental::impact::raw::LedgerValue,
     atoms: Vec<AlignmentAtom>,
-) -> Wire3<FieldT, Public> {
+) -> Wire<FieldT, Public> {
     let limbs: usize = atoms.iter().map(minocrab_experimental::impact::raw::atom_limbs).sum();
-    let wires: Vec<Wire3<FieldT, Public>> = (0..limbs)
+    let wires: Vec<Wire<FieldT, Public>> = (0..limbs)
         .map(|_| c.public_transcript_input_guarded::<FieldT, Public>(guard))
         .collect();
     let value = minocrab_experimental::impact::raw::LedgerValue::new(
@@ -285,7 +285,7 @@ fn guarded_map_lookup_field(
 /// `[bytes 32, bytes 21]` (the stdlib's `persistentCommit` is
 /// rand-then-value; here the VALUE is the 21-byte tag and the RAND the
 /// secret).
-fn owner_commitment(c: &mut Circuit3, sk: &common::SecretKey<Private>) -> B32<Private> {
+fn owner_commitment(c: &mut Circuit, sk: &common::SecretKey<Private>) -> B32<Private> {
     let sk = sk.bytes();
     let tag = c.constant(Fr::from_le_bytes(OWNER_TAG).expect("21 bytes fit"));
     let alignment = Alignment(vec![atom(32), atom(21)]);
@@ -305,23 +305,23 @@ fn owner_commitment(c: &mut Circuit3, sk: &common::SecretKey<Private>) -> B32<Pr
 // dominant cost of its `execute` (see the row comparison in the report).
 
 /// `uint*Word(value)` — the value as a 32-byte big-endian ABI word.
-fn numeric_word<V: minocrab_std::v3::Vis3>(
-    c: &mut Circuit3,
-    value: Wire3<FieldT, V>,
+fn numeric_word<V: minocrab_std::Vis>(
+    c: &mut Circuit,
+    value: Wire<FieldT, V>,
 ) -> B32<V> {
     crate::evm::numeric_word(c, value)
 }
 
 /// `addressWord(addr)` — the 20-byte address at bytes 12..31 of a word.
-fn address_word<V: minocrab_std::v3::Vis3>(
-    c: &mut Circuit3,
-    addr: Wire3<FieldT, V>,
+fn address_word<V: minocrab_std::Vis>(
+    c: &mut Circuit,
+    addr: Wire<FieldT, V>,
 ) -> B32<V> {
     crate::evm::address_word(c, addr)
 }
 
 /// keccak256 over a list of 32-byte words.
-fn keccak_words<V: minocrab_std::v3::Vis3>(c: &mut Circuit3, words: &[&B32<V>]) -> B32<V> {
+fn keccak_words<V: minocrab_std::Vis>(c: &mut Circuit, words: &[&B32<V>]) -> B32<V> {
     let alignment = Alignment(words.iter().map(|_| atom(32)).collect());
     let mut limbs = Vec::with_capacity(words.len() * 2);
     for w in words {
@@ -335,9 +335,9 @@ fn keccak_words<V: minocrab_std::v3::Vis3>(c: &mut Circuit3, words: &[&B32<V>]) 
 /// `evmAccountIdFor(manager, owner, salt)` —
 /// `keccak256<Bytes<128>>(accountTag ‖ manager ‖ addressWord(owner) ‖ salt)`.
 fn evm_account_id_for(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     manager: &B32<Public>,
-    owner: Wire3<FieldT, Public>,
+    owner: Wire<FieldT, Public>,
     salt: &B32<Public>,
 ) -> B32<Public> {
     c.region("eip712: account id", |c| {
@@ -354,7 +354,7 @@ fn evm_account_id_for(
 /// `keccak256<Bytes<160>>(domainType ‖ domainName ‖ domainVersion ‖
 /// addressWord(alias) ‖ domain)`.
 fn evm_domain_separator_for(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     manager: &B32<Public>,
     domain: &B32<Public>,
 ) -> B32<Public> {
@@ -388,7 +388,7 @@ fn pow2_bytes(bytes: usize) -> Vec<u8> {
 /// `eip712Digest(domain, structHash)` —
 /// `keccak256<Bytes<66>>(0x19 ‖ 0x01 ‖ domain ‖ structHash)`.
 fn eip712_digest(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     domain: &B32<Public>,
     struct_hash: &B32<Public>,
 ) -> B32<Public> {
@@ -443,26 +443,26 @@ struct SignatureArg {
 /// field crosses the gate under the one [`Payload`] label, and the public
 /// copies are what the guards, keys and ledger ops read.
 struct PublicPayload {
-    selector: Wire3<FieldT, Public>,
-    auth_mode: Wire3<FieldT, Public>,
+    selector: Wire<FieldT, Public>,
+    auth_mode: Wire<FieldT, Public>,
     account: B32<Public>,
-    owner: Wire3<FieldT, Public>,
+    owner: Wire<FieldT, Public>,
     account_salt: B32<Public>,
-    nonce: Wire3<FieldT, Public>,
-    valid_until: Wire3<FieldT, Public>,
+    nonce: Wire<FieldT, Public>,
+    valid_until: Wire<FieldT, Public>,
     primary_color: CoinColor<Public>,
-    primary_amount: Wire3<FieldT, Public>,
-    recipient_kind: Wire3<FieldT, Public>,
+    primary_amount: Wire<FieldT, Public>,
+    recipient_kind: Wire<FieldT, Public>,
     recipient: B32<Public>,
     to_account: B32<Public>,
     want_nonce: CoinNonce<Public>,
     want_color: CoinColor<Public>,
-    want_amount: Wire3<FieldT, Public>,
+    want_amount: Wire<FieldT, Public>,
     credit_account: B32<Public>,
 }
 
 impl ExecutePayloadArg {
-    fn disclose(self, c: &mut Circuit3) -> PublicPayload {
+    fn disclose(self, c: &mut Circuit) -> PublicPayload {
         PublicPayload {
             selector: self.selector.disclose_as::<Payload>(c).field(),
             auth_mode: self.auth_mode.disclose_as::<Payload>(c).field(),
@@ -491,7 +491,7 @@ impl Manager {
     /// `export circuit isRegistered(owner: Bytes<32>): Boolean`.
     #[circuit(output = "registered")]
     pub fn is_registered(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         owner: B32<Private>,
     ) -> Discloses<(QueriedAccount,), Bool<Public>> {
         let owner = owner.disclose_as::<QueriedAccount>(c);
@@ -505,7 +505,7 @@ impl Manager {
     /// membership, asserted absent).
     #[circuit(output = "record")]
     pub fn account_record(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         account: B32<Private>,
     ) -> Discloses<(QueriedAccount,), AccountRecordOut> {
         let acct = account.disclose_as::<QueriedAccount>(c);
@@ -569,7 +569,7 @@ impl Manager {
     /// `export circuit shieldedAccountBalance(owner, colour): Uint<128>`.
     #[circuit(output = "balance")]
     pub fn shielded_account_balance(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         owner: B32<Private>,
         colour: CoinColor<Private>,
     ) -> Discloses<(QueriedAccount, QueriedColour), Uint<128, Public>> {
@@ -583,7 +583,7 @@ impl Manager {
     /// `export circuit unshieldedAccountBalance(owner, colour): Uint<128>`.
     #[circuit(output = "balance")]
     pub fn unshielded_account_balance(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         owner: B32<Private>,
         colour: CoinColor<Private>,
     ) -> Discloses<(QueriedAccount, QueriedColour), Uint<128, Public>> {
@@ -598,7 +598,7 @@ impl Manager {
     /// 0 for a colour this contract has never seen.
     #[circuit(output = "value")]
     pub fn pool_value(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         colour: CoinColor<Private>,
     ) -> Discloses<(QueriedColour,), Uint<128, Public>> {
         let col = colour.disclose_as::<QueriedColour>(c);
@@ -610,7 +610,7 @@ impl Manager {
     /// `export circuit poolHasColour(colour): Boolean`.
     #[circuit(output = "present")]
     pub fn pool_has_colour(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         colour: CoinColor<Private>,
     ) -> Discloses<(QueriedColour,), Bool<Public>> {
         let col = colour.disclose_as::<QueriedColour>(c);
@@ -623,12 +623,12 @@ impl Manager {
     /// pooled coin (created here on first credit).
     #[circuit]
     pub fn deposit_shielded(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         coin: ShieldedCoinArg,
         account: B32<Private>,
     ) -> Discloses<(DepositCoin, CreditAccount)> {
         let coin_value = coin.value;
-        let coin = ShieldedCoinInfo3 {
+        let coin = ShieldedCoinInfo {
             nonce: coin.nonce.disclose_as::<DepositCoin>(c),
             color: coin.color.disclose_as::<DepositCoin>(c),
             value: coin_value.disclose_as::<DepositCoin>(c).field(),
@@ -689,7 +689,7 @@ impl Manager {
     /// balancing enforces the deposit's honesty.
     #[circuit]
     pub fn deposit_unshielded(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         colour: CoinColor<Private>,
         amount: Uint<128>,
         account: B32<Private>,
@@ -720,7 +720,7 @@ impl Manager {
     /// deadline, then register OR dispatch custody, then write the nonce.
     #[circuit]
     pub fn execute(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         payload: ExecutePayloadArg,
         sig: SignatureArg,
         pk: Secp256k1Point,
@@ -760,7 +760,7 @@ impl Manager {
         // const signer = secp256k1EthereumAddress(pk)
         // STRAIGHT-LINE, exactly as the source demands (the pinned proving
         // backend cannot lower guarded secp256k1 operations).
-        let signature = minocrab_std::v3::Secp256k1EcdsaSignature {
+        let signature = minocrab_std::Secp256k1EcdsaSignature {
             r: sig.r.scalar(),
             s: sig.s.scalar(),
         };
@@ -769,7 +769,7 @@ impl Manager {
             lo: digest.lo.private(),
         };
         let signature_ok = compat::secp::secp256k1_ecdsa_verify(c, &digest_priv, &signature, pk.point());
-        let signer = minocrab_std::v3::secp256k1_ethereum_address(c, pk.point());
+        let signer = minocrab_std::secp256k1_ethereum_address(c, pk.point());
 
         let is_evm_action = c.mul(f.is_evm_authorized, f.is_action);
 
@@ -936,10 +936,10 @@ pub struct AccountRecordOut {
     pub next_nonce: Uint<64, Public>,
 }
 
-impl minocrab_std::v3::CircuitOut for AccountRecordOut {
+impl minocrab_std::CircuitOut for AccountRecordOut {
     const SLOTS: usize = 4;
 
-    fn emit(self, c: &mut Circuit3, label: &str) {
+    fn emit(self, c: &mut Circuit, label: &str) {
         self.registered.emit(c, &format!("{label} registered"));
         self.mode.emit(c, &format!("{label} mode"));
         self.owner.emit(c, &format!("{label} owner"));
@@ -962,21 +962,21 @@ struct ShieldedCoinArg {
 /// The selector/mode flags every `execute` stage muxes on. All Public — the
 /// payload is disclosed before anything reads it.
 struct Flags {
-    is0: Wire3<FieldT, Public>,
-    is1: Wire3<FieldT, Public>,
-    is2: Wire3<FieldT, Public>,
-    is3: Wire3<FieldT, Public>,
-    is4: Wire3<FieldT, Public>,
-    is5: Wire3<FieldT, Public>,
-    is6: Wire3<FieldT, Public>,
-    is_registration: Wire3<FieldT, Public>,
-    is_action: Wire3<FieldT, Public>,
-    is_evm_authorized: Wire3<FieldT, Public>,
-    is_native_authorized: Wire3<FieldT, Public>,
+    is0: Wire<FieldT, Public>,
+    is1: Wire<FieldT, Public>,
+    is2: Wire<FieldT, Public>,
+    is3: Wire<FieldT, Public>,
+    is4: Wire<FieldT, Public>,
+    is5: Wire<FieldT, Public>,
+    is6: Wire<FieldT, Public>,
+    is_registration: Wire<FieldT, Public>,
+    is_action: Wire<FieldT, Public>,
+    is_evm_authorized: Wire<FieldT, Public>,
+    is_native_authorized: Wire<FieldT, Public>,
 }
 
 impl Flags {
-    fn of(c: &mut Circuit3, p: &PublicPayload) -> Flags {
+    fn of(c: &mut Circuit, p: &PublicPayload) -> Flags {
         let is0 = c.test_eq(p.selector, 0u64);
         let is1 = c.test_eq(p.selector, 1u64);
         let is2 = c.test_eq(p.selector, 2u64);
@@ -1009,7 +1009,7 @@ impl Flags {
 /// its canonical zero before authentication or custody logic runs. Pure
 /// arithmetic (no ledger reads), so it is exactly its assert list, each
 /// folded with its branch's guard.
-fn assert_action_envelope(c: &mut Circuit3, p: &PublicPayload, f: &Flags) {
+fn assert_action_envelope(c: &mut Circuit, p: &PublicPayload, f: &Flags) {
     let sel = Uint::<8, Public>::from_field_unchecked(p.selector);
     let auth = Uint::<8, Public>::from_field_unchecked(p.auth_mode);
     let kind = Uint::<8, Public>::from_field_unchecked(p.recipient_kind);
@@ -1166,7 +1166,7 @@ fn assert_action_envelope(c: &mut Circuit3, p: &PublicPayload, f: &Flags) {
 /// `assert(p.selector == 6)` of the fall-through arm binds only when the
 /// call reaches it (selector not in 0..5).
 fn evm_struct_hash_for(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     manager: &B32<Public>,
     p: &PublicPayload,
     f: &Flags,
@@ -1283,7 +1283,7 @@ fn evm_struct_hash_for(
 /// `custodyDispatch(p, account)` — selectors 2..6 as ONE debit leg, ONE
 /// credit leg and shared sends, with family, recipient, account and colour
 /// muxed in. Emitted under the caller's `!isRegistration` guard (ambient).
-fn custody_dispatch(c: &mut Circuit3, p: &PublicPayload, f: &Flags, account: &B32<Public>) {
+fn custody_dispatch(c: &mut Circuit, p: &PublicPayload, f: &Flags, account: &B32<Public>) {
     let is_transfer = c.add(f.is4, f.is5);
     let debit_shielded = {
         let a = c.add(f.is2, f.is4);
@@ -1394,8 +1394,8 @@ fn custody_dispatch(c: &mut Circuit3, p: &PublicPayload, f: &Flags, account: &B3
             // carry the same limbs and the wrap is per-arm.
             let recipient = CoinRecipient {
                 is_left: use_left,
-                left: minocrab_std::v3::ZswapCoinPublicKey(p.recipient),
-                right: minocrab_std::v3::ContractAddress(p.recipient),
+                left: minocrab_std::ZswapCoinPublicKey(p.recipient),
+                right: minocrab_std::ContractAddress(p.recipient),
             };
             let result = compat::kernel::send_shielded(
                 c,
@@ -1456,7 +1456,7 @@ fn custody_dispatch(c: &mut Circuit3, p: &PublicPayload, f: &Flags, account: &B3
                 let evolved = c.transient_hash(&[tag, two, pooled.nonce.bytes().lo]);
                 let (_overflow, lo) = c.div_mod_power_of_two(evolved, 248);
                 let zero = c.constant(0u64);
-                let change_coin = ShieldedCoinInfo3 {
+                let change_coin = ShieldedCoinInfo {
                     nonce: CoinNonce(B32 { hi: zero, lo }),
                     color: p.primary_color,
                     value: change_value,
@@ -1518,7 +1518,7 @@ fn custody_dispatch(c: &mut Circuit3, p: &PublicPayload, f: &Flags, account: &B3
 
     // --- the swap WANT leg: claim wantCoin into custody ---
     c.when(f.is6, |c| {
-        let want_coin = ShieldedCoinInfo3 {
+        let want_coin = ShieldedCoinInfo {
             nonce: p.want_nonce,
             color: p.want_color,
             value: p.want_amount,

@@ -18,10 +18,10 @@
 //! What still applies, raw or typed:
 //!
 //! - THE STALE-READ CHECK: [`raw::emit`] runs the value a cell write, a map
-//!   insert or a list push stores through `Circuit3::refuse_stale`, which
+//!   insert or a list push stores through `Circuit::refuse_stale`, which
 //!   refuses at build time a value computed from an inline ledger read that
 //!   was not acknowledged with `.stale(c)` (or with
-//!   `Circuit3::acknowledge_stale` on the wires a raw read returned), naming
+//!   `Circuit::acknowledge_stale` on the wires a raw read returned), naming
 //!   the read. It is the check a typed slot's write gets, made in the same
 //!   place, so it covers the same values: keys are not checked, nor ops that
 //!   store no author value (counters, the coin arms, a Merkle-tree leaf,
@@ -30,7 +30,7 @@
 //!   checked; nor is an op composed by hand from `minocrab_ledger::push_cell`
 //!   instead of taken from a write builder.
 //! - DISCLOSURE: every element of an Impact op is a public wire (an
-//!   [`raw::ImpactElem::Wire`] is a `Wire3<FieldT, Public>`), and each one
+//!   [`raw::ImpactElem::Wire`] is a `Wire<FieldT, Public>`), and each one
 //!   is recorded in the circuit's disclosure record.
 //! - THE GUARD: [`raw::emit`] resolves the ambient guard, so an op emitted
 //!   inside `c.when(…)` carries that scope's condition, and one emitted

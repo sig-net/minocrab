@@ -66,7 +66,7 @@ use midnight_ledger::semantics::TransactionResult;
 use midnight_ledger::verify::ProofVerificationMode;
 use midnight_onchain_runtime::cost_model::INITIAL_COST_MODEL;
 use midnight_transient_crypto::proofs::{ParamsProverProvider, ProvingKeyMaterial, Zkir};
-use minocrab::v3::Compiled3;
+use minocrab::Compiled;
 use minocrab_contracts::events::MISC_SIZE;
 use minocrab_contracts::signet_contract;
 use rand::rngs::StdRng;
@@ -95,7 +95,7 @@ fn params_provider() -> MidnightDataProvider {
 /// A signer circuit under test: its Compact name and how to build its IR.
 struct Subject {
     circuit: &'static str,
-    build: fn() -> Compiled3,
+    build: fn() -> Compiled,
 }
 
 fn subjects() -> Vec<Subject> {

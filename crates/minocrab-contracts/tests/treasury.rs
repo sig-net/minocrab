@@ -26,7 +26,7 @@
 //! SENDER's secret, and `refund_to_owner` opens it against a fresh witness.
 
 use minocrab_contracts::treasury::Treasury;
-use minocrab_sim::v3::{cost, simulate};
+use minocrab_sim::{cost, simulate};
 
 #[path = "vault/prims.rs"]
 #[allow(dead_code)]

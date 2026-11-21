@@ -1,5 +1,5 @@
 //! `bounded.compact` — Compact's `Uint<0..n>` at every shape the bound can
-//! take, through [`minocrab_std::v3::BoundedUint`] (M14,
+//! take, through [`minocrab_std::BoundedUint`] (M14,
 //! notes/bounded-integers.org).
 //!
 //! Not a corpus contract: no compiled corpus artifact carries a
@@ -31,12 +31,12 @@
 //!
 //! Which of the four constraints a bound gets is never this file's decision
 //! and never the leaf's: [`BoundedUint::constrain_input`] hands the maxval to
-//! compactc's own ported table (`minocrab::v3::Prim::constraint`). That is
+//! compactc's own ported table (`minocrab::Prim::constraint`). That is
 //! the whole claim the differential checks.
 
-use minocrab::v3::Circuit3;
+use minocrab::Circuit;
 use minocrab::Public;
-use minocrab_std::v3::{
+use minocrab_std::{
     contract, label, Bool, BoundedUint, Bytes, CircuitArg, Disclose, Discloses, Ledger,
     LedgerCell, LedgerCounter, Uint,
 };
@@ -76,7 +76,7 @@ pub struct Order {
 impl Bounded {
     /// `export circuit b10(x: Uint<0..10>): [] { dummy.increment(1); }`.
     #[circuit]
-    pub fn b10(c: &mut Circuit3, x: BoundedUint<10>) -> Discloses<()> {
+    pub fn b10(c: &mut Circuit, x: BoundedUint<10>) -> Discloses<()> {
         let _ = x;
         BOUNDED.dummy.increment(c, 1);
         Discloses::of(())
@@ -84,7 +84,7 @@ impl Bounded {
 
     /// `export circuit b300(x: Uint<0..300>): []`.
     #[circuit]
-    pub fn b300(c: &mut Circuit3, x: BoundedUint<300>) -> Discloses<()> {
+    pub fn b300(c: &mut Circuit, x: BoundedUint<300>) -> Discloses<()> {
         let _ = x;
         BOUNDED.dummy.increment(c, 1);
         Discloses::of(())
@@ -92,7 +92,7 @@ impl Bounded {
 
     /// `export circuit b1000(x: Uint<0..1000>): []`.
     #[circuit]
-    pub fn b1000(c: &mut Circuit3, x: BoundedUint<1000>) -> Discloses<()> {
+    pub fn b1000(c: &mut Circuit, x: BoundedUint<1000>) -> Discloses<()> {
         let _ = x;
         BOUNDED.dummy.increment(c, 1);
         Discloses::of(())
@@ -102,7 +102,7 @@ impl Bounded {
     /// fairness bullet, and the one whose three widths all differ (constraint
     /// 18, comparison 17, FAB atom 3 bytes).
     #[circuit]
-    pub fn b70000(c: &mut Circuit3, x: BoundedUint<70000>) -> Discloses<()> {
+    pub fn b70000(c: &mut Circuit, x: BoundedUint<70000>) -> Discloses<()> {
         let _ = x;
         BOUNDED.dummy.increment(c, 1);
         Discloses::of(())
@@ -111,7 +111,7 @@ impl Bounded {
     /// `export circuit b1(x: Uint<0..1>): []` — the type holding only zero, so
     /// the table's `constrain_eq 0` arm. Its FAB atom is ZERO bytes wide.
     #[circuit]
-    pub fn b1(c: &mut Circuit3, x: BoundedUint<1>) -> Discloses<()> {
+    pub fn b1(c: &mut Circuit, x: BoundedUint<1>) -> Discloses<()> {
         let _ = x;
         BOUNDED.dummy.increment(c, 1);
         Discloses::of(())
@@ -120,7 +120,7 @@ impl Bounded {
     /// `export circuit b2(x: Uint<0..2>): []` — Compact's `Boolean` by another
     /// name, so `constrain_to_boolean`.
     #[circuit]
-    pub fn b2(c: &mut Circuit3, x: BoundedUint<2>) -> Discloses<()> {
+    pub fn b2(c: &mut Circuit, x: BoundedUint<2>) -> Discloses<()> {
         let _ = x;
         BOUNDED.dummy.increment(c, 1);
         Discloses::of(())
@@ -133,7 +133,7 @@ impl Bounded {
     /// table does the rest, so `BoundedUint<256>` and `Uint<8>` emit the same
     /// instruction.
     #[circuit]
-    pub fn b256(c: &mut Circuit3, x: BoundedUint<256>) -> Discloses<()> {
+    pub fn b256(c: &mut Circuit, x: BoundedUint<256>) -> Discloses<()> {
         let _ = x;
         BOUNDED.dummy.increment(c, 1);
         Discloses::of(())
@@ -144,7 +144,7 @@ impl Bounded {
     /// bits. The one-off-a-power-of-two case is why the leaf takes the bound and
     /// not a width.
     #[circuit]
-    pub fn b255(c: &mut Circuit3, x: BoundedUint<255>) -> Discloses<()> {
+    pub fn b255(c: &mut Circuit, x: BoundedUint<255>) -> Discloses<()> {
         let _ = x;
         BOUNDED.dummy.increment(c, 1);
         Discloses::of(())
@@ -155,7 +155,7 @@ impl Bounded {
     /// representation beyond its index — the VARIANT INDEX is the whole value —
     /// which is why the interface generator maps it to this same leaf.
     #[circuit]
-    pub fn b_enum(c: &mut Circuit3, x: BoundedUint<3>) -> Discloses<()> {
+    pub fn b_enum(c: &mut Circuit, x: BoundedUint<3>) -> Discloses<()> {
         let _ = x;
         BOUNDED.dummy.increment(c, 1);
         Discloses::of(())
@@ -163,7 +163,7 @@ impl Bounded {
 
     /// `export circuit bStruct(order: Order): []`.
     #[circuit]
-    pub fn b_struct(c: &mut Circuit3, order: Order) -> Discloses<()> {
+    pub fn b_struct(c: &mut Circuit, order: Order) -> Discloses<()> {
         let _ = order;
         BOUNDED.dummy.increment(c, 1);
         Discloses::of(())
@@ -177,7 +177,7 @@ impl Bounded {
     /// neither is hand-written here.
     #[circuit]
     pub fn b_compare(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         a: BoundedUint<70000>,
         b: BoundedUint<70000>,
     ) -> Discloses<(LeftOperand, RightOperand)> {

@@ -667,7 +667,7 @@ and this one. Ranked by how likely each is to move an artifact:
   with such a field moves its transcript AND its =contract-info.json=,
   i.e. taxonomy 2/4/5, not merely 3. Corpus reach: midnight-serde's
   =serde-fixtures.compact= (=Bounded.unit: Uint<0..1>=). OUR reach: this
-  is a behaviour we MIRRORED — =crates/minocrab-std/src/v3/borsh.rs=
+  is a behaviour we MIRRORED — =crates/minocrab-std/src/borsh.rs=
   §754 and notes/bounded-integers.org §3 both state "Uint<0..1> FAB 0
   bytes". If the fix is real, our mirror is now wrong: answer (b).
 - *P2 — hashing alignment for point/scalar types (0.33.105 #608,
@@ -904,12 +904,12 @@ a circuit ARGUMENT and is byte-identical under both compilers — which is
 why every gate stayed silent.
 
 OUR SIDE MIRRORS THE OLD BEHAVIOUR, in exactly one place:
-=crates/minocrab/src/v3/abi.rs:183= =uint_atom_bytes(maxval) =
+=crates/minocrab/src/abi.rs:183= =uint_atom_bytes(maxval) =
 integer_length(maxval).div_ceil(8)=, which is 0 at =maxval = 0=, with
 the doc comment "Compact's =Uint<0..1>= occupies no bytes, which is what
 the corpus's own serde fixtures say about it". It reaches
 =AlignmentAtom::Bytes { length: 0 }= through =BoundedUint='s
-=CircuitAbi= (=minocrab-std/src/v3/entry.rs:215=) and
+=CircuitAbi= (=minocrab-std/src/entry.rs:215=) and
 =minocrab-abi/src/info.rs:443= (where a single-variant ENUM takes the
 same path), and from there into =minocrab-ledger='s =push_cell=
 alignment header — i.e. into the same operand the probe shows moving.

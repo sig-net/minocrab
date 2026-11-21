@@ -27,8 +27,8 @@ use minocrab::Fr;
 use minocrab_contracts::events;
 use minocrab_contracts::xcontract_events as xce;
 use minocrab_ledger::ep_hash;
-use minocrab_sim::v3::{assert_call_compatible, simulate};
-use minocrab_zkir::v3::IrSource;
+use minocrab_sim::{assert_call_compatible, simulate};
+use minocrab_zkir::IrSource;
 use sha2::{Digest, Sha256};
 
 type VmOp = Op<ResultModeVerify, InMemoryDB>;
@@ -386,7 +386,7 @@ fn deposit_via_vault_rejects_tampering() {
 /// the strongest form of the claim.
 #[test]
 fn borsh_twin_is_byte_identical_to_the_original() {
-    use minocrab_zkir::v3::to_zkir_string;
+    use minocrab_zkir::to_zkir_string;
     assert_eq!(
         to_zkir_string(&xce::XcontractEvents::token_deposit().ir).expect("the original serializes"),
         to_zkir_string(&minocrab_contracts::xcontract_events_borsh::XcontractEventsBorsh::token_deposit().ir)

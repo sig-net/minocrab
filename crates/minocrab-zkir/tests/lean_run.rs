@@ -10,7 +10,7 @@
 //! 2. `zkir-run <artifact> <record>` for every run record under
 //!    `lean/differential/` — the artifact is compactc's own `.zkir`,
 //!    named by the record; the expected block is what
-//!    `minocrab_sim::v3::simulate` (cross-checked against upstream
+//!    `minocrab_sim::simulate` (cross-checked against upstream
 //!    `IrSource::check`) produced. The comparison is the whole block:
 //!    accept/reject, the PI stream, `pi_skips`, and the outputs.
 //!

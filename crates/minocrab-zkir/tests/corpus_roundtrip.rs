@@ -39,9 +39,9 @@ fn round_trips_entire_corpus() {
             if minocrab_zkir::major_version(path).map_err(|e| format!("version: {e}"))? != 3 {
                 return Ok(false);
             }
-            let ir = minocrab_zkir::v3::read_zkir(path).map_err(|e| format!("parse: {e}"))?;
-            let emitted = minocrab_zkir::v3::to_zkir_string(&ir).map_err(|e| format!("emit: {e}"))?;
-            let reparsed = minocrab_zkir::v3::parse_zkir(emitted.as_bytes(), &name)
+            let ir = minocrab_zkir::read_zkir(path).map_err(|e| format!("parse: {e}"))?;
+            let emitted = minocrab_zkir::to_zkir_string(&ir).map_err(|e| format!("emit: {e}"))?;
+            let reparsed = minocrab_zkir::parse_zkir(emitted.as_bytes(), &name)
                 .map_err(|e| format!("reparse: {e}"))?;
             if reparsed != ir {
                 return Err("re-emitted v3 IR differs from original".into());

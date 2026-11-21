@@ -1,9 +1,9 @@
 //! L2 — the MinoCrab eDSL.
 //!
-//! Circuits are ordinary Rust built against [`v3::Circuit3`]; wires carry
-//! their visibility in the type. A `Wire3<_, Private>` cannot reach a
+//! Circuits are ordinary Rust built against [`Circuit`]; wires carry
+//! their visibility in the type. A `Wire<_, Private>` cannot reach a
 //! public output — there is no method for it — until it passes through
-//! [`v3::Circuit3::disclose`] (or `disclose_as::<Label>`), which is the
+//! [`Circuit::disclose`] (or `disclose_as::<Label>`), which is the
 //! single, greppable gate for information leaving the private domain.
 //! Combining wires taints: any operation touching a private wire yields a
 //! private wire (see [`Meet`]).
@@ -16,18 +16,18 @@
 //! The enforcement is a type error, not a runtime check:
 //!
 //! ```compile_fail
-//! use minocrab::v3::{Circuit3, FieldT};
-//! let mut c = Circuit3::new();
+//! use minocrab::{Circuit, FieldT};
+//! let mut c = Circuit::new();
 //! let secret = c.witness::<FieldT>();
-//! // ERROR: expected `Wire3<FieldT, Public>`, found `Wire3<FieldT, Private>`
+//! // ERROR: expected `Wire<FieldT, Public>`, found `Wire<FieldT, Private>`
 //! c.output(secret, "leak");
 //! ```
 //!
 //! With `disclose` it compiles — and the leak is named and greppable:
 //!
 //! ```
-//! use minocrab::v3::{Circuit3, FieldT};
-//! let mut c = Circuit3::new();
+//! use minocrab::{Circuit, FieldT};
+//! let mut c = Circuit::new();
 //! let secret = c.witness::<FieldT>();
 //! let public = c.disclose(secret, "intentionally published");
 //! c.output(public, "value");
@@ -39,38 +39,64 @@
 //! typed instruction builder) and is what `minocrab-std` (L3, the ports of
 //! Compact's standard library), `minocrab-ledger` (L2.5, Impact ledger ops)
 //! and `minocrab-macros` (`#[circuit]`, `#[contract]`) are all written
-//! against. `minocrab-sim` runs what [`v3::Circuit3::finish`] produces
+//! against. `minocrab-sim` runs what [`Circuit::finish`] produces
 //! under `cargo test`. Every contract targets ZKIR v3; there is no other
 //! frontend.
 //!
 //! # Start here
 //!
-//! - [`v3::Circuit3`] — the builder; [`v3::Wire3`] — a typed, visibility-
+//! - [`Circuit`] — the builder; [`Wire`] — a typed, visibility-
 //!   tagged value
 //! - [`Visibility`] ([`Public`] / [`Private`]) and [`Meet`] — the lattice
 //!   wires combine under
-//! - [`v3::Circuit3::disclose`] / [`v3::DisclosureLabel`] — the single
+//! - [`Circuit::disclose`] / [`DisclosureLabel`] — the single
 //!   Private→Public gate, and the thing to grep for
-//! - [`v3::Discloses`] and [`v3::assert_declared_disclosures`] — a circuit
+//! - [`Discloses`] and [`assert_declared_disclosures`] — a circuit
 //!   declares what it discloses, and a generated test checks it
-//! - [`v3::Compiled3`] — a finished circuit: the IR plus its disclosure
+//! - [`Compiled`] — a finished circuit: the IR plus its disclosure
 //!   record and regions
 //!
 //! # Stability (M24 tier boundary)
 //!
 //! STABLE TIER (semver commitment): the v3 eDSL authoring core —
-//! [`v3::Circuit3`] and its instruction-emitting methods (except the Impact
+//! [`Circuit`] and its instruction-emitting methods (except the Impact
 //! lowering primitives `impact` / `impact_mixed`, which are `#[doc(hidden)]`
 //! and carry no promise; hand-written Impact lives in `minocrab-experimental`),
-//! [`v3::Wire3`] /
-//! [`v3::AnyWire3`], the visibility types, the FAB alignment re-exports,
-//! and [`v3::Compiled3`]. The proposed stable set is deliberately small
+//! [`Wire`] /
+//! [`AnyWire`], the visibility types, the FAB alignment re-exports,
+//! and [`Compiled`]. The proposed stable set is deliberately small
 //! (notes/library-api.org §1) and grows only by decision, never by
 //! accident.
 
 pub use minocrab_ir::{Alignment, AlignmentAtom, AlignmentSegment, Fr};
 
-pub mod v3;
+mod circuit;
+mod abi;
+mod disclose;
+mod effects;
+mod lowering;
+pub use circuit::*;
+
+// rename-v3: begin shim (tools/rename-v3.sh never rewrites this block)
+/// The pre-rename path: everything that was `minocrab::v3::X` is `minocrab::X`.
+/// Kept for the downstream pins only; nothing in this workspace uses it.
+#[doc(hidden)]
+#[deprecated(note = "`minocrab::v3` is gone: the items are at the crate root \
+                     (`minocrab::X`) and lose the `3` suffix; this module is removed in the next release")]
+pub mod v3 {
+    pub use crate::*;
+    #[deprecated(note = "renamed to `minocrab::Circuit`")]
+    pub type Circuit3 = crate::Circuit;
+    #[deprecated(note = "renamed to `minocrab::Wire`")]
+    pub type Wire3<T, V> = crate::Wire<T, V>;
+    #[deprecated(note = "renamed to `minocrab::AnyWire`")]
+    pub type AnyWire3<V> = crate::AnyWire<V>;
+    #[deprecated(note = "renamed to `minocrab::Compiled`")]
+    pub type Compiled3 = crate::Compiled;
+    #[deprecated(note = "renamed to `minocrab::Disclosure`")]
+    pub type Disclosure3 = crate::Disclosure;
+}
+// rename-v3: end shim
 
 // --- visibility -------------------------------------------------------------
 
@@ -128,7 +154,7 @@ impl Visibility for Private {}
     note = "visibility is a two-point lattice: `Public` and `Private` are its \
             only inhabitants and `Meet` is implemented for all four pairs, so \
             a failure here is a GENERIC parameter that has not been told it is \
-            one. Bound it — `V: Meet<Public, Out = V>`, or `V: Vis3`, which \
+            one. Bound it — `V: Meet<Public, Out = V>`, or `V: Vis`, which \
             carries that plus the rest of what a stdlib gadget needs"
 )]
 pub trait Meet<B: Visibility>: Visibility {
@@ -150,7 +176,7 @@ impl Meet<Private> for Private {
 // --- disclosure records -----------------------------------------------------
 
 /// How a disclosed value leaves the circuit, as recorded in a
-/// [`v3::Disclosure3`].
+/// [`Disclosure`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DisclosureKind {
     /// `disclose_as::<L>()` — a private value became public inside the

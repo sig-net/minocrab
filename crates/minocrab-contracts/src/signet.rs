@@ -21,12 +21,12 @@
 //! stage-7 record in [`minocrab_signet::record_v2`], the byte reversal in
 //! [`minocrab_evm`]. Nothing outside this module's own tests reads the rest.
 
-use minocrab::v3::{Circuit3, FieldT, Wire3};
+use minocrab::{Circuit, FieldT, Wire};
 use minocrab::{AlignmentAtom, Public};
-use minocrab_std::v3::borsh::CircuitBorsh;
-use minocrab_std::v3::hash::upgrade_from_transient;
-use minocrab_std::v3::{
-    pow2_const, BytesN, ContractAddress, LedgerRepr, Serializer, Vis3, B32,
+use minocrab_std::borsh::CircuitBorsh;
+use minocrab_std::hash::upgrade_from_transient;
+use minocrab_std::{
+    pow2_const, BytesN, ContractAddress, LedgerRepr, Serializer, Vis, B32,
 };
 
 use crate::common::{Caip2Id, SigningPath};
@@ -58,27 +58,27 @@ pub use signet_signer_interface::RequestId;
 /// contract (the request-id hash order and the ledger record layout).
 #[derive(Clone)]
 pub struct SignBidirectionalEvent<
-    V: Vis3,
+    V: Vis,
     const WORDS: usize,
     const LEN_OUT: usize,
     const LEN_RESPOND: usize,
 > {
     pub sender: ContractAddress<V>,
-    pub request_nonce: Wire3<FieldT, V>,
-    pub key_version: Wire3<FieldT, V>,
+    pub request_nonce: Wire<FieldT, V>,
+    pub key_version: Wire<FieldT, V>,
     pub path: SigningPath<V>,
-    pub algo: Wire3<FieldT, V>,
-    pub dest: Wire3<FieldT, V>,
+    pub algo: Wire<FieldT, V>,
+    pub dest: Wire<FieldT, V>,
     /// `params: Bytes<64>` — 3 limbs `[2, 31, 31]`, zero-fill today.
     pub params: BytesN<V, PARAMS_LEN>,
-    pub tx_param_type: Wire3<FieldT, V>,
+    pub tx_param_type: Wire<FieldT, V>,
     pub tx_params: EvmType2TxParams<V, WORDS>,
     pub caip2_id: Caip2Id<V>,
     pub output_deserialization_schema: BytesN<V, LEN_OUT>,
     pub respond_serialization_schema: BytesN<V, LEN_RESPOND>,
 }
 
-impl<V: Vis3, const WORDS: usize, const LEN_OUT: usize, const LEN_RESPOND: usize>
+impl<V: Vis, const WORDS: usize, const LEN_OUT: usize, const LEN_RESPOND: usize>
     SignBidirectionalEvent<V, WORDS, LEN_OUT, LEN_RESPOND>
 {
     /// The record's FAB limb count (claim.zkir:287 — 33 for the vault's
@@ -95,7 +95,7 @@ impl<V: Vis3, const WORDS: usize, const LEN_OUT: usize, const LEN_RESPOND: usize
     }
 
     /// The record's FAB limbs, slot order ([`Self::LIMBS`] of them).
-    pub fn limbs(&self) -> Vec<Wire3<FieldT, V>> {
+    pub fn limbs(&self) -> Vec<Wire<FieldT, V>> {
         let mut l = vec![
             self.sender.bytes().hi,
             self.sender.bytes().lo,
@@ -122,7 +122,7 @@ impl<V: Vis3, const WORDS: usize, const LEN_OUT: usize, const LEN_RESPOND: usize
 /// limbs in FAB slot order. The instantiation's consts are part of the
 /// type, so a 2-word record cannot be read with 7-word offsets.
 pub struct EventRecord<const WORDS: usize, const LEN_OUT: usize, const LEN_RESPOND: usize>(
-    Vec<Wire3<FieldT, Public>>,
+    Vec<Wire<FieldT, Public>>,
 );
 
 impl<const WORDS: usize, const LEN_OUT: usize, const LEN_RESPOND: usize>
@@ -140,12 +140,12 @@ impl<const WORDS: usize, const LEN_OUT: usize, const LEN_RESPOND: usize>
     }
 
     /// `txParams.to`.
-    pub fn to(&self) -> Wire3<FieldT, Public> {
+    pub fn to(&self) -> Wire<FieldT, Public> {
         self.0[layout::TO]
     }
 
     /// `txParams.calldata.is_some`.
-    pub fn calldata_is_some(&self) -> Wire3<FieldT, Public> {
+    pub fn calldata_is_some(&self) -> Wire<FieldT, Public> {
         self.0[layout::CALLDATA_IS_SOME]
     }
 
@@ -171,11 +171,11 @@ impl<const WORDS: usize, const LEN_OUT: usize, const LEN_RESPOND: usize> LedgerR
         SignBidirectionalEvent::<Public, WORDS, LEN_OUT, LEN_RESPOND>::atoms()
     }
 
-    fn push_limbs(&self, _c: &mut Circuit3, limbs: &mut Vec<Wire3<FieldT, Public>>) {
+    fn push_limbs(&self, _c: &mut Circuit, limbs: &mut Vec<Wire<FieldT, Public>>) {
         limbs.extend_from_slice(&self.0);
     }
 
-    fn from_limbs(limbs: Vec<Wire3<FieldT, Public>>) -> Self {
+    fn from_limbs(limbs: Vec<Wire<FieldT, Public>>) -> Self {
         assert_eq!(
             limbs.len(),
             Self::LIMBS,
@@ -190,15 +190,15 @@ impl<const WORDS: usize, const LEN_OUT: usize, const LEN_RESPOND: usize> LedgerR
 /// asserts `keyVersion >= 1` (for a `Uint<8>`: `keyVersion != 0`).
 #[allow(clippy::too_many_arguments)]
 pub fn construct_sign_bidirectional_event<
-    V: Vis3,
+    V: Vis,
     const WORDS: usize,
     const LEN_OUT: usize,
     const LEN_RESPOND: usize,
 >(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     sender: ContractAddress<V>,
-    request_nonce: Wire3<FieldT, V>,
-    key_version: Wire3<FieldT, V>,
+    request_nonce: Wire<FieldT, V>,
+    key_version: Wire<FieldT, V>,
     path: SigningPath<V>,
     tx_params: EvmType2TxParams<V, WORDS>,
     caip2_id: Caip2Id<V>,
@@ -233,12 +233,12 @@ pub fn construct_sign_bidirectional_event<
 /// `calculateRequestId(request)` — `keccak256` of the whole record in its
 /// FAB alignment.
 pub fn calculate_request_id<
-    V: Vis3,
+    V: Vis,
     const WORDS: usize,
     const LEN_OUT: usize,
     const LEN_RESPOND: usize,
 >(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     request: &SignBidirectionalEvent<V, WORDS, LEN_OUT, LEN_RESPOND>,
 ) -> RequestId<V> {
     request_id_of(c, &request.limbs())
@@ -253,10 +253,10 @@ pub fn calculate_request_id<
 /// `compact-hashing::compute_response_hash` recomputes it. `output_limbs`
 /// are the serialized output's FAB limbs for `LEN_OUTPUT` bytes ([`BytesN`]
 /// slot order; the settle circuits' 1/5/8-byte outputs are one limb).
-pub fn calculate_attestation_digest<V: Vis3, const LEN_OUTPUT: usize>(
-    c: &mut Circuit3,
+pub fn calculate_attestation_digest<V: Vis, const LEN_OUTPUT: usize>(
+    c: &mut Circuit,
     request_id: &RequestId<V>,
-    output_limbs: &[Wire3<FieldT, V>],
+    output_limbs: &[Wire<FieldT, V>],
 ) -> B32<V> {
     c.region("signet: attestation digest (transientHash)", |c| {
         let mut limbs = vec![request_id.bytes().hi, request_id.bytes().lo];
@@ -270,13 +270,13 @@ pub fn calculate_attestation_digest<V: Vis3, const LEN_OUTPUT: usize>(
 /// mpcResponseKey)` — recompute the attestation digest and verify the
 /// event's ECDSA signature over it. Only `bigR.x` and `s` enter
 /// verification, little-endian ([`Secp256k1SigLimbs`]).
-pub fn verify_respond_bidirectional_event<V: Vis3, const LEN_OUTPUT: usize>(
-    c: &mut Circuit3,
+pub fn verify_respond_bidirectional_event<V: Vis, const LEN_OUTPUT: usize>(
+    c: &mut Circuit,
     request_id: &RequestId<V>,
-    output_limbs: &[Wire3<FieldT, V>],
+    output_limbs: &[Wire<FieldT, V>],
     sig: &Secp256k1SigLimbs<V>,
-    mpc_response_key: minocrab::v3::Wire3<minocrab::v3::Secp256k1PointT, V>,
-) -> Wire3<FieldT, V> {
+    mpc_response_key: minocrab::Wire<minocrab::Secp256k1PointT, V>,
+) -> Wire<FieldT, V> {
     let digest = calculate_attestation_digest::<V, LEN_OUTPUT>(c, request_id, output_limbs);
     verify_attestation_signature(c, &digest, sig, mpc_response_key)
 }
@@ -308,8 +308,8 @@ pub fn verify_respond_bidirectional_event<V: Vis3, const LEN_OUTPUT: usize>(
 /// is discharged by the caller: the output is a circuit ARGUMENT
 /// (`Succeeded` / `Failed` tickets), constrained at entry by
 /// `CircuitArg::constrain`, and `Pending::complete` asserts its kind besides.
-pub fn calculate_attestation_digest_borsh<V: Vis3, T: CircuitBorsh<V>>(
-    c: &mut Circuit3,
+pub fn calculate_attestation_digest_borsh<V: Vis, T: CircuitBorsh<V>>(
+    c: &mut Circuit,
     request_id: &RequestId<V>,
     output: &T,
 ) -> B32<V> {
@@ -325,11 +325,11 @@ pub fn calculate_attestation_digest_borsh<V: Vis3, T: CircuitBorsh<V>>(
 /// (`Pending::refund`: the MPC's failure output is the kind byte alone, the
 /// call's own output is the kind byte and the return value). Same limbs as
 /// the digest: `[id.hi, id.lo]` then the output packed as one byte string.
-pub fn attestation_transient_hash_borsh<V: Vis3, T: CircuitBorsh<V>>(
-    c: &mut Circuit3,
+pub fn attestation_transient_hash_borsh<V: Vis, T: CircuitBorsh<V>>(
+    c: &mut Circuit,
     request_id: &RequestId<V>,
     output: &T,
-) -> Wire3<FieldT, V> {
+) -> Wire<FieldT, V> {
     let mut out = Serializer::new();
     output.push_segments(&mut out);
     let packed = out.finish_limbs(c, T::LEN);
@@ -347,13 +347,13 @@ pub fn attestation_transient_hash_borsh<V: Vis3, T: CircuitBorsh<V>>(
 /// [`verify_respond_bidirectional_event`] over a TYPED Borsh output — M11
 /// stage 5. Same signature check, same MPC key, a digest whose preimage
 /// carries the response kind.
-pub fn verify_respond_bidirectional_event_borsh<V: Vis3, T: CircuitBorsh<V>>(
-    c: &mut Circuit3,
+pub fn verify_respond_bidirectional_event_borsh<V: Vis, T: CircuitBorsh<V>>(
+    c: &mut Circuit,
     request_id: &RequestId<V>,
     output: &T,
     sig: &Secp256k1SigLimbs<V>,
-    mpc_response_key: minocrab::v3::Wire3<minocrab::v3::Secp256k1PointT, V>,
-) -> Wire3<FieldT, V> {
+    mpc_response_key: minocrab::Wire<minocrab::Secp256k1PointT, V>,
+) -> Wire<FieldT, V> {
     let digest = calculate_attestation_digest_borsh(c, request_id, output);
     verify_attestation_signature(c, &digest, sig, mpc_response_key)
 }
@@ -363,7 +363,7 @@ pub fn verify_respond_bidirectional_event_borsh<V: Vis3, T: CircuitBorsh<V>>(
 /// `slice<20>(word, 12)` — the low 20 bytes of an ABI word as the
 /// `Bytes<20>` single limb (the vault reads token addresses back out of
 /// stored calldata words).
-pub fn abi_word_low20<V: Vis3>(c: &mut Circuit3, word: &B32<V>) -> Wire3<FieldT, V> {
+pub fn abi_word_low20<V: Vis>(c: &mut Circuit, word: &B32<V>) -> Wire<FieldT, V> {
     c.region("abi words", |c| {
         // Bytes 12.. of the string are the word shifted right 96 bits:
         // (lo >> 96) plus the top byte re-shifted to string position 19.
@@ -386,7 +386,7 @@ mod tests {
     /// A zero-filled record of the given instantiation — only its shape
     /// (atom widths, limb count) is under test.
     fn zero_event<const WORDS: usize, const LEN_OUT: usize, const LEN_RESPOND: usize>(
-        c: &mut Circuit3,
+        c: &mut Circuit,
     ) -> SignBidirectionalEvent<Public, WORDS, LEN_OUT, LEN_RESPOND> {
         let zero = c.constant(0u64);
         let b32 = B32 { hi: zero, lo: zero };
@@ -441,7 +441,7 @@ mod tests {
     #[test]
     fn vault_event_layout_matches_corpus() {
         type Event = SignBidirectionalEvent<Public, 2, 34, 34>;
-        let mut c = Circuit3::new();
+        let mut c = Circuit::new();
         let event = zero_event::<2, 34, 34>(&mut c);
 
         let atoms = Event::atoms();
@@ -468,7 +468,7 @@ mod tests {
     #[test]
     fn swap_event_layout() {
         type Event = SignBidirectionalEvent<Public, 7, 38, 37>;
-        let mut c = Circuit3::new();
+        let mut c = Circuit::new();
         let event = zero_event::<7, 38, 37>(&mut c);
 
         let atoms = Event::atoms();
@@ -543,7 +543,7 @@ mod tests {
         assert_eq!(EventRecordV2::<7>::LIMBS, 41);
 
         // The limb count is also what the struct emits, per instantiation.
-        let mut c = Circuit3::new();
+        let mut c = Circuit::new();
         let z = c.constant(0u64);
         let b32 = B32 { hi: z, lo: z };
         let ev = SignBidirectionalEventV2::<Public, 2> {

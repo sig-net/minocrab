@@ -4,6 +4,8 @@
 
 dmd, 2026-11-21: the codebase was built incrementally and reads defensive; the aim is a planned core with minimal, thought-through abstractions on top, accepting that some features leave minocrab and a few rows fall out. This is the survey (five read-only passes: compiler core, std and macros, the periphery crates, usage, tests) and the ranked starting points. Nothing was changed. Claims marked UNMEASURED were not run.
 
+THE RENAME, 2026-11-22 (M48 rung K, =tools/rename-v3.sh=): the =v3= modules of minocrab, minocrab-ir, minocrab-std, minocrab-sim and minocrab-zkir went to the crate root and our items lost the =3= suffix (=Circuit3= is =Circuit=, =Wire3= =Wire=, =Builder3= =Builder=, =Vis3= =Vis=, =Sim3Error= =SimError=, and so on), and the =tests/v3_*.rs= files lost the prefix. Notes written before that date, this one included, use the old names; a deprecated =v3= shim per crate keeps the old paths compiling for the downstream pins.
+
 * 1. Size and shape today
 
 | part | src lines | note |

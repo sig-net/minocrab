@@ -19,9 +19,9 @@
 //! [`UsdtLike`](super::usdt::UsdtLike), a SIBLING interface rather than a
 //! subtype, and the reason is the whole of notes/evm-calls.org §3.1.
 
-use minocrab::v3::Circuit3;
+use minocrab::Circuit;
 use minocrab::Private;
-use minocrab_std::v3::{is_true, Bool as BoolWire, Check};
+use minocrab_std::{is_true, Bool as BoolWire, Check};
 
 use super::{always, Address, Bool, Bytes32, EvmCall, Interface, Unit, U128, U256, U8};
 
@@ -69,7 +69,7 @@ impl EvmCall for Transfer {
     type Success = ();
     const GAS_LIMIT: u64 = CALL_GAS;
 
-    fn succeeded(_c: &mut Circuit3, ok: &BoolWire<Private>) -> Check<Private> {
+    fn succeeded(_c: &mut Circuit, ok: &BoolWire<Private>) -> Check<Private> {
         is_true(*ok)
     }
 }
@@ -89,7 +89,7 @@ impl EvmCall for Approve {
     type Success = ();
     const GAS_LIMIT: u64 = CALL_GAS;
 
-    fn succeeded(_c: &mut Circuit3, ok: &BoolWire<Private>) -> Check<Private> {
+    fn succeeded(_c: &mut Circuit, ok: &BoolWire<Private>) -> Check<Private> {
         is_true(*ok)
     }
 }
@@ -115,7 +115,7 @@ impl EvmCall for TransferFrom {
     type Success = ();
     const GAS_LIMIT: u64 = CALL_GAS;
 
-    fn succeeded(_c: &mut Circuit3, ok: &BoolWire<Private>) -> Check<Private> {
+    fn succeeded(_c: &mut Circuit, ok: &BoolWire<Private>) -> Check<Private> {
         is_true(*ok)
     }
 }
@@ -143,7 +143,7 @@ impl EvmCall for IncreaseAllowance {
     type Success = ();
     const GAS_LIMIT: u64 = CALL_GAS;
 
-    fn succeeded(_c: &mut Circuit3, ok: &BoolWire<Private>) -> Check<Private> {
+    fn succeeded(_c: &mut Circuit, ok: &BoolWire<Private>) -> Check<Private> {
         is_true(*ok)
     }
 }
@@ -161,7 +161,7 @@ impl EvmCall for DecreaseAllowance {
     type Success = ();
     const GAS_LIMIT: u64 = CALL_GAS;
 
-    fn succeeded(_c: &mut Circuit3, ok: &BoolWire<Private>) -> Check<Private> {
+    fn succeeded(_c: &mut Circuit, ok: &BoolWire<Private>) -> Check<Private> {
         is_true(*ok)
     }
 }
@@ -201,9 +201,9 @@ impl EvmCall for Permit {
     type Success = ();
     const GAS_LIMIT: u64 = CALL_GAS;
 
-    fn succeeded(c: &mut Circuit3, _out: &()) -> Check<Private> {
+    fn succeeded(c: &mut Circuit, _out: &()) -> Check<Private> {
         // The constant-true assert this makes is removed by
-        // `drop_true_asserts` in `Builder3::finish`.
+        // `drop_true_asserts` in `Builder::finish`.
         always(c)
     }
 }

@@ -63,16 +63,16 @@
 use alloy_primitives::aliases::{U160, U24};
 use alloy_primitives::{Address as SolAddress, FixedBytes, U256 as SolU256};
 use alloy_sol_types::SolCall;
-use minocrab::v3::{Circuit3, FieldT, Wire3};
+use minocrab::{Circuit, FieldT, Wire};
 use minocrab::{Fr, Private};
 use minocrab_contracts::evm::{
     aave_v3, erc20, erc4626, erc721, uniswap_v3, usdt, weth, AbiArg, AbiTuple, AbiType, Address,
     Bool, Bytes32, EvmCall, U128, U16 as OurU16, U160 as OurU160, U24 as OurU24, U256 as OurU256,
     U64, U8 as OurU8,
 };
-use minocrab_sim::v3::simulate;
-use minocrab_std::v3::{is_true, Bool as BoolWire, Bytes, Check, Uint, B32};
-use minocrab_zkir::v3::IrValue;
+use minocrab_sim::simulate;
+use minocrab_std::{is_true, Bool as BoolWire, Bytes, Check, Uint, B32};
+use minocrab_zkir::IrValue;
 use proptest::prelude::*;
 
 use std::borrow::Cow;
@@ -333,7 +333,7 @@ impl EvmCall for AbiLeafProbe {
     type Success = ();
     const GAS_LIMIT: u64 = 100_000;
 
-    fn succeeded(_c: &mut Circuit3, ok: &BoolWire<Private>) -> Check<Private> {
+    fn succeeded(_c: &mut Circuit, ok: &BoolWire<Private>) -> Check<Private> {
         is_true(*ok)
     }
 }
@@ -370,7 +370,7 @@ trait SampleLeaf: AbiArg {
     fn limbs(v: &Self::Value) -> Vec<Fr>;
 
     /// The wire, rebuilt from that many argument wires.
-    fn wire(args: &[Wire3<FieldT, Private>]) -> <Self as AbiType>::Wire<Private>;
+    fn wire(args: &[Wire<FieldT, Private>]) -> <Self as AbiType>::Wire<Private>;
 }
 
 /// An address is twenty bytes, unconstrained.
@@ -386,7 +386,7 @@ impl SampleLeaf for Address {
         vec![b20(v)]
     }
 
-    fn wire(args: &[Wire3<FieldT, Private>]) -> Bytes<20, Private> {
+    fn wire(args: &[Wire<FieldT, Private>]) -> Bytes<20, Private> {
         Bytes::<20, Private>::from_field_unchecked(args[0])
     }
 }
@@ -405,7 +405,7 @@ impl SampleLeaf for Bool {
         vec![Fr::from(u64::from(*v))]
     }
 
-    fn wire(args: &[Wire3<FieldT, Private>]) -> BoolWire<Private> {
+    fn wire(args: &[Wire<FieldT, Private>]) -> BoolWire<Private> {
         BoolWire::<Private>::from_field_unchecked(args[0])
     }
 }
@@ -424,7 +424,7 @@ impl SampleLeaf for Bytes32 {
         vec![hi, lo]
     }
 
-    fn wire(args: &[Wire3<FieldT, Private>]) -> B32<Private> {
+    fn wire(args: &[Wire<FieldT, Private>]) -> B32<Private> {
         B32 {
             hi: args[0],
             lo: args[1],
@@ -457,7 +457,7 @@ impl SampleLeaf for OurU24 {
         vec![Fr::from(u64::from(*v))]
     }
 
-    fn wire(args: &[Wire3<FieldT, Private>]) -> Uint<24, Private> {
+    fn wire(args: &[Wire<FieldT, Private>]) -> Uint<24, Private> {
         Uint::<24, Private>::from_field_unchecked(args[0])
     }
 }
@@ -479,7 +479,7 @@ impl SampleLeaf for OurU8 {
         vec![Fr::from(u64::from(*v))]
     }
 
-    fn wire(args: &[Wire3<FieldT, Private>]) -> Uint<8, Private> {
+    fn wire(args: &[Wire<FieldT, Private>]) -> Uint<8, Private> {
         Uint::<8, Private>::from_field_unchecked(args[0])
     }
 }
@@ -500,7 +500,7 @@ impl SampleLeaf for OurU16 {
         vec![Fr::from(u64::from(*v))]
     }
 
-    fn wire(args: &[Wire3<FieldT, Private>]) -> Uint<16, Private> {
+    fn wire(args: &[Wire<FieldT, Private>]) -> Uint<16, Private> {
         Uint::<16, Private>::from_field_unchecked(args[0])
     }
 }
@@ -518,7 +518,7 @@ impl SampleLeaf for U64 {
         vec![Fr::from(*v)]
     }
 
-    fn wire(args: &[Wire3<FieldT, Private>]) -> Uint<64, Private> {
+    fn wire(args: &[Wire<FieldT, Private>]) -> Uint<64, Private> {
         Uint::<64, Private>::from_field_unchecked(args[0])
     }
 }
@@ -545,7 +545,7 @@ impl SampleLeaf for U128 {
         vec![u128_limb(*v)]
     }
 
-    fn wire(args: &[Wire3<FieldT, Private>]) -> Uint<128, Private> {
+    fn wire(args: &[Wire<FieldT, Private>]) -> Uint<128, Private> {
         Uint::<128, Private>::from_field_unchecked(args[0])
     }
 }
@@ -567,7 +567,7 @@ impl SampleLeaf for OurU160 {
         vec![hi, lo]
     }
 
-    fn wire(args: &[Wire3<FieldT, Private>]) -> B32<Private> {
+    fn wire(args: &[Wire<FieldT, Private>]) -> B32<Private> {
         B32 {
             hi: args[0],
             lo: args[1],
@@ -596,7 +596,7 @@ impl SampleLeaf for OurU256 {
         vec![hi, lo]
     }
 
-    fn wire(args: &[Wire3<FieldT, Private>]) -> B32<Private> {
+    fn wire(args: &[Wire<FieldT, Private>]) -> B32<Private> {
         B32 {
             hi: args[0],
             lo: args[1],
@@ -632,7 +632,7 @@ trait SampleArgs: AbiTuple {
     fn limbs(v: &Self::Values) -> Vec<Fr>;
 
     /// The wires, rebuilt from that argument list.
-    fn wires(args: &[Wire3<FieldT, Private>]) -> Self::Wires<Private>;
+    fn wires(args: &[Wire<FieldT, Private>]) -> Self::Wires<Private>;
 }
 
 /// THE EMPTY ARGUMENT LIST — WETH's `deposit()`, whose only argument is the
@@ -654,7 +654,7 @@ impl SampleArgs for () {
         Vec::new()
     }
 
-    fn wires(_args: &[Wire3<FieldT, Private>]) {}
+    fn wires(_args: &[Wire<FieldT, Private>]) {}
 }
 
 macro_rules! sample_args {
@@ -673,7 +673,7 @@ macro_rules! sample_args {
             }
 
             #[allow(unused_assignments, reason = "the last element still advances `at`")]
-            fn wires(args: &[Wire3<FieldT, Private>]) -> Self::Wires<Private> {
+            fn wires(args: &[Wire<FieldT, Private>]) -> Self::Wires<Private> {
                 // Left to right, which is argument order: a tuple
                 // expression evaluates its operands in order, so `at`
                 // walks the limb list exactly as `limbs` laid it out.
@@ -752,8 +752,8 @@ where
 {
     let limbs = <C::Args as SampleArgs>::limbs(values);
 
-    let mut c = Circuit3::new();
-    let args: Vec<Wire3<FieldT, Private>> = (0..limbs.len())
+    let mut c = Circuit::new();
+    let args: Vec<Wire<FieldT, Private>> = (0..limbs.len())
         .map(|i| c.arg::<FieldT>(&format!("a{i}")))
         .collect();
     let wires = <C::Args as SampleArgs>::wires(&args);

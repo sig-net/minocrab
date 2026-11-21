@@ -23,8 +23,8 @@
 use midnight_transient_crypto::proofs::{ProofPreimage, Zkir};
 use midnight_transient_crypto::repr::FieldRepr;
 use minocrab_contracts::erc20_vault_pending as pending;
-use minocrab_sim::v3::simulate;
-use minocrab_zkir::v3::IrSource;
+use minocrab_sim::simulate;
+use minocrab_zkir::IrSource;
 use proptest::prelude::*;
 
 mod vault_pending;

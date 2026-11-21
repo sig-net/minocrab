@@ -9,12 +9,12 @@
 //! dump instrument and the adversarial suite, with nothing asserting it was
 //! complete. `CIRCUITS` is that list, derived.
 //!
-//! The methods take `c: &mut Circuit3` and no receiver, deliberately. A
+//! The methods take `c: &mut Circuit` and no receiver, deliberately. A
 //! `&mut self` would mean the circuit lived in the state value, which forces
 //! either interior mutability (turning a borrow error into a runtime panic —
 //! against the standing compile-errors-over-panics rule) or a second calling
-//! convention beside the `&mut Circuit3` every gadget in `minocrab-ledger`,
-//! `minocrab_std::v3::kernel` and `common` already takes.
+//! convention beside the `&mut Circuit` every gadget in `minocrab-ledger`,
+//! `minocrab_std::kernel` and `common` already takes.
 //!
 //! THE TOOLING PROPERTY (M37 rung E, notes/evm-calls.org §6/§12): the
 //! author's items are emitted as parsed; the macro adds siblings only. Every
@@ -54,7 +54,7 @@ use crate::circuit::{CircuitAttr, Expansion};
 /// `#[contract]` / `#[contract(lowering = path)]`.
 #[derive(Default)]
 pub struct ContractAttr {
-    /// A path to a `fn(&mut Circuit3)` every circuit of the contract calls
+    /// A path to a `fn(&mut Circuit)` every circuit of the contract calls
     /// before its body. The macro only splices it; rustc checks its type.
     lowering: Option<syn::Path>,
 }
@@ -62,7 +62,7 @@ pub struct ContractAttr {
 impl Parse for ContractAttr {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let expected = "expected `lowering = path::to::a_fn` inside #[contract(..)], where the \
-                        fn takes `&mut Circuit3` (e.g. `lowering = minocrab_compat::profile`)";
+                        fn takes `&mut Circuit` (e.g. `lowering = minocrab_compat::profile`)";
         let mut attr = ContractAttr::default();
         while !input.is_empty() {
             let key: Ident = input
@@ -150,7 +150,7 @@ pub fn expand(attr: ContractAttr, item: ItemImpl) -> syn::Result<TokenStream> {
         if let Some(FnArg::Receiver(receiver)) = method.sig.inputs.first() {
             return Err(syn::Error::new(
                 receiver.span(),
-                "a circuit takes `c: &mut Circuit3` and no receiver. A contract's \
+                "a circuit takes `c: &mut Circuit` and no receiver. A contract's \
                  state is a LAYOUT, not a value this function owns: a ledger read \
                  is a transcript gate and a ledger write is an Impact op, so there \
                  is nothing in `self` to borrow. Drop it and take the circuit",
@@ -173,7 +173,7 @@ pub fn expand(attr: ContractAttr, item: ItemImpl) -> syn::Result<TokenStream> {
         circuits.push((bare, name));
     }
 
-    let root = quote!(::minocrab_std::v3);
+    let root = quote!(::minocrab_std);
     let names = circuits.iter().map(|(bare, _)| bare);
     let idents = circuits.iter().map(|(_, ident)| ident);
     let count = circuits.len();
@@ -191,7 +191,7 @@ pub fn expand(attr: ContractAttr, item: ItemImpl) -> syn::Result<TokenStream> {
             /// Derived by `#[contract]`, so it cannot drift from the file: a
             /// circuit that exists is in here, and the snapshots enumerate it
             /// without anyone maintaining a second list.
-            pub const CIRCUITS: [(&'static str, fn() -> #root::__private::Compiled3); #count] =
+            pub const CIRCUITS: [(&'static str, fn() -> #root::__private::Compiled); #count] =
                 [ #( (#names, Self::#idents) ),* ];
 
             /// The lowering every circuit of this contract applies before its
@@ -200,7 +200,7 @@ pub fn expand(attr: ContractAttr, item: ItemImpl) -> syn::Result<TokenStream> {
             ///
             /// Derived by `#[contract]` from its one argument, so a test can
             /// ask which contracts chose a lowering.
-            pub const LOWERING: ::core::option::Option<fn(&mut #root::__private::Circuit3)> =
+            pub const LOWERING: ::core::option::Option<fn(&mut #root::__private::Circuit)> =
                 #lowering_value;
         }
 
@@ -232,7 +232,7 @@ mod tests {
                 fn helper(x: u32) -> u32 { x + 1 }
 
                 #[circuit]
-                pub fn deposit(c: &mut Circuit3, amount: Uint<64>) {}
+                pub fn deposit(c: &mut Circuit, amount: Uint<64>) {}
             }
         };
         let syn::ImplItem::Fn(helper) = &item.items[0] else {
@@ -257,7 +257,7 @@ mod tests {
         let item: ItemImpl = syn::parse_quote! {
             impl Vault {
                 #[circuit]
-                pub fn deposit(c: &mut Circuit3, amount: Uint<64>) {
+                pub fn deposit(c: &mut Circuit, amount: Uint<64>) {
                     let doubled = amount;
                     TREASURY.note(c, doubled);
                 }
@@ -290,7 +290,7 @@ mod tests {
         let err = expand(ContractAttr::default(), syn::parse_quote! {
             impl SomeTrait for Vault {
                 #[circuit]
-                fn deposit(c: &mut Circuit3) {}
+                fn deposit(c: &mut Circuit) {}
             }
         })
         .expect_err("only an inherent impl describes a contract's own circuits")
@@ -306,11 +306,11 @@ mod tests {
         syn::parse_quote! {
             impl Vault {
                 #[circuit]
-                pub fn deposit(c: &mut Circuit3, amount: Uint<64>) {
+                pub fn deposit(c: &mut Circuit, amount: Uint<64>) {
                     TREASURY.note(c, amount);
                 }
                 #[circuit]
-                pub fn withdraw(c: &mut Circuit3) {}
+                pub fn withdraw(c: &mut Circuit) {}
             }
         }
     }
@@ -330,7 +330,7 @@ mod tests {
             "the lowering is not the closure's first statement, before the body's call:\n{expanded}"
         );
         assert!(
-            expanded.contains("pub const LOWERING : :: core :: option :: Option < fn (& mut :: minocrab_std :: v3 :: __private :: Circuit3) > = :: core :: option :: Option :: Some (my_compat :: profile) ;"),
+            expanded.contains("pub const LOWERING : :: core :: option :: Option < fn (& mut :: minocrab_std :: __private :: Circuit) > = :: core :: option :: Option :: Some (my_compat :: profile) ;"),
             "{expanded}"
         );
     }

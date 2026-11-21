@@ -31,7 +31,7 @@ pub mod merkle;
 pub mod normalise;
 pub mod secp;
 
-use minocrab::v3::{Circuit3, Lowering, SelfAddressReads};
+use minocrab::{Circuit, Lowering, SelfAddressReads};
 
 /// Set this circuit's lowering to compactc's, for every circuit ported from
 /// Compact and every circuit of the deployed signer.
@@ -39,11 +39,11 @@ use minocrab::v3::{Circuit3, Lowering, SelfAddressReads};
 /// A ported contract says it ONCE, on its block:
 /// `#[contract(lowering = minocrab_compat::profile)]`, and `#[contract]`
 /// calls this on each of its circuits before the body. A circuit built by
-/// hand outside a `#[contract]` block (through `entry`, or `Circuit3::new()`)
+/// hand outside a `#[contract]` block (through `entry`, or `Circuit::new()`)
 /// calls it itself, as the first statement of what it builds.
 ///
 /// The settings no gadget can carry, because shared helpers reach them
-/// through core ([`Circuit3::set_lowering`]):
+/// through core ([`Circuit::set_lowering`]):
 ///
 /// - `kernel.self()` is read at EVERY call ([`SelfAddressReads::EveryCall`]):
 ///   compactc never caches it. The lean form reads it once per circuit. With
@@ -61,7 +61,7 @@ use minocrab::v3::{Circuit3, Lowering, SelfAddressReads};
 /// lowered under the circuit's previous settings: the circuit would be half
 /// one lowering and half the other.
 #[track_caller]
-pub fn profile(c: &mut Circuit3) {
+pub fn profile(c: &mut Circuit) {
     c.set_lowering(Lowering {
         self_address: SelfAddressReads::EveryCall,
         dedup_range_constraints: false,

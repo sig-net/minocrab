@@ -21,8 +21,8 @@ use midnight_transient_crypto::proofs::{KeyLocation, ProofPreimage, Zkir};
 use midnight_transient_crypto::repr::FieldRepr;
 use minocrab::Fr;
 use minocrab_contracts::hashing;
-use minocrab_sim::v3::simulate;
-use minocrab_zkir::v3::IrSource;
+use minocrab_sim::simulate;
+use minocrab_zkir::IrSource;
 use sha2::Digest as _;
 
 type VmOp = Op<ResultModeVerify, InMemoryDB>;

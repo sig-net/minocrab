@@ -11,7 +11,7 @@ That said, it is a direct port of the Compact compiler with millions of tests ch
 
 ## Why use this
 
-**More errors caught at compile time.** A `Wire<Private>` cannot reach a public output without `disclose(w, label)`, and the label must appear in the circuit's signature; a generated test enforces that and caught four real undeclared disclosures ([disclose.rs](crates/minocrab/src/v3/disclose.rs)). Subtraction emits its underflow guard. A guarded-off read must say what its default means. A literal outside its operand's bound doesn't build. Argument types *are* the range constraints: `Uint<64>` is `assert_bits(w, 64)`, from compactc's own table ([v3_leaves.rs](crates/minocrab-std/tests/v3_leaves.rs)).
+**More errors caught at compile time.** A `Wire<Private>` cannot reach a public output without `disclose(w, label)`, and the label must appear in the circuit's signature; a generated test enforces that and caught four real undeclared disclosures ([disclose.rs](crates/minocrab/src/disclose.rs)). Subtraction emits its underflow guard. A guarded-off read must say what its default means. A literal outside its operand's bound doesn't build. Argument types *are* the range constraints: `Uint<64>` is `assert_bits(w, 64)`, from compactc's own table ([leaves.rs](crates/minocrab-std/tests/leaves.rs)).
 
 **Rust tooling for testing and verification.** Circuits run natively under `cargo test` ([minocrab-sim](crates/minocrab-sim/src/lib.rs)). That makes a reference model affordable: every vault circuit's run is replayed through Midnight's reference VM against a modelled pre-state, with the guard failures both artifacts must reject and a tamper sweep over every transcript and witness element ([erc20_vault_differential.rs](crates/minocrab-contracts/tests/erc20_vault_differential.rs)); the Pending lineage keeps an eighteen-property spec harness and its own executor replay ([erc20_vault_pending_spec.rs](crates/minocrab-contracts/tests/erc20_vault_pending_spec.rs), [executor_vault.rs](crates/minocrab-contracts/tests/executor_vault.rs)); and a leakage inventory is generated from the ZKIR itself ([leakage_inventory.rs](crates/minocrab-contracts/tests/leakage_inventory.rs)). Every ported circuit is differential-tested against compactc's artifact ([porting kit](#porting-kit)); `(k, rows)` and the interfaces of all 227 circuits are frozen, so drift is a test failure ([row_snapshot.rs](crates/minocrab-contracts/tests/row_snapshot.rs)). The property harness and adversarial sweeps of the seventeen-circuit vault retired with it (M44); their flush-pattern successors are the milestone's open rung F.
 
@@ -59,7 +59,7 @@ struct DepositRequest {
 
 #[circuit]
 pub fn deposit(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     evm_nonce: Uint<64>,
     gas_limit: Uint<64>,
     max_fee_per_gas: Uint<128>,
@@ -81,8 +81,8 @@ pub fn deposit(
         c,
         |c| Contract::<Erc20>::from_address(c, deposit_request.erc20_address),
         (
-            |c: &mut Circuit3| cell_address(c, &VAULT.vault_evm_address),
-            |_c: &mut Circuit3| deposit_request.amount,
+            |c: &mut Circuit| cell_address(c, &VAULT.vault_evm_address),
+            |_c: &mut Circuit| deposit_request.amount,
         ),
         Envelope::caller(max_priority_fee_per_gas, max_fee_per_gas, gas_limit),
         key_version,
@@ -121,7 +121,7 @@ export circuit deposit(evmNonce: Uint<64>, gasLimit: Uint<64>): [] { /* ... */ }
 ```
 ```rust
 #[circuit]
-pub fn deposit(c: &mut Circuit3, evm_nonce: Uint<64>, gas_limit: Uint<64>) -> Discloses<()> { /* ... */ }
+pub fn deposit(c: &mut Circuit, evm_nonce: Uint<64>, gas_limit: Uint<64>) -> Discloses<()> { /* ... */ }
 ```
 
 **Cost budget** — `max_k` is the circuit's ceiling in `k` (log2 of the proving-table rows: proving key, prover RAM, wall clock). A generated test prices the circuit with Midnight's own cost model and fails when it goes over. Compact has no equivalent.
@@ -131,7 +131,7 @@ pub fn deposit(c: &mut Circuit3, evm_nonce: Uint<64>, gas_limit: Uint<64>) -> Di
 ```
 ```rust
 #[circuit(max_k = 14)]
-pub fn deposit(c: &mut Circuit3, evm_nonce: Uint<64>, gas_limit: Uint<64>) { /* ... */ }
+pub fn deposit(c: &mut Circuit, evm_nonce: Uint<64>, gas_limit: Uint<64>) { /* ... */ }
 ```
 
 **Loop** — plain Rust over any slice, `Vec` or iterator, unrolled by rustc. Compact has `for` over a range or vector plus `map`/`fold` and nothing else; `while`, `break`, early return, iterator adapters and host-side data structures are Rust's alone. Neither side can loop on a wire: ZKIR has no loop instruction, so the length is fixed once the circuit is built.
@@ -142,7 +142,7 @@ circuit sum<#N>(v: Vector<N, Uint<64>>): Uint<64> {
 }
 ```
 ```rust
-fn sum(c: &mut Circuit3, v: &[Uint<64>]) -> Uint<64> {
+fn sum(c: &mut Circuit, v: &[Uint<64>]) -> Uint<64> {
     let mut acc = c.constant(0u64).private();
     for &x in v {
         acc = c.add(acc, x.field());
@@ -151,7 +151,7 @@ fn sum(c: &mut Circuit3, v: &[Uint<64>]) -> Uint<64> {
 }
 ```
 
-**Variable-length argument** — `Bounded<T, MAX>` is a length limb and a contiguous prefix; `NonEmpty<T, REST>` is a head plus a bounded tail, so "at least one" is a type, not an assert. The length is range-checked by the argument constraint (compactc's own table, at `Uint<0..MAX+1>`), and `fold` / `for_each` own the guard: a dead slot's ledger ops are skipped on chain and its step never reaches the carried state. Compact's circuits have only the fixed `Vector<N, T>`; variable length is hand-rolled as a vector plus a length or a `Maybe` per slot (the corpus's `Vector<5000, Maybe<…>>`), the ledger `List` cannot be iterated from a circuit, and non-emptiness is a runtime assert. Proof cost is `MAX` either way; the ledger applies `len` steps ([v3_vector.rs](crates/minocrab-std/tests/v3_vector.rs)).
+**Variable-length argument** — `Bounded<T, MAX>` is a length limb and a contiguous prefix; `NonEmpty<T, REST>` is a head plus a bounded tail, so "at least one" is a type, not an assert. The length is range-checked by the argument constraint (compactc's own table, at `Uint<0..MAX+1>`), and `fold` / `for_each` own the guard: a dead slot's ledger ops are skipped on chain and its step never reaches the carried state. Compact's circuits have only the fixed `Vector<N, T>`; variable length is hand-rolled as a vector plus a length or a `Maybe` per slot (the corpus's `Vector<5000, Maybe<…>>`), the ledger `List` cannot be iterated from a circuit, and non-emptiness is a runtime assert. Proof cost is `MAX` either way; the ledger applies `len` steps ([vector.rs](crates/minocrab-std/tests/vector.rs)).
 
 ```compact
 circuit flush(keys: Vector<4, Maybe<Uint<64>>>): [] {
@@ -163,14 +163,14 @@ circuit flush(keys: Vector<4, Maybe<Uint<64>>>): [] {
 ```
 ```rust
 #[circuit]
-fn flush(c: &mut Circuit3, keys: NonEmpty<Uint<64>, 3>) -> Discloses<(FlushKeys,)> {
+fn flush(c: &mut Circuit, keys: NonEmpty<Uint<64>, 3>) -> Discloses<(FlushKeys,)> {
     let keys = keys.disclose_as::<FlushKeys>(c);
     keys.for_each(c, |c, k| QUEUE.remove(c, k));            // guarded per slot, the head unconditionally
     Discloses::of(())
 }
 ```
 
-**Blind ledger update** — inline is the read set, the hook is the write program. Every inline ledger read is a `popeq`: an assumption the landing validates, which a landed transaction can make stale. A `Hook` is a program the ledger runs *after* the body on whatever it holds then — `add` / `sub` / `max` / `min` / `and` / `or` on a cell, `copy` of a cell into a map entry the circuit never reads, `move_entry`, `if_absent` / `if_below` / `if_unset` branches — and it embeds no public input, so nothing can stale it and it cannot tell the circuit anything. Attached with `c.then(hook)`, emitted in attachment order under the guard of the `when` it was attached in. The accumulator behind a contention-free outbox (M41) is one: `(Add, Max)` over `(nonce, last_seen)`, one cell and one snapshot map per component. And the read side is typed: every inline read returns `Assumed<T>`, which the proof uses as `T` and the ledger refuses to store until `.stale(c)` names the assumption — so a read-modify-write says so where it happens, and a value *computed* from a read is caught at the ledger boundary at build time, naming the read. Compact compiles every ledger read to a `popeq` except `Counter.increment`; it has no construct that moves a ledger value to another slot without reading it into the circuit (`m.insert(k, cell)` reads `cell` first) and no ledger-side compare-and-select (`Counter.lessThan` is a read). Gated on Midnight's on-chain VM, not on a compactc artifact ([v3_hook.rs](crates/minocrab-std/tests/v3_hook.rs), [v3_blind.rs](crates/minocrab-std/tests/v3_blind.rs)); four to twelve Impact ops per method, zero read rows.
+**Blind ledger update** — inline is the read set, the hook is the write program. Every inline ledger read is a `popeq`: an assumption the landing validates, which a landed transaction can make stale. A `Hook` is a program the ledger runs *after* the body on whatever it holds then — `add` / `sub` / `max` / `min` / `and` / `or` on a cell, `copy` of a cell into a map entry the circuit never reads, `move_entry`, `if_absent` / `if_below` / `if_unset` branches — and it embeds no public input, so nothing can stale it and it cannot tell the circuit anything. Attached with `c.then(hook)`, emitted in attachment order under the guard of the `when` it was attached in. The accumulator behind a contention-free outbox (M41) is one: `(Add, Max)` over `(nonce, last_seen)`, one cell and one snapshot map per component. And the read side is typed: every inline read returns `Assumed<T>`, which the proof uses as `T` and the ledger refuses to store until `.stale(c)` names the assumption — so a read-modify-write says so where it happens, and a value *computed* from a read is caught at the ledger boundary at build time, naming the read. Compact compiles every ledger read to a `popeq` except `Counter.increment`; it has no construct that moves a ledger value to another slot without reading it into the circuit (`m.insert(k, cell)` reads `cell` first) and no ledger-side compare-and-select (`Counter.lessThan` is a read). Gated on Midnight's on-chain VM, not on a compactc artifact ([hook.rs](crates/minocrab-std/tests/hook.rs), [blind.rs](crates/minocrab-std/tests/blind.rs)); four to twelve Impact ops per method, zero read rows.
 
 ```compact
 // no equivalent: nonces.insert(k, nonce) reads `nonce` (a popeq) before it inserts,
@@ -365,7 +365,7 @@ pub struct Treasury {
 impl Treasury {
     #[circuit]
     pub fn send(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         evm_nonce: Uint<64>,
         key_version: Uint<8>,
         token: Contract<Erc20>,
@@ -388,7 +388,7 @@ impl Treasury {
     /// that returned `false` cannot reach here — `complete` asserts the
     /// call's own success rule.
     #[circuit]
-    pub fn complete(c: &mut Circuit3, ticket: Succeeded<Transfer>) -> Discloses<Settled> {
+    pub fn complete(c: &mut Circuit, ticket: Succeeded<Transfer>) -> Discloses<Settled> {
         let outcome = TREASURY.transfers.complete(c, ticket);
         let _amount = outcome.env.inner.amount;
         Discloses::of(())
@@ -396,7 +396,7 @@ impl Treasury {
 
     /// Only the original caller: a fresh witness opens the commitment.
     #[circuit]
-    pub fn refund(c: &mut Circuit3, ticket: Failed<Transfer>) -> Discloses<(Settled, RefundRecipient)> {
+    pub fn refund(c: &mut Circuit, ticket: Failed<Transfer>) -> Discloses<(Settled, RefundRecipient)> {
         let (_owner, Amount { amount: _amount }, _flag) =
             TREASURY.transfers.refund_to_owner::<RefundRecipient>(c, ticket);
         Discloses::of(())
@@ -441,15 +441,15 @@ The pattern the blind ops exist for, and one Compact cannot write (every ledger 
 struct Block { signet: Signet, calls: Outbox<Kinded<Transfer, 1>, HandleOwned<Amount>, 2> }
 
 #[circuit]
-fn call(c: &mut Circuit3, key_version: Uint<8>, token: Contract<Erc20>, to: Bytes<20>, amount: Uint<64>)
+fn call(c: &mut Circuit, key_version: Uint<8>, token: Contract<Erc20>, to: Bytes<20>, amount: Uint<64>)
     -> Discloses<(Sent, Owner, Inserted)> {
     BLOCK.calls.call_owned::<Owner>(c, token, (to, amount.widen::<128>()), key_version, |_, _| Amount { .. });
     Discloses::of(())
 }
 #[circuit]
-fn emit(c: &mut Circuit3, handle: Handle) -> Discloses<Emitted> { BLOCK.calls.emit(c, handle); Discloses::of(()) }
+fn emit(c: &mut Circuit, handle: Handle) -> Discloses<Emitted> { BLOCK.calls.emit(c, handle); Discloses::of(()) }
 #[circuit]
-fn complete(c: &mut Circuit3, ticket: Succeeded<Kinded<Transfer, 1>>) -> Discloses<(Settled, Height)> {
+fn complete(c: &mut Circuit, ticket: Succeeded<Kinded<Transfer, 1>>) -> Discloses<(Settled, Height)> {
     let outcome = BLOCK.calls.complete(c, ticket);
     BLOCK.calls.raise_seen::<Height>(c, &outcome.env, outcome.output);   // C3, then the blind max
     Discloses::of(())
@@ -481,12 +481,12 @@ struct Disclosure {
 // and re-registering rotates your key. `ek` is witnessed too and the circuit
 // proves `g^ek == pk`, so a key you do not hold cannot be registered.
 #[circuit]
-fn register(c: &mut Circuit3, pk: JubjubPoint<Private>)
+fn register(c: &mut Circuit, pk: JubjubPoint<Private>)
     -> Discloses<(RegisteredAccount, RegisteredKey)>;
 
 // Anyone may then disclose to that account.
 #[circuit]
-fn disclose_to(c: &mut Circuit3, account: B32<Private>, pk: JubjubPoint<Private>,
+fn disclose_to(c: &mut Circuit, account: B32<Private>, pk: JubjubPoint<Private>,
                value: Uint<128>, seed: B32<Private>)
     -> Discloses<(RegisteredAccount, EphemeralKey, MaskedValue)>;
 ```
@@ -593,16 +593,16 @@ Deeper: `plan.org` (aim and design requirements), `milestones.org` (state of pla
 
 ## Using MinoCrab as a library
 
-Like the [GHC API](https://hackage.haskell.org/package/ghc), MinoCrab exposes its innards so you build tooling *on* it without forking. Rust users get `minocrab_sim::v3::profile()` in a `#[test]`, criterion, the row snapshot as a regression gate. Non-Rust users get the `minocrab` CLI in `minocrab-sim`: `minocrab rows <file.zkir>...` and `minocrab diff <a> <b>` report `(k, rows)` over any ZKIR file, MinoCrab's or compactc's.
+Like the [GHC API](https://hackage.haskell.org/package/ghc), MinoCrab exposes its innards so you build tooling *on* it without forking. Rust users get `minocrab_sim::profile()` in a `#[test]`, criterion, the row snapshot as a regression gate. Non-Rust users get the `minocrab` CLI in `minocrab-sim`: `minocrab rows <file.zkir>...` and `minocrab diff <a> <b>` report `(k, rows)` over any ZKIR file, MinoCrab's or compactc's.
 
 **Stability tiers** (each crate's docs open with its own tier statement):
 
 | tier | what | where |
 |---|---|---|
-| **stable** | the v3 eDSL authoring core (`Circuit3` + its instruction methods, `Wire3`/`AnyWire3`, the typed leaves, the FAB alignment types, `Compiled3`/`IrSource`) | `minocrab`, `minocrab-std` |
-| **stable** | the `Pass` trait + reference passes; the taint lint | `minocrab_ir::v3::passes`; `minocrab-taint` |
+| **stable** | the v3 eDSL authoring core (`Circuit` + its instruction methods, `Wire`/`AnyWire`, the typed leaves, the FAB alignment types, `Compiled`/`IrSource`) | `minocrab`, `minocrab-std` |
+| **stable** | the `Pass` trait + reference passes; the taint lint | `minocrab_ir::passes`; `minocrab-taint` |
 | **stable** | the measurement API: `cost`, `profile`, `assert_max_k`, the calibrated `rowcost` tables, the `minocrab` CLI | `minocrab-sim` |
-| **internal** | the raw `Builder3`/`Val` layers, the simulator VMs (compiled unconditionally; no stability promise) | `minocrab-ir`, `minocrab-sim` |
+| **internal** | the raw `Builder`/`Val` layers, the simulator VMs (compiled unconditionally; no stability promise) | `minocrab-ir`, `minocrab-sim` |
 | **internal** | the Impact ledger-op layer, the interface generator | `minocrab-ledger`, `minocrab-interface-gen` |
 
 The wider contract-authoring surface (ledger declarations, kernel, Borsh, disclosure vocabulary) is *not yet* under the stability promise; the line widens by decision, never by accident.
@@ -610,8 +610,8 @@ The wider contract-authoring surface (ledger declarations, kernel, Borsh, disclo
 **Three ways to extend it, no fork:**
 
 1. **A super-optimised gadget**: a crate on `minocrab-std` that builds a fragment (a keccak, a Merkle path, an ABI encoder) in fewer rows than the stdlib's. This is where the speed is: typed-layer instruction selection needs the type information ZKIR has erased. Prove it equivalent with the differential or spec harness.
-2. **An optimisation pass**: implement `minocrab_ir::v3::passes::Pass`, a pure, total `Vec<Instruction> -> (Vec<Instruction>, Vec<String>)`, and compose with `passes::run_pipeline`. Passes see type-erased ZKIR, so they are the uniform-transform tail. `Pass::run` returns a `PassReport` whose `warnings` flag anything that could move the public-input stream; read it. Built-in passes carry machine-checked Lean proofs (`crates/minocrab-ir/lean/`), reflected as the `VerifiedPass` marker `run_pipeline_verified` requires; cite yours with `lean_proof!`.
-3. **Measure**: `minocrab_sim::v3::{cost, profile}` give `(k, rows)` and a region-attributed breakdown; the calibrated primitive-cost tables (`minocrab-sim/examples/`) price individual gadgets.
+2. **An optimisation pass**: implement `minocrab_ir::passes::Pass`, a pure, total `Vec<Instruction> -> (Vec<Instruction>, Vec<String>)`, and compose with `passes::run_pipeline`. Passes see type-erased ZKIR, so they are the uniform-transform tail. `Pass::run` returns a `PassReport` whose `warnings` flag anything that could move the public-input stream; read it. Built-in passes carry machine-checked Lean proofs (`crates/minocrab-ir/lean/`), reflected as the `VerifiedPass` marker `run_pipeline_verified` requires; cite yours with `lean_proof!`.
+3. **Measure**: `minocrab_sim::{cost, profile}` give `(k, rows)` and a region-attributed breakdown; the calibrated primitive-cost tables (`minocrab-sim/examples/`) price individual gadgets.
 
 Good passes or circuits: publish on cargo, or open a PR if they beat the stdlib. Lean proofs of equivalence are preferred and may be merged automatically.
 

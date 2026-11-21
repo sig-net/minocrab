@@ -46,10 +46,10 @@ use midnight_storage::db::InMemoryDB;
 use midnight_transient_crypto::hash::transient_commit;
 use midnight_transient_crypto::repr::FieldRepr;
 use midnight_transient_crypto::proofs::{KeyLocation, ProofPreimage, Zkir};
-use minocrab::v3::Compiled3;
+use minocrab::Compiled;
 use minocrab::Fr;
 use minocrab_contracts::adts;
-use minocrab_zkir::v3::{to_zkir_string, IrSource};
+use minocrab_zkir::{to_zkir_string, IrSource};
 
 type VmOp = Op<ResultModeVerify, InMemoryDB>;
 
@@ -59,7 +59,7 @@ fn theirs(name: &str) -> IrSource {
         "{}/tests/fixtures/adts/out/zkir/{name}.zkir",
         env!("CARGO_MANIFEST_DIR")
     );
-    minocrab_zkir::v3::read_zkir(&path).expect("the pinned compactc's artifact parses")
+    minocrab_zkir::read_zkir(&path).expect("the pinned compactc's artifact parses")
 }
 
 /// The corpus's own `test-caller-contract` artifact.
@@ -69,14 +69,14 @@ fn corpus(name: &str) -> IrSource {
          src/test-caller-contract/zkir/{name}.zkir",
         env!("CARGO_MANIFEST_DIR")
     );
-    minocrab_zkir::v3::read_zkir(&path).expect("the corpus artifact parses")
+    minocrab_zkir::read_zkir(&path).expect("the corpus artifact parses")
 }
 
 /// Every circuit of the fixture: compactc's artifact name and our builder.
-fn cases() -> Vec<(&'static str, fn() -> Compiled3)> {
+fn cases() -> Vec<(&'static str, fn() -> Compiled)> {
     vec![
         // Set
-        ("setInsert", adts::Adts::set_insert as fn() -> Compiled3),
+        ("setInsert", adts::Adts::set_insert as fn() -> Compiled),
         ("setMember", adts::Adts::set_member),
         ("setRemove", adts::Adts::set_remove),
         ("setSize", adts::Adts::set_size),
@@ -226,10 +226,10 @@ fn impact_ops(ir: &IrSource) -> Vec<Vec<String>> {
 /// caught the curve-point bug, pointed at M16's leaf.
 #[test]
 fn compactc_s_abi_agrees_with_the_leaves() {
-    use minocrab::v3::CircuitAbi;
+    use minocrab::CircuitAbi;
     use minocrab::Public;
     use minocrab_abi::info::ContractInfo;
-    use minocrab_std::v3::{Bool, Maybe, MerkleTreeDigest, Uint, B32};
+    use minocrab_std::{Bool, Maybe, MerkleTreeDigest, Uint, B32};
 
     let text = std::fs::read_to_string(format!(
         "{}/tests/fixtures/adts/out/compiler/contract-info.json",
@@ -330,8 +330,8 @@ fn the_tree_reads_are_accepted_by_upstream() {
         )
     };
 
-    let cases: Vec<(&str, fn() -> Compiled3, (Vec<VmOp>, Vec<Fr>, u8))> = vec![
-        ("mtIsFull", adts::Adts::mt_is_full as fn() -> Compiled3, is_full(4, 0)),
+    let cases: Vec<(&str, fn() -> Compiled, (Vec<VmOp>, Vec<Fr>, u8))> = vec![
+        ("mtIsFull", adts::Adts::mt_is_full as fn() -> Compiled, is_full(4, 0)),
         ("hmtIsFull", adts::Adts::hmt_is_full, is_full(5, 1)),
         (
             "mtCheckRoot",

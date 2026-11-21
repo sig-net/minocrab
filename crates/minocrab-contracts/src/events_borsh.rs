@@ -5,7 +5,7 @@
 //! `events` artifacts and does not move. This twin emits THE SAME BYTES —
 //! stage 0 proved the deployed `Misc` payloads are already canonical Borsh
 //! for the fixed-width subset — but builds them out of DECLARED TYPES
-//! (`#[derive(CircuitBorsh)]`, [`minocrab_std::v3::borsh::to_bytes`]) instead
+//! (`#[derive(CircuitBorsh)]`, [`minocrab_std::borsh::to_bytes`]) instead
 //! of hand-rolled [`Serializer`] pushes. Nothing about the format changes;
 //! what changes is that the layout is a type rather than a call sequence, and
 //! that the same declaration also yields the offset table the TS side reads.
@@ -33,7 +33,7 @@
 //! the one carrying the exact 288-byte `Misc` transcript that compactc's own
 //! artifact accepts.
 
-use minocrab::v3::{Circuit3, Compiled3, FieldT, Wire3};
+use minocrab::{Circuit, Compiled, FieldT, Wire};
 use minocrab::{Private, Public};
 use minocrab_experimental::impact::raw::{
     cell_write, counter_increment, counter_read, emit, map_insert, ImpactElem,
@@ -41,8 +41,8 @@ use minocrab_experimental::impact::raw::{
 };
 // `CircuitBorsh` names both the trait and the derive macro (different
 // namespaces, one path), as `serde::Serialize` does.
-use minocrab_std::v3::borsh::{self, CircuitBorsh};
-use minocrab_std::v3::{entry, event, CircuitArg, Disclose, Discloses, Uint, Vis3, B32};
+use minocrab_std::borsh::{self, CircuitBorsh};
+use minocrab_std::{entry, event, CircuitArg, Disclose, Discloses, Uint, Vis, B32};
 
 // The labels and the declaration are the ORIGINAL's: the twin discloses the
 // same two values under the same two names, which is part of what "same
@@ -55,7 +55,7 @@ use crate::events::{
 /// `struct DepositEvent { amount: Uint<128>, sequence: Uint<64>, recipient:
 /// Bytes<32> }` — 56 Borsh bytes, the payload the deployed contract logs.
 #[derive(CircuitBorsh)]
-pub struct DepositEvent<V: Vis3> {
+pub struct DepositEvent<V: Vis> {
     pub amount: Uint<128, V>,
     pub sequence: Uint<64, V>,
     pub recipient: B32<V>,
@@ -65,7 +65,7 @@ pub struct DepositEvent<V: Vis3> {
 /// bytes, written into the 288-byte envelope with a zero tail (see the module
 /// docs for why this is the same byte string as `{name, payload: Bytes<256>}`).
 #[derive(CircuitBorsh)]
-pub struct MiscDepositEvent<V: Vis3> {
+pub struct MiscDepositEvent<V: Vis> {
     pub name: B32<V>,
     pub payload: DepositEvent<V>,
 }
@@ -80,7 +80,7 @@ pub struct MiscDepositEvent<V: Vis3> {
 /// stronger gate for a stage whose whole claim is "same bytes, built through
 /// the API". Two constants in the other order would have cost nothing and
 /// proven less.
-pub(crate) fn event_name_literal(c: &mut Circuit3, name: &str) -> B32<Public> {
+pub(crate) fn event_name_literal(c: &mut Circuit, name: &str) -> B32<Public> {
     assert!(name.len() <= 32, "an event name is a pad(32, ..) literal");
     let mut bytes = [0u8; 32];
     bytes[..name.len()].copy_from_slice(name.as_bytes());
@@ -92,7 +92,7 @@ pub(crate) fn event_name_literal(c: &mut Circuit3, name: &str) -> B32<Public> {
 /// The shared workload: `callCount.increment(1); lastAmount = a;
 /// balances.insert(r, a)` — identical to [`crate::events`]'s, which is the
 /// point: this stage touches serialization and nothing else.
-fn workload(c: &mut Circuit3, r: &B32<Public>, a: Wire3<FieldT, Public>) {
+fn workload(c: &mut Circuit, r: &B32<Public>, a: Wire<FieldT, Public>) {
     let amount_val = LedgerValue::bytes(16, vec![ImpactElem::Wire(a)]);
     let recipient_val = LedgerValue::bytes(32, vec![ImpactElem::Wire(r.hi), ImpactElem::Wire(r.lo)]);
     let mut ops = counter_increment(CALL_COUNT, 1);
@@ -116,7 +116,7 @@ struct DepositArgs {
 /// (`emits`), which is not a circuit argument. The argument list is the
 /// derived struct either way, so the typed-argument guarantee is the same
 /// one — only the entry point's spelling differs.
-fn base_with_emits(emits: usize) -> Compiled3 {
+fn base_with_emits(emits: usize) -> Compiled {
     entry(|c, args: DepositArgs| -> DepositDisclosures {
         minocrab_compat::profile(c);
         let recipient = args.recipient;
@@ -165,12 +165,12 @@ fn base_with_emits(emits: usize) -> Compiled3 {
 }
 
 /// `export circuit base(recipient, amount): []` — the control.
-pub fn base() -> Compiled3 {
+pub fn base() -> Compiled {
     base_with_emits(0)
 }
 
 /// `export circuit emit1/2/4(recipient, amount): []`.
-pub fn emit_n(n: usize) -> Compiled3 {
+pub fn emit_n(n: usize) -> Compiled {
     assert!(n >= 1);
     base_with_emits(n)
 }
@@ -180,7 +180,7 @@ pub fn emit_n(n: usize) -> Compiled3 {
 #[cfg(test)]
 mod discloses {
     use super::*;
-    use minocrab_std::v3::assert_declared_disclosures;
+    use minocrab_std::assert_declared_disclosures;
 
     #[test]
     fn the_declared_disclosures_are_the_ones_the_family_makes() {

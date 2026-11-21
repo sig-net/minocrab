@@ -32,18 +32,18 @@
 //! The same sixteen circuits are therefore the ONLY ones in the corpus
 //! without a typed disclosure declaration (M9 closure): a `Discloses<..>` is
 //! a return type, and these have no typed entry point to return from —
-//! `hash_circuit` calls `Circuit3::finish` itself. Nothing is hidden by that.
+//! `hash_circuit` calls `Circuit::finish` itself. Nothing is hidden by that.
 //! Each discloses exactly one value, the digest it writes to the ledger, and
 //! the write is right there in `hash_circuit`; the declaration would restate
 //! one line of a measurement rig. Porting the family is what would close it,
 //! and the paragraph above is why nobody should.
 
-use minocrab::v3::{Circuit3, Compiled3, Wire3};
+use minocrab::{Circuit, Compiled, Wire};
 use minocrab::{label, Alignment, AlignmentAtom, AlignmentSegment, Private};
 use minocrab_experimental::impact::raw::{
     cell_write, counter_increment, emit, ImpactElem, LedgerValue,
 };
-use minocrab_std::v3::{contract, BytesNDyn, Disclose, Discloses, B32};
+use minocrab_std::{contract, BytesNDyn, Disclose, Discloses, B32};
 
 label!(TheDigestHi = "the digest (hi)");
 label!(TheDigestLo = "the digest (lo)");
@@ -64,7 +64,7 @@ pub const DIGEST: u8 = 1;
 pub const FDIGEST: u8 = 2;
 
 /// Declare a constrained `Bytes<len>` argument (len > 31).
-fn bytesn_arg(c: &mut Circuit3, len: usize) -> BytesNDyn<Private> {
+fn bytesn_arg(c: &mut Circuit, len: usize) -> BytesNDyn<Private> {
     let limbs = (0..len.div_ceil(31))
         .map(|i| c.arg(&format!("data_{i}")))
         .collect();
@@ -87,8 +87,8 @@ enum HashKind {
     Transient,
 }
 
-fn hash_circuit(len: usize, kind: HashKind) -> Compiled3 {
-    let mut c = Circuit3::new();
+fn hash_circuit(len: usize, kind: HashKind) -> Compiled {
+    let mut c = Circuit::new();
     // Explicit: built by hand, outside the `#[contract]` block, so its attribute does not reach it.
     minocrab_compat::profile(&mut c);
     let data = bytesn_arg(&mut c, len);
@@ -115,7 +115,7 @@ fn hash_circuit(len: usize, kind: HashKind) -> Compiled3 {
             emit(&mut c, &cell_write(DIGEST, &value));
         }
         HashKind::Transient => {
-            let limbs: Vec<Wire3<_, Private>> = data.limbs.clone();
+            let limbs: Vec<Wire<_, Private>> = data.limbs.clone();
             let f = c.transient_hash(&limbs);
             let f = f.disclose_as::<TheFieldDigest>(&mut c);
             let value = LedgerValue::new(vec![AlignmentAtom::Field], vec![ImpactElem::Wire(f)]);
@@ -126,22 +126,22 @@ fn hash_circuit(len: usize, kind: HashKind) -> Compiled3 {
 }
 
 /// `controlN` / `cN`: the N-byte input, no hash.
-pub fn control(len: usize) -> Compiled3 {
+pub fn control(len: usize) -> Compiled {
     hash_circuit(len, HashKind::None)
 }
 
 /// `persistentN` / `pN`.
-pub fn persistent(len: usize) -> Compiled3 {
+pub fn persistent(len: usize) -> Compiled {
     hash_circuit(len, HashKind::Persistent)
 }
 
 /// `kN` (keccak contract).
-pub fn keccak(len: usize) -> Compiled3 {
+pub fn keccak(len: usize) -> Compiled {
     hash_circuit(len, HashKind::Keccak)
 }
 
 /// `transientN` (hashing contract).
-pub fn transient(len: usize) -> Compiled3 {
+pub fn transient(len: usize) -> Compiled {
     hash_circuit(len, HashKind::Transient)
 }
 
@@ -160,7 +160,7 @@ impl Hashing {
     /// and constrains all sixteen limbs from the type (see the module docs for
     /// why the `Bytes<len>` family stays hand-declared).
     #[circuit]
-    pub fn persistent_vec8(c: &mut Circuit3, data: [B32<Private>; 8]) -> Discloses<(TheDigest,)> {
+    pub fn persistent_vec8(c: &mut Circuit, data: [B32<Private>; 8]) -> Discloses<(TheDigest,)> {
         let parts = data;
         // Kept even though guard threading no longer uses it: dropping this
         // `Copy` would renumber every later identifier, moving the ZKIR

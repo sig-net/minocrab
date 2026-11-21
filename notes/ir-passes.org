@@ -83,7 +83,7 @@ So passes divide cleanly:
 ** (i) Guard scoping — the biggest API win, and not the backend's job
 
 Every ledger and kernel operation takes a guard operand, so every method has
-an =_under= twin differing only in that argument. =minocrab-std/src/v3/
+an =_under= twin differing only in that argument. =minocrab-std/src/
 kernel.rs= is about half boilerplate for this reason, and =ledger.rs= worse.
 
 It also does not COMPOSE, which is the real complaint. A helper called under
@@ -232,7 +232,7 @@ a convenience:
    bug class is now unwritable inside a scope.
 
 THE GATE, and the reason it is safe to adopt incrementally:
-=tests/v3_guard_scope.rs= proves =guarded(g, plain)= is BYTE-IDENTICAL to
+=tests/guard_scope.rs= proves =guarded(g, plain)= is BYTE-IDENTICAL to
 the hand-threaded =plain_under(g)= for every shape — Impact ops, reads,
 assertions, nesting, and =if_else=. It is a way of writing the guard down,
 not a different lowering. All 164 pre-existing circuits are unchanged
@@ -656,11 +656,11 @@ the 27 beside them do, or not at all.
 
 The bigger correction, and it is why /delete/ is the wrong verb in step 3.
 
-=tests/v3_guard_scope.rs= proves the scope is a way of WRITING a guard down
+=tests/guard_scope.rs= proves the scope is a way of WRITING a guard down
 rather than a different lowering, and it does so by building the same circuit
 twice: once with =guarded(g, plain)= and once with the hand-threaded
 =plain_under(g)= / =witness_guarded(g)= / =public_transcript_input_guarded(g)=,
-then comparing bytes. =tests/v3_ledger.rs= does the same for the typed ledger
+then comparing bytes. =tests/ledger.rs= does the same for the typed ledger
 layer against raw =minocrab_ledger= calls. Delete the halves and there is no
 twin left to compare against — the test would have to hand-roll a duplicate of
 the thing it is checking, which is not a proof of anything.
@@ -693,7 +693,7 @@ back as a bare =T= and nothing said so — the silent default was not a gap §9
 opened, it was one that had been there since M10's guarded reads landed.
 
 =minocrab::v3::Guarded<T, V>= is what the guarded read helpers return now.
-Three ways out, and the price list is =tests/v3_guard_scope.rs=:
+Three ways out, and the price list is =tests/guard_scope.rs=:
 
 | | means | measured cost |
 |---+---+---|
@@ -816,7 +816,7 @@ worse and does not fix it. FIXED 2026-10-10, §13.
 
 ** THE KEY TEST, which is the whole claim
 
-=crates/minocrab-std/tests/v3_dedup.rs=. One representative record (every leaf
+=crates/minocrab-std/tests/dedup.rs=. One representative record (every leaf
 family, including the =Bool= whose entry constraint is booleanity and whose
 segment is a byte), built twice:
 
@@ -1017,7 +1017,7 @@ instruction took its index.
 
 =builtin_names()= is now the three, in =finish='s order, and
 =DropTrueAsserts= implements =VerifiedPass=. Tests:
-=crates/minocrab-ir/tests/v3_passes.rs=, the =drop_true_asserts= section —
+=crates/minocrab-ir/tests/passes.rs=, the =drop_true_asserts= section —
 the rule, the three refusals, the order through =finish=, the report's
 warnings, and the verified pipeline in =finish='s own order.
 
@@ -1193,23 +1193,23 @@ Zero movement: the 214-circuit ZKIR dump is byte-identical before and after
 (=diff -rq= empty) — the fix touches no instruction, only the metadata
 beside the stream. Pinned by:
 
-- =crates/minocrab-ir/src/v3/passes/kept.rs= (unit tests): each pass's map
+- =crates/minocrab-ir/src/passes/kept.rs= (unit tests): each pass's map
   against an independent expectation, operands included, on a fixed stream
   with two distinct surviving asserts and on 100,000 random streams per
   pass; composition equal to stepwise =position= and associative; the
   identity; the three panics; the empty stream.
-- =crates/minocrab-ir/tests/v3_passes.rs=: the composition through
+- =crates/minocrab-ir/tests/passes.rs=: the composition through
   =finish_kept= with all three passes on.
-- =crates/minocrab/src/v3.rs=
+- =crates/minocrab/src/circuit.rs=
   (=assert_messages_survive_the_passes_that_drop_instructions=,
   =regions_survive_the_passes_that_drop_instructions=, both failing before
   the fix with the shapes above).
-- =crates/minocrab-sim/tests/v3_metadata.rs=: 5,000 random =Circuit3=
+- =crates/minocrab-sim/tests/metadata.rs=: 5,000 random =Circuit3=
   programs, half under the opt profile — each message on its own assert
   (the argument or immediate it was written on), the dropped ones gone,
   each region holding exactly its own messages and surviving instruction
   count, regions nested or disjoint. Fails at program 5 before the fix.
-- =crates/minocrab-sim/tests/v3_end_to_end.rs=: a failing check reported
+- =crates/minocrab-sim/tests/end_to_end.rs=: a failing check reported
   through =simulate_compiled= with its own message and a region profiled
   with its own instruction, once with the fold and the true-assert rule and
   once under the opt profile with a deduped constraint emptying its region
@@ -1290,8 +1290,8 @@ LEFT OUT:
 
 ** Evidence
 
-- (A) =crates/minocrab-ir/tests/v3_simplify.rs=, 23 tests on hand-built streams: each rule, the fixed point and idempotence, the refusals (an unused =cond_select=, =not=, =less_than=, =inv=, =reconstitute_field= stays; transcript reads, constraints, Impact and asserts never merge; a disclosed value or disclosed repeat stays; arithmetic on a value not known Native stays; a select on 2, on an immediate arm, or on a variable selector with equal arms stays), and the builder's map through =finish_kept=.
-- (B) =crates/minocrab-sim/tests/v3_simplify.rs=: 3,000 random =Circuit3= programs (the =v3_metadata= generator's shape, with arithmetic, selects on wires and on 0/1/2, =not=, =inv=, =less_than=, =div_mod=, Poseidon, asserts, range checks, exact repeats, unused results, disclosures, Impacts, outputs, regions), each built with the pass off and on and run on 4 preimages (their Impact transcript gathered from the unsimplified build) through our simulator AND upstream =IrSource::check=: same verdict under both walks, and on accept the same =pis=, skips, outputs, private consumption and disclosed values. 12,000 runs, about 2,100 accepting and 9,900 rejecting, 2,900 programs shrinking by 13,500 instructions. Mutation check: reclassifying =not= as pure fails it at program 28.
+- (A) =crates/minocrab-ir/tests/simplify.rs=, 23 tests on hand-built streams: each rule, the fixed point and idempotence, the refusals (an unused =cond_select=, =not=, =less_than=, =inv=, =reconstitute_field= stays; transcript reads, constraints, Impact and asserts never merge; a disclosed value or disclosed repeat stays; arithmetic on a value not known Native stays; a select on 2, on an immediate arm, or on a variable selector with equal arms stays), and the builder's map through =finish_kept=.
+- (B) =crates/minocrab-sim/tests/simplify.rs=: 3,000 random =Circuit3= programs (the =v3_metadata= generator's shape, with arithmetic, selects on wires and on 0/1/2, =not=, =inv=, =less_than=, =div_mod=, Poseidon, asserts, range checks, exact repeats, unused results, disclosures, Impacts, outputs, regions), each built with the pass off and on and run on 4 preimages (their Impact transcript gathered from the unsimplified build) through our simulator AND upstream =IrSource::check=: same verdict under both walks, and on accept the same =pis=, skips, outputs, private consumption and disclosed values. 12,000 runs, about 2,100 accepting and 9,900 rejecting, 2,900 programs shrinking by 13,500 instructions. Mutation check: reclassifying =not= as pure fails it at program 28.
 - (C) =crates/minocrab-contracts/tests/simplify_survey.rs=: on all 227 workspace circuits (finished streams, pass applied in the test), every effect kept in order, every disclosed name still defined, idempotent; 45 circuits change. And the whole workspace suite run once with =MINOCRAB_CHECK_SIMPLIFY=<log>= (=minocrab_sim::v3::simplify_check=, a no-op unless set): every =simulate_with= call anywhere also simulates the simplified circuit on the same preimage and panics on a different verdict, =pis=, skips, outputs or private consumption. Result (2026-11-21): the suite green under the instrument (1,410 passed, 0 failed), 6,690 distinct streams simulated, 117 of the 227 workspace circuits among them. Of the 45 circuits the pass changes, 39 were simulated on their suites' own vectors with at least one ACCEPTING run and agreed every time (every =erc20_vault= circuit in the table, all twelve changed =erc20_vault_pending= ones but =swap= and =withdraw=, both =attest= verifiers, =manager::execute= and =deposit_shielded=, =serde_builtin::check_roundtrip=, =events_borsh::emit_n(2)= and =(4)=, =xcontract_events_borsh::token_deposit=, =xcall_with_payment::{notify, pay}=, both =mint_tokens= mints); =erc20_vault_pending::{swap, withdraw}= only on rejecting vectors; four never simulated by any suite: =events::emit_n(2)=, =events::emit_n(4)=, =xcontract_events::token_deposit= (their =_borsh= twins were) and =kernel_tokens::s_send_shielded=, which therefore has only the structural evidence. The first run of the instrument found the static-check gap described under the table (four hand-built ill-typed streams in =v3_zkir31_ops.rs=) and a meaningless comparison under the executor's provisional =Gather= walk; both fixed before this result.
 
 ** Rows (Midnight's cost model, =minocrab_sim::v3::cost=, the pass applied to each finished stream in the test; =simplify_row_table=, --release)
@@ -1370,7 +1370,7 @@ No Lean theorem yet: the warrant is the table, the three kinds of evidence above
 
 ** The spellings, checked for dead ones (rung F part 1)
 
-Public items of =passes.rs= with no caller outside tests (=tests/v3_passes.rs=, =minocrab-std/tests/lean_claims.rs=): =run_pipeline=, =run_pipeline_verified=, =VerifiedPass= and its three impls, =ProofRef= with =lean_proof!= and the three statics =FOLD_PROOF=, =DEDUP_PROOF=, =DROP_TRUE_ASSERTS_PROOF=, =ProofRef::file= and =ProofRef::missing_theorems=; and with NO caller at all, tests included, =ProofRef::contents= and =ProofRef::theorems=. Everything else is reached: =by_name=, =builtin_names=, the =Pass= trait, =PassReport= and the three =Pass= structs (hence the three unsuffixed pass functions) by the =minocrab pass= CLI (=minocrab-sim/src/bin/minocrab.rs=); =fold_immediate_copies= also by =minocrab_compat::normalise::folded=; =operands=, =returned=, =defined_identifiers= by the builder and the taint lint; =Kept= by the frontend. Not deleted in this rung, by instruction. The new pass adds =simplify=, =simplify_with=, =Rules= and =native_inputs= and no =Pass= value.
+Public items of =passes.rs= with no caller outside tests (=tests/passes.rs=, =minocrab-std/tests/lean_claims.rs=): =run_pipeline=, =run_pipeline_verified=, =VerifiedPass= and its three impls, =ProofRef= with =lean_proof!= and the three statics =FOLD_PROOF=, =DEDUP_PROOF=, =DROP_TRUE_ASSERTS_PROOF=, =ProofRef::file= and =ProofRef::missing_theorems=; and with NO caller at all, tests included, =ProofRef::contents= and =ProofRef::theorems=. Everything else is reached: =by_name=, =builtin_names=, the =Pass= trait, =PassReport= and the three =Pass= structs (hence the three unsuffixed pass functions) by the =minocrab pass= CLI (=minocrab-sim/src/bin/minocrab.rs=); =fold_immediate_copies= also by =minocrab_compat::normalise::folded=; =operands=, =returned=, =defined_identifiers= by the builder and the taint lint; =Kept= by the frontend. Not deleted in this rung, by instruction. The new pass adds =simplify=, =simplify_with=, =Rules= and =native_inputs= and no =Pass= value.
 
 The three =Kept= checks, as found: =Builder3::finish_kept= asserts in every build that the composed map starts at the built stream's length and ends at the finished one's; =check_kept= (debug) asserted the same two lengths again and then each kept instruction against its landing place and each dropped one's kind; =moved_onto_the_finished_stream= in =Circuit3::finish= (debug) checks the frontend's use of the map: each surviving message at its assert's position in order, and each region exactly the run of positions its survivors landed on (=boundary= against =position=). Only the two repeated length asserts were exact duplicates; they are gone from =check_kept=. The per-instruction check stays debug-only (it clones the whole built stream); the frontend check tests a different property (the metadata moves and =boundary='s agreement with =position=) and stays.
 

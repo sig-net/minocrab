@@ -3,7 +3,7 @@
 //! Executes a circuit in plain Rust for `cargo test` loops: no proving, no
 //! keys, instant feedback. Semantics mirror midnight-zkir's reference
 //! interpreter (`src/ir_vm.rs`) instruction for instruction:
-//! `v3::simulate` *verifies* a complete `ProofPreimage` — arguments
+//! `simulate` *verifies* a complete `ProofPreimage` — arguments
 //! decoded per the input schema, Impact public inputs checked against the
 //! transcript as they accumulate — so every run can be cross-checked against
 //! the reference VM via `IrSource::check`, and the simulator is never
@@ -15,31 +15,53 @@
 //! # Where this sits
 //!
 //! The top of the stack and off to the side of it: a dev-dependency, not
-//! something a contract links. It takes the [`minocrab::v3::Compiled3`] that
-//! the eDSL produces (or a bare [`minocrab_zkir::v3::IrSource`]) and runs
+//! something a contract links. It takes the [`minocrab::Compiled`] that
+//! the eDSL produces (or a bare [`minocrab_zkir::IrSource`]) and runs
 //! it. `minocrab-std`, `minocrab-ledger` and the contract crates all use it
 //! the same way — build a circuit, simulate it, assert on the disclosure
 //! report and the row cost.
 //!
 //! # Start here
 //!
-//! - `v3::simulate` and `v3::Run3` — run a circuit against a preimage
-//! - `v3::report` and `v3::DisclosedValue3` — what the run actually
+//! - `simulate` and `Run` — run a circuit against a preimage
+//! - `report` and `DisclosedValue` — what the run actually
 //!   published, label by label
-//! - [`v3::cost`] and [`v3::profile`] — `(k, rows)` for a circuit, and
+//! - [`cost`] and [`profile`] — `(k, rows)` for a circuit, and
 //!   [`Profile`], the per-region breakdown the benchmark charts
-//! - [`v3::rowcost`] — the calibrated primitive costs behind [`v3::cost`]
+//! - [`rowcost`] — the calibrated primitive costs behind [`cost`]
 //!
 //! # Stability
 //!
-//! The measurement API — [`v3::cost`], [`v3::profile`],
-//! [`v3::assert_max_k`], the calibrated [`v3::rowcost`] tables,
+//! The measurement API — [`cost`], [`profile`],
+//! [`assert_max_k`], the calibrated [`rowcost`] tables,
 //! [`Profile`]/[`RegionCost`], and the `minocrab` gate-count CLI — is the
-//! public contract. The simulator VM (`v3::simulate`, `Run3`, the report
+//! public contract. The simulator VM (`simulate`, `Run`, the report
 //! machinery) is the correctness harness's engine and carries no stability
 //! promise.
 
-pub mod v3;
+mod vm;
+pub mod rowcost;
+pub mod exec;
+pub use vm::*;
+
+// rename-v3: begin shim (tools/rename-v3.sh never rewrites this block)
+/// The pre-rename path: everything that was `minocrab_sim::v3::X` is `minocrab_sim::X`.
+/// Kept for the downstream pins only; nothing in this workspace uses it.
+#[doc(hidden)]
+#[deprecated(note = "`minocrab_sim::v3` is gone: the items are at the crate root \
+                     (`minocrab_sim::X`) and lose the `3` suffix; this module is removed in the next release")]
+pub mod v3 {
+    pub use crate::*;
+    #[deprecated(note = "renamed to `minocrab_sim::Run`")]
+    pub type Run3 = crate::Run;
+    #[deprecated(note = "renamed to `minocrab_sim::Report`")]
+    pub type Report3 = crate::Report;
+    #[deprecated(note = "renamed to `minocrab_sim::DisclosedValue`")]
+    pub type DisclosedValue3 = crate::DisclosedValue;
+    #[deprecated(note = "renamed to `minocrab_sim::SimError`")]
+    pub type Sim3Error = crate::SimError;
+}
+// rename-v3: end shim
 
 use std::collections::BTreeMap;
 
@@ -53,8 +75,8 @@ pub struct RegionCost {
     /// Share of the whole circuit's instructions, in percent.
     pub percent: f64,
     /// Estimated share of the *proving table* — the number k, prove time and
-    /// RAM track — from the calibrated [`crate::v3::rowcost`] model. Always
-    /// `Some` for a [`v3::profile`]; the `Option` is kept for API stability.
+    /// RAM track — from the calibrated [`crate::rowcost`] model. Always
+    /// `Some` for a [`profile`]; the `Option` is kept for API stability.
     pub est_rows: Option<usize>,
     /// Share of the circuit's estimated rows, in percent.
     pub est_rows_percent: Option<f64>,
@@ -72,7 +94,7 @@ pub struct Profile {
     /// Sum of the per-region row estimates. It undershoots `rows`: the
     /// difference is the circuit's fixed cost (chip stand-up, the pow2range
     /// table), which belongs to no region. Always `Some` for a
-    /// [`v3::profile`]; the `Option` is kept for API stability.
+    /// [`profile`]; the `Option` is kept for API stability.
     pub est_rows_total: Option<usize>,
     /// Most expensive region first — by estimated rows where they exist,
     /// else by instruction count.

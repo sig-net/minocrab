@@ -1,9 +1,9 @@
 //! Derives for the MinoCrab v3 contract API.
 //!
 //! The crate depends on nothing of ours and emits fully-qualified
-//! `::minocrab_std::v3::…` paths (notes/contract-api.org §macros). Its
+//! `::minocrab_std::…` paths (notes/contract-api.org §macros). Its
 //! expansions are exactly what phase 2 wrote by hand — impls a reader could
-//! have written — and, by the THINNESS RULE, contain no `Circuit3` method
+//! have written — and, by the THINNESS RULE, contain no `Circuit` method
 //! call at all: everything goes through `CircuitArg` and `ArgPath`.
 //!
 //! # Where this sits
@@ -41,6 +41,14 @@ mod ledger;
 mod ledger_repr;
 mod value;
 
+// rename-v3: begin shim (tools/rename-v3.sh never rewrites this block)
+/// The pre-rename spellings of `&mut Circuit` and `V: Vis`, which code
+/// pinned to the deprecated `v3` shims still writes: the derives accept
+/// both while the shims live.
+const OLD_CIRCUIT: &str = "Circuit3";
+const OLD_VIS: &str = "Vis3";
+// rename-v3: end shim
+
 /// Derive the VALUE impls of a struct with named fields: its layout
 /// (`CircuitAbi`), its slots at each visibility the fields support
 /// (`Encode` / `Decode`), its declaration as a circuit argument
@@ -50,7 +58,7 @@ mod value;
 /// Every impl holds exactly where every field's impl of the same trait
 /// does, so the record is whatever its fields allow: a struct of `Public`
 /// fields is a ledger value and a cross-contract argument, a struct of
-/// `Private` fields a circuit argument, a struct generic in `<V: Vis3>`
+/// `Private` fields a circuit argument, a struct generic in `<V: Vis>`
 /// each at its own visibility, and a struct generic in a payload
 /// (`Owned<E>`) a ledger value exactly where `E` is. Type and const
 /// parameters and where-clauses are carried into every impl.
@@ -113,7 +121,7 @@ pub fn derive_circuit_arg(input: TokenStream) -> TokenStream {
 /// ```ignore
 /// #[derive(CircuitBorsh)]
 /// #[borsh(spec = spec_types::RespondMisc)]   // generates the schema cross-check test
-/// struct RespondPayload<V: Vis3> {
+/// struct RespondPayload<V: Vis> {
 ///     request_id: B32<V>,                    // layout path "request_id"
 ///     #[borsh(name = "big_r_x")]             // where the spec type names it differently
 ///     bigr_x: B32<V>,
@@ -122,7 +130,7 @@ pub fn derive_circuit_arg(input: TokenStream) -> TokenStream {
 /// ```
 ///
 /// A plain struct serializes at `Private`; a struct generic in a single
-/// visibility parameter (`<V: Vis3>`) serializes at every visibility, and is
+/// visibility parameter (`<V: Vis>`) serializes at every visibility, and is
 /// a circuit argument at `Private` — arguments are witness data.
 ///
 /// Two label namespaces: the ARGUMENT label is `lowerCamelCase` of the field
@@ -180,7 +188,7 @@ pub fn derive_ledger_repr(input: TokenStream) -> TokenStream {
 /// `<FieldTy>::at(index)` per field — and stating it here is what removes the
 /// hand-maintained `const REFUND_COMMITMENT: u8 = 9;` table from contracts.
 ///
-/// The field types are the ledger ADTs of `minocrab_std::v3`
+/// The field types are the ledger ADTs of `minocrab_std`
 /// (`LedgerMap`/`LedgerCell`/`LedgerCounter`, and `LedgerField` for a field
 /// this layer does not model yet); anything with a `const fn at(u8) -> Self`
 /// works, since that is all the expansion calls.
@@ -196,17 +204,17 @@ pub fn derive_ledger(input: TokenStream) -> TokenStream {
 ///
 /// ```ignore
 /// #[circuit]
-/// pub fn deposit(c: &mut Circuit3, evm_nonce: Uint<64>, deposit_request: DepositRequest) {
+/// pub fn deposit(c: &mut Circuit, evm_nonce: Uint<64>, deposit_request: DepositRequest) {
 ///     let one = c.constant(1u64);
 ///     ..
 /// }
 /// ```
 ///
-/// The parameters after `c: &mut Circuit3` are the circuit's arguments, in
+/// The parameters after `c: &mut Circuit` are the circuit's arguments, in
 /// declaration order — **which is the wire contract**, exactly as for
 /// [`macro@CircuitArg`]: they become the fields of a hidden argument struct
 /// carrying that derive's impls, and `deposit` becomes the familiar
-/// `pub fn deposit() -> Compiled3` that declares them, constrains them from
+/// `pub fn deposit() -> Compiled` that declares them, constrains them from
 /// their types, and runs the body. Labels are the same mechanical
 /// `snake_case` → `lowerCamelCase` rule, with the same
 /// `#[arg(name = "…")]` escape hatch, written on the parameter.
@@ -226,7 +234,7 @@ pub fn derive_ledger(input: TokenStream) -> TokenStream {
 ///
 /// ```ignore
 /// #[circuit(max_k = 14)]
-/// pub fn deposit(c: &mut Circuit3, evm_nonce: Uint<64>) { .. }
+/// pub fn deposit(c: &mut Circuit, evm_nonce: Uint<64>) { .. }
 /// ```
 ///
 /// generates one more test beside the entry point: build the circuit, price
@@ -261,20 +269,20 @@ pub fn circuit(attr: TokenStream, item: TokenStream) -> TokenStream {
 /// #[contract]
 /// impl Vault {
 ///     #[circuit]
-///     pub fn deposit(c: &mut Circuit3, amount: Uint<128>) -> Discloses<(Amount,)> { … }
+///     pub fn deposit(c: &mut Circuit, amount: Uint<128>) -> Discloses<(Amount,)> { … }
 /// }
 /// ```
 ///
-/// The circuits are ASSOCIATED FUNCTIONS taking `c: &mut Circuit3` — there is
+/// The circuits are ASSOCIATED FUNCTIONS taking `c: &mut Circuit` — there is
 /// no receiver, and a `self` parameter is a compile error with the reason. A
 /// contract's state is a layout rather than a value: a ledger read is a
 /// transcript gate and a write is an Impact op, so there is nothing in `self`
 /// to borrow, and putting the circuit inside the state value would force
 /// either interior mutability or a second calling convention beside the
-/// `&mut Circuit3` every gadget below already takes.
+/// `&mut Circuit` every gadget below already takes.
 ///
 /// What the block buys is that the LANGUAGE knows the circuit set:
-/// `Vault::CIRCUITS` is `[(name, fn() -> Compiled3); N]` in declaration
+/// `Vault::CIRCUITS` is `[(name, fn() -> Compiled); N]` in declaration
 /// order, derived from the file. Before it, a contract was a module by
 /// convention and its circuits were a hand-written list in a test-support
 /// module that nothing checked for completeness.
@@ -291,17 +299,17 @@ pub fn circuit(attr: TokenStream, item: TokenStream) -> TokenStream {
 /// impl Vault { … }
 /// ```
 ///
-/// takes a PATH to a `fn(&mut Circuit3)`, and every `#[circuit]` in the
+/// takes a PATH to a `fn(&mut Circuit)`, and every `#[circuit]` in the
 /// block calls it on the circuit before its body: after the arguments are
 /// declared and constrained (neither consults the lowering), before anything
 /// the body does. How a circuit is lowered is a property of the contract, so
 /// it is said once here rather than as a first line in each circuit, where a
 /// newly added circuit could leave it out. The macro only splices the path;
-/// rustc checks that it is a `fn(&mut Circuit3)`. A circuit built by hand
-/// (through `entry`, or `Circuit3::new()`) is outside the block and calls the
+/// rustc checks that it is a `fn(&mut Circuit)`. A circuit built by hand
+/// (through `entry`, or `Circuit::new()`) is outside the block and calls the
 /// function itself.
 ///
-/// The block also gets `Vault::LOWERING: Option<fn(&mut Circuit3)>`, the
+/// The block also gets `Vault::LOWERING: Option<fn(&mut Circuit)>`, the
 /// path given or `None`, so a test can ask which contracts chose a lowering.
 #[proc_macro_attribute]
 pub fn contract(attr: TokenStream, item: TokenStream) -> TokenStream {
@@ -346,7 +354,7 @@ pub fn contract(attr: TokenStream, item: TokenStream) -> TokenStream {
 /// and `at` takes an address at runtime, so an interface crate is publishable
 /// without knowing where its contract is deployed.
 ///
-/// The generated methods take `c: &mut Circuit3` before the callee's own
+/// The generated methods take `c: &mut Circuit` before the callee's own
 /// parameters — no guard parameter (notes/edsl-trim.org §B): the call
 /// resolves the AMBIENT scope, so a guarded call is `c.when(g, |c|
 /// callee.deposit(c, amount, me))`. The expansion needs `minocrab_ledger` and

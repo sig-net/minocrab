@@ -19,8 +19,8 @@ pub use common::{b32_slots, bytesn_value};
 
 use midnight_transient_crypto::proofs::ProofPreimage;
 
-use minocrab::v3::Compiled3;
-use minocrab_zkir::v3::{to_zkir_string, IrSource};
+use minocrab::Compiled;
+use minocrab_zkir::{to_zkir_string, IrSource};
 use minocrab_contracts::{
     adts, attest, bounded, bounded_ledger, coins, disclosure, kernel_tokens, erc20_vault, erc20_vault_pending, events, events_borsh, hashing, manager, mint_tokens,
     nested, opaque,
@@ -29,7 +29,7 @@ use minocrab_contracts::{
 };
 
 /// A circuit under snapshot: its name and how to build it.
-pub type Circuit = (&'static str, fn() -> Compiled3);
+pub type Circuit = (&'static str, fn() -> Compiled);
 
 /// A file under `crates/minocrab-contracts/tests/`.
 pub fn test_source(name: &str) -> std::path::PathBuf {
@@ -247,7 +247,7 @@ fn positional_diff(expected: &[&str], actual: &[&str]) -> String {
 pub fn circuits() -> Vec<Circuit> {
     macro_rules! c {
         ($name:literal, $f:expr) => {
-            ($name, { $f } as fn() -> Compiled3)
+            ($name, { $f } as fn() -> Compiled)
         };
     }
 
@@ -426,7 +426,7 @@ pub fn circuits() -> Vec<Circuit> {
 
 /// A contract's derived circuit set, named `module::circuit` the way the
 /// snapshots key their tables.
-fn of(module: &str, circuits: &[(&'static str, fn() -> Compiled3)]) -> Vec<Circuit> {
+fn of(module: &str, circuits: &[(&'static str, fn() -> Compiled)]) -> Vec<Circuit> {
     circuits
         .iter()
         .map(|(name, build)| {

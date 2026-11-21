@@ -26,7 +26,7 @@ let public = c.disclose(secret, "intentionally published");
 c.declare_public(public, "value");
 ```
 
-`v3::Circuit3` is the current frontend: same discipline, but wires also carry their ZKIR value type, so an unsupported operand is a Rust type error rather than a build-time panic. A circuit's `Discloses<..>` return type is its disclosure manifest, and a generated test fails if it discloses anything not listed — which is how four real undeclared disclosures were caught.
+`Circuit` is the current frontend: same discipline, but wires also carry their ZKIR value type, so an unsupported operand is a Rust type error rather than a build-time panic. A circuit's `Discloses<..>` return type is its disclosure manifest, and a generated test fails if it discloses anything not listed — which is how four real undeclared disclosures were caught.
 
 [Repository README](https://github.com/sig-net/minocrab#readme) · [VERIFICATION.md](https://github.com/sig-net/minocrab/blob/main/VERIFICATION.md) · [BENCHMARK.md](https://github.com/sig-net/minocrab/blob/main/BENCHMARK.md)
 
