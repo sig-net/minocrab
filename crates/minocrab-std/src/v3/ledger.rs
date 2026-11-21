@@ -94,10 +94,8 @@ use super::{
             public transcript — so `LedgerRepr` is implemented at `Public` \
             only. A private value has to pass `disclose_as` before it can be \
             written, and forgetting is this error rather than a leak",
-    note = "a record type gets its impl from `#[derive(LedgerRepr)]`, from \
-            `#[derive(CircuitArg)]`'s `Public` instantiation, or by \
-            delegating to the ABI traits the way the leaf table in this \
-            module does"
+    note = "a record type gets its impl from `#[derive(Value)]` (or \
+            `#[derive(LedgerRepr)]`, which also checks it), field by field"
 )]
 pub trait LedgerStore: Sized {
     /// This type's FAB atoms, in slot order.

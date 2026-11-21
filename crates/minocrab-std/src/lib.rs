@@ -37,7 +37,7 @@
 //!   ledger block as types, carrying Compact's own method names
 //! - [`v3::kernel`] — mint/send/receive/claim, `blockTime*`,
 //!   `unshieldedBalance*`
-//! - [`macro@v3::circuit`] and [`macro@v3::CircuitArg`] — the decorators
+//! - [`macro@v3::circuit`] and [`macro@v3::Value`] — the decorators
 //!   (default `macros` feature)
 //!
 //! # Stability (M24 tier boundary)

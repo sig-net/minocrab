@@ -6,6 +6,46 @@
 //! `[hi, lo]` native slot pairs ([`B32`]); typed `Bytes<32>` values appear
 //! only at instruction boundaries; byte surgery is div_mod / reconstitute
 //! chains over the low limb.
+//!
+//! # The value model
+//!
+//! A value is a fixed list of native field SLOTS, in declaration order, and
+//! that order is the wire contract (input schema, communications
+//! commitment, ledger layout, preimage). Four traits say what a type does
+//! with them:
+//!
+//! - LAYOUT, [`CircuitAbi`]: how many slots, their FAB atoms, the primitive
+//!   type of each (which picks its input constraint). Visibility-independent.
+//! - ENCODE, [`Encode<V>`](Encode): the slots at visibility `V`. A leaf
+//!   encodes at its own visibility only, so `Encode<Public>` is exactly the
+//!   values that may cross a contract boundary, and a private one must pass
+//!   `disclose_as` first. Bounds say `Encode<Public>` for a call argument.
+//! - DECODE, [`Decode<V>`](Decode): the value rebuilt from its slots; a call
+//!   result is `Decode<Public>`.
+//! - DECLARE, [`CircuitArg`]: a circuit argument, on top of
+//!   `Encode<Private>`; it labels each slot from the argument's path and
+//!   its constraints come from the layout, never from the impl.
+//!
+//! The ledger adds two: [`LedgerStore`] (atoms, limbs, the cell read; every
+//! operation that writes, keys or tests membership) and [`LedgerRepr`] (the
+//! value rebuilt from a read's limbs; lookup, list head, stream reads).
+//! [`ProofWires`] is the wire walk `Assumed::stale` records.
+//!
+//! A RECORD gets all of this from `#[derive(Value)]`: one impl per trait,
+//! each holding exactly where every field's does, so the record is whatever
+//! its fields allow (a struct of `Public` fields is storable and a call
+//! argument, a struct of `Private` fields an argument, a `Notification<V:
+//! Vis3>` each at its own `V`, an `Owned<E>` storable where `E` is).
+//! `#[derive(CircuitArg)]` and `#[derive(LedgerRepr)]` are the same derive
+//! with a definition-site check that the record is an argument (resp.
+//! storable).
+//!
+//! THE POINTS are the encode-only case: [`Secp256k1Point`] and
+//! [`JubjubPoint`] occupy one slot whose wire is not a field element. As
+//! arguments they encode to no native slot; in the ledger their limbs are
+//! COMPUTED by an `encode` instruction that has no inverse, so they are
+//! `LedgerStore` and not `LedgerRepr`, and a map of points can be written
+//! and tested but not looked up.
 
 use minocrab::v3::{
     AnyWire3, Bytes32T, Circuit3, FieldT, IrTy, JubjubPointT, Secp256k1PointT, Secp256k1ScalarT,
@@ -152,11 +192,11 @@ pub use minocrab_macros::contract;
 #[cfg(feature = "macros")]
 pub use minocrab_macros::Ledger;
 
-/// `#[derive(LedgerRepr)]` — a struct of `Public` ledger leaves becomes a
-/// storable value (a `Map` value, a `Cell` type), atoms and limbs in
-/// declaration order. The derive and the trait share the name, as
-/// serde's do. A `Private` field has no `LedgerRepr` impl, so it fails to
-/// type-check rather than leaking into state:
+/// `#[derive(LedgerRepr)]` — [`Value`](macro@Value), checked to be a
+/// storable value (a `Map` value, a `Cell` type). The derive and the trait
+/// share the name, as serde's do. A `Private` field has no `LedgerRepr`
+/// impl, so it fails to type-check at the derive rather than leaking into
+/// state:
 ///
 /// ```compile_fail
 /// use minocrab::{Private, Public};
