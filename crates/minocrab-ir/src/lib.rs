@@ -25,15 +25,12 @@
 //! - [`minocrab_zkir::v3::IrSource`] — what a finished build hands to L0 for
 //!   writing
 //!
-//! # Stability (M24 tier boundary)
+//! # Stability
 //!
-//! STABLE TIER (semver commitment): [`v3::passes`] (the [`v3::passes::Pass`]
-//! trait and the reference passes), [`v3::taint`], and the re-exported ZKIR
-//! types. INTERNAL TIER, gated behind the `unstable` cargo feature: the raw
-//! [`v3::Builder3`] layer — the eDSL's implementation detail, wrapped by
-//! `minocrab`'s `Circuit3`. A pass or
-//! lint crate depending on `minocrab-ir` alone builds against the stable
-//! tier only; the full-eDSL crates enable `unstable` internally.
+//! [`v3::passes`] (the [`v3::passes::Pass`] trait and the reference passes),
+//! [`v3::taint`] and the re-exported ZKIR types are the surface a pass crate
+//! builds on. The raw [`v3::Builder3`] layer is the eDSL's implementation detail,
+//! wrapped by `minocrab`'s `Circuit3`, and carries no stability promise.
 
 pub use midnight_base_crypto::fab::{Alignment, AlignmentAtom, AlignmentSegment};
 pub use minocrab_zkir::Fr;

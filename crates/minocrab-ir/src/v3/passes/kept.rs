@@ -2,11 +2,10 @@
 //! `Builder3::finish` runs, and `retain_kept`, the one way those passes build
 //! it (notes/ir-passes.org §13).
 //!
-//! INTERNAL TIER. The module is private; `Kept` is re-exported from
-//! `passes` only under the `unstable` feature, for `Builder3::finish_kept`
-//! and the `minocrab` frontend. It bakes in "every pass in `finish` is a
-//! filter", which is a fact about today's `finish`, not a promise the stable
-//! tier makes.
+//! The module is private; `Kept` is re-exported from `passes` for
+//! `Builder3::finish_kept` and the `minocrab` frontend. It bakes in "every
+//! pass in `finish` is a filter", which is a fact about today's `finish`, not
+//! a promise.
 
 use minocrab_zkir::v3::Instruction;
 
@@ -31,9 +30,7 @@ pub struct Kept {
     before: Vec<usize>,
 }
 
-// Read only by `Builder3::finish_kept` and the `minocrab` frontend, both
-// behind `unstable`; the stable tier builds the map and drops it.
-#[cfg_attr(not(feature = "unstable"), allow(dead_code))]
+// Read only by `Builder3::finish_kept` and the `minocrab` frontend.
 impl Kept {
     /// The map of a pass that dropped nothing from a stream of `len`
     /// instructions.

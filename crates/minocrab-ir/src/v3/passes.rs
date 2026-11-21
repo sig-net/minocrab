@@ -61,11 +61,8 @@ use minocrab_zkir::Fr;
 
 mod kept;
 use kept::retain_kept;
-/// INTERNAL TIER (`unstable`): the map `Builder3::finish_kept` returns.
-#[cfg(feature = "unstable")]
+/// The map `Builder3::finish_kept` returns.
 pub use kept::Kept;
-#[cfg(not(feature = "unstable"))]
-use kept::Kept;
 
 /// Fold every `Copy` of an immediate into its consumers and drop it.
 ///

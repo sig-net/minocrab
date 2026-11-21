@@ -3261,7 +3261,6 @@ name = "minocrab-ir"
 version = "0.1.0"
 dependencies = [
  "midnight-base-crypto",
- "minocrab-ir",
  "minocrab-zkir",
  "serde_json",
 ]
@@ -3334,7 +3333,6 @@ dependencies = [
  "midnight-zkir 3.2.0",
  "minocrab",
  "minocrab-ir",
- "minocrab-sim",
  "minocrab-std",
  "minocrab-zkir",
  "proptest",

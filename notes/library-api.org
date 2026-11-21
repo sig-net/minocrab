@@ -238,6 +238,8 @@ Build-order steps 3 and the rest of 4, closing the milestone's checklist.
 
 ** Tier boundary v1
 
+SUPERSEDED (M48 B, 2026-11-21): the =unstable= feature gates nothing in either crate any more; it survives as an empty no-op alias so downstream manifests that name it (the passport port pins =minocrab-sim= with it) still resolve. Every consumer enabled it (=minocrab= itself turned it on for =minocrab-ir=), so the gated items are now compiled unconditionally with the visibility they had; the tiers survive only as the crates' Stability doc sections. The record below is how it was.
+
 §1's option (a), implemented: an =unstable= cargo feature on
 =minocrab-ir= and =minocrab-sim= gates the named internals —
 

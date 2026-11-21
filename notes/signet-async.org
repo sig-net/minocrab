@@ -145,7 +145,7 @@ pub enum EvmOutcome { Executed { success: bool, ret: Vec<u8> }, Reverted, NeverE
 pub struct Attestation { request_id, signature: Secp256k1Sig, output: Vec<u8> }
 #+end_src
 
-- =SigNetSim { root: Scalar }= in minocrab-sim (=unstable= feature):
+- =SigNetSim { root: Scalar }= in minocrab-sim:
   ONE root key, the REAL kdf (=derive_epsilon_midnight=), so derived
   user addresses and the response key equal what the cluster would
   derive for that root; =initialize='s =mpcResponseKey= is derived, not

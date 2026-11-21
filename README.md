@@ -598,10 +598,10 @@ Like the [GHC API](https://hackage.haskell.org/package/ghc), MinoCrab exposes it
 | **stable** | the v3 eDSL authoring core (`Circuit3` + its instruction methods, `Wire3`/`AnyWire3`, the typed leaves, the FAB alignment types, `Compiled3`/`IrSource`) | `minocrab`, `minocrab-std` |
 | **stable** | the `Pass` trait + reference passes, the taint lint | `minocrab_ir::v3::{passes, taint}` |
 | **stable** | the measurement API: `cost`, `profile`, `assert_max_k`, the calibrated `rowcost` tables, the `minocrab` CLI | `minocrab-sim` |
-| **internal** | the raw `Builder3`/`Val` layers, the simulator VMs, behind the `unstable` cargo feature | `minocrab-ir`, `minocrab-sim` |
+| **internal** | the raw `Builder3`/`Val` layers, the simulator VMs (compiled unconditionally; no stability promise) | `minocrab-ir`, `minocrab-sim` |
 | **internal** | the Impact ledger-op layer, the interface generator | `minocrab-ledger`, `minocrab-interface-gen` |
 
-The `unstable` gate is a hard wall for a pass or lint crate depending on `minocrab-ir` alone. The wider contract-authoring surface (ledger declarations, kernel, Borsh, disclosure vocabulary) is *not yet* under the stability promise; the line widens by decision, never by accident.
+The wider contract-authoring surface (ledger declarations, kernel, Borsh, disclosure vocabulary) is *not yet* under the stability promise; the line widens by decision, never by accident.
 
 **Three ways to extend it, no fork:**
 

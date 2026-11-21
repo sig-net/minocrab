@@ -21,10 +21,7 @@ typed contract-testing harness — was blocked on the same missing direction:
 : preimage --(simulate)--> accept / reject          existed
 : state    --(execute )--> preimage                 did not
 
-=minocrab_sim::v3::exec= is the second arrow. It sits at L5 with the rest of
-the harness layer (=minocrab-sim=), behind the =unstable= feature, with the
-ledger crates as OPTIONAL dependencies so the published measurement API and
-the =minocrab= CLI do not grow a ledger dependency.
+=minocrab_sim::v3::exec= is the second arrow. It sits at L5 with the rest of the harness layer (=minocrab-sim=). It was behind an =unstable= feature with the ledger crates as optional dependencies until M48 B (2026-11-21) emptied the feature: every user enabled it, so the ledger crates are plain dependencies now.
 
 * 2. The reuse survey (midnight-ledger 04c9c5d9, 2026-09-06)
 

@@ -1113,15 +1113,15 @@ before any pass can run.
 
 ** The API, and two panics for dmd
 
-=Kept= is INTERNAL TIER: it lives in the private =passes::kept= module and
-is re-exported from =passes= only under =unstable=, beside
+=Kept= is INTERNAL: it lives in the private =passes::kept= module and
+is re-exported from =passes= (behind =unstable= until M48 B emptied the feature), beside
 =Builder3::finish_kept=, its one producer. It bakes in "every pass in
 =finish= is a filter", which is a fact about today's =finish= and not a
 promise for the semver tier (notes/library-api.org §1). The =_kept= passes,
 =retain_kept=, =Kept::identity= and =Kept::compose= are crate-private;
 =compose='s length check is an internal invariant of =finish_kept=.
 
-Two rejections on the unstable surface are build-time panics, because the
+Two rejections on the internal surface are build-time panics, because the
 bound is a stream length known only at run time (the ladder's last rung):
 =Kept::position(i)= panics for =i >= input_len()= and =Kept::boundary(i)=
 for =i > input_len()=, each with a message naming the stream's length and

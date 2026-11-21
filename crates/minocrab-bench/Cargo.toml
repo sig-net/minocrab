@@ -14,7 +14,7 @@ workspace = true
 [dependencies]
 minocrab = { path = "../minocrab" }
 minocrab-contracts = { path = "../minocrab-contracts" }
-minocrab-sim = { path = "../minocrab-sim", features = ["unstable"] }
+minocrab-sim = { path = "../minocrab-sim" }
 minocrab-zkir = { path = "../minocrab-zkir" }
 midnight-transient-crypto.workspace = true
 midnight-base-crypto.workspace = true

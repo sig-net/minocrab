@@ -30,14 +30,14 @@
 //!   [`Profile`], the per-region breakdown the benchmark charts
 //! - [`v3::rowcost`] — the calibrated primitive costs behind [`v3::cost`]
 //!
-//! # Stability (M24 tier boundary)
+//! # Stability
 //!
-//! STABLE TIER (semver commitment): the measurement API — [`v3::cost`],
-//! [`v3::profile`], [`v3::assert_max_k`], the calibrated [`v3::rowcost`]
-//! tables, [`Profile`]/[`RegionCost`], and the `minocrab` gate-count CLI.
-//! INTERNAL TIER, gated behind the `unstable` cargo feature: the simulator
-//! VM (`v3::simulate`, `Run3`, the report machinery) — the correctness
-//! harness's engine, not a public contract.
+//! The measurement API — [`v3::cost`], [`v3::profile`],
+//! [`v3::assert_max_k`], the calibrated [`v3::rowcost`] tables,
+//! [`Profile`]/[`RegionCost`], and the `minocrab` gate-count CLI — is the
+//! public contract. The simulator VM (`v3::simulate`, `Run3`, the report
+//! machinery) is the correctness harness's engine and carries no stability
+//! promise.
 
 pub mod v3;
 

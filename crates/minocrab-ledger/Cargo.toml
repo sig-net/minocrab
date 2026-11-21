@@ -19,7 +19,7 @@ workspace = true
 
 [dependencies]
 minocrab.workspace = true
-minocrab-ir = { workspace = true, features = ["unstable"] }
+minocrab-ir.workspace = true
 midnight-onchain-vm.workspace = true
 midnight-onchain-state.workspace = true
 midnight-storage.workspace = true
@@ -27,6 +27,6 @@ midnight-base-crypto.workspace = true
 midnight-transient-crypto.workspace = true
 
 [dev-dependencies]
-minocrab-sim = { path = "../minocrab-sim", features = ["unstable"] }
+minocrab-sim = { path = "../minocrab-sim" }
 minocrab-zkir = { path = "../minocrab-zkir" }
 serde_json.workspace = true

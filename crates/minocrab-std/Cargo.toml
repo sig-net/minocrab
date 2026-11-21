@@ -68,14 +68,14 @@ all-features = true
 [dev-dependencies]
 # tests/v3_passport_upstream.rs reads the IR back as JSON to compare opcodes.
 serde_json.workspace = true
-minocrab-sim = { path = "../minocrab-sim", features = ["unstable"] }
+minocrab-sim = { path = "../minocrab-sim" }
 # The blind ops' gate (M40, tests/v3_blind.rs) seeds a `StateValue` and runs
 # each transcript through Midnight's on-chain VM via the executor; these
 # three are the state tree's own types. Already in the lock.
 midnight-onchain-state.workspace = true
 midnight-storage.workspace = true
 midnight-onchain-vm.workspace = true
-minocrab-ir = { path = "../minocrab-ir", features = ["unstable"] }
+minocrab-ir = { path = "../minocrab-ir" }
 minocrab-zkir = { path = "../minocrab-zkir" }
 # v3 secp tests generate ECDSA signatures through zkir-v3's own off-circuit
 # helpers and check the Ethereum address against a native keccak.
