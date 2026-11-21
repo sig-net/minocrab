@@ -89,7 +89,20 @@ fn preimage(bytes: &[u8; 128]) -> ProofPreimage {
 #[test]
 fn check_roundtrip_matches_corpus() {
     let theirs = corpus_zkir();
-    let ours = serde_builtin::SerdeBuiltin::check_roundtrip().ir;
+    let compiled = serde_builtin::SerdeBuiltin::check_roundtrip();
+    // The deserialize region is compactc's, instruction for instruction up
+    // to naming: our region against the same number of instructions of
+    // compactc's stream from its first split of the low limb (input 4,
+    // bytes 0..31).
+    let region = compiled.regions.iter().find(|r| r.label == "deserialize Mixed").expect("the region");
+    let len = region.end - region.start;
+    let at = common::first_reading_input(&theirs, "div_mod_power_of_two", 4);
+    assert_eq!(
+        common::canonical_window(&compiled.ir, region.start, len),
+        common::canonical_window(&theirs, at, len),
+        "the deserialize region is not compactc's"
+    );
+    let ours = compiled.ir;
 
     let bytes = mixed_bytes(0xdead_beef_0123, 0x2a, b"mixed-tag-32-bytes-for-the-test!");
     let pi = preimage(&bytes);
@@ -127,4 +140,23 @@ fn check_roundtrip_matches_corpus() {
     let pi = preimage(&bad_pad);
     assert!(simulate(&ours, &pi).is_err(), "ours must reject padding");
     assert!(simulate(&theirs, &pi).is_err(), "corpus must reject padding");
+
+    // The deserialize splits only the 50 bytes the fields occupy, so the
+    // padding is held to zero by the round trip alone, on BOTH sides: a
+    // nonzero byte is refused in each limb, including the first padding
+    // byte (in the limb the tag shares) and the last byte of the string.
+    for at in [50usize, 61, 62, 93, 124, 127] {
+        let mut bad_pad = bytes;
+        bad_pad[at] = 1;
+        let pi = preimage(&bad_pad);
+        assert!(simulate(&ours, &pi).is_err(), "ours must reject padding at {at}");
+        assert!(simulate(&theirs, &pi).is_err(), "corpus must reject padding at {at}");
+    }
+    // A flag of 0 and the widest field values are canonical, and accepted by
+    // BOTH with the same public inputs.
+    let mut wide = mixed_bytes(u128::MAX, 0xff, &[0xff; 32]);
+    wide[0] = 0;
+    let pi = preimage(&wide);
+    let (our_run, their_run) = (simulate(&ours, &pi).expect("ours accepts"), simulate(&theirs, &pi).expect("corpus accepts"));
+    assert_eq!(our_run.pis, their_run.pis, "PI vectors differ");
 }

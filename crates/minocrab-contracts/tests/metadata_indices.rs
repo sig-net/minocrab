@@ -89,8 +89,10 @@ fn every_circuit_s_messages_and_regions_name_its_finished_stream() {
     // whose entry point is a constant of every call. 455 → 474 messages: the
     // identity-key assert of `secp256k1_ecdsa_verify` in its 18 callers and
     // of `secp256k1_ethereum_address` in `manager::execute` carry compactc
-    // 0.36's message.
-    assert_eq!((circuits, messages, regions), (227, 474, 411));
+    // 0.36's message. 411 → 412 regions: `serde_builtin::check_roundtrip`
+    // names its compactc-shaped deserialize ("deserialize Mixed"), which its
+    // differential compares with compactc's stream.
+    assert_eq!((circuits, messages, regions), (227, 474, 412));
     // The three messages that go: the `Always` outcome rule's `assert(imm 1)`,
     // deleted by the true-assert rule, takes its message with it.
     dropped.sort();

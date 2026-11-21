@@ -24,9 +24,10 @@ use minocrab::{label, Alignment, AlignmentAtom, AlignmentSegment, Fr, Private};
 use minocrab_experimental::impact::raw::{
     counter_increment, emit, map_insert, ImpactElem, LedgerValue,
 };
+use minocrab_compat::deserialize::Packed;
 use minocrab_compat::secp::secp256k1_ecdsa_verify;
 use minocrab_std::v3::{
-    contract, rebuild_limb, BytesN, Disclose, Discloses,
+    contract, BytesN, Disclose, Discloses,
     Secp256k1EcdsaSignature, Secp256k1Point, Vis3, B32,
 };
 
@@ -59,30 +60,28 @@ fn ledger_writes(c: &mut Circuit3, request_id: B32<Private>) {
     emit(c, &ops);
 }
 
-/// `struct RespondOutput { success: Boolean; amount: Uint<128>;
-/// recipient: Bytes<20> }` as circuit wires.
+/// The fields of `struct RespondOutput { success: Boolean; amount:
+/// Uint<128>; recipient: Bytes<20> }` that the circuit reads, as wires.
+/// `recipient` is not among them: nothing reads it, and compactc emits
+/// nothing for it.
 pub struct RespondOutput<V: Vis3> {
     pub success: Wire3<FieldT, V>,
     pub amount: Wire3<FieldT, V>,
-    pub recipient: Wire3<FieldT, V>,
 }
 
-/// `deserialize<RespondOutput, 128>(output)` (expand-serialize.ss
-/// build-deserialize): `success = (byte 0 == 1)`, `amount = bytes 1..17`
-/// (Uint<128>, LE), `recipient = bytes 17..37` (`Bytes<20>`, one limb);
-/// the 91 padding bytes are ignored. compactc 0.36 also constrains byte 0 to
-/// 0 or 1; the caller asserts `success`, which already rejects any byte but 1.
+/// `deserialize<RespondOutput, 128>(output)` in compactc's shape
+/// ([`Packed`]): `success` is byte 0 (constrained to 0 or 1, then `== 1`),
+/// `amount` is bytes 1..17 (`Uint<128>`, LE, range-checked to 128 bits).
+/// Only those 17 bytes are split. `recipient` (bytes 17..37) and the 91
+/// padding bytes are not: the circuit never reads them, and compactc's
+/// optimizer drops their splits. `amount` is read anyway because compactc
+/// keeps its range check, which is an effect.
 fn deserialize_respond_output<V: Vis3>(
     c: &mut Circuit3,
     output: &BytesN<V, 128>,
 ) -> RespondOutput<V> {
-    let bytes = output.to_le_bytes(c);
-    let one = V::from_public(c.constant(1u64));
-    RespondOutput {
-        success: c.test_eq(bytes[0], one),
-        amount: rebuild_limb(c, &bytes[1..17]),
-        recipient: rebuild_limb(c, &bytes[17..37]),
-    }
+    let packed = Packed::new(output);
+    RespondOutput { success: packed.boolean::<0>(c), amount: packed.uint::<1, 16>(c) }
 }
 
 /// The shared body of `shaVerify` / `keccakVerify`, parameterized by the

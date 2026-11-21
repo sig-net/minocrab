@@ -14,6 +14,7 @@
 //!
 //! | module | what |
 //! |---|---|
+//! | [`deserialize`] | `deserialize<T, N>`, one field at a time, splitting only the bytes a field occupies |
 //! | [`kernel`] | the Compact standard-library circuits over `kernel` |
 //! | [`merkle`] | `insertIndexDefault` with the default leaf hashed in circuit |
 //! | [`secp`] | `secp256k1EcdsaVerify` |
@@ -24,6 +25,7 @@
 //! minocrab-compat` lists only the corpus of ports), so nothing compactc
 //! needs can reach a contract that did not ask for it.
 
+pub mod deserialize;
 pub mod kernel;
 pub mod merkle;
 pub mod normalise;

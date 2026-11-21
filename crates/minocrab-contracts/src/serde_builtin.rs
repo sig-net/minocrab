@@ -17,7 +17,8 @@
 use minocrab::v3::Circuit3;
 use minocrab::Private;
 use minocrab_experimental::impact::raw::{counter_increment, emit};
-use minocrab_std::v3::{bytes_to_b32, contract, rebuild_limb, BytesN, Discloses, Serializer};
+use minocrab_compat::deserialize::Packed;
+use minocrab_std::v3::{contract, BytesN, Discloses, Serializer};
 
 /// Ledger field indices.
 pub const CHECKS: u8 = 0;
@@ -35,17 +36,16 @@ impl SerdeBuiltin {
     #[circuit]
     pub fn check_roundtrip(c: &mut Circuit3, bytes: BytesN<Private, 128>) -> Discloses<()> {
         let data = bytes;
-        let one = c.constant(1u64);
 
-        // const v = deserialize<Mixed, 128>(bytes)
-        let bytes = data.to_le_bytes(c);
-        let one_p = one.private();
-        // compactc 0.36 also constrains the flag byte to 0 or 1; the
-        // round-trip assert below already rejects a byte above 1.
-        let flag = c.test_eq(bytes[0], one_p);
-        let amount = rebuild_limb(c, &bytes[1..17]);
-        let small = bytes[17];
-        let tag = bytes_to_b32(c, &bytes[18..50]);
+        // const v = deserialize<Mixed, 128>(bytes), in compactc's shape: the
+        // 50 bytes the fields occupy are split, one field at a time; the 78
+        // padding bytes are not (the round trip below compares them, limb by
+        // limb, with the zeros the serializer writes). The flag byte is
+        // constrained to 0 or 1, the Uints are range-checked, as compactc's.
+        let packed = Packed::new(&data);
+        let (flag, amount, small, tag) = c.region("deserialize Mixed", |c| {
+            (packed.boolean::<0>(c), packed.uint::<1, 16>(c), packed.uint::<17, 1>(c), packed.bytes32::<18>(c))
+        });
 
         // serialize<Mixed, 128>(v)
         let mut s = Serializer::<Private>::new();

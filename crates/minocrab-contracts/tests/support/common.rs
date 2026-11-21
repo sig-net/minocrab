@@ -69,6 +69,35 @@ pub fn canonicalize(text: &str) -> String {
     out
 }
 
+/// The instructions `[start, start + len)` of a stream in [`canonical`]'s
+/// form: folded, one per line, every `%identifier` renamed in order of
+/// first appearance WITHIN THE WINDOW. Two windows compare equal when they
+/// are the same instructions over the same operands in the same order, up to
+/// naming: how a port shows that one region of its circuit is compactc's
+/// even where the rest is not. Indices are into the folded stream.
+pub fn canonical_window(ir: &IrSource, start: usize, len: usize) -> Vec<String> {
+    let ir = minocrab_compat::normalise::folded(ir);
+    let lines: Vec<String> = ir.instructions[start..start + len]
+        .iter()
+        .map(|i| serde_json::to_string(i).expect("serializes"))
+        .collect();
+    canonicalize(&lines.join("\n")).lines().map(str::to_string).collect()
+}
+
+/// The index, in the folded stream, of the first instruction whose JSON form
+/// has `op` and whose `val` operand is the circuit input at `input`.
+pub fn first_reading_input(ir: &IrSource, op: &str, input: usize) -> usize {
+    let name = serde_json::to_value(&ir.inputs).expect("serializes")[input]["name"].clone();
+    minocrab_compat::normalise::folded(ir)
+        .instructions
+        .iter()
+        .position(|i| {
+            let v = serde_json::to_value(i).expect("serializes");
+            v["op"] == op && v["val"] == name
+        })
+        .expect("an instruction reading the input")
+}
+
 /// A `Bytes<n>` alignment atom.
 pub fn atom(n: u32) -> AlignmentSegment {
     AlignmentSegment::Atom(AlignmentAtom::Bytes { length: n })

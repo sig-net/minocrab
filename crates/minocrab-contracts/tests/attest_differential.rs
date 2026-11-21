@@ -275,12 +275,51 @@ fn check_hash_verify(ours: &IrSource, theirs: &IrSource, digest_of: impl Fn(&[u8
     let pi = preimage(inputs, attest_transcript(&request_id));
     assert!(simulate(ours, &pi).is_err(), "ours must reject tampering");
     assert!(simulate(theirs, &pi).is_err(), "corpus must reject tampering");
+
+    // The deserialize splits only the 17 bytes `success` and `amount` occupy
+    // (as compactc's does), so what each side constrains in the rest is
+    // shown on correctly signed outputs. A success byte other than 0 or 1 is
+    // refused by BOTH (compactc's Boolean constraint; the `== 1` assert
+    // would refuse it anyway)…
+    let signed = |output: &[u8; 128]| {
+        let mut preimage_bytes = Vec::new();
+        preimage_bytes.extend_from_slice(&request_id);
+        preimage_bytes.extend_from_slice(output);
+        let (r, s, pk) = sign(&digest_of(&preimage_bytes), &d, &k);
+        preimage(hash_verify_inputs(&request_id, output, &r, &s, &pk), attest_transcript(&request_id))
+    };
+    for success in [2u8, 0xff] {
+        let pi = signed(&pack_respond_output(success, 1_000_000, &recipient));
+        assert!(simulate(ours, &pi).is_err(), "ours must reject success={success}");
+        assert!(simulate(theirs, &pi).is_err(), "corpus must reject success={success}");
+    }
+    // …while the bytes neither side reads are free on BOTH: the largest
+    // amount, any recipient and nonzero padding in every limb are accepted,
+    // with the same public inputs.
+    let mut wild = pack_respond_output(1, u128::MAX, &[0xff; 20]);
+    wild[37..].fill(0xa5);
+    assert_call_compatible(ours, theirs, &signed(&wild));
+}
+
+/// The deserialize region (plus the `assert(out.success)` after it) is
+/// compactc's, instruction for instruction up to naming: our region
+/// against the same number of instructions of compactc's stream from its
+/// first split of the output's low limb (input 6, bytes 0..31).
+fn assert_deserialize_is_compactcs(ours: &minocrab::v3::Compiled3, theirs: &IrSource) {
+    let region = ours.regions.iter().find(|r| r.label == "deserialize RespondOutput").expect("the region");
+    let len = region.end - region.start + 1;
+    let at = first_reading_input(theirs, "div_mod_power_of_two", 6);
+    let (a, b) = (canonical_window(&ours.ir, region.start, len), canonical_window(theirs, at, len));
+    assert_eq!(a, b, "the deserialize region is not compactc's");
+    assert!(b.last().is_some_and(|l| l.contains("\"assert\"")), "the window ends at the success assert");
 }
 
 #[test]
 fn sha_verify_matches_corpus() {
     let theirs = corpus_zkir("shaVerify");
-    let ours = attest::Attest::sha_verify().ir;
+    let compiled = attest::Attest::sha_verify();
+    assert_deserialize_is_compactcs(&compiled, &theirs);
+    let ours = compiled.ir;
     check_hash_verify(&ours, &theirs, |bytes| {
         use sha2::Digest;
         sha2::Sha256::digest(bytes).into()
@@ -290,7 +329,9 @@ fn sha_verify_matches_corpus() {
 #[test]
 fn keccak_verify_matches_corpus() {
     let theirs = corpus_zkir("keccakVerify");
-    let ours = attest::Attest::keccak_verify().ir;
+    let compiled = attest::Attest::keccak_verify();
+    assert_deserialize_is_compactcs(&compiled, &theirs);
+    let ours = compiled.ir;
     check_hash_verify(&ours, &theirs, |bytes| {
         use sha3::Digest;
         sha3::Keccak256::digest(bytes).into()
