@@ -1948,13 +1948,23 @@ pub fn leaf_hash<T: LedgerStore>(c: &mut Circuit3, item: &T) -> B32<Public> {
 /// [`leaf_hash`] of `T`'s DEFAULT value — all-zero limbs
 /// (notes/ledger-adts.org finding (c)), which is what
 /// `insertIndexDefault` hashes.
+///
+/// FOLDED: every operand is a constant (the separator and the zeros), so the
+/// digest is computed at build time by [`hash::constant_persistent_hash`]
+/// and emitted as its two limbs: zero rows, where hashing it in circuit is
+/// one SHA-256 block (about 1,885 rows). The preimage is [`leaf_hash_of`]'s,
+/// atom for atom. compactc does not fold it; a port that must match its
+/// stream uses `minocrab_compat::merkle::insert_index_default`.
 fn default_leaf_hash<T: LedgerStore>(c: &mut Circuit3) -> B32<Public> {
     let atoms = T::store_atoms();
     let zeros = atoms.iter().map(atom_limbs).sum::<usize>();
-    // Inline immediates, like the separator: compactc's `insertIndexDefault`
-    // hashes `["0x6d646e3a6c68", "0x00", "0x00"]` with no `copy` in sight.
-    let limbs = vec![AnyWire3::immediate(0u64); zeros];
-    leaf_hash_of(c, atoms, &limbs)
+    let mut segments = vec![AlignmentSegment::Atom(AlignmentAtom::Bytes {
+        length: LEAF_HASH_SEP_LEN as u32,
+    })];
+    segments.extend(atoms.into_iter().map(AlignmentSegment::Atom));
+    let mut limbs = vec![Fr::from_le_bytes(LEAF_HASH_DOMAIN_SEP).expect("6 bytes fit")];
+    limbs.extend(vec![Fr::from(0u64); zeros]);
+    hash::constant_persistent_hash(c, &Alignment(segments), &limbs)
 }
 
 fn leaf_hash_of(

@@ -64,3 +64,11 @@ The port's scratch copy with the std helpers substituted (tags as immediates, =a
 The k=17 → 16 that would matter most for k256 (=withdraw_shielded_with_k256=, 67.7k → 64.0k) did not happen: 2^16 is 65,536 and the backend's reserved rows put the real threshold near 61-62k, so another ~2.5k has to come from the protocol-fixed parts (nine SHA blocks and the ECDSA), which is to say from Compact-side spec changes (a 32-byte tag where 8 would do, preimages packed to block boundaries), not from the eDSL.
 
 Soundness notes for the three big ones: the fold is SHA-256 over the same FAB binary encoding the chip hashes (=ValueReprAlignedValue::binary_repr=) and the test holds the two equal; base64url is exact integer arithmetic on byte values the circuit already range-checked (the 24-bit group is below the field, the splits are the backend's); the cofactor doubling relies on completeness of the JubJub addition law, true for twisted Edwards with non-square =d= and asserted by simulation — a real proof of =times_cofactor= against the backend's gadget is the remaining check before anyone relies on it for a stored key.
+
+* 4. The lean std gadgets against their compactc-shaped twins (M48 C step 3, 2026-11-21)
+
+Rows of one call, the gadget alone in a circuit over twenty public field arguments (=minocrab_sim::v3::cost=, the same harness =crates/minocrab-compat/tests/same_as_std.rs= runs both sides in). The compat twin is what every port with a Compact twin and the signer still emit; the lean form is std's. Each pair is held to equivalent behaviour on the on-chain VM by that test.
+
+| gadget | compat (compactc's) | std (lean) | what changed |
+|--------+---------------------+------------+--------------|
+| =insert_index_default= (one =MerkleTree<4, Bytes<32>>= insert) | 1,952 | 65 | the default leaf's =persistentHash= folded at build time (=hash::constant_persistent_hash=) |

@@ -24,3 +24,18 @@ minocrab-ledger.workspace = true
 # `normalise::folded`: the copy fold, over a whole `IrSource`.
 minocrab-ir.workspace = true
 minocrab-zkir.workspace = true
+
+[dev-dependencies]
+# tests/same_as_std.rs: each lean std gadget and its compactc-shaped twin here
+# are run on the same inputs through the executor (`minocrab_sim::v3::exec`,
+# Midnight's on-chain VM) and must agree on accept/reject, outputs, the
+# public-input vector, the transcript and the call's effects. The state
+# tree's own types seed the ledger; proptest draws the inputs; the zkir and
+# curve crates sign ECDSA test vectors off circuit.
+minocrab-sim = { path = "../minocrab-sim" }
+midnight-onchain-state.workspace = true
+midnight-storage.workspace = true
+midnight-transient-crypto.workspace = true
+midnight-zkir-v3.workspace = true
+midnight-curves.workspace = true
+proptest.workspace = true

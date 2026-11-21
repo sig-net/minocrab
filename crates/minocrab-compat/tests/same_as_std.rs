@@ -1,10 +1,19 @@
-//! Every gadget this crate copied from `minocrab_std` emits the IDENTICAL
-//! ZKIR to std's own, on the same inputs, both at top level and inside a
-//! `when` (the manager calls several of them under a guard).
+//! Every gadget this crate copied from `minocrab_std` is checked against
+//! std's own, on the same inputs, both at top level and inside a `when` (the
+//! manager calls several of them under a guard).
 //!
-//! This pins the copy (M48 C, step 1). When std's gadgets go lean (step 3)
-//! these assertions change, deliberately, to public-input equality: the two
-//! must then agree on what they prove, not on how.
+//! Two strengths of check. Where std's gadget is still compactc's shape the
+//! two emit the IDENTICAL ZKIR (the `pin_*` tests; M48 C step 1 copied them).
+//! Where std's has gone lean (M48 C step 3) they cannot, and they are held to
+//! EQUIVALENT BEHAVIOUR instead (the `agree_*` tests): each side is built in
+//! the same harness, both are run on the same inputs through the executor
+//! (`minocrab_sim::v3::exec`, which settles the transcript against Midnight's
+//! on-chain VM and replays it in `ResultModeVerify`), and they must agree on
+//! accept or reject (and on which side refused: the circuit or the ledger),
+//! and on acceptance on the whole preimage (the transcript in and out, which
+//! is what the ledger sees), the public-input vector, the returned values, the
+//! call's effects and the post-state; each accepted preimage is also checked
+//! by upstream's own `IrSource::check`.
 
 use minocrab::v3::{Circuit3, FieldT, Secp256k1PointT, Secp256k1ScalarT, Wire3};
 use minocrab::{Private, Public};
@@ -17,11 +26,76 @@ use minocrab_std::v3::{
 };
 use minocrab_zkir::v3::to_zkir_string;
 
+use midnight_onchain_state::state::StateValue;
+use midnight_storage::db::InMemoryDB;
+use midnight_storage::storage::Array;
+use minocrab::v3::Compiled3;
+use minocrab::Fr;
+use midnight_transient_crypto::proofs::Zkir;
+use minocrab_sim::v3::exec::{self, Call, ExecError, Executed};
+
 /// The circuit `f` builds, serialized.
 fn build(f: impl FnOnce(&mut Circuit3)) -> String {
     let mut c = Circuit3::new();
     f(&mut c);
     to_zkir_string(&c.finish(true).ir).expect("IR serializes")
+}
+
+/// The circuit `f` builds, finished without a communications commitment (so
+/// a call needs no randomness), for running.
+fn compile(f: impl FnOnce(&mut Circuit3)) -> Compiled3 {
+    let mut c = Circuit3::new();
+    f(&mut c);
+    c.finish(false)
+}
+
+/// The contract address every run executes as: `kernel.self()`.
+const SELF: [u8; 32] = [0x5e; 32];
+
+/// How a run ended, as an observer of the call can tell.
+#[derive(Debug, PartialEq, Eq)]
+enum Verdict {
+    Accepted,
+    /// The circuit refused: an assert failed, or a value was not of its
+    /// type (a selector that is not a bit, say).
+    CircuitRefused,
+    /// The circuit was satisfied but the ledger would not apply the
+    /// transcript.
+    LedgerRefused,
+}
+
+fn verdict(r: &Result<Executed, ExecError>) -> Verdict {
+    match r {
+        Ok(_) => Verdict::Accepted,
+        Err(ExecError::Rejected { .. } | ExecError::Circuit(_)) => Verdict::CircuitRefused,
+        Err(ExecError::Vm(_) | ExecError::NotApplied { .. }) => Verdict::LedgerRefused,
+        Err(other) => panic!("a harness failure, not a verdict: {other}"),
+    }
+}
+
+/// Run both circuits on `inputs` against `state` and require that they
+/// agree on everything the module doc lists. Returns the verdict.
+fn agree(what: &str, lean: &Compiled3, twin: &Compiled3, state: &StateValue<InMemoryDB>, inputs: &[Fr]) -> Verdict {
+    let run = |compiled: &Compiled3| {
+        let ctx = exec::context(state.clone(), SELF);
+        exec::execute(&compiled.ir, &Call::new(inputs, &[]), &ctx)
+    };
+    let (a, b) = (run(lean), run(twin));
+    let v = verdict(&a);
+    assert_eq!(v, verdict(&b), "{what} {inputs:?}: verdicts differ\nlean: {:?}\ncompat: {:?}", a.as_ref().err(), b.as_ref().err());
+    if let (Ok(a), Ok(b)) = (a, b) {
+        assert_eq!(a.preimage.inputs, b.preimage.inputs, "{what}: inputs");
+        assert_eq!(a.preimage.public_transcript_inputs, b.preimage.public_transcript_inputs, "{what} {inputs:?}: transcript (Impact program)");
+        assert_eq!(a.preimage.public_transcript_outputs, b.preimage.public_transcript_outputs, "{what} {inputs:?}: transcript (read results)");
+        assert_eq!(a.run.pis, b.run.pis, "{what} {inputs:?}: public-input vector");
+        assert_eq!(a.run.pi_skips, b.run.pi_skips, "{what} {inputs:?}: guarded-off Impact blocks");
+        assert_eq!(a.run.outputs, b.run.outputs, "{what} {inputs:?}: returned values");
+        assert!(a.effects == b.effects, "{what} {inputs:?}: effects");
+        assert!(a.post == b.post, "{what} {inputs:?}: post-state");
+        lean.ir.check(&a.preimage).unwrap_or_else(|e| panic!("{what}: upstream refuses the lean preimage: {e:?}"));
+        twin.ir.check(&b.preimage).unwrap_or_else(|e| panic!("{what}: upstream refuses the compat preimage: {e:?}"));
+    }
+    v
 }
 
 /// Twenty public field wires: arguments first (ZKIR wants every input before
@@ -128,24 +202,47 @@ pin_kernel!(merge_coin_immediate, |c, w, k| k::merge_coin_immediate(c, &qualifie
 pin_kernel!(send_shielded, |c, w, k| k::send_shielded(c, &qualified(&w, 0), &coin_recipient(&w), u128_(w[6])));
 
 /// `insertIndexDefault` on both tree types, for a one-limb and a two-limb
-/// leaf: compat's free function and std's method.
+/// leaf: compat's free function (the default leaf hashed in circuit) and
+/// std's method (the digest folded at build time). Run on the VM from blank
+/// trees: the same transcript and the same trees after, at every index in
+/// range and refused alike past the end, at top level and under a guard
+/// either way.
 #[test]
-fn insert_index_default() {
+fn agree_insert_index_default() {
     const MT: LedgerMerkleTree<4, B32<Public>> = LedgerMerkleTree::at(0);
     const HMT: LedgerHistoricMerkleTree<6, Uint<64, Public>> = LedgerHistoricMerkleTree::at(1);
-    let std_side = build(|c| {
-        let w = inputs(c);
-        MT.insert_index_default(c, u64_(w[0]));
-        HMT.insert_index_default(c, u64_(w[1]));
-        let _ = c.when(w[19], |c| MT.insert_index_default(c, u64_(w[2])));
-    });
-    let compat_side = build(|c| {
-        let w = inputs(c);
-        merkle::insert_index_default(c, &MT, u64_(w[0]));
-        merkle::insert_index_default(c, &HMT, u64_(w[1]));
-        let _ = c.when(w[19], |c| merkle::insert_index_default(c, &MT, u64_(w[2])));
-    });
-    assert_eq!(std_side, compat_side);
+    let side = |use_compat: bool| {
+        compile(move |c| {
+            let w = inputs(c);
+            MT.reset_to_default(c);
+            HMT.reset_to_default(c);
+            if use_compat {
+                merkle::insert_index_default(c, &MT, u64_(w[0]));
+                merkle::insert_index_default(c, &HMT, u64_(w[1]));
+                let _ = c.when(w[19], |c| merkle::insert_index_default(c, &MT, u64_(w[2])));
+            } else {
+                MT.insert_index_default(c, u64_(w[0]));
+                HMT.insert_index_default(c, u64_(w[1]));
+                let _ = c.when(w[19], |c| MT.insert_index_default(c, u64_(w[2])));
+            }
+        })
+    };
+    let (lean, twin) = (side(false), side(true));
+    let blank = StateValue::Array(Array::from(vec![StateValue::Null, StateValue::Null]));
+    let mut seen = Vec::new();
+    for (mt, hmt, guarded_mt, guard) in [(0, 0, 0, 0), (3, 5, 7, 1), (15, 63, 15, 1), (15, 63, 16, 0), (16, 0, 0, 0), (0, 64, 0, 0), (2, 2, 16, 1)] {
+        let mut args = vec![Fr::from(0u64); 20];
+        args[0] = Fr::from(mt);
+        args[1] = Fr::from(hmt);
+        args[2] = Fr::from(guarded_mt);
+        args[19] = Fr::from(guard);
+        seen.push(agree("insert_index_default", &lean, &twin, &blank, &args));
+    }
+    assert!(seen.contains(&Verdict::Accepted) && seen.iter().any(|v| *v != Verdict::Accepted), "both verdicts covered: {seen:?}");
+
+    // The fold is the whole saving: the lean side hashes nothing in circuit.
+    let hashes = |c: &Compiled3| c.ir.instructions.iter().filter(|i| format!("{i:?}").starts_with("PersistentHash")).count();
+    assert_eq!((hashes(&lean), hashes(&twin)), (0, 3));
 }
 
 /// `secp256k1EcdsaVerify`, private operands (the attest port's) and public.
