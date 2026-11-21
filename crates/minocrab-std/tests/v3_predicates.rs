@@ -10,7 +10,7 @@
 //! `_COMPILE_ERRORS_NOT_PANICS`), the third as a panic, because the value of
 //! a runtime integer is not in the type system.
 
-use minocrab::v3::{Circuit3, Compiled3, FieldT};
+use minocrab::v3::{Circuit3, Compiled3, FieldT, Wire3};
 use minocrab::{Private, Public};
 use minocrab_std::v3::{
     eq, ge, greater_than, is_true, le, less_than, ne, not, Bool, BoundedUint, Bytes, Uint,
@@ -136,19 +136,125 @@ fn the_combinators_lower_to_the_ops_they_name() {
             c.assert(p);
         },
     );
-    // or is De Morgan, written out: !(!x && !y)
+    // or over two comparisons (bits by construction) is one select
     same_zkir(
         |c, a, b| c.assert(less_than(a, b).or(eq(a, b))),
         |c, a, b| {
             let lt = c.less_than(a.field(), b.field(), 128);
-            let not_lt = c.not(lt);
             let e = c.test_eq(a.field(), b.field());
-            let not_e = c.not(e);
-            let neither = c.mul(not_lt, not_e);
+            let p = c.cond_select(lt, 1u64, e);
+            c.assert(p);
+        },
+    );
+    // …with the operand that is a bit as the arm whichever side it is on…
+    same_zkir(
+        |c, a, b| c.assert(is_true(Bool::from_field_unchecked(a.field())).or(eq(a, b))),
+        |c, a, b| {
+            let e = c.test_eq(a.field(), b.field());
+            let p = c.cond_select(a.field(), 1u64, e);
+            c.assert(p);
+        },
+    );
+    same_zkir(
+        |c, a, b| c.assert(eq(a, b).or(is_true(Bool::from_field_unchecked(a.field())))),
+        |c, a, b| {
+            let e = c.test_eq(a.field(), b.field());
+            let p = c.cond_select(a.field(), 1u64, e);
+            c.assert(p);
+        },
+    );
+    // …and De Morgan, written out, !(!x && !y), when neither is
+    same_zkir(
+        |c, a, b| {
+            c.assert(is_true(Bool::from_field_unchecked(a.field())).or(is_true(Bool::from_field_unchecked(b.field()))))
+        },
+        |c, a, b| {
+            let not_a = c.not(a.field());
+            let not_b = c.not(b.field());
+            let neither = c.mul(not_a, not_b);
             let p = c.not(neither);
             c.assert(p);
         },
     );
+}
+
+/// `or`'s lowering accepts EXACTLY what the De Morgan form accepted and
+/// computes the same value, for every shape of operand on either side,
+/// including leaves whose wires are not bits (an unchecked `Bool` of 2 or of
+/// p − 1). Run through the executor on every assignment of
+/// `{0, 1, 2, p − 1}` to the two wires, the result asserted equal to a third
+/// argument of 0 or 1 so that the verdict reads the value too.
+#[test]
+fn or_accepts_exactly_what_de_morgan_accepts() {
+    use midnight_onchain_state::state::StateValue;
+    use minocrab::Fr;
+    use minocrab_sim::v3::exec::{self, Call, ExecError};
+    use minocrab_std::v3::Check;
+
+    // The four operand shapes, each over the wires (x, y): the check, and
+    // its lowering by hand as the old `or` saw it.
+    type Shape = (fn(Wire3<FieldT, Private>, Wire3<FieldT, Private>) -> Check<Private>, fn(&mut Circuit3, Wire3<FieldT, Private>, Wire3<FieldT, Private>) -> Wire3<FieldT, Private>);
+    let shapes: [(&str, Shape); 4] = [
+        ("leaf", (|x, _| is_true(Bool::from_field_unchecked(x)), |_, x, _| x)),
+        ("compare", (|x, y| eq(x, y), |c, x, y| c.test_eq(x, y))),
+        ("not", (|x, _| not(is_true(Bool::from_field_unchecked(x))), |c, x, _| c.not(x))),
+        ("and", (|x, y| is_true(Bool::from_field_unchecked(x)).and(is_true(Bool::from_field_unchecked(y))), |c, x, y| c.mul(x, y))),
+    ];
+    let minus_one = Fr::from(0u64) - Fr::from(1u64);
+    let values = [Fr::from(0u64), Fr::from(1u64), Fr::from(2u64), minus_one];
+    let (mut accepted, mut refused) = (0, 0);
+    for (left_name, (left, left_by_hand)) in shapes {
+        for (right_name, (right, right_by_hand)) in shapes {
+            let build = |lean: bool| {
+                let mut c = Circuit3::new();
+                let x = c.arg::<FieldT>("x");
+                let y = c.arg::<FieldT>("y");
+                let z = c.arg::<FieldT>("z");
+                let value = if lean {
+                    left(x, y).or(right(y, x)).eval(&mut c).field()
+                } else {
+                    let l = left_by_hand(&mut c, x, y);
+                    let l = c.not(l);
+                    let r = right_by_hand(&mut c, y, x);
+                    let r = c.not(r);
+                    let both = c.mul(l, r);
+                    c.not(both)
+                };
+                let same = c.test_eq(value, z);
+                c.assert(same);
+                c.finish(false)
+            };
+            let (lean, de_morgan) = (build(true), build(false));
+            for x in values {
+                for y in values {
+                    for z in [Fr::from(0u64), Fr::from(1u64)] {
+                        let args = [x, y, z];
+                        let run = |compiled: &Compiled3| {
+                            let ctx = exec::context(StateValue::Null, [0u8; 32]);
+                            exec::execute(&compiled.ir, &Call::new(&args, &[]), &ctx)
+                        };
+                        let (a, b) = (run(&lean), run(&de_morgan));
+                        let refused_by_circuit = |r: &Result<_, ExecError>| match r {
+                            Ok(_) => false,
+                            Err(ExecError::Rejected { .. } | ExecError::Circuit(_)) => true,
+                            Err(other) => panic!("not a circuit verdict: {other}"),
+                        };
+                        assert_eq!(
+                            refused_by_circuit(&a),
+                            refused_by_circuit(&b),
+                            "{left_name} || {right_name} on {args:?}: lean {:?}, De Morgan {:?}",
+                            a.as_ref().err(),
+                            b.as_ref().err()
+                        );
+                        if a.is_ok() { accepted += 1 } else { refused += 1 }
+                    }
+                }
+            }
+        }
+    }
+    // Both verdicts were reached: every bit pair accepts once (z its value)
+    // and every non-bit operand the old form saw refuses.
+    assert!(accepted > 0 && refused > accepted, "accepted {accepted}, refused {refused}");
 }
 
 /// The escape hatch: `eval` hands back the wire, and emits the comparison

@@ -526,9 +526,18 @@ impl<V: Vis3> Check<V> {
         }
     }
 
-    /// `self || other` — De Morgan, `!(!self && !other)`: three `not`s and a
-    /// `mul`. Written out rather than folded, because a combinator that
-    /// quietly simplified would be hiding cost.
+    /// `self || other` — ONE `cond_select` (five rows) when either operand
+    /// is a bit by construction (a comparison, a negation, another `or`):
+    /// `cond_select(x, 1, y)` with `y` that operand and `x` the other, which
+    /// the select itself constrains to be a bit. Otherwise (two
+    /// [`is_true`] leaves, say, whose wires the circuit has not proven
+    /// boolean) De Morgan, `!(!self && !other)`: three `not`s and a `mul`,
+    /// twelve rows.
+    ///
+    /// Both forms accept exactly the same assignments: De Morgan's `not`s
+    /// reject an operand that is not 0 or 1, and so does the select's
+    /// selector, while the other operand of the select cannot be anything
+    /// but a bit. Both compute `self ∨ other` on bits.
     pub fn or(self, other: Check<V>) -> Check<V> {
         Check {
             node: Node::Or(Box::new(self.node), Box::new(other.node)),
@@ -539,8 +548,8 @@ impl<V: Vis3> Check<V> {
     /// `self → other` (`!self || other`) — ONE `cond_select` over the two
     /// lowered booleans: where the premise holds the conclusion decides,
     /// otherwise true. The shape of every scope rule ("a spend grant must
-    /// have a positive cap"); written as `not(a).or(b)` it is four
-    /// instructions and twelve rows, this is five.
+    /// have a positive cap"); written as `not(a).or(b)` it is a `not` and a
+    /// select, eight rows, this is five.
     pub fn implies(self, other: Check<V>) -> Check<V> {
         Check {
             node: Node::Implies(Box::new(self.node), Box::new(other.node)),
@@ -646,13 +655,37 @@ fn lower<V: Vis3>(c: &mut Circuit3, node: Node<V>) -> Wire3<FieldT, V> {
             c.mul(left, right)
         }
         Node::Or(left, right) => {
+            let (left_bit, right_bit) = (is_bit_by_construction(&left), is_bit_by_construction(&right));
             let left = lower(c, *left);
-            let left = c.not(left);
             let right = lower(c, *right);
-            let right = c.not(right);
-            let both = c.mul(left, right);
-            c.not(both)
+            if right_bit {
+                c.cond_select(left, 1u64, right)
+            } else if left_bit {
+                c.cond_select(right, 1u64, left)
+            } else {
+                let left = c.not(left);
+                let right = c.not(right);
+                let both = c.mul(left, right);
+                c.not(both)
+            }
         }
+    }
+}
+
+/// Whether every assignment satisfying the circuit gives `node`'s lowered
+/// wire the value 0 or 1, whatever its operands. A comparison's output is
+/// one (`less_than` and `test_eq` return a bit, ir_vm.rs:1157-1163,
+/// 1209-1219), so is a `not`'s (it converts its operand to a bit and
+/// negates it, ir_vm.rs:1186-1193) and an `or`'s (either form above). A
+/// select `p → q` is one where `q` is; a product where both factors are. An
+/// [`is_true`] leaf is not: a `Bool` built unchecked from a field wire can
+/// hold anything.
+fn is_bit_by_construction<V: Vis3>(node: &Node<V>) -> bool {
+    match node {
+        Node::Compare { .. } | Node::Not(_) | Node::Or(..) => true,
+        Node::Implies(_, conclusion) => is_bit_by_construction(conclusion),
+        Node::And(left, right) => is_bit_by_construction(left) && is_bit_by_construction(right),
+        Node::Leaf(_) => false,
     }
 }
 
