@@ -399,11 +399,13 @@ pub fn block_time_lte(c: &mut Circuit3, time: Uint<64, Public>) -> Assumed<Bool<
     Assumed::of_read(not(c, gt.into_inner()))
 }
 
-/// Compact's `!b` on a Boolean, which compactc lowers to
-/// `cond_select(b, 0, 1)` rather than to an arithmetic negation — the shape
-/// the fixture's `sBlockTimeGte` shows.
+/// Compact's `!b` on a Boolean: the `not` instruction (3 rows). compactc
+/// writes `cond_select(b, 0, 1)` (5 rows; `minocrab_compat::kernel`). The
+/// two are the same constraint on `b` and the same value: `not` converts its
+/// operand to a bit (midnight-zkir 3.2.0 `ir_vm.rs:1186-1193`) exactly as
+/// `cond_select` converts its selector (`:1064-1071`), and both yield `1 - b`.
 fn not(c: &mut Circuit3, b: Bool<Public>) -> Bool<Public> {
-    Bool::from_field_unchecked(c.cond_select(b.field(), 0u64, 1u64))
+    Bool::from_field_unchecked(c.not(b.field()))
 }
 
 /// `circuit unshieldedBalance(color): Uint<128>`
@@ -466,60 +468,34 @@ pub fn receive_unshielded(c: &mut Circuit3, color: CoinColor<Public>, amount: Ui
 /// AUTO-RECEIVE guard both [`send_unshielded`] and [`mint_unshielded_token`]
 /// end with, and the reason each of them is more than a pair of effects.
 ///
-/// Two things about its shape, both compactc's and both visible in the
-/// fixture. The `kernel.self()` read is guarded by `is_left` ALONE — a
-/// recipient that is a user address never needs the contract's own address,
-/// so the read is skipped and its `public_input` gates yield the default.
-/// And the conjunction is two `cond_select`s rather than a multiplication,
-/// because that is how compactc lowers `&&` on Booleans.
+/// The address is [`self_address`] under `is_left` (a user recipient never
+/// needs it): the kept address if the circuit has one (no read), else a
+/// read guarded by `is_left` that yields zero where `is_left` is off. The
+/// value only matters where `is_left` is 1, and there both are the address.
+///
+/// LEAN against compactc's (`minocrab_compat::kernel::is_self`, which reads
+/// under an explicit guard and uses two `cond_select`s): the limb `&&` is a
+/// `mul`, sound because both operands are `test_eq` outputs, bits by
+/// construction, so the selector bit check it drops constrained nothing. The
+/// outer `cond_select(is_left, …)` STAYS: it is the one instruction that
+/// constrains `is_left` to be a bit whether or not a read is emitted.
 fn is_self(c: &mut Circuit3, recipient: &UnshieldedRecipient<Public>) -> Wire3<FieldT, Public> {
     let is_left = recipient.is_left.field();
-    let me = guarded_kernel_self(c, is_left);
-    let me = never_stale(c, me);
+    let me = c.when(is_left, self_address).or_default().bytes();
     let left = recipient.left.bytes();
-    let eq_hi = c.test_eq(left.hi, me[0]);
-    let eq_lo = c.test_eq(left.lo, me[1]);
-    let both = c.cond_select(eq_hi, eq_lo, 0u64);
+    let eq_hi = c.test_eq(left.hi, me.hi);
+    let eq_lo = c.test_eq(left.lo, me.lo);
+    let both = c.mul(eq_hi, eq_lo);
     c.cond_select(is_left, both, 0u64)
 }
 
-/// [`minocrab_ledger::kernel_self`], guarded by an EXPLICIT wire rather than
-/// the ambient scope.
-///
-/// Not spelled `c.when(is_left, |c| kernel_self(c)).or_default()`: both
-/// [`send_unshielded`] and [`mint_unshielded_token`] are called from inside
-/// another `c.when` at some corpus call sites (e.g. `manager.compact`'s
-/// `execute`), and the scope conjoins the two guards ONCE on entry
-/// (`Circuit3::when`'s doc) where the deleted `kernel_self_guarded` conjoined
-/// PER EFFECT (`Circuit3::effect_guard`, once per read and once for the
-/// Impact op) — fewer rows there, so not zero-movement. This reproduces the
-/// same op sequence [`minocrab_ledger::kernel_self`] does, through the core
-/// primitives that resolve the guard the same way regardless of nesting.
-fn guarded_kernel_self(c: &mut Circuit3, guard: Wire3<FieldT, Public>) -> [Wire3<FieldT, Public>; 2] {
-    let atoms = vec![AlignmentAtom::Bytes { length: 32 }];
-    let limbs: usize = atoms.iter().map(minocrab_ledger::atom_limbs).sum();
-    let wires: Vec<Wire3<FieldT, Public>> = (0..limbs)
-        .map(|_| c.public_transcript_input_guarded::<FieldT, Public>(guard))
-        .collect();
-    let value = LedgerValue::new(atoms, wires.iter().map(|&w| ImpactElem::Wire(w)).collect());
-    for op in [
-        minocrab_ledger::dup(2),
-        minocrab_ledger::idx_one(true, false, 0),
-        minocrab_ledger::popeq(true, &value),
-    ] {
-        c.impact_mixed(guard, &op.0);
-    }
-    [wires[0], wires[1]]
-}
-
-/// Emit `ops` under an EXPLICIT guard, resolved against the ambient scope
-/// PER OP — [`Circuit3::impact_mixed`] directly, once per op, which is what
-/// the deleted `minocrab_ledger::emit(c, guard, ops)` did. See
-/// [`guarded_kernel_self`] for why this is not `c.when(guard, |c| ..)`.
+/// Emit `ops` under `guard`, in ONE `when` scope: the guard is conjoined
+/// with the ambient scope once on entry. compactc's
+/// (`minocrab_compat::kernel::emit_guarded`) conjoins it per op, the same
+/// `cond_select(ambient, guard, 0)` repeated, so each Impact op carries the
+/// same guard value either way; the repeats are only rows.
 fn emit_guarded(c: &mut Circuit3, guard: Wire3<FieldT, Public>, ops: &[minocrab_ledger::ImpactOp]) {
-    for op in ops {
-        c.impact_mixed(guard, &op.0);
-    }
+    c.when(guard, |c| emit(c, ops));
 }
 
 /// ```text
@@ -640,12 +616,15 @@ fn derived_nonce(c: &mut Circuit3, domain: &[u8], nonce: &CoinNonce<Public>) -> 
     CoinNonce(hash::upgrade_from_transient(c, h))
 }
 
-/// `a == b` on `Bytes<32>`, as compactc lowers it: a `test_eq` per limb and
-/// the `&&` of the two, which is one `cond_select` and not a `mul`.
+/// `a == b` on `Bytes<32>`: a `test_eq` per limb and their product. compactc
+/// writes the `&&` as `cond_select(hi, lo, 0)` (`minocrab_compat::kernel`);
+/// the product is the same value because `hi` is a `test_eq` output, a bit
+/// by construction, so the selector bit check the select adds constrains
+/// nothing (`mul` 3 rows, `cond_select` 5).
 fn bytes_eq(c: &mut Circuit3, a: &B32<Public>, b: &B32<Public>) -> Wire3<FieldT, Public> {
     let hi = c.test_eq(a.hi, b.hi);
     let lo = c.test_eq(a.lo, b.lo);
-    c.cond_select(hi, lo, 0u64)
+    c.mul(hi, lo)
 }
 
 /// Compact's `a - b` on a `Uint<128>`: the difference, and the assertion that
@@ -663,15 +642,15 @@ fn checked_sub(
     c.add(a, neg)
 }
 
-/// Compact's `x as Uint<128>` on a value just computed: the range constraint,
-/// then the `Copy` the cast names its result with.
+/// Compact's `x as Uint<128>` on a value just computed: the range
+/// constraint, and the checked wire. compactc also names the result with a
+/// `copy` (`minocrab_compat::kernel::as_uint128`), an alias of zero rows.
 fn as_uint128(c: &mut Circuit3, w: Wire3<FieldT, Public>) -> Wire3<FieldT, Public> {
     // Inside a `when` the checked value is the selected one; that is the
-    // value the cast names and everything downstream (the commitment, the
-    // ledger op) consumes — compactc's branch semantics, and what keeps the
-    // hash preimage provably bounded for the taint lint.
-    let checked = Uint::<128, Public>::from_field_checked(c, w);
-    c.copy(checked.field())
+    // value everything downstream (the commitment, the ledger op) consumes —
+    // compactc's branch semantics, and what keeps the hash preimage provably
+    // bounded for the taint lint.
+    Uint::<128, Public>::from_field_checked(c, w).field()
 }
 
 /// ```text
@@ -789,9 +768,10 @@ fn merge(
 /// emit that select a second time. So the tag IS the guard here, named once,
 /// and only the five payload slots are selected.
 ///
-/// Both commitments of `output` are the same digest, hashed twice, because
-/// that is what compactc's inlining of two `coinCommitment` calls produces;
-/// the recipient select they share is hoisted (see [`coin_commitment_to`]).
+/// `output`'s commitment is hashed ONCE and claimed twice (spend, and the
+/// auto-receive). compactc hashes it twice, one per `coinCommitment` call in
+/// the source (`minocrab_compat::kernel::send_shielded`, about 5,640 rows):
+/// the same `persistent_hash` on the same wires, so the same digest.
 pub fn send_shielded(
     c: &mut Circuit3,
     input: &QualifiedShieldedCoinInfo3<Public>,
@@ -817,11 +797,12 @@ pub fn send_shielded(
     // Auto-receive when sending to self: `!recipient.is_left && …`, which is
     // one `cond_select` with the arms the other way round from `is_self`'s.
     // The address needs no guarded read — `selfAddr` is already to hand.
+    // The select stays (rather than `(1 - is_left) * same`): it is a bit
+    // check on `is_left` that does not depend on what else reads it.
     let same = bytes_eq(c, &recipient.right.bytes(), &me);
     let mine = c.cond_select(recipient.is_left, 0u64, same);
-    let cm_again = coin_commitment_to(c, &output, recipient.is_left.erase(), &to);
-    let cm_again_val = cm_again.ledger_value(c);
-    emit_guarded(c, mine, &minocrab_ledger::kernel_claim_zswap_coin_receive(&cm_again_val));
+    let cm_val = cm.ledger_value(c);
+    emit_guarded(c, mine, &minocrab_ledger::kernel_claim_zswap_coin_receive(&cm_val));
 
     let spent_it_all = c.test_eq(change, 0u64);
     let has_change = not(c, Bool::from_field_unchecked(spent_it_all)).field();
