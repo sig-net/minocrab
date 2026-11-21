@@ -44,21 +44,174 @@ use minocrab::v3::{Circuit3, FieldT, Wire3};
 use minocrab::{AlignmentAtom, Fr, Public};
 use minocrab_std::v3::hash::upgrade_from_transient;
 use minocrab_std::v3::{
-    bytes_limbs, bytes_literal_limbs, BoundedUint, Bytes, BytesN, CircuitArg, ContractAddress,
-    LedgerRepr, Uint, Vis3, B32,
+    bytes_limbs, bytes_literal_limbs, secp256k1_ecdsa_verify, BoundedUint, Bytes, BytesN,
+    CircuitArg, ContractAddress, LedgerRepr, Secp256k1EcdsaSignature, Uint, Vis3, B32,
 };
 use signet_signer_interface::Signature;
 
-use crate::common::{Caip2Id, SigningPath};
-pub use crate::signet::{
-    abi_word_to_uint128, evm_address_abi_word, numeric_abi_word, verify_attestation_signature,
-    EvmCalldata, EvmType2TxParams, RequestId, Secp256k1SigLimbs, MPC_ALGO_ECDSA, MPC_DEST_UNUSED,
-    PARAMS_LEN, TX_PARAM_TYPE_EVM_TYPE2,
-};
+use crate::evm_abi::reverse_bytes32;
+use crate::signet_common::{Caip2Id, SigningPath};
+/// `checkedTruncationU128`, the module's own narrowing of an attested
+/// uint256; the body is the EVM ABI layer's, which decodes returns with it.
+pub use crate::evm_abi::checked_truncation_u128;
+/// `evmAddressAbiWord` / `numericAbiWord`, the module's names for the EVM
+/// ABI layer's two word encoders (the same functions, not wrappers).
+pub use crate::evm_abi::{address_word as evm_address_abi_word, numeric_word as numeric_abi_word};
+pub use signet_signer_interface::RequestId;
 
 fn bytes(length: u32) -> AlignmentAtom {
     AlignmentAtom::Bytes { length }
 }
+
+// ---- the transaction parameters and the ECDSA plumbing every generation shares ----
+
+// ---- EVM Type2 transaction parameters ---------------------------------------
+
+/// `struct EvmCalldata<#maxWords>` — selector (`Bytes<4>`), used-word
+/// count (`Uint<16>`), and the canonical big-endian ABI words.
+#[derive(Clone)]
+pub struct EvmCalldata<V: Vis3, const WORDS: usize> {
+    pub selector: Wire3<FieldT, V>,
+    pub no_words: Wire3<FieldT, V>,
+    pub words: [B32<V>; WORDS],
+}
+
+/// `struct EvmType2TxParams<#maxCalldataWords, 0, 0>` — the EIP-1559
+/// envelope with an empty access list. `calldata` is
+/// `Maybe<EvmCalldata<n>>`: the tag is `calldata_is_some`, a `none` value
+/// carries a zeroed calldata.
+#[derive(Clone)]
+pub struct EvmType2TxParams<V: Vis3, const WORDS: usize> {
+    pub chain_id: Wire3<FieldT, V>,
+    pub nonce: Wire3<FieldT, V>,
+    pub max_priority_fee_per_gas: Wire3<FieldT, V>,
+    pub max_fee_per_gas: Wire3<FieldT, V>,
+    pub gas_limit: Wire3<FieldT, V>,
+    pub to: Wire3<FieldT, V>,
+    pub value: Wire3<FieldT, V>,
+    pub calldata_is_some: Wire3<FieldT, V>,
+    pub calldata: EvmCalldata<V, WORDS>,
+    pub access_list_entry_count: Wire3<FieldT, V>,
+}
+
+impl<V: Vis3, const WORDS: usize> EvmType2TxParams<V, WORDS> {
+    /// FAB limbs, slot order (one per atom except `bytes<32>` words = 2).
+    pub fn limbs(&self) -> Vec<Wire3<FieldT, V>> {
+        let mut l = vec![
+            self.chain_id,
+            self.nonce,
+            self.max_priority_fee_per_gas,
+            self.max_fee_per_gas,
+            self.gas_limit,
+            self.to,
+            self.value,
+            self.calldata_is_some,
+            self.calldata.selector,
+            self.calldata.no_words,
+        ];
+        for w in &self.calldata.words {
+            l.push(w.hi);
+            l.push(w.lo);
+        }
+        l.push(self.access_list_entry_count);
+        l
+    }
+}
+
+/// `params: Bytes<64>`'s width — the record's one fixed-size byte field.
+pub const PARAMS_LEN: usize = 64;
+
+/// `MPCSignatureAlgorithm.ecdsa` / `MPCDestination.unused` /
+/// `TxParamType.evmType2` — all first enum members, value 0.
+pub const MPC_ALGO_ECDSA: u64 = 0;
+pub const MPC_DEST_UNUSED: u64 = 0;
+pub const TX_PARAM_TYPE_EVM_TYPE2: u64 = 0;
+
+/// The two 32-byte limbs an MPC attestation's ECDSA signature enters the
+/// circuit as — `bigR.x` and `s` in `verifyRespondBidirectionalEvent`'s
+/// CIRCUIT-INPUT FORM, LITTLE-endian (the signet signer's event carries them
+/// big-endian; the reversal happens off-chain, where it is free — the TS
+/// SDK's `respondBidirectionalEventToCircuitInput`, `signet-sim`'s
+/// `Signature::circuit_input`). A wrong byte order fails verification,
+/// never a false accept. NAMED fields, so the two same-shaped halves cannot
+/// be transposed positionally (newtype-survey A7's sub-case).
+#[derive(Clone, Copy)]
+pub struct Secp256k1SigLimbs<V: Vis3> {
+    pub big_r_x: B32<V>,
+    pub s: B32<V>,
+}
+
+/// The signature half of `signet::verify_respond_bidirectional_event`, over an
+/// already-computed digest: only `bigR.x` and `s` enter verification, as
+/// little-endian scalars (no in-circuit reversal since `fff3421c`).
+///
+/// Extracted so the two digest constructions — the deployed
+/// `[Bytes<32>, Bytes<len>]` concatenation and the Borsh-typed
+/// `signet::calculate_attestation_digest_borsh` — share one verifier rather than
+/// two copies of the ECDSA plumbing. The extraction is instruction-for-
+/// instruction identical to the inlined original (row and interface
+/// snapshots, and every vault differential suite, say so).
+pub fn verify_attestation_signature<V: Vis3>(
+    c: &mut Circuit3,
+    digest: &B32<V>,
+    sig: &Secp256k1SigLimbs<V>,
+    mpc_response_key: minocrab::v3::Wire3<minocrab::v3::Secp256k1PointT, V>,
+) -> Wire3<FieldT, V> {
+    c.region("signet: attestation verify (ecdsa)", |c| {
+        let r_typed = sig.big_r_x.to_typed(c);
+        let s_typed = sig.s.to_typed(c);
+        let sig = Secp256k1EcdsaSignature {
+            r: c.from_bytes32(r_typed),
+            s: c.from_bytes32(s_typed),
+        };
+        secp256k1_ecdsa_verify(c, digest, &sig, mpc_response_key)
+    })
+}
+
+/// `abiWordToUint128(word)` — asserts the leading 16 bytes are zero and
+/// folds the trailing 16 big-endian bytes back into a `Uint<128>`.
+pub fn abi_word_to_uint128<V: Vis3>(c: &mut Circuit3, word: &B32<V>) -> Wire3<FieldT, V> {
+    abi_word_to_uint128_with(c, None, word)
+}
+
+/// [`abi_word_to_uint128`] inside a conditional: the canonical-word assert
+/// only binds when the branch is taken.
+pub fn abi_word_to_uint128_guarded<V: Vis3>(
+    c: &mut Circuit3,
+    guard: Wire3<FieldT, V>,
+    word: &B32<V>,
+) -> Wire3<FieldT, V> {
+    abi_word_to_uint128_with(c, Some(guard), word)
+}
+
+fn abi_word_to_uint128_with<V: Vis3>(
+    c: &mut Circuit3,
+    guard: Option<Wire3<FieldT, V>>,
+    word: &B32<V>,
+) -> Wire3<FieldT, V> {
+    c.region("abi words", |c| {
+        // Reversed, the BE value's bytes land at string positions 0..15
+        // (LSB first) and the zero head at 16..31: the value is the
+        // reversal mod 2^128, and the head check is "everything above
+        // bit 128 of the reversal is zero".
+        let rev = reverse_bytes32(c, word);
+        let (above, value) = c.div_mod_power_of_two(rev.lo, 128);
+        let zero = V::from_public(c.constant(0u64));
+        let above_zero = c.test_eq(above, zero);
+        let hi_zero = c.test_eq(rev.hi, zero);
+        let head_zero = c.mul(above_zero, hi_zero);
+        match guard {
+            Some(g) => {
+                let one = V::from_public(c.constant(1u64));
+                let gated = c.cond_select(g, head_zero, one);
+                c.assert(gated);
+            }
+            None => c.assert(head_zero),
+        }
+        value
+    })
+}
+
 
 // ---- the protocol's enums --------------------------------------------------------------
 
@@ -815,18 +968,6 @@ pub fn verify_respond_bidirectional_event_v1_at<V: Vis3>(
         },
         mpc_response_key,
     )
-}
-
-/// `checkedTruncationU128(x: Bytes<32>): Uint<128>` — an attested uint256
-/// (32 little-endian bytes) narrowed to `Uint<128>`: byte 31 must be zero
-/// (the source's "seems pointless but is important" check — without it the
-/// `as Uint<128>` cast of a 32-byte string reads a value mod the field),
-/// then the low 31 bytes are range-checked to 128 bits.
-pub fn checked_truncation_u128<V: Vis3>(c: &mut Circuit3, x: &B32<V>) -> Uint<128, V> {
-    let zero = V::from_public(c.constant(0u64));
-    let top_zero = c.test_eq(x.hi, zero);
-    c.assert_with(top_zero, Some("Value exceeds Uint<128>"));
-    Uint::<128, V>::from_field_checked(c, x.lo)
 }
 
 /// `pad(32, "eip155:1")` as the record's `executionDest`.

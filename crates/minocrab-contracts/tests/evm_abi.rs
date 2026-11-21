@@ -14,11 +14,11 @@
 //! 2. WORDS. Each `AbiType::word`, simulated on a concrete value, equals
 //!    the host-side oracle in `tests/vault/prims.rs` (`abi_addr_word` /
 //!    `abi_num_word`) — the same equality the vault differential rests on.
-//! 3. ZERO MOVEMENT. The encoders MOVED out of `signet` into `evm`; a
-//!    circuit built through `signet::evm_address_abi_word` and one built
-//!    through `Address::word` serialize to byte-identical ZKIR. (The
-//!    209-circuit dump says the same thing at scale; this says it in one
-//!    assertion a reader can hold.)
+//! 3. ZERO MOVEMENT. The untyped encoders (`evm::address_word`,
+//!    `evm::numeric_word`, the bodies the Signet ports used to carry) and
+//!    their typed spellings (`Address::word`, `U128::word`, `U64::word`)
+//!    serialize to byte-identical ZKIR. (The circuit dump says the same
+//!    thing at scale; this says it in one assertion a reader can hold.)
 //! 4. `build_tx`. `build_tx::<erc20::Transfer, 2>` emits the same stream as
 //!    `erc20_vault_pending::erc20_call` — whose twenty lines are copied in
 //!    here as `reference::erc20_call`, since rung A does not rewire the
@@ -36,12 +36,12 @@ use minocrab_contracts::erc20_vault::{
 use minocrab_contracts::evm::erc20::CALL_GAS as ERC20_CALL_GAS;
 use minocrab_contracts::evm::{FIXED_MAX_FEE, FIXED_PRIORITY_FEE};
 use minocrab_contracts::evm::{
-    always, build_tx, build_tx_filed, build_tx_payable, erc20, erc4626, uniswap_v3, usdt, weth,
-    AbiArg, AbiTuple, AbiType, Address, Bool, Bytes32, EvmCall, Extends, Filed, Filing, Interface,
+    address_word, always, build_tx, build_tx_filed, build_tx_payable, erc20, erc4626, numeric_word,
+    uniswap_v3, usdt, weth, AbiArg, AbiTuple, AbiType, Address, Bool, Bytes32, EvmCall, Extends, Filed, Filing, Interface,
     U128, U24, U256, U64, U8,
 };
 use minocrab_contracts::evm_flow::Contract;
-use minocrab_contracts::signet::{self, EvmCalldata};
+use minocrab_contracts::signet::EvmCalldata;
 use minocrab_contracts::signet_flow::EvmTx;
 use minocrab_contracts::signet_v1::schema;
 use minocrab_sim::v3::simulate;
@@ -274,14 +274,14 @@ fn pre_encoded_words_are_the_identity() {
 
 // ---- 3. zero movement of the moved encoders ----------------------------------
 
-/// The address encoder MOVED from `signet` to `evm`. Both spellings build
-/// byte-identical ZKIR — the move is a place to write the body down, not a
-/// different lowering.
+/// The untyped address encoder and its typed spelling build byte-identical
+/// ZKIR — the type is a place to write the range down, not a different
+/// lowering.
 #[test]
 fn the_moved_address_encoder_did_not_move_an_instruction() {
     let old = zkir(|c| {
         let a = c.arg::<FieldT>("addr");
-        let w = signet::evm_address_abi_word(c, a);
+        let w = address_word(c, a);
         let hi = c.disclose(w.hi, "hi");
         let lo = c.disclose(w.lo, "lo");
         c.output(hi, "hi");
@@ -304,7 +304,7 @@ fn the_moved_address_encoder_did_not_move_an_instruction() {
 fn the_moved_numeric_encoder_did_not_move_an_instruction() {
     let old = zkir(|c| {
         let v = c.arg::<FieldT>("value");
-        let w = signet::numeric_abi_word(c, v);
+        let w = numeric_word(c, v);
         let hi = c.disclose(w.hi, "hi");
         let lo = c.disclose(w.lo, "lo");
         c.output(hi, "hi");
@@ -385,8 +385,8 @@ mod reference {
         amount: Wire3<FieldT, Private>,
         nonce: Wire3<FieldT, Private>,
     ) -> EvmTx<2> {
-        let word0 = signet::evm_address_abi_word(c, dest);
-        let word1 = signet::numeric_abi_word(c, amount);
+        let word0 = address_word(c, dest);
+        let word1 = numeric_word(c, amount);
         let gas = fixed_gas(c, ERC20_CALL_GAS);
         erc20_call(c, &TRANSFER_SELECTOR, to, [word0, word1], nonce, gas)
     }
@@ -1089,4 +1089,26 @@ fn the_rung_b_gas_defaults_are_the_erc20_one() {
     ] {
         assert_eq!(limit, erc20::CALL_GAS);
     }
+}
+
+/// THE FIVE OUTPUT SCHEMAS ARE THE DEPLOYED STRINGS, byte for byte, at
+/// the widths `notes/vault-flush.org` §2 names (2, 34, 36, 38) — the
+/// record's limbing depends on the length, and the length is in the
+/// signed request id.
+#[test]
+fn the_output_schemas_are_the_deployed_strings() {
+    use minocrab_contracts::erc20_vault as v;
+    use minocrab_contracts::signet_v1::OutputSchema;
+
+    assert_eq!(schema::NoReturn::BYTES, v::REPLACE_NONCE_OUTPUT_SCHEMA);
+    assert_eq!(schema::Success::BYTES, v::VAULT_OUTPUT_SCHEMA);
+    assert_eq!(schema::AmountIn::BYTES, v::SWAP_OUTPUT_SCHEMA);
+    assert_eq!(schema::Shares::BYTES, v::SUPPLY_OUTPUT_SCHEMA);
+    assert_eq!(schema::Assets::BYTES, v::REDEEM_OUTPUT_SCHEMA);
+
+    assert_eq!(schema::NoReturn::BYTES.len(), 2);
+    assert_eq!(schema::Success::BYTES.len(), 34);
+    assert_eq!(schema::AmountIn::BYTES.len(), 38);
+    assert_eq!(schema::Shares::BYTES.len(), 36);
+    assert_eq!(schema::Assets::BYTES.len(), 36);
 }

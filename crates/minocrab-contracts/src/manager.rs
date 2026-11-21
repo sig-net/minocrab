@@ -309,7 +309,7 @@ fn numeric_word<V: minocrab_std::v3::Vis3>(
     c: &mut Circuit3,
     value: Wire3<FieldT, V>,
 ) -> B32<V> {
-    crate::signet::numeric_abi_word(c, value)
+    crate::evm::numeric_word(c, value)
 }
 
 /// `addressWord(addr)` — the 20-byte address at bytes 12..31 of a word.
@@ -317,7 +317,7 @@ fn address_word<V: minocrab_std::v3::Vis3>(
     c: &mut Circuit3,
     addr: Wire3<FieldT, V>,
 ) -> B32<V> {
-    crate::signet::evm_address_abi_word(c, addr)
+    crate::evm::address_word(c, addr)
 }
 
 /// keccak256 over a list of 32-byte words.

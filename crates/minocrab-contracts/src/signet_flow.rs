@@ -115,7 +115,7 @@ use minocrab_std::v3::{
 use signet_signer_interface::notification::construct_notification_v1;
 use signet_signer_interface::{RequestId, SignetSigner};
 
-use crate::common::SigningPath;
+use crate::signet_common::SigningPath;
 use crate::signet_v1::{self, EventRecordV1, EvmType2TxParams, OutputSchema};
 
 // ---- the shared configuration slot ------------------------------------------------
@@ -213,7 +213,7 @@ pub struct EvmTx<const WORDS: usize> {
     /// `Maybe<EvmCalldata>`: the flag then the (always-present, zero-filled
     /// when absent) calldata.
     pub calldata_is_some: Wire3<FieldT, Private>,
-    pub calldata: crate::signet::EvmCalldata<Private, WORDS>,
+    pub calldata: signet_v1::EvmCalldata<Private, WORDS>,
 }
 
 /// WHOSE KEY SIGNS, and whether the reserved-path assert is emitted.

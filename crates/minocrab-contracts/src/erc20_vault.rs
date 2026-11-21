@@ -178,7 +178,7 @@ pub const SWAP_ARGS_PAD: &str = "vault:swap:args";
 pub const SUPPLY_ARGS_PAD: &str = "vault:supply:args";
 pub const REDEEM_ARGS_PAD: &str = "vault:redeem:args";
 /// The vault's own signing path, `pad(32, "vault")`.
-pub const VAULT_PATH: &str = "vault";
+pub use crate::common::VAULT_PATH;
 
 /// `vaultOutputSchema()` — the ERC20 transfer/approve bool return.
 pub const VAULT_OUTPUT_SCHEMA: &[u8] = b"[{\"name\":\"success\",\"type\":\"bool\"}]";
