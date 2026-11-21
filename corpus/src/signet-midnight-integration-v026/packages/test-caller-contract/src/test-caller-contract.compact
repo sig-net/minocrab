@@ -1,0 +1,501 @@
+//                                          💡 NOTE 💡
+// This contract drives the Signet Signer @sig-net/midnight-signer for integration purposes.
+// While informative, for better full integration examples (such as an ERC20 cross chain vault example) see
+// the Midnight Examples repository at: https://github.com/sig-net/midnight-examples.
+//
+// =================== Test Caller Contract ================================================================
+// This minimal signet caller tests:
+// - initialisation: pinning its MPC response key once after deploy
+// - submitting a SignBidirectionalEvent signature request with contract-fixed minimal call data
+//   (signed, never broadcast) plus real-EVM requests against the SignetEvmTarget Solidity contract
+//   (one submit circuit per target method, growing in ABI complexity over time)
+// - verification of the MPC's ECDSA-signed respond-bidirectional response of those requests,
+//   one verify circuit per attested output width, settling on the attested output (the
+//   checkAndDouble leg narrows an attested uint256 word to Uint<128> in-circuit)
+// - settlement of a failed or unviable execution: the width-0 attestation the MPC posts when
+//   the transaction reverted or lost its nonce, recorded under its verified output kind
+// ========================================================================================================
+pragma language_version >= 0.25;
+
+import CompactStandardLibrary;
+
+import "@sig-net/midnight/src/Signet";
+
+// Ledger layout: field numbers are declaration order and stay fixed.
+// signBidirectionalEventMap deliberately sits at field 3, after a List that
+// grows with each request, so the tests prove the MPC locates it via the
+// field position named in the notification.
+
+// field 0: log of every submitted request id, newest first.
+export ledger requestLog: List<Bytes<32>>;
+
+// field 1: the MPC response key for this contract, pinned by initialise().
+export ledger mpcResponseKey: Secp256k1Point;
+
+// field 2: the central signet signer, sealed at deploy. submitSignatureRequest
+// cross-contract-calls it to emit the request notification the MPC polls.
+sealed ledger signetSigner: SignetSigner;
+
+// field 3: the request map the MPC reads requests back from. Sized for EVM
+// Type 2 transactions with <1 calldata word, 0 access-list entries,
+// 0 storage keys> and a 34-byte ABI output schema. Shared by every request
+// of that shape: submitSignatureRequest, submitIsEvenRequest and
+// submitRevertIfRequest. The schema fills its field exactly here. A shorter
+// canonical schema can share this map when NUL-padded to the field width,
+// and a longer one needs its own map: see field 6.
+export ledger signBidirectionalEventMap: SignBidirectionalEventMapV1<EvmType2TxParams<1, 0, 0>, 34>;
+
+// field 4: identity commitment of the deployer, gating initialise().
+sealed ledger deployer: Bytes<32>;
+
+// field 5: whether initialise has run (0 = no, 1 = yes).
+export ledger initialised: Counter;
+
+// field 6: the request map for the 69-byte ABI bool+uint256 output schema
+// (submitCheckAndDoubleRequest). One map per schema WIDTH is the growth
+// pattern: the notification names each map's field position, so the MPC
+// locates whichever map a request lives in. New fields append AFTER this
+// one, existing positions stay fixed.
+export ledger signBidirectionalEventMap69: SignBidirectionalEventMapV1<EvmType2TxParams<1, 0, 0>, 69>;
+
+// field 7: the amount each verified checkAndDouble response returned, keyed
+// by the request it settled: what a real client does with an attested
+// output once it has matched a verified attestation. The attested amount is the
+// uint256 as 32 little-endian bytes, narrowed to Uint<128> in-circuit by
+// checkedTruncationU128.
+export ledger checkAndDoubleAmounts: Map<RequestId, Uint<128>>;
+
+// field 8: the MPC's verdict on each settled failure, keyed by the request
+// it settled: failed (the transaction reverted) or unviable (another
+// transaction took its nonce).
+export ledger failureVerdicts: Map<RequestId, OutputKind>;
+
+witness deployerSecretKey(): Bytes<32>;
+
+// Exported so deploy tooling and tests can compute the commitment.
+export pure circuit deployerCommitment(sk: Bytes<32>): Bytes<32> {
+  return upgradeFromTransient(transientHash<Vector<2, Bytes<32>>>([pad(32, "signet-caller:deployer:"), sk]));
+}
+
+constructor(initialDeployerCommitment: Bytes<32>, initialSignetSigner: SignetSigner) {
+  deployer = disclose(initialDeployerCommitment);
+  signetSigner = disclose(initialSignetSigner);
+}
+
+// Tests the two-step configuration: the MPC response key can only be derived
+// once the contract address exists, so it is pinned here after deploy.
+// One-shot and deployer-gated.
+export circuit initialise(responseKey: Secp256k1Point): [] {
+  assert(
+    initialised == 0,
+    "Already initialised: the MPC response key is stored"
+  );
+  assert(
+    deployerCommitment(deployerSecretKey()) == deployer,
+    "Not the deployer"
+  );
+  assert(
+    responseKey != default<Secp256k1Point>,
+    "Response key must not be the identity point"
+  );
+  initialised.increment(1);
+  mpcResponseKey = disclose(responseKey);
+}
+
+// Tests submitting the smallest well-formed signet request. Everything about
+// the transaction is a contract-fixed constant (a syntactically valid payload
+// to be SIGNED, never broadcast). The caller supplies only the derived
+// account's EVM nonce and the MPC key version.
+export circuit submitSignatureRequest(
+  evmNonce: Uint<64>,
+  keyVersion: Uint<8>
+): [] {
+  const calldata = EvmCalldata<1> {
+    selector: Bytes [0xca, 0x11, 0xab, 0x1e],
+    noWords: 1 as Uint<16>,
+    words: [pad(32, "signet-caller:fixed-word")]
+  };
+
+  // Declaration order (canonical EIP-1559), which is also the request-id hash order.
+  const txParams = EvmType2TxParams<1, 0, 0> {
+    chainId: 31337 as Uint<64>,
+    nonce: evmNonce,
+    maxPriorityFeePerGas: 1000000000 as Uint<128>, // 1 gwei
+    maxFeePerGas: 30000000000 as Uint<128>,        // 30 gwei
+    gasLimit: 100000 as Uint<64>,
+    to: pad(20, "signet-caller-e2e-to"),
+    value: 0 as Uint<128>,
+    calldata: some<EvmCalldata<1>>(calldata),
+    accessListEntryCount: 0,
+    accessList: []
+  };
+
+  const outputSchema = "[{\"name\":\"success\",\"type\":\"bool\"}]" as Bytes<34>;
+  const request = constructSignBidirectionalEventV1<EvmType2TxParams<1, 0, 0>, 34>(
+    keyVersion,
+    kernel.self(),
+    pad(32, "caller-path"),
+    MPCSignatureAlgorithm.ecdsa,
+    TxParamType.evmType2,
+    txParams,
+    ethereumCaip2Id(),
+    MPCDestination.unused,
+    pad(64, ""),
+    outputSchema
+  );
+  const requestId = disclose(calculateEvmType2RequestIdV1<1, 0, 0, 34>(request));
+
+  assert(!signBidirectionalEventMap.member(requestId), "Request already exists");
+  signBidirectionalEventMap.insert(requestId, disclose(request));
+  requestLog.pushFront(requestId as Bytes<32>);
+
+  // Notify the MPC via the signet signer's notification event: the payload
+  // carries the resolved ledger-tree path of signBidirectionalEventMap. This
+  // flat contract stores it at field 3, so the path is [3] at depth 1 (see
+  // layout).
+  signetSigner.signBidirectional(
+    requestId,
+    constructSignBidirectionalEventNotificationV1(
+      kernel.self(),
+      1 as Uint<8>,
+      [3, 0, 0, 0] as Vector<4, Uint<8>>,
+    ),
+  );
+}
+
+// Real EVM leg, stage 1a: SignetEvmTarget.isEven(uint256) on the local
+// anvil. Unlike submitSignatureRequest's payload, this request IS broadcast:
+// the e2e funds the derived sender and sends the signed transaction, and
+// the MPC observes the execution and attests its output. The selector is
+// the first 4 bytes of keccak256("isEven(uint256)"), pinned here and
+// lockstep-checked against ethers in the e2e. The output schema is the
+// same exact-width single bool as submitSignatureRequest's, so the request
+// SHARES the field-3 map and its responses verify via verifyResponse
+// (attested output: 1 byte).
+export circuit submitIsEvenRequest(
+  evmNonce: Uint<64>,
+  keyVersion: Uint<8>,
+  to: Bytes<20>,
+  argWord: Bytes<32>
+): [] {
+  const calldata = EvmCalldata<1> {
+    selector: Bytes [0x2a, 0x2e, 0x13, 0x20],
+    noWords: 1 as Uint<16>,
+    words: [argWord]
+  };
+
+  const txParams = EvmType2TxParams<1, 0, 0> {
+    chainId: 31337 as Uint<64>,
+    nonce: evmNonce,
+    maxPriorityFeePerGas: 1000000000 as Uint<128>, // 1 gwei
+    maxFeePerGas: 30000000000 as Uint<128>,        // 30 gwei
+    gasLimit: 100000 as Uint<64>,
+    to: to,
+    value: 0 as Uint<128>,
+    calldata: some<EvmCalldata<1>>(calldata),
+    accessListEntryCount: 0,
+    accessList: []
+  };
+
+  const outputSchema = "[{\"name\":\"success\",\"type\":\"bool\"}]" as Bytes<34>;
+  const request = constructSignBidirectionalEventV1<EvmType2TxParams<1, 0, 0>, 34>(
+    keyVersion,
+    kernel.self(),
+    pad(32, "caller-path"),
+    MPCSignatureAlgorithm.ecdsa,
+    TxParamType.evmType2,
+    txParams,
+    ethereumCaip2Id(),
+    MPCDestination.unused,
+    pad(64, ""),
+    outputSchema
+  );
+  const requestId = disclose(calculateEvmType2RequestIdV1<1, 0, 0, 34>(request));
+
+  assert(!signBidirectionalEventMap.member(requestId), "Request already exists");
+  signBidirectionalEventMap.insert(requestId, disclose(request));
+  requestLog.pushFront(requestId as Bytes<32>);
+
+  // signBidirectionalEventMap sits at flat field 3, path [3] at depth 1.
+  signetSigner.signBidirectional(
+    requestId,
+    constructSignBidirectionalEventNotificationV1(
+      kernel.self(),
+      1 as Uint<8>,
+      [3, 0, 0, 0] as Vector<4, Uint<8>>,
+    ),
+  );
+}
+
+// Real EVM leg, stage 1b: SignetEvmTarget.checkAndDouble(uint256) on the
+// local anvil, also broadcast by the e2e. The selector is the first 4 bytes
+// of keccak256("checkAndDouble(uint256)"), pinned here and lockstep-checked
+// against ethers in the e2e. The ABI output schema is bool + uint256 (69
+// bytes), so the request lives in the field-6 map (named in the
+// notification) and its responses verify via verifyCheckAndDoubleResponse
+// (attested output: a 1-byte bool then the uint256 as 32 little-endian bytes,
+// 33 bytes).
+export circuit submitCheckAndDoubleRequest(
+  evmNonce: Uint<64>,
+  keyVersion: Uint<8>,
+  to: Bytes<20>,
+  argWord: Bytes<32>
+): [] {
+  const calldata = EvmCalldata<1> {
+    selector: Bytes [0xe6, 0xcf, 0x21, 0x87],
+    noWords: 1 as Uint<16>,
+    words: [argWord]
+  };
+
+  const txParams = EvmType2TxParams<1, 0, 0> {
+    chainId: 31337 as Uint<64>,
+    nonce: evmNonce,
+    maxPriorityFeePerGas: 1000000000 as Uint<128>, // 1 gwei
+    maxFeePerGas: 30000000000 as Uint<128>,        // 30 gwei
+    gasLimit: 100000 as Uint<64>,
+    to: to,
+    value: 0 as Uint<128>,
+    calldata: some<EvmCalldata<1>>(calldata),
+    accessListEntryCount: 0,
+    accessList: []
+  };
+
+  const outputSchema = "[{\"name\":\"success\",\"type\":\"bool\"},{\"name\":\"amount\",\"type\":\"uint256\"}]" as Bytes<69>;
+  const request = constructSignBidirectionalEventV1<EvmType2TxParams<1, 0, 0>, 69>(
+    keyVersion,
+    kernel.self(),
+    pad(32, "caller-path"),
+    MPCSignatureAlgorithm.ecdsa,
+    TxParamType.evmType2,
+    txParams,
+    ethereumCaip2Id(),
+    MPCDestination.unused,
+    pad(64, ""),
+    outputSchema
+  );
+  const requestId = disclose(calculateEvmType2RequestIdV1<1, 0, 0, 69>(request));
+
+  assert(!signBidirectionalEventMap69.member(requestId), "Request already exists");
+  signBidirectionalEventMap69.insert(requestId, disclose(request));
+  requestLog.pushFront(requestId as Bytes<32>);
+
+  // signBidirectionalEventMap69 sits at flat field 6, path [6] at depth 1.
+  signetSigner.signBidirectional(
+    requestId,
+    constructSignBidirectionalEventNotificationV1(
+      kernel.self(),
+      1 as Uint<8>,
+      [6, 0, 0, 0] as Vector<4, Uint<8>>,
+    ),
+  );
+}
+
+// Real EVM leg, stage 1c: SignetEvmTarget.revertIf(bool) on the local anvil,
+// broadcast by the e2e with shouldRevert = true so the transaction mines
+// reverted and the MPC attests it failed over an empty output, which
+// verifyFailureResponse settles. The selector is the first 4 bytes of
+// keccak256("revertIf(bool)"), pinned here and lockstep-checked against
+// ethers in the e2e. The argument is composed in-circuit with boolAbiWord.
+// The output schema is the single bool of submitIsEvenRequest, so the
+// request shares the field-3 map.
+export circuit submitRevertIfRequest(
+  evmNonce: Uint<64>,
+  keyVersion: Uint<8>,
+  to: Bytes<20>,
+  shouldRevert: Boolean
+): [] {
+  const calldata = EvmCalldata<1> {
+    selector: Bytes [0xd4, 0x60, 0xc5, 0x1a],
+    noWords: 1 as Uint<16>,
+    words: [boolAbiWord(shouldRevert)]
+  };
+
+  const txParams = EvmType2TxParams<1, 0, 0> {
+    chainId: 31337 as Uint<64>,
+    nonce: evmNonce,
+    maxPriorityFeePerGas: 1000000000 as Uint<128>, // 1 gwei
+    maxFeePerGas: 30000000000 as Uint<128>,        // 30 gwei
+    gasLimit: 100000 as Uint<64>,
+    to: to,
+    value: 0 as Uint<128>,
+    calldata: some<EvmCalldata<1>>(calldata),
+    accessListEntryCount: 0,
+    accessList: []
+  };
+
+  const outputSchema = "[{\"name\":\"success\",\"type\":\"bool\"}]" as Bytes<34>;
+  const request = constructSignBidirectionalEventV1<EvmType2TxParams<1, 0, 0>, 34>(
+    keyVersion,
+    kernel.self(),
+    pad(32, "caller-path"),
+    MPCSignatureAlgorithm.ecdsa,
+    TxParamType.evmType2,
+    txParams,
+    ethereumCaip2Id(),
+    MPCDestination.unused,
+    pad(64, ""),
+    outputSchema
+  );
+  const requestId = disclose(calculateEvmType2RequestIdV1<1, 0, 0, 34>(request));
+
+  assert(!signBidirectionalEventMap.member(requestId), "Request already exists");
+  signBidirectionalEventMap.insert(requestId, disclose(request));
+  requestLog.pushFront(requestId as Bytes<32>);
+
+  // signBidirectionalEventMap sits at flat field 3, path [3] at depth 1.
+  signetSigner.signBidirectional(
+    requestId,
+    constructSignBidirectionalEventNotificationV1(
+      kernel.self(),
+      1 as Uint<8>,
+      [3, 0, 0, 0] as Vector<4, Uint<8>>,
+    ),
+  );
+}
+
+// The Compact mirror of the single-bool output schema
+// ("[{\"name\":\"success\",\"type\":\"bool\"}]"): the MPC serialises the decoded
+// EVM output as this struct (1 byte), and verifyResponse reads it back with
+// the stdlib deserialize.
+struct BoolResponse {
+  success: Boolean;
+}
+
+// Tests in-circuit verification of the MPC's ECDSA-signed
+// respond-bidirectional response: the attestation over (requestId, blockHeight,
+// outputKind, output) must verify against the pinned response key, and the
+// request the event names is consumed so it cannot be verified twice. The
+// output width follows from the output schema: the single-bool schema
+// (submitSignatureRequest, submitIsEvenRequest and submitRevertIfRequest)
+// serialises to exactly 1 byte (no padding: the digest commits to the
+// output's exact width and hash, and the target-chain block height beside
+// them). The caller hands the event over in
+// verifyRespondBidirectionalEventV1's circuit-input form (signature scalars
+// byte-reversed off-chain, see that circuit's contract): the attested bytes
+// deserialize into BoolResponse in-circuit and the decoded value gates
+// settlement, the way a real client would react to a foreign call's return
+// value. Settlement routes on the verified kind: only an executed
+// attestation carries return data, a failure settles through
+// verifyFailureResponse.
+export circuit verifyResponse(
+  respondBidirectionalEvent: RespondBidirectionalEventV1,
+  serializedOutput: Bytes<1>
+): [] {
+  const disclosedRequestId = disclose(respondBidirectionalEvent.requestId);
+
+  assert(
+    initialised != 0,
+    "Not initialised: no MPC response key stored"
+  );
+
+  assert(
+    verifyRespondBidirectionalEventV1<1>(
+      serializedOutput,
+      disclose(respondBidirectionalEvent),
+      mpcResponseKey
+    ),
+    "Invalid attestation or output"
+  );
+  assert(
+    respondBidirectionalEvent.outputKind == OutputKind.executed,
+    "Attestation is not an execution"
+  );
+
+  // The output matched the width and hash the signature covers, so the
+  // attested bytes can now be unpacked and acted on: deserialize is the
+  // compiled builtin, the true inverse of the MPC's off-chain packing.
+  const response = deserialize<BoolResponse, 1>(serializedOutput);
+  assert(response.success, "Foreign call reported failure");
+
+  assert(signBidirectionalEventMap.member(disclosedRequestId), "Request not found");
+  signBidirectionalEventMap.remove(disclosedRequestId);
+}
+
+// The Compact mirror of the bool + uint256 output schema, one field per
+// schema field: the MPC carries the uint256 whole as 32 little-endian bytes,
+// so the field is Bytes<32> and the struct serialises to 33 bytes.
+struct CheckAndDoubleResponse {
+  success: Boolean;
+  amount: Bytes<32>;
+}
+
+// Same in-circuit verification as verifyResponse but for the checkAndDouble
+// output schema, consumed from the field-6 map those requests live in. The
+// attested bytes deserialize into CheckAndDoubleResponse in-circuit, the
+// amount is narrowed to Uint<128> with checkedTruncationU128 (an amount at or
+// above 2^128 aborts the circuit with a valid signature) and recorded on the
+// ledger under the request it settles. Duplicated per width: contract-level
+// circuits cannot be generic over the output width.
+export circuit verifyCheckAndDoubleResponse(
+  respondBidirectionalEvent: RespondBidirectionalEventV1,
+  serializedOutput: Bytes<33>
+): [] {
+  const disclosedRequestId = disclose(respondBidirectionalEvent.requestId);
+
+  assert(
+    initialised != 0,
+    "Not initialised: no MPC response key stored"
+  );
+
+  assert(
+    verifyRespondBidirectionalEventV1<33>(
+      serializedOutput,
+      disclose(respondBidirectionalEvent),
+      mpcResponseKey
+    ),
+    "Invalid attestation or output"
+  );
+  assert(
+    respondBidirectionalEvent.outputKind == OutputKind.executed,
+    "Attestation is not an execution"
+  );
+
+  const response = deserialize<CheckAndDoubleResponse, 33>(serializedOutput);
+  assert(response.success, "Foreign call reported failure");
+  const amount = checkedTruncationU128(response.amount);
+
+  assert(signBidirectionalEventMap69.member(disclosedRequestId), "Request not found");
+  signBidirectionalEventMap69.remove(disclosedRequestId);
+  checkAndDoubleAmounts.insert(disclosedRequestId, disclose(amount));
+}
+
+// Tests settlement of a failed foreign execution: the MPC attests a reverted
+// transaction (failed) or one whose nonce another transaction took
+// (unviable) over an EMPTY output, so the attestation verifies at width 0
+// under the kind that says why. The verified kind gates settlement: an
+// executed attestation never settles here, whatever its width. The request
+// is consumed from whichever map holds it (a failure can answer a request
+// of any schema width) and the verdict is recorded under the request.
+export circuit verifyFailureResponse(
+  respondBidirectionalEvent: RespondBidirectionalEventV1,
+  serializedOutput: Bytes<0>
+): [] {
+  const disclosedRequestId = disclose(respondBidirectionalEvent.requestId);
+
+  assert(
+    initialised != 0,
+    "Not initialised: no MPC response key stored"
+  );
+
+  assert(
+    verifyRespondBidirectionalEventV1<0>(
+      serializedOutput,
+      disclose(respondBidirectionalEvent),
+      mpcResponseKey
+    ),
+    "Invalid attestation or output"
+  );
+  const outputKind = disclose(respondBidirectionalEvent.outputKind);
+  assert(
+    outputKind == OutputKind.failed || outputKind == OutputKind.unviable,
+    "Attestation is not a failure"
+  );
+
+  if (signBidirectionalEventMap.member(disclosedRequestId)) {
+    signBidirectionalEventMap.remove(disclosedRequestId);
+  } else {
+    assert(signBidirectionalEventMap69.member(disclosedRequestId), "Request not found");
+    signBidirectionalEventMap69.remove(disclosedRequestId);
+  }
+  failureVerdicts.insert(disclosedRequestId, outputKind);
+}

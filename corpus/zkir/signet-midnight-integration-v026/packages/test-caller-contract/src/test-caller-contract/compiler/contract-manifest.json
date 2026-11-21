@@ -1,0 +1,76 @@
+{
+  "manifest-version": "1",
+  "compiler-version": "0.36.1",
+  "compiler-commit": "7fa3a117c5e7efe9d2c51da04263e5f0b3509144",
+  "language-version": "0.28.0",
+  "runtime-version": "0.21.0",
+  "compiler": {
+    "type": "directory",
+    "contract-info.json": {
+      "type": "file",
+      "size": 33852,
+      "hash": "f004d67f24ad7683e94aef23ccc6c361adc6d9c3cad2fdeeaa57a1bddeb19e79"
+    }
+  },
+  "contract": {
+    "type": "directory",
+    "index.d.ts": {
+      "type": "file",
+      "size": 23099,
+      "hash": "367424cb0957dc85767d72ad9b026c845aff813472a41209816001a0ee85273e"
+    },
+    "index.js": {
+      "type": "file",
+      "size": 251842,
+      "hash": "974dec89e340500be29e42ff6333ef620740b4510980568beb0ed81a08cf520d"
+    },
+    "index.js.map": {
+      "type": "file",
+      "size": 11611,
+      "hash": "5e14b4053b94506906f7e6df40f9ad28754de10cb409350cc0d4122acd76fd8d"
+    }
+  },
+  "zkir": {
+    "type": "directory",
+    "initialise.zkir": {
+      "type": "file",
+      "size": 3047,
+      "hash": "93f7f4c7409320120754a3e5ace5a9c0d674bb66d66651df738823805c33bcc7"
+    },
+    "submitCheckAndDoubleRequest.zkir": {
+      "type": "file",
+      "size": 13553,
+      "hash": "8929940d95a8c6ce8a0f78b39a8c8eb6faf979c80f4ec9c43b789491bafbf413"
+    },
+    "submitIsEvenRequest.zkir": {
+      "type": "file",
+      "size": 13477,
+      "hash": "02e1d571cde69700282c93f9a3e9f6e42a4b1dc0711a8340df8f4090f92aa12e"
+    },
+    "submitRevertIfRequest.zkir": {
+      "type": "file",
+      "size": 13399,
+      "hash": "f6f5947cbc0d2937a225c4d679cfcd7f8469070f26f6617499aae864ad842a93"
+    },
+    "submitSignatureRequest.zkir": {
+      "type": "file",
+      "size": 13245,
+      "hash": "b849935d1973e84c37724c8e26c60c431b14a469d2ef8eaf3b92cc94d71ec348"
+    },
+    "verifyCheckAndDoubleResponse.zkir": {
+      "type": "file",
+      "size": 30966,
+      "hash": "4c0149461d299e00aac251e7e3a765b26bfc5a4a4835873ce31a8f054db0a6c4"
+    },
+    "verifyFailureResponse.zkir": {
+      "type": "file",
+      "size": 20345,
+      "hash": "ccbe1fab2dcd85cd060d1bb1e09d1d3136056fa9ddaf0b2732e1c7bb03feaa27"
+    },
+    "verifyResponse.zkir": {
+      "type": "file",
+      "size": 19198,
+      "hash": "235cdc0534d9750371d6d91e0d97da94e747dbf699b1adbd96b099678b199bb3"
+    }
+  }
+}

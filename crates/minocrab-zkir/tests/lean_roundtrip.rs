@@ -69,8 +69,9 @@ fn lean_syntax_round_trips_the_v3_corpus_byte_for_byte() {
     // 855 → 907 with passport-account-custody's 52 circuits.
     // 907 → 897 when the compact source moved to compactc-v0.36.1 (7fa3a117);
     // corpus_roundtrip.rs names what was added and removed.
+    // 897 → 938 with the mainnet pins (M48 L), named in corpus_roundtrip.rs.
     assert!(
-        stdout.starts_with("897 ok, 0 failed, 0 v2 skipped"),
+        stdout.starts_with("938 ok, 0 failed, 0 v2 skipped"),
         "unexpected round-trip summary (corpus size moved?): {stdout}"
     );
 

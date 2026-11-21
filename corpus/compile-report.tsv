@@ -582,6 +582,7 @@ src/oz-midnight-apps/contracts/src/structs/test/mocks/contracts/Queue.mock.compa
 src/passport-account-custody/experiments/minocrab-account-custody/reference/contracts/account-p256.compact	fail	Exception: account-p256.compact line 21 char 8:
 src/passport-account-custody/experiments/minocrab-account-custody/reference/contracts/account.compact	ok	
 src/passport-account-custody/experiments/minocrab-account-custody/reference/contracts/webauthn.compact	ok	
+src/signet-midnight-examples-v070/examples/erc20-vault/contract/src/erc20-vault.compact	ok	
 src/signet-midnight-examples/examples/erc20-vault/contract/src/erc20-vault.compact	ok	
 src/signet-midnight-experiments/experiments/attest/contract/src/attest.compact	ok	
 src/signet-midnight-experiments/experiments/baseline/contract/src/baseline.compact	ok	
@@ -602,6 +603,12 @@ src/signet-midnight-integration-v0241/packages/signet-midnight/src/circuits.comp
 src/signet-midnight-integration-v0250/packages/signet-contract/src/signet-contract.compact	ok	
 src/signet-midnight-integration-v0250/packages/signet-midnight/src/Signet.compact	ok	
 src/signet-midnight-integration-v0250/packages/signet-midnight/src/circuits.compact	ok	
+src/signet-midnight-integration-v026/packages/signet-midnight/src/Signet.compact	ok	
+src/signet-midnight-integration-v026/packages/signet-midnight/src/circuits.compact	ok	
+src/signet-midnight-integration-v026/packages/signet-responder/src/signet-responder.compact	ok	
+src/signet-midnight-integration-v026/packages/signet-signer/src/signet-signer.compact	ok	
+src/signet-midnight-integration-v026/packages/test-caller-contract-20-field/src/test-caller-contract-20-field.compact	ok	
+src/signet-midnight-integration-v026/packages/test-caller-contract/src/test-caller-contract.compact	ok	
 src/signet-midnight-integration/packages/midnight-serde/tests/fixtures/serde-fixtures.compact	ok	
 src/signet-midnight-integration/packages/signet-contract/src/signet-contract.compact	ok	
 src/signet-midnight-integration/packages/signet-midnight/src/Signet.compact	ok	

@@ -93,6 +93,23 @@
       "note": "Tag v0.25.0, the deployed @sig-net/midnight-contract 0.25.0 singleton: respondBidirectional attests outputHash beside the digest. The signer artifacts are ported from it."
     },
     {
+      "name": "signet-midnight-integration-v026",
+      "url": "https://github.com/sig-net/midnight-integration",
+      "rev": "aa91570e67ced5c7590a0b5e7b68abba8b6108f6",
+      "license": "UNLICENSED (sig-net internal)",
+      "paths": [
+        "packages/signet-signer",
+        "packages/signet-responder",
+        "packages/signet-midnight",
+        "packages/test-caller-contract",
+        "packages/test-caller-contract-20-field"
+      ],
+      "compact_path_links": {
+        "@sig-net/midnight": "signet-midnight-integration-v026/packages/signet-midnight"
+      },
+      "note": "Tag v0.26.0-rc.15 (2026-11-12), the @sig-net/* version erc20-vault v0.7.0-rc.2 pins: the signet signer split into a signer (signBidirectional) and a responder (respond, respondBidirectional), each its own contract, and the Signet module the vault imports (M48 L, notes/mainnet-pin.org)."
+    },
+    {
       "name": "signet-midnight-examples",
       "url": "https://github.com/sig-net/midnight-examples",
       "rev": "375071b182a7ad2fb35fb2ae334e9725a88442c3",
@@ -102,6 +119,17 @@
         "@sig-net/midnight": "signet-midnight-integration-v0241/packages/signet-midnight"
       },
       "note": "main at 2026-10-07 (PR #91): the vault on the flush pattern, importing the V1 Signet vocabulary of @sig-net/midnight 0.24.x, so its @sig-net/midnight link points at the v0.24.1 pin (M44)."
+    },
+    {
+      "name": "signet-midnight-examples-v070",
+      "url": "https://github.com/sig-net/midnight-examples",
+      "rev": "60541464a34cc6137e194258eba3a6b052b45fde",
+      "license": "UNLICENSED (sig-net internal)",
+      "paths": [],
+      "compact_path_links": {
+        "@sig-net/midnight": "signet-midnight-integration-v026/packages/signet-midnight"
+      },
+      "note": "Tag erc20-vault-v0.7.0-rc.2 (2026-11-13): the vault on @sig-net/midnight 0.26.0-rc.15 and compactc 0.36.0 (the ledger-9 set), with per-token fees and one queueAttestation; its @sig-net/midnight link points at the v026 pin (M48 L, notes/mainnet-pin.org)."
     },
     {
       "name": "signet-midnight-experiments",

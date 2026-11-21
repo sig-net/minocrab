@@ -131,7 +131,9 @@ fn lean_dataflow_agrees_with_the_rust_functions_on_every_corpus_instruction() {
         // 121834 → 119109 at the compactc 0.36.1 bump (no artifact moved):
         // the compact source repinned to the release tag (7fa3a117), its
         // examples and test contracts added and removed.
-        instructions, 119109,
+        // 119109 → 128982 with the mainnet pins (M48 L): the v026 signer,
+        // responder and test callers and the 0.7.0-rc.2 vault, 41 artifacts.
+        instructions, 128982,
         "corpus instruction count moved ({instructions}); recompiled or extended corpus?"
     );
     println!("lean and rust dataflow agree on {instructions} corpus instructions");

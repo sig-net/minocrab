@@ -106,7 +106,10 @@ fn round_trips_entire_corpus() {
         // (56c3b77 → 7fa3a117): +31 new examples and test contracts, -41
         // (advanced_casts and vector_to_bytes rewritten, four examples
         // deleted upstream).
-        (897, 897),
+        // 897/897 → 938/938 with the mainnet pins (M48 L, notes/mainnet-pin.org):
+        // signet-midnight-integration-v026 (signer 1, responder 2, test
+        // callers 8 + 1) and signet-midnight-examples-v070 (the vault, 29).
+        (938, 938),
         "corpus size moved: {} files ({} v3). If the corpus was deliberately \
          recompiled or extended, update this assertion in the same commit and say \
          which source moved it; otherwise the checkout is incomplete.",

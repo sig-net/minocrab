@@ -98,8 +98,10 @@ fn ep_hash_matches_upstream_for_every_corpus_circuit() {
     // release tag (56c3b77 → 7fa3a117): 89 new compiling contracts in its
     // examples, test-center and test-contracts, 4 examples deleted upstream.
     // The compiler itself moved no artifact.
+    // +7 with the mainnet pins (M48 L): the v026 signer, responder and two
+    // test callers, and the 0.7.0-rc.2 vault.
     assert_eq!(
-        artifacts, 412,
+        artifacts, 419,
         "the corpus artifact count moved; re-read notes/corpus-sources.org before \
          refreshing this number"
     );
