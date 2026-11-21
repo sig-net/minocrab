@@ -29,6 +29,7 @@
 
 use minocrab::v3::Circuit3;
 use minocrab::{Private, Public};
+use minocrab_compat::merkle;
 use minocrab_std::v3::{
     contract, label, Bool, Disclose, Discloses, Ledger, LedgerCounter, LedgerHistoricMerkleTree,
     LedgerList, LedgerMap, LedgerMerkleTree, LedgerSet, Maybe, MerkleTreeDigest, Uint, B32,
@@ -220,7 +221,7 @@ impl Adts {
     #[circuit]
     pub fn mt_insert_index_default(c: &mut Circuit3, i: Uint<64>) -> Discloses<(Index,)> {
         let i = i.disclose_as::<Index>(c);
-        ADTS.mt.insert_index_default(c, i);
+        merkle::insert_index_default(c, &ADTS.mt, i);
         Discloses::of(())
     }
 
@@ -295,7 +296,7 @@ impl Adts {
     #[circuit]
     pub fn hmt_insert_index_default(c: &mut Circuit3, i: Uint<64>) -> Discloses<(Index,)> {
         let i = i.disclose_as::<Index>(c);
-        ADTS.hmt.insert_index_default(c, i);
+        merkle::insert_index_default(c, &ADTS.hmt, i);
         Discloses::of(())
     }
 

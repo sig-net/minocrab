@@ -36,7 +36,7 @@ pub fn corpus_zkir(dir: &str, name: &str) -> IrSource {
 /// instruction MODULO the naming of constants — a rename with no rows, no
 /// public input and no semantics. Everything else still compares exactly.
 pub fn canonical(ir: &IrSource) -> String {
-    let ir = &minocrab_ir::v3::passes::folded(ir);
+    let ir = &minocrab_compat::normalise::folded(ir);
     canonicalize(&to_zkir_string(ir).expect("serializes"))
 }
 

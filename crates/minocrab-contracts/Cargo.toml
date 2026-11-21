@@ -15,6 +15,10 @@ workspace = true
 minocrab = { path = "../minocrab" }
 minocrab-std = { path = "../minocrab-std" }
 minocrab-ledger = { path = "../minocrab-ledger" }
+# M48 C: the compactc-shaped gadgets and `profile`, for the PARITY PORTS only
+# (the contracts with a Compact twin, and the deployed signer). The
+# MinoCrab-only contracts keep importing minocrab-std.
+minocrab-compat = { path = "../minocrab-compat" }
 # AN IMPORTED INTERFACE CRATE (M12 stage 4): the vault calls the
 # signet signer through the callee's own published declaration, not through a
 # transliteration kept here. Ordinary cargo dependency — that is the whole
@@ -54,10 +58,9 @@ minocrab-sim = { path = "../minocrab-sim" }
 # against the schema signet-signer-interface publishes.
 minocrab-abi = { path = "../minocrab-abi" }
 minocrab-zkir = { path = "../minocrab-zkir" }
-# The IR-pass normalisation the instruction-for-instruction differentials run
-# over BOTH sides (notes/ir-passes.org §2 ii): our builder folds a `Copy` of an
-# immediate at `finish`, so compactc's artifact is folded the same way before
-# the comparison. One definition of the fold, used by the pass and the test.
+# The dataflow helpers the leakage inventory walks streams with. (The
+# normaliser the differentials run over both sides is
+# `minocrab_compat::normalise::folded`, over the same pass.)
 minocrab-ir = { path = "../minocrab-ir" }
 # tests/taint_lint.rs: the lint over every circuit the workspace builds.
 minocrab-taint = { path = "../minocrab-taint" }

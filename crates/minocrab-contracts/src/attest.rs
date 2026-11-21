@@ -22,8 +22,9 @@
 use minocrab::v3::{Circuit3, FieldT, Wire3};
 use minocrab::{label, Alignment, AlignmentAtom, AlignmentSegment, Fr, Private};
 use minocrab_ledger::{counter_increment, emit, map_insert, ImpactElem, LedgerValue};
+use minocrab_compat::secp::secp256k1_ecdsa_verify;
 use minocrab_std::v3::{
-    contract, rebuild_limb, secp256k1_ecdsa_verify, BytesN, Disclose, Discloses,
+    contract, rebuild_limb, BytesN, Disclose, Discloses,
     Secp256k1EcdsaSignature, Secp256k1Point, Vis3, B32,
 };
 

@@ -8,6 +8,9 @@ members = [
     "crates/minocrab-macros",
     "crates/signet-sim",
     "crates/minocrab-std",
+    # M48 C: the compactc-shaped gadgets the parity ports import (see its
+    # crate docs for why it exists). Nothing in the core depends on it.
+    "crates/minocrab-compat",
     "crates/minocrab-ledger",
     "crates/minocrab-contracts",
     "crates/minocrab-sim",
@@ -59,6 +62,7 @@ rust-version = "1.85"
 # cycle open for a first publish.
 minocrab = { path = "crates/minocrab", version = "0.1.0" }
 minocrab-abi = { path = "crates/minocrab-abi", version = "0.1.0" }
+minocrab-compat = { path = "crates/minocrab-compat", version = "0.1.0" }
 minocrab-ir = { path = "crates/minocrab-ir", version = "0.1.0" }
 minocrab-ledger = { path = "crates/minocrab-ledger", version = "0.1.0" }
 minocrab-macros = { path = "crates/minocrab-macros", version = "0.1.0" }

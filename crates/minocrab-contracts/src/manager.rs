@@ -41,6 +41,7 @@
 
 use minocrab::v3::{Circuit3, FieldT, Wire3};
 use minocrab::{Alignment, AlignmentAtom, AlignmentSegment, Fr, Private, Public};
+use minocrab_compat as compat;
 use minocrab_std::v3::kernel;
 use minocrab_std::v3::kernel::SelfAddress;
 use minocrab_std::v3::{
@@ -660,7 +661,7 @@ impl Manager {
         let member = MANAGER.pools.member(c, &coin.color).field();
         c.when(member, |c| {
             let pooled = MANAGER.pools.lookup(c, &coin.color);
-            let merged = kernel::merge_coin_immediate(c, &pooled, &coin);
+            let merged = compat::kernel::merge_coin_immediate(c, &pooled, &coin);
             let me = kernel::self_address(c);
             let recipient = contract_recipient(c, me);
             MANAGER.pools.insert_coin(c, &coin.color, &merged, &recipient);
@@ -701,7 +702,7 @@ impl Manager {
         let known = MANAGER.accounts.member(c, &acct);
         c.assert(is_true(known).message("credit account is not registered"));
 
-        kernel::receive_unshielded(c, col, amt);
+        compat::kernel::receive_unshielded(c, col, amt);
 
         let k = unshielded_key(c, &acct, &col);
         let prior = balance_at(c, &MANAGER.unshielded_balances, &k).stale(c);
@@ -767,7 +768,7 @@ impl Manager {
             hi: digest.hi.private(),
             lo: digest.lo.private(),
         };
-        let signature_ok = minocrab_std::v3::secp256k1_ecdsa_verify(c, &digest_priv, &signature, pk.point());
+        let signature_ok = compat::secp::secp256k1_ecdsa_verify(c, &digest_priv, &signature, pk.point());
         let signer = minocrab_std::v3::secp256k1_ethereum_address(c, pk.point());
 
         let is_evm_action = c.mul(f.is_evm_authorized, f.is_action);
@@ -858,12 +859,12 @@ impl Manager {
             let minus = c.constant(3600u64);
             let neg = c.neg(minus);
             let earliest = c.add(p.valid_until, neg);
-            let not_expired_early = kernel::block_time_gte(c, Uint::from_field_unchecked(earliest));
+            let not_expired_early = compat::kernel::block_time_gte(c, Uint::from_field_unchecked(earliest));
             c.assert(
                 is_true(not_expired_early)
                     .message("EVM authorization deadline exceeds 3600-second horizon"),
             );
-            let not_expired = kernel::block_time_lt(c, until);
+            let not_expired = compat::kernel::block_time_lt(c, until);
             c.assert(is_true(not_expired).message("EVM authorization has expired"));
         });
 
@@ -1396,7 +1397,7 @@ fn custody_dispatch(c: &mut Circuit3, p: &PublicPayload, f: &Flags, account: &B3
                 left: minocrab_std::v3::ZswapCoinPublicKey(p.recipient),
                 right: minocrab_std::v3::ContractAddress(p.recipient),
             };
-            let result = kernel::send_shielded(
+            let result = compat::kernel::send_shielded(
                 c,
                 &pooled,
                 &recipient,
@@ -1476,7 +1477,7 @@ fn custody_dispatch(c: &mut Circuit3, p: &PublicPayload, f: &Flags, account: &B3
 
     // --- the unshielded give leg (selector 3) ---
     c.when(f.is3, |c| {
-        let funded = kernel::unshielded_balance_gte(c, p.primary_color, val_u128);
+        let funded = compat::kernel::unshielded_balance_gte(c, p.primary_color, val_u128);
         c.assert(is_true(funded).message("contract unshielded balance too low"));
         // sendUnshielded's recipient is Either<ContractAddress, UserAddress>:
         // LEFT = contract, RIGHT = user; envelope kind 0 = user key. The
@@ -1493,7 +1494,7 @@ fn custody_dispatch(c: &mut Circuit3, p: &PublicPayload, f: &Flags, account: &B3
             left: ContractAddress(left),
             right: UserAddress(right),
         };
-        kernel::send_unshielded(c, p.primary_color, val_u128, &recipient);
+        compat::kernel::send_unshielded(c, p.primary_color, val_u128, &recipient);
     });
 
     // --- ONE debit write, into the muxed family ---
@@ -1530,7 +1531,7 @@ fn custody_dispatch(c: &mut Circuit3, p: &PublicPayload, f: &Flags, account: &B3
         let member = MANAGER.pools.member(c, &p.want_color).field();
         c.when(member, |c| {
             let pooled = MANAGER.pools.lookup(c, &p.want_color);
-            let merged = kernel::merge_coin_immediate(c, &pooled, &want_coin);
+            let merged = compat::kernel::merge_coin_immediate(c, &pooled, &want_coin);
             let me = kernel::self_address(c);
             let recipient = contract_recipient(c, me);
             MANAGER

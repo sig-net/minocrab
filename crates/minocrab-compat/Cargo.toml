@@ -1,0 +1,26 @@
+[package]
+name = "minocrab-compat"
+description = "MinoCrab's compactc-compatibility gadgets: the compactc-shaped lowerings a circuit ported from Compact uses so that it emits the compiler's instruction stream byte for byte"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+readme = "README.md"
+keywords = ["midnight", "zkir", "compact", "zero-knowledge", "circuit"]
+categories = ["cryptography::cryptocurrencies", "cryptography"]
+include = ["src/**/*.rs", "README.md", "LICENSE-MIT", "LICENSE-APACHE"]
+
+[lints]
+workspace = true
+
+[dependencies]
+# The circuit builder, and the lowering state `profile` sets.
+minocrab.workspace = true
+# The typed values and ledger slots the gadgets are written over.
+minocrab-std.workspace = true
+# The kernel's Impact ops (the guarded self read and the guarded claims).
+minocrab-ledger.workspace = true
+# `normalise::folded`: the copy fold, over a whole `IrSource`.
+minocrab-ir.workspace = true
+minocrab-zkir.workspace = true

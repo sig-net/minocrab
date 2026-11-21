@@ -3204,6 +3204,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "minocrab-compat"
+version = "0.1.0"
+dependencies = [
+ "minocrab",
+ "minocrab-ir",
+ "minocrab-ledger",
+ "minocrab-std",
+ "minocrab-zkir",
+]
+
+[[package]]
 name = "minocrab-contracts"
 version = "0.1.0"
 dependencies = [
@@ -3228,6 +3239,7 @@ dependencies = [
  "midnight-zswap",
  "minocrab",
  "minocrab-abi",
+ "minocrab-compat",
  "minocrab-ir",
  "minocrab-ledger",
  "minocrab-publisher",

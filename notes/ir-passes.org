@@ -983,7 +983,7 @@ emit it, and the rule removes it there (§13).
 
 ** =folded= DOES NOT GET IT, deliberately
 
-=passes::folded= is the normaliser the instruction-for-instruction
+=passes::folded= (since M48 C =minocrab_compat::normalise::folded=) is the normaliser the instruction-for-instruction
 differentials run over compactc's artifact AND ours (§8). It stays the COPY
 FOLD ONLY. The rule deletes an instruction rather than renaming one, no
 compactc artifact we hold carries its shape (measured above), and adding it
