@@ -5,7 +5,8 @@
 //! switch").
 //!
 //! The defaults are TODAY'S behaviour: every `kernel.self()` call reads,
-//! and range constraints are not deduplicated. A circuit ported from
+//! range constraints are not deduplicated, and the simplification pass is
+//! off. A circuit ported from
 //! Compact states compactc's settings explicitly, as its first line, through
 //! `minocrab_compat::profile`; nothing else needs to touch this.
 
@@ -25,8 +26,7 @@ pub enum SelfAddressReads {
 /// The settings. ONE PLACE TO ADD A SETTING: a field here, its default in
 /// the `Default` impl, and compactc's value in `minocrab_compat::profile`,
 /// whose struct literal is exhaustive on purpose, so it stops compiling
-/// until it says what compactc does. (The simplification pass of M48 F is
-/// the expected next one; it gets a field when it exists.)
+/// until it says what compactc does.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Lowering {
     /// See [`SelfAddressReads`].
@@ -35,11 +35,18 @@ pub struct Lowering {
     /// already proved at least as tight. See
     /// [`Circuit3::dedup_range_constraints`].
     pub dedup_range_constraints: bool,
+    /// Whether [`Circuit3::finish`] runs the simplification pass
+    /// (`minocrab_ir::v3::passes::simplify`, notes/ir-passes.org §14):
+    /// pure instructions nothing reads are deleted, and an exact repeat of
+    /// an earlier computation reads the earlier one's result. OFF by
+    /// default in M48 F; compactc emits both, so a circuit with a Compact
+    /// twin leaves it off.
+    pub simplify: bool,
 }
 
 impl Default for Lowering {
     fn default() -> Self {
-        Lowering { self_address: SelfAddressReads::EveryCall, dedup_range_constraints: false }
+        Lowering { self_address: SelfAddressReads::EveryCall, dedup_range_constraints: false, simplify: false }
     }
 }
 

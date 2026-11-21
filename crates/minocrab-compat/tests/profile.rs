@@ -14,7 +14,7 @@ fn the_profile_is_compactcs() {
     let mut c = Circuit3::new();
     c.dedup_range_constraints(true);
     minocrab_compat::profile(&mut c);
-    assert_eq!(c.lowering(), Lowering { self_address: SelfAddressReads::EveryCall, dedup_range_constraints: false });
+    assert_eq!(c.lowering(), Lowering { self_address: SelfAddressReads::EveryCall, dedup_range_constraints: false, simplify: false });
     assert!(c.lowering_chosen());
 }
 

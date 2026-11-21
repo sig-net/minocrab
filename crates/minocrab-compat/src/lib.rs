@@ -58,5 +58,10 @@ use minocrab::v3::{Circuit3, Lowering, SelfAddressReads};
 /// one lowering and half the other.
 #[track_caller]
 pub fn profile(c: &mut Circuit3) {
-    c.set_lowering(Lowering { self_address: SelfAddressReads::EveryCall, dedup_range_constraints: false });
+    c.set_lowering(Lowering {
+        self_address: SelfAddressReads::EveryCall,
+        dedup_range_constraints: false,
+        // compactc emits the dead and repeated computations the simplification deletes.
+        simplify: false,
+    });
 }

@@ -480,6 +480,17 @@ pub fn simulate_with(
     preimage: &ProofPreimage,
     mode: Mode,
 ) -> Result<Run3, Sim3Error> {
+    let run = simulate_with_unchecked(ir, preimage, mode);
+    simplify_check::cross_check(ir, preimage, mode, &run);
+    run
+}
+
+/// [`simulate_with`] without the `MINOCRAB_CHECK_SIMPLIFY` instrument.
+fn simulate_with_unchecked(
+    ir: &IrSource,
+    preimage: &ProofPreimage,
+    mode: Mode,
+) -> Result<Run3, Sim3Error> {
     let gather = mode == Mode::Gather;
     let mut memory: HashMap<Identifier, IrValue> = HashMap::new();
     let mut public_transcript_inputs: Vec<Fr> = Vec::new();
@@ -1461,5 +1472,73 @@ pub fn profile(compiled: &minocrab::v3::Compiled3) -> crate::Profile {
         total_instructions: instructions.len(),
         est_rows_total: Some(est_total),
         regions,
+    }
+}
+
+/// A TEST INSTRUMENT for the simplification pass (M48 F, notes/ir-passes.org
+/// §14): with `MINOCRAB_CHECK_SIMPLIFY=<file>` set, every [`simulate_with`]
+/// call in [`Mode::Verify`] (the reference semantics; the executor's
+/// provisional `Gather` walk is re-verified by one anyway) also simulates `minocrab_ir::v3::passes::simplify`
+/// of the same circuit on the same preimage and panics unless the two
+/// agree on the verdict and, on accept, on the public-input vector, the
+/// skips, the outputs and the private transcript consumed. One line per
+/// call is appended to `<file>`: the circuit's [`simplify_check::fingerprint`], whether the
+/// pass changed it, and the verdict. Unset (always, outside that one
+/// measurement), it does nothing.
+///
+/// It exists so the whole workspace suite — every differential and model
+/// test that simulates a circuit on its own test vectors — can be run once
+/// as evidence for the pass, without touching any contract or test.
+#[doc(hidden)]
+pub mod simplify_check {
+    use std::hash::{Hash, Hasher};
+    use std::io::Write;
+
+    use midnight_transient_crypto::proofs::ProofPreimage;
+    use minocrab_ir::v3::passes::{native_inputs, simplify};
+    use minocrab_zkir::v3::{to_zkir_string, IrSource};
+
+    use super::{Mode, Run3, Sim3Error};
+
+    const VAR: &str = "MINOCRAB_CHECK_SIMPLIFY";
+
+    /// A circuit's identity for the log: a hash of its serialized ZKIR, the same
+    /// text the zkir dump writes.
+    #[doc(hidden)]
+    pub fn fingerprint(ir: &IrSource) -> u64 {
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        to_zkir_string(ir).expect("the IR serializes").hash(&mut h);
+        h.finish()
+    }
+
+    pub(super) fn cross_check(ir: &IrSource, preimage: &ProofPreimage, mode: Mode, run: &Result<Run3, Sim3Error>) {
+        let Some(log) = std::env::var_os(VAR) else { return };
+        if mode != Mode::Verify {
+            return;
+        }
+        let simplified = simplify(ir.instructions.to_vec(), &native_inputs(ir), &[]);
+        let changed = simplified.len() != ir.instructions.len();
+        if changed {
+            let other = IrSource { instructions: std::sync::Arc::new(simplified), ..ir.clone() };
+            let theirs = super::simulate_with_unchecked(&other, preimage, mode);
+            match (run, &theirs) {
+                (Ok(a), Ok(b)) => {
+                    assert_eq!(a.pis, b.pis, "{VAR}: the simplified circuit moved the public inputs");
+                    assert_eq!(a.pi_skips, b.pi_skips, "{VAR}: the simplified circuit moved the skips");
+                    assert_eq!(a.outputs, b.outputs, "{VAR}: the simplified circuit moved the outputs");
+                    assert_eq!(a.consumed_private, b.consumed_private, "{VAR}: private transcript consumed");
+                }
+                (Err(_), Err(_)) => {}
+                (a, b) => panic!("{VAR}: the simplified circuit changed the verdict\n  original: {a:?}\n  simplified: {b:?}"),
+            }
+        }
+        let line = format!(
+            "{:016x} {} {}\n",
+            fingerprint(ir),
+            if changed { "changed" } else { "unchanged" },
+            if run.is_ok() { "accept" } else { "reject" }
+        );
+        let mut file = std::fs::OpenOptions::new().create(true).append(true).open(log).expect("the log opens");
+        file.write_all(line.as_bytes()).expect("the log is writable");
     }
 }

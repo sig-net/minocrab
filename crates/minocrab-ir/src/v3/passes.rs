@@ -56,7 +56,7 @@ impl<V> AssocMap<V> {
     }
 }
 
-use minocrab_zkir::v3::{Identifier, Instruction, Operand};
+use minocrab_zkir::v3::{Identifier, Instruction, IrType, Operand};
 use minocrab_zkir::Fr;
 
 mod kept;
@@ -138,14 +138,29 @@ pub(crate) fn fold_immediate_copies_kept(instructions: Vec<Instruction>) -> (Vec
 /// That the map starts at `built` and ends at `finished` is NOT re-checked
 /// here: `Builder3::finish_kept` asserts both lengths in every build, release
 /// included, immediately before it calls this.
-pub(crate) fn check_kept(built: &[Instruction], finished: &[Instruction], kept: &Kept) {
+pub(crate) fn check_kept(
+    built: &[Instruction],
+    finished: &[Instruction],
+    kept: &Kept,
+    simplified: Option<&[Identifier]>,
+) {
+    // With the simplification on (its argument: the `Native` inputs), a
+    // kept instruction may also read a merged value's twin (a variable
+    // renamed to a variable, the terminator included), and a dropped one
+    // may be any instruction its table lets it delete or merge.
+    let natives = simplified.map(|inputs| native_identifiers(built, inputs));
     for (index, instruction) in built.iter().enumerate() {
         match kept.position(index) {
             Some(at) => {
                 let mut expected = instruction.clone();
                 let mut landed = finished[at].clone();
-                for (want, got) in operands_mut(&mut expected).into_iter().zip(operands_mut(&mut landed)) {
-                    if matches!((&*want, &*got), (Operand::Variable(_), Operand::Immediate(_))) {
+                for (want, got) in renamable_operands(&mut expected).into_iter().zip(renamable_operands(&mut landed)) {
+                    let rewrite = match (&*want, &*got) {
+                        (Operand::Variable(_), Operand::Immediate(_)) => !matches!(instruction, Instruction::Output { .. }),
+                        (Operand::Variable(_), Operand::Variable(_)) => natives.is_some(),
+                        _ => false,
+                    };
+                    if rewrite {
                         *want = got.clone();
                     }
                 }
@@ -154,17 +169,27 @@ pub(crate) fn check_kept(built: &[Instruction], finished: &[Instruction], kept: 
                     "Kept law: built instruction {index} is not the finished instruction {at}"
                 );
             }
-            None => assert!(
-                matches!(
-                    instruction,
-                    Instruction::Copy { .. }
-                        | Instruction::Assert { .. }
-                        | Instruction::ConstrainBits { .. }
-                        | Instruction::ConstrainToBoolean { .. }
-                ),
-                "Kept law: built instruction {index} ({instruction:?}) was dropped, and no pass in \
-                 finish deletes that kind"
-            ),
+            None => {
+                let simplifiable = natives.as_ref().is_some_and(|natives| {
+                    let is_native = |op: &Operand| match op {
+                        Operand::Immediate(_) => true,
+                        Operand::Variable(id) => natives.contains(id),
+                    };
+                    definition(&mut instruction.clone(), &is_native).effect != Effect::Kept
+                });
+                assert!(
+                    simplifiable
+                        || matches!(
+                            instruction,
+                            Instruction::Copy { .. }
+                                | Instruction::Assert { .. }
+                                | Instruction::ConstrainBits { .. }
+                                | Instruction::ConstrainToBoolean { .. }
+                        ),
+                    "Kept law: built instruction {index} ({instruction:?}) was dropped, and no pass in \
+                     finish deletes that kind"
+                )
+            }
         }
     }
 }
@@ -510,59 +535,481 @@ pub fn returned(instruction: &Instruction) -> Vec<Operand> {
 
 /// The identifiers an instruction binds, in output order.
 ///
-/// Exhaustive by construction like `operands_mut`: an upstream variant
-/// that defines a value this list does not know about breaks the build.
+/// Read through [`definition`], the one exhaustive match that also carries
+/// the simplification's purity table: an upstream variant that defines a
+/// value this list does not know about breaks the build.
 pub fn defined_identifiers(instruction: &Instruction) -> Vec<Identifier> {
+    let mut owned = instruction.clone();
+    definition(&mut owned, &|_| false).outputs.into_iter().map(|id| id.clone()).collect()
+}
+
+// ============================================================================
+// Simplification (M48 F): dead pure instructions, common subexpressions
+// ============================================================================
+//
+// notes/ir-passes.org §14 is the design of record: the purity table with its
+// midnight-zkir citations, the two rules and why each preserves the circuit
+// (the set of satisfying assignments and the public-input vector, not merely
+// the computed values), what was measured and what was left out.
+//
+// OFF by default, per circuit, through `minocrab::v3::Lowering::simplify`:
+// compactc emits the instructions these rules delete, so a circuit with a
+// Compact twin keeps them and stays instruction-comparable.
+//
+// Hash maps rather than the association lists above: the stream-level Kani
+// specimens that motivated those are gone (M48 F), and the rules below only
+// ever LOOK UP, so iteration order cannot reach the output.
+
+use std::collections::{HashMap, HashSet};
+
+/// What the simplification rules may do with one instruction, decided from
+/// its upstream definition (midnight-zkir 3.2.0 `ir_vm.rs`, both the
+/// off-circuit `preprocess` walk and the in-circuit synthesis walk).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Effect {
+    /// Constrains nothing beyond defining its outputs: for EVERY value of its
+    /// operands (of their types) exactly one value of its outputs satisfies
+    /// it, and the off-circuit walk cannot fail on a value. So it may be
+    /// deleted when no output is used, and merged into an identical earlier
+    /// instance.
+    Pure,
+    /// Its outputs are a function of its operands, but it also constrains
+    /// the operands (a selector must be a bit, a hash input must fit its
+    /// alignment, an inverse must not be of zero), or it carries a STATIC
+    /// check (an operand's type, a slice's bounds) on a type this pass does
+    /// not track. Merged into an identical earlier instance, which imposes
+    /// the SAME constraint and the SAME check on the SAME operands; never
+    /// deleted as dead, which would drop the constraint or let a circuit
+    /// that can never be satisfied become one that can.
+    Determined,
+    /// Neither: a constraint, a transcript read, a public-input push, the
+    /// terminator, or an instruction this table has not established. Never
+    /// touched.
+    Kept,
+}
+
+/// One instruction's outputs, its [`Effect`], and whether its outputs are
+/// known to be `Native` — THE ONE EXHAUSTIVE MATCH the simplification reads,
+/// and the one [`defined_identifiers`] reads too.
+///
+/// `native` answers for an operand whether it is known to be a `Native`
+/// value (an immediate always is: `resolve_operand`, `ir_vm.rs:962-966`).
+/// Instructions upstream defines for several types (`add` on points and on
+/// foreign fields, `test_eq` on anything) are classified only on `Native`
+/// operands; on anything else they are `Kept`, because the rules have not
+/// been argued for those gadgets. "Not known" is always the safe answer.
+///
+/// No wildcard arm: a ZKIR instruction added upstream breaks this match, and
+/// someone has to decide what it is.
+struct Definition<'a> {
+    outputs: Vec<&'a mut Identifier>,
+    effect: Effect,
+    native_outputs: bool,
+}
+
+fn definition<'a>(instruction: &'a mut Instruction, native: &dyn Fn(&Operand) -> bool) -> Definition<'a> {
+    use Effect::{Determined, Kept, Pure};
+    let def = |outputs: Vec<&'a mut Identifier>, effect: Effect, native_outputs: bool| Definition {
+        outputs,
+        effect,
+        native_outputs,
+    };
+    // `Pure` / `Determined` when `ok`, `Kept` otherwise.
+    let when = |ok: bool, effect: Effect| if ok { effect } else { Kept };
     match instruction {
-        Instruction::Encode { outputs, .. }
-        | Instruction::DivModPowerOfTwo { outputs, .. }
-        | Instruction::BytesIntoNatives { outputs, .. } => outputs.clone(),
-        Instruction::IntoCoordinates { outputs, .. }
-        | Instruction::Bytes32IntoLowHigh { outputs, .. } => {
-            vec![outputs.0.clone(), outputs.1.clone()]
+        // Polymorphic in its input, and the JubjubScalar arm asserts the
+        // spare limb is zero (encode.rs:108-118): not established.
+        Instruction::Encode { outputs, .. } => def(outputs.iter_mut().collect(), Kept, true),
+        Instruction::Assert { .. } => def(vec![], Kept, false),
+        // The selector is `convert`ed to a bit, which constrains it
+        // (ir_vm.rs:1064-1071); `select` on natives is `b + bit·(a − b)`.
+        Instruction::CondSelect { a, b, output, .. } => {
+            let n = native(a) && native(b);
+            def(vec![output], when(n, Determined), n)
         }
-        Instruction::CondSelect { output, .. }
-        | Instruction::Copy { output, .. }
-        | Instruction::EcMul { output, .. }
+        Instruction::ConstrainBits { .. }
+        | Instruction::ConstrainEq { .. }
+        | Instruction::ConstrainToBoolean { .. } => def(vec![], Kept, false),
+        // An alias: no constraint at all (ir_vm.rs:1094-1097).
+        Instruction::Copy { val, output } => {
+            let n = native(val);
+            def(vec![output], Pure, n)
+        }
+        // Pushes public inputs (ir_vm.rs:1098-1111).
+        Instruction::Impact { .. } => def(vec![], Kept, false),
+        // Foreign and embedded-curve arithmetic: not established.
+        // `from_coordinates` asserts the point is on the curve.
+        Instruction::EcMul { output, .. }
         | Instruction::EcMulGenerator { output, .. }
         | Instruction::HashToCurve { output, .. }
-        | Instruction::FromCoordinates { output, .. }
-        | Instruction::IntoBytes32 { output, .. }
-        | Instruction::FromBytes32 { output, .. }
-        | Instruction::ReverseBytes { output, .. }
-        | Instruction::Bytes32FromLowHigh { output, .. }
-        | Instruction::ReconstituteField { output, .. }
-        | Instruction::TransientHash { output, .. }
-        | Instruction::PersistentHash { output, .. }
+        | Instruction::FromCoordinates { output, .. } => def(vec![output], Kept, false),
+        Instruction::IntoCoordinates { outputs, .. } => def(vec![&mut outputs.0, &mut outputs.1], Kept, false),
+        // A native's 32 bytes: the CANONICAL decomposition (to_bytes.rs:118-120;
+        // midnight-circuits native_gadget.rs:908-922), unique and total.
+        Instruction::IntoBytes32 { input, output } | Instruction::ToBytes { input, output } => {
+            let n = native(input);
+            def(vec![output], when(n, Pure), false)
+        }
+        // THE BYTE, BOOLEAN AND CONSTANT INSTRUCTIONS constrain nothing
+        // beyond their outputs, but each carries a static check on a type
+        // this pass does not track (an operand must be `Bytes`, `Bool`, of
+        // a length; a slice in bounds; an encoding that decodes). Deleting
+        // one that fails it would make a circuit that accepts nothing accept,
+        // so they are merged, never deleted as dead.
+        //
+        // Bytes to a native: a linear combination, reduced mod p
+        // (from_bytes.rs:182; off-circuit from_le_bytes_with_reduction, :78).
+        Instruction::FromBytes32 { val_t, output, .. } | Instruction::FromBytes { val_t, output, .. } => {
+            let n = *val_t == IrType::Native;
+            def(vec![output], when(n, Determined), n)
+        }
+        // Byte 31 converted to a native, the rest recomposed with byte 31
+        // fixed to zero (ir_vm.rs:1478-1486): no constraint on the input.
+        Instruction::Bytes32IntoLowHigh { outputs, .. } => def(vec![&mut outputs.0, &mut outputs.1], Determined, true),
+        // A permutation of already-assigned bytes (ir_vm.rs:1403-1410).
+        Instruction::ReverseBytes { output, .. } | Instruction::Reverse { output, .. } => def(vec![output], Determined, false),
+        // Asserts the low half's byte 31 is zero and converts the high half
+        // to a byte (ir_vm.rs:1487-1497).
+        Instruction::Bytes32FromLowHigh { inputs, output } => {
+            let n = native(&inputs.0) && native(&inputs.1);
+            def(vec![output], when(n, Determined), false)
+        }
+        // The CANONICAL bit decomposition of a native, split and recomposed
+        // (ir_vm.rs:1253-1272): unique and total. Its static checks are the
+        // operand's type, two outputs, and at most 248 bits (ir_vm.rs:470-476).
+        Instruction::DivModPowerOfTwo { val, bits, outputs } => {
+            let ok = native(val) && outputs.len() == 2 && *bits <= 248;
+            def(outputs.iter_mut().collect(), if ok { Pure } else { Determined }, true)
+        }
+        // Asserts the two halves recompose below the modulus (ir_vm.rs:1273-1303).
+        Instruction::ReconstituteField { output, .. } => def(vec![output], Determined, true),
+        // Poseidon over natives (ir_vm.rs:1112-1121).
+        Instruction::TransientHash { inputs, output } => {
+            let ok = inputs.iter().all(native);
+            def(vec![output], if ok { Pure } else { Determined }, true)
+        }
+        // The inputs are decomposed into bytes per the alignment, which
+        // range-checks them (ir_vm.rs:169-212, fab_decode_to_bytes_atom).
+        Instruction::PersistentHash { output, .. }
         | Instruction::Keccak256 { output, .. }
-        | Instruction::TestEq { output, .. }
-        | Instruction::Add { output, .. }
-        | Instruction::Mul { output, .. }
-        | Instruction::Neg { output, .. }
-        | Instruction::Inv { output, .. }
-        | Instruction::Not { output, .. }
-        | Instruction::LessThan { output, .. }
-        | Instruction::JubjubScalarFromNative { output, .. }
-        | Instruction::PublicInput { output, .. }
-        | Instruction::PrivateInput { output, .. }
-        | Instruction::Slice { output, .. }
-        | Instruction::Nth { output, .. }
-        | Instruction::Concat { output, .. }
-        | Instruction::LoadConstant { output, .. }
-        | Instruction::Sha512 { output, .. }
-        | Instruction::And { output, .. }
-        | Instruction::Or { output, .. }
-        | Instruction::Xor { output, .. }
-        | Instruction::ToBytes { output, .. }
-        | Instruction::FromBytes { output, .. }
-        | Instruction::Reverse { output, .. }
-        | Instruction::BytesFromNatives { output, .. } => vec![output.clone()],
-        Instruction::Assert { .. }
-        | Instruction::ConstrainBits { .. }
-        | Instruction::ConstrainEq { .. }
-        | Instruction::ConstrainToBoolean { .. }
-        | Instruction::Impact { .. }
-        | Instruction::Output { .. } => vec![],
+        | Instruction::Sha512 { output, .. } => def(vec![output], Determined, false),
+        // `is_equal` on natives, converted to a native (ir_vm.rs:1157-1163, eq.rs:104).
+        Instruction::TestEq { a, b, output } => {
+            let n = native(a) && native(b);
+            def(vec![output], when(n, Pure), true)
+        }
+        // Native field arithmetic (ir_vm.rs:1164-1180; add.rs:96, mul.rs:85, neg.rs).
+        Instruction::Add { a, b, output } | Instruction::Mul { a, b, output } => {
+            let n = native(a) && native(b);
+            def(vec![output], when(n, Pure), n)
+        }
+        Instruction::Neg { a, output } => {
+            let n = native(a);
+            def(vec![output], when(n, Pure), n)
+        }
+        // `inv` asserts its operand is not zero (inv.rs:106-108; off-circuit
+        // "cannot invert zero", inv.rs:42).
+        Instruction::Inv { a, output } => {
+            let n = native(a);
+            def(vec![output], when(n, Determined), n)
+        }
+        // The operand is `convert`ed to a bit (ir_vm.rs:1186-1193).
+        Instruction::Not { output, .. } => def(vec![output], Determined, true),
+        // `lower_than` range-checks both operands (ir_vm.rs:1209-1219;
+        // off-circuit `resolve_operand_bits(_, Some(bits))`, ir_vm.rs:529-537).
+        Instruction::LessThan { output, .. } => def(vec![output], Determined, true),
+        // A biguint reduction: not established.
+        Instruction::JubjubScalarFromNative { output, .. } => def(vec![output], Kept, false),
+        // Transcript reads: each consumes a position.
+        Instruction::PublicInput { val_t, output, .. } | Instruction::PrivateInput { val_t, output, .. } => {
+            let n = *val_t == IrType::Native;
+            def(vec![output], Kept, n)
+        }
+        // Re-indexing of assigned bytes (ir_vm.rs:1411-1544).
+        Instruction::Slice { output, .. } | Instruction::Nth { output, .. } | Instruction::Concat { output, .. } => {
+            def(vec![output], Determined, false)
+        }
+        // Fixed cells (ir_vm.rs:1545-1554).
+        Instruction::LoadConstant { val_t, output, .. } => {
+            let n = *val_t == IrType::Native;
+            def(vec![output], Determined, n)
+        }
+        // Over `Bool` values, whose bit-ness their definer established; the
+        // unwrap is a type check (ir_vm.rs:970-987, ir_types.rs:552-560).
+        Instruction::And { output, .. } | Instruction::Or { output, .. } | Instruction::Xor { output, .. } => {
+            def(vec![output], Determined, false)
+        }
+        // A Bytes value packed into natives by linear combinations
+        // (ir_vm.rs:1438-1458, encode.rs:100-106).
+        Instruction::BytesIntoNatives { outputs, .. } => def(outputs.iter_mut().collect(), Determined, true),
+        // Each limb decomposed into exactly the bytes it contributes, which
+        // bounds it (ir_vm.rs:1459-1477).
+        Instruction::BytesFromNatives { output, .. } => def(vec![output], Determined, false),
+        Instruction::Output { .. } => def(vec![], Kept, false),
+    }
+}
+
+/// Every operand position a rename may touch: [`operands_mut`]'s, and the
+/// `Output` terminator's (a returned duplicate is returned as its twin).
+fn renamable_operands(instruction: &mut Instruction) -> Vec<&mut Operand> {
+    match instruction {
+        Instruction::Output { vals } => vals.iter_mut().collect(),
+        other => operands_mut(other),
+    }
+}
+
+/// The identifiers known to hold a `Native` value: `native_inputs`, and
+/// every output [`definition`] says is `Native` given what is known before
+/// it. Forward, once: ZKIR v3 defines every value before its first use.
+fn native_identifiers(instructions: &[Instruction], native_inputs: &[Identifier]) -> HashSet<Identifier> {
+    let mut native: HashSet<Identifier> = native_inputs.iter().cloned().collect();
+    for instruction in instructions {
+        let mut scratch = instruction.clone();
+        let is_native = |op: &Operand| match op {
+            Operand::Immediate(_) => true,
+            Operand::Variable(id) => native.contains(id),
+        };
+        let def = definition(&mut scratch, &is_native);
+        let outputs: Vec<Identifier> = if def.native_outputs {
+            def.outputs.iter().map(|id| (**id).clone()).collect()
+        } else {
+            Vec::new()
+        };
+        native.extend(outputs);
+    }
+    native
+}
+
+/// The `Native` circuit arguments of `ir`, read from its input schema — the
+/// seed [`simplify`] needs for a stream taken from a finished circuit.
+pub fn native_inputs(ir: &minocrab_zkir::v3::IrSource) -> Vec<Identifier> {
+    ir.inputs
+        .iter()
+        .filter_map(|input| {
+            // `TypedIdentifier`'s fields are `pub(crate)` upstream; its serde
+            // form is `{"name": .., "type": ..}`.
+            let value = serde_json::to_value(input).ok()?;
+            let ty: IrType = serde_json::from_value(value.get("type")?.clone()).ok()?;
+            let name: Identifier = serde_json::from_value(value.get("name")?.clone()).ok()?;
+            (ty == IrType::Native).then_some(name)
+        })
+        .collect()
+}
+
+/// Which of the simplification's rules to run — [`Rules::ALL`] is what
+/// [`simplify`] and `Builder3::simplify` run; the others exist so each rule
+/// can be measured and tested alone (notes/ir-passes.org §14).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Rules {
+    /// Merge an exact repeat of an earlier [`Pure`](Effect::Pure)
+    /// instruction into it.
+    pub merge_pure: bool,
+    /// The same for a [`Determined`](Effect::Determined) instruction (one
+    /// that also constrains its operands).
+    pub merge_determined: bool,
+    /// Read a `cond_select` on the immediate 0 or 1 as the arm it selects.
+    pub constant_selects: bool,
+    /// Delete a [`Pure`](Effect::Pure) instruction nothing reads.
+    pub dead_pure: bool,
+}
+
+impl Rules {
+    /// Every rule.
+    pub const ALL: Rules = Rules { merge_pure: true, merge_determined: true, constant_selects: true, dead_pure: true };
+    /// No rule.
+    pub const NONE: Rules = Rules { merge_pure: false, merge_determined: false, constant_selects: false, dead_pure: false };
+}
+
+/// Every rule ([`Rules::ALL`]): see [`simplify_with`].
+pub fn simplify(instructions: Vec<Instruction>, native_inputs: &[Identifier], observed: &[Identifier]) -> Vec<Instruction> {
+    simplify_kept(instructions, native_inputs, observed, Rules::ALL).0
+}
+
+/// The simplification: the MERGES first (an exact repeat of an earlier
+/// computation, and a select on a constant selector, each read as the value
+/// it equals), then the DEAD-CODE rule on what that leaves — the order in
+/// which each finds the most, since a merge can leave a value dead and a
+/// deletion never creates a repeat. Idempotent. A FILTER, like every pass
+/// in `Builder3::finish`: it deletes instructions and renames a variable
+/// operand to another variable, nothing else.
+///
+/// `native_inputs` are the circuit arguments known to be `Native`
+/// ([`native_inputs`] reads them from a finished circuit); `observed` are
+/// names something outside the stream reads (the frontend's disclosure
+/// records). A value named in `observed` keeps its defining instruction and
+/// its name under every rule.
+///
+/// THE MERGE. An instruction that repeats an earlier one exactly — same
+/// opcode, same attributes, same operands after the renames so far — is
+/// deleted, and its outputs are read as the earlier one's. A
+/// [`Pure`](Effect::Pure) instruction always qualifies. A
+/// [`Determined`](Effect::Determined) one does too: its earlier twin lays
+/// down the same constraint on the same operands, so no constraint is lost,
+/// and its outputs are a function of its operands, so the twin's are equal
+/// in every satisfying assignment. ZKIR has no control flow, so what lies
+/// between the two is irrelevant: both are laid down regardless. Never
+/// merged: anything [`Kept`](Effect::Kept) — a transcript read (each one
+/// consumes a position, notes/ir-passes.org §3), a constraint (the dedup's
+/// business), Impact, an assert.
+///
+/// THE CONSTANT SELECT. `cond_select 1 a b` is `a` and `cond_select 0 a b`
+/// is `b`, on natives: the selector is a fixed cell that is a bit, so its
+/// `convert` constrains nothing that depends on a witness. Only when the
+/// chosen arm is a VARIABLE (so every rename is variable to variable) and
+/// only on 0 and 1: on any other immediate the circuit can never be
+/// satisfied, and that is left exactly as it is.
+///
+/// THE DEAD CODE. A [`Pure`](Effect::Pure) instruction none of whose
+/// outputs is read — by a later instruction, by the `Output` terminator, or
+/// through `observed` — is deleted. One backward sweep is the fixed point:
+/// ZKIR v3 uses a value only after the instruction defining it, so the
+/// sweep has seen every use of a definition before it reaches it.
+pub fn simplify_with(
+    instructions: Vec<Instruction>,
+    native_inputs: &[Identifier],
+    observed: &[Identifier],
+    rules: Rules,
+) -> Vec<Instruction> {
+    simplify_kept(instructions, native_inputs, observed, rules).0
+}
+
+pub(crate) fn simplify_kept(
+    instructions: Vec<Instruction>,
+    native_inputs: &[Identifier],
+    observed: &[Identifier],
+    rules: Rules,
+) -> (Vec<Instruction>, Kept) {
+    let (instructions, merged) = merge_kept(instructions, native_inputs, observed, rules);
+    if !rules.dead_pure {
+        return (instructions, merged);
+    }
+    let (instructions, dropped) = drop_dead_kept(instructions, native_inputs, observed);
+    (instructions, merged.compose(&dropped))
+}
+
+fn drop_dead_kept(
+    instructions: Vec<Instruction>,
+    native_inputs: &[Identifier],
+    observed: &[Identifier],
+) -> (Vec<Instruction>, Kept) {
+    let native = native_identifiers(&instructions, native_inputs);
+    let is_native = |op: &Operand| match op {
+        Operand::Immediate(_) => true,
+        Operand::Variable(id) => native.contains(id),
+    };
+    let mut live: HashSet<Identifier> = observed.iter().cloned().collect();
+    let mut keep = vec![true; instructions.len()];
+    for (at, instruction) in instructions.iter().enumerate().rev() {
+        let mut scratch = instruction.clone();
+        let def = definition(&mut scratch, &is_native);
+        let dead = def.effect == Effect::Pure
+            && !def.outputs.is_empty()
+            && def.outputs.iter().all(|id| !live.contains(&**id));
+        if dead {
+            keep[at] = false;
+            continue;
+        }
+        for op in operands(instruction).into_iter().chain(returned(instruction)) {
+            if let Operand::Variable(id) = op {
+                live.insert(id);
+            }
+        }
+    }
+    let mut at = 0;
+    retain_kept(instructions, |_| {
+        at += 1;
+        keep[at - 1]
+    })
+}
+
+fn merge_kept(
+    instructions: Vec<Instruction>,
+    native_inputs: &[Identifier],
+    observed: &[Identifier],
+    rules: Rules,
+) -> (Vec<Instruction>, Kept) {
+    let native = native_identifiers(&instructions, native_inputs);
+    let is_native = |op: &Operand| match op {
+        Operand::Immediate(_) => true,
+        Operand::Variable(id) => native.contains(id),
+    };
+    let observed: HashSet<&Identifier> = observed.iter().collect();
+    // A deleted instruction's output -> the variable it equals. That
+    // variable was itself already renamed when it was read (operands are
+    // renamed before anything else), so one lookup resolves a name.
+    let mut renamed: HashMap<Identifier, Identifier> = HashMap::new();
+    // The kept instructions by their shape with outputs blanked: the
+    // `Debug` text buckets them, `==` on the instruction decides.
+    let mut seen: HashMap<String, Vec<(Instruction, Vec<Identifier>)>> = HashMap::new();
+    retain_kept(instructions, |instruction| {
+        for op in renamable_operands(instruction) {
+            if let Operand::Variable(id) = op {
+                if let Some(to) = renamed.get(id) {
+                    *id = to.clone();
+                }
+            }
+        }
+        if rules.constant_selects {
+            if let Some((output, chosen)) = constant_select(instruction, &is_native) {
+                if !observed.contains(output) {
+                    renamed.insert(output.clone(), chosen.clone());
+                    return false;
+                }
+            }
+        }
+        let mut shape = instruction.clone();
+        let def = definition(&mut shape, &is_native);
+        let mergeable = match def.effect {
+            Effect::Pure => rules.merge_pure,
+            Effect::Determined => rules.merge_determined,
+            Effect::Kept => false,
+        };
+        if !mergeable {
+            return true;
+        }
+        let mut outputs = Vec::with_capacity(def.outputs.len());
+        for id in def.outputs {
+            outputs.push(std::mem::replace(id, Identifier(String::new())));
+        }
+        let bucket = seen.entry(format!("{shape:?}")).or_default();
+        match bucket.iter().find(|(earlier, _)| *earlier == shape) {
+            Some((_, twin)) if !outputs.iter().any(|id| observed.contains(id)) => {
+                for (from, to) in outputs.into_iter().zip(twin) {
+                    renamed.insert(from, to.clone());
+                }
+                false
+            }
+            Some(_) => true,
+            None => {
+                bucket.push((shape, outputs));
+                true
+            }
+        }
+    })
+}
+
+/// `cond_select` on the immediate 1 or 0 between two natives, choosing a
+/// variable: its output, and the variable it equals.
+fn constant_select<'a>(
+    instruction: &'a Instruction,
+    native: &dyn Fn(&Operand) -> bool,
+) -> Option<(&'a Identifier, &'a Identifier)> {
+    let Instruction::CondSelect { bit: Operand::Immediate(bit), a, b, output } = instruction else {
+        return None;
+    };
+    if !(native(a) && native(b)) {
+        return None;
+    }
+    let chosen = if *bit == Fr::from(1u64) {
+        a
+    } else if *bit == Fr::from(0u64) {
+        b
+    } else {
+        return None;
+    };
+    match chosen {
+        Operand::Variable(id) => Some((output, id)),
+        Operand::Immediate(_) => None,
     }
 }
 
@@ -580,7 +1027,9 @@ pub fn defined_identifiers(instruction: &Instruction) -> Vec<Identifier> {
 // transforms — guards, constants, range constraints. The REJECTED class —
 // dead-code elimination and common-subexpression elimination — DIVERGES from
 // compactc or is unsound-here, and a third party reaching for either needs a
-// protocol argument this crate cannot make for them. Every pass MUST preserve
+// protocol argument this crate cannot make for them (this crate's own, the
+// off-by-default `simplify` above, makes it from a purity table and never
+// touches a transcript read: notes/ir-passes.org §14). Every pass MUST preserve
 // the public-input / witness stream (PI-equality is the correctness oracle)
 // and, until the verification hooks land, the author's own range constraints.
 //

@@ -2050,6 +2050,18 @@ impl Circuit3 {
         // (notes/ir-passes.org §13). A message whose assert was deleted goes
         // with it; a region whose instructions were all deleted is empty.
         self.b.dedup_range_constraints(self.lowering.settings.dedup_range_constraints);
+        // The simplification keeps every value a disclosure record names
+        // defined under that name, so the records need no moving.
+        let observed: Vec<Identifier> = self
+            .disclosures
+            .iter()
+            .flat_map(|d| d.values.iter())
+            .filter_map(|w| match w {
+                DisclosedWire::Named(id) => Some(id.clone()),
+                DisclosedWire::Constant(_) => None,
+            })
+            .collect();
+        self.b.simplify(self.lowering.settings.simplify, observed);
         let (ir, kept) = self.b.finish_kept(communications_commitment);
         #[cfg(debug_assertions)]
         let built = (self.regions.clone(), self.assert_messages.clone());

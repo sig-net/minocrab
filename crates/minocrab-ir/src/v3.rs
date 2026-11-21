@@ -157,6 +157,10 @@ pub struct Builder3 {
     /// Set by [`Builder3::dedup_range_constraints`]; OFF by default, because
     /// the pass diverges from compactc (notes/ir-passes.org §1).
     dedup_constraints: bool,
+    /// Set by [`Builder3::simplify`]: `Some` holds the names the frontend
+    /// reads the run's memory by (disclosure records), which the pass keeps
+    /// defined. `None`, the default, leaves the pass off.
+    simplify: Option<Vec<Identifier>>,
 }
 
 impl Builder3 {
@@ -937,9 +941,33 @@ impl Builder3 {
         self.dedup_constraints = on;
     }
 
+    /// Run [`passes::simplify`] in [`Builder3::finish`], after the fold and
+    /// the true-assert drop and before the dedup: dead pure instructions
+    /// and exact repeats go (notes/ir-passes.org §14). `observed` names the
+    /// values something outside the stream reads by name (the frontend's
+    /// disclosure records); their definitions are kept under their names.
+    ///
+    /// OFF by default: compactc emits the instructions it deletes, so a
+    /// circuit with a Compact twin keeps it off
+    /// (`minocrab::v3::Lowering::simplify`).
+    pub fn simplify(&mut self, on: bool, observed: Vec<Identifier>) {
+        self.simplify = on.then_some(observed);
+    }
+
+    /// The circuit arguments of type `Native`, the seed of the
+    /// simplification's type knowledge.
+    fn native_inputs(&self) -> Vec<Identifier> {
+        self.values[..self.inputs.len()]
+            .iter()
+            .filter(|def| def.ty == IrType::Native)
+            .map(|def| def.name.clone())
+            .collect()
+    }
+
     /// Finish into a v3 [`IrSource`].
     ///
-    /// FOLD FIRST, THEN DROP TRUE ASSERTS, THEN DEDUP, and the order is not
+    /// FOLD FIRST, THEN DROP TRUE ASSERTS, THEN (if asked) SIMPLIFY, THEN
+    /// DEDUP, and the order is not
     /// arbitrary. The fold
     /// substitutes immediates into operand positions, so a constraint on a
     /// named constant becomes a constraint on an IMMEDIATE — which the dedup
@@ -965,6 +993,12 @@ impl Builder3 {
     /// `erc20_vault_pending::{complete_swap, complete_supply,
     /// complete_redeem}` (notes/ir-passes.org §13).
     ///
+    /// [`passes::simplify`], when [`Builder3::simplify`] asks, runs on the
+    /// folded stream (so its operands are the ones that ship) and before the
+    /// dedup, because merging two repeats can make two range constraints on
+    /// their outputs identical, which only the dedup then removes. It
+    /// deletes, and renames a merged value to its twin; nothing else.
+    ///
     /// EVERY PASS HERE IS A FILTER — it deletes instructions, never inserts
     /// or reorders — and builds its map through `passes::retain_kept`, which
     /// is what lets [`Builder3::finish_kept`] say where each built
@@ -983,11 +1017,19 @@ impl Builder3 {
     /// composition of each pass's own map, in the order the passes ran.
     pub fn finish_kept(self, communications_commitment: bool) -> (IrSource, passes::Kept) {
         let built = self.instructions.len();
+        let natives = self.simplify.as_ref().map(|_| self.native_inputs());
         #[cfg(debug_assertions)]
         let built_stream = self.instructions.clone();
         let (instructions, kept) = passes::fold_immediate_copies_kept(self.instructions);
         let (instructions, dropped) = passes::drop_true_asserts_kept(instructions);
         let kept = kept.compose(&dropped);
+        let (instructions, kept) = match (&self.simplify, &natives) {
+            (Some(observed), Some(natives)) => {
+                let (instructions, simplified) = passes::simplify_kept(instructions, natives, observed, passes::Rules::ALL);
+                (instructions, kept.compose(&simplified))
+            }
+            _ => (instructions, kept),
+        };
         let (instructions, kept) = if self.dedup_constraints {
             let (instructions, deduped) = passes::dedup_range_constraints_kept(instructions);
             (instructions, kept.compose(&deduped))
@@ -1003,7 +1045,7 @@ impl Builder3 {
             "finish_kept: compose every pass's map, in the order the passes run"
         );
         #[cfg(debug_assertions)]
-        passes::check_kept(&built_stream, &instructions, &kept);
+        passes::check_kept(&built_stream, &instructions, &kept, natives.as_deref());
         let ir = IrSource {
             // ZKIR 3.1, the minor version compactc 0.36 writes. Explicit
             // because `IrMinorVersion`'s default is V2; midnight-zkir 3.2.0
