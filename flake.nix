@@ -23,15 +23,16 @@
 
         # Pinned Compact toolchain, from the LFDT-Minokawa/compact release
         # binaries (recipe + verified hashes: notes/zkir.org "Option B").
-        # 0.36.0 (language 0.28.0, runtime 0.21.0, released 2026-11-04) — the
-        # toolchain Midnight's compatibility matrix lists for ledger 9.1.0.1
-        # (Mainnet since 2026-11-06). It emits ZKIR v3 only.
-        # Its own flake.lock pins zkir-v3 at midnight-zkir eeb8a316
-        # (zkir-3.2.0-rc.2), whose zkir/ the crates.io midnight-zkir 3.2.0 our
-        # Cargo.toml names carries unchanged (manifest version aside), so the
-        # binaries and the crate speak one ZKIR (hazard 1).
+        # 0.36.1 (language 0.28.0, runtime 0.21.0, released 2026-11-10), the
+        # patch release of 0.36.0, the toolchain Midnight's compatibility
+        # matrix lists for ledger 9.1.0.1 (Mainnet since 2026-11-06). It emits
+        # ZKIR v3 only and fixes compact#616 and #856.
+        # Its own flake.lock pins zkir-v3 at midnight-zkir 7a51b338
+        # (zkir-3.2.1, the #616 key-generation fix); our Cargo.toml names the
+        # crates.io midnight-zkir 3.2.0 that midnight-node locks
+        # (notes/version-bump.org "Bump 3", hazard 1).
         # To bump: change version + hash below; hashes per arch in notes/zkir.org.
-        compactcVersion = "0.36.0";
+        compactcVersion = "0.36.1";
         # The release zips name linux targets `-unknown-linux-musl`.
         compactcTarget = {
           aarch64-darwin = "aarch64-darwin";
@@ -40,10 +41,10 @@
           x86_64-linux = "x86_64-unknown-linux-musl";
         };
         compactcHashes = {
-          aarch64-darwin = "sha256-qBJrLMBiMO0sZVgFmolFEZ43D/Iikw5qUvkIcOjMPF0=";
-          x86_64-darwin = "sha256-LGca7R1lsnlF8/MrrRCZcc4fJvUO4jhTjSaQUOQEO/8=";
-          aarch64-linux = "sha256-h3QMokx/mfwiAP05jFfd+qVetg9r3PlxhpsLVDp3Iq0=";
-          x86_64-linux = "sha256-cBe2Eh67nVOlYphLymFtFD74T8fuGLTabDoKZhXLXpc=";
+          aarch64-darwin = "sha256-lu5opZ2eiwk/Bcl0eaTPCMeXYAFdzCbsx5fsAWDKJ/k=";
+          x86_64-darwin = "sha256-wz7XXSKCU8j2R5YMyQgslGlswegadBZD/E2iM7Ii1WQ=";
+          aarch64-linux = "sha256-fwcwTYGNK6tvlgEyd3ISOLu5aQjti/eSc0BNg6ZFyEQ=";
+          x86_64-linux = "sha256-nV/t/smud1oeR9XG94UTCzFMHFxSzRpOufxW0fxh0jo=";
         };
         compactc = pkgs.stdenvNoCC.mkDerivation {
           pname = "compactc";

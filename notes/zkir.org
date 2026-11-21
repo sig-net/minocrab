@@ -361,9 +361,18 @@ The zips have no top-level dir; unpack with unzip. File-level SRI hashes
   =sha256-NaKACcmlfSCQLk/P0S8MqeqUM4IIlUz4vNM1ZS4k84I==
   (hex =35a28009c9a57d20902e4fcfd12f0ca9ea94338208954cf8bcd335652e24f382=)
 
-THE PINNED RELEASE, all four systems (Bump 2, verified 2026-11-10 by
+THE PINNED RELEASE, all four systems (Bump 3, verified 2026-11-21 by
 =nix store prefetch-file --hash-type sha256= on each asset URL — none
 guessed; a stale linux hash breaks CI, not the laptop):
+
+| =compactc_v0.36.1_<target>.zip= | SRI hash | sha256 hex |
+|---------------------------------+----------+------------|
+| =aarch64-darwin= | =sha256-lu5opZ2eiwk/Bcl0eaTPCMeXYAFdzCbsx5fsAWDKJ/k== | =96ee68a59d9e8b093f05c97479a4cf08c79760015dcc26ecc797ec0160ca27f9= |
+| =x86_64-darwin= | =sha256-wz7XXSKCU8j2R5YMyQgslGlswegadBZD/E2iM7Ii1WQ== | =c33ed75d228253c8f647960cc9082c94696cc1e81a741643fc4da233b222d564= |
+| =aarch64-unknown-linux-musl= | =sha256-fwcwTYGNK6tvlgEyd3ISOLu5aQjti/eSc0BNg6ZFyEQ== | =7f07304d818d2bab6f96013277721238bbb96908ed8bf79273404d83a645c844= |
+| =x86_64-unknown-linux-musl= | =sha256-nV/t/smud1oeR9XG94UTCzFMHFxSzRpOufxW0fxh0jo== | =9d5fedfec9ae775a1e47d5c6f785130b314c1c5c52cd1a4eb9fc56d1fc61d23a= |
+
+The previous pin's four, 0.36.0 (Bump 2, 2026-11-10), kept for a rollback:
 
 | =compactc_v0.36.0_<target>.zip= | SRI hash | sha256 hex |
 |---------------------------------+----------+------------|
@@ -372,7 +381,7 @@ guessed; a stale linux hash breaks CI, not the laptop):
 | =aarch64-unknown-linux-musl= | =sha256-h3QMokx/mfwiAP05jFfd+qVetg9r3PlxhpsLVDp3Iq0== | =87740ca24c7f99fc2200fd398c57ddfaa55eb60f6bdcf971869b0b543a7722ad= |
 | =x86_64-unknown-linux-musl= | =sha256-cBe2Eh67nVOlYphLymFtFD74T8fuGLTabDoKZhXLXpc== | =7017b6121ebb9d53a562984bca616d143ef84fc7ee18b4da6c3a0a6615cb5e97= |
 
-(The previous pin's four, 0.34.0, kept for a rollback: aarch64-darwin
+(The pin before that, 0.34.0, kept for a rollback: aarch64-darwin
 =sha256-zkWMQGLxod0pIFkaC7WrZXvgL0q4Qi8tdpiHc/YBA8M==, x86_64-darwin
 =sha256-Pe4f3Q1crRM146eAdHtkDi90AQ6Pj2MRfz+B9L6lioE==, aarch64-linux
 =sha256-0+KSxPSOJX3Naz0+PkdD19jqByn0iVPquRo2bUTNAm0==, x86_64-linux
