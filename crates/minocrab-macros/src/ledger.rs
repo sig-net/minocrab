@@ -42,7 +42,8 @@
 //! a nested write. See [`field_paths`], which is that pass transcribed.
 
 use proc_macro2::TokenStream;
-use quote::quote;
+use quote::{quote, quote_spanned};
+use syn::spanned::Spanned;
 use syn::{Data, DeriveInput, Fields};
 
 pub fn expand(input: DeriveInput) -> syn::Result<TokenStream> {
@@ -108,12 +109,37 @@ pub fn expand(input: DeriveInput) -> syn::Result<TokenStream> {
     // reads the fields of the block's one `IS_ANCHOR` slot, so it is handed
     // that slot's start offset rather than taking the slot as an argument on
     // every call. Which field is the anchor is read off the TYPES, in a
-    // `const`, by `anchor_start` — which is also what rejects (E0080) two
-    // anchors, or a slot that needs one in a block without. Every field is
-    // then built through the same constructor; an ordinary slot ignores the
-    // third argument.
+    // `const`, by `anchor_start`. Every field is then built through the same
+    // constructor; an ordinary slot ignores the third argument.
     let anchor_rows = types.iter().zip(&starts).map(|(ty, start)| {
         quote!((<#ty as #width>::IS_ANCHOR, <#ty as #width>::NEEDS_ANCHOR, #start))
+    });
+
+    // THE TWO REJECTIONS (E0080), one `const` assertion per field SPANNED AT
+    // THAT FIELD'S TYPE, so rustc points at the offending field: the SECOND
+    // of two anchors, or the slot that needs an anchor in a block without.
+    let is_anchor: Vec<TokenStream> =
+        types.iter().map(|ty| quote!(<#ty as #width>::IS_ANCHOR)).collect();
+    let anchor_checks = types.iter().enumerate().map(|(i, ty)| {
+        let (earlier, all) = (&is_anchor[..i], &is_anchor);
+        quote_spanned! {ty.span()=>
+            const _: () = ::core::assert!(
+                !(<#ty as #width>::IS_ANCHOR && (false #( || #earlier )*)),
+                "this ledger block has two anchor fields (types with \
+                 `LedgerWidth::IS_ANCHOR`), and a block has at most one: every \
+                 slot with `NEEDS_ANCHOR` is built against it. Delete one of \
+                 them (for the Sig Network slots, the block keeps one \
+                 `signet: Signet`)."
+            );
+            const _: () = ::core::assert!(
+                !<#ty as #width>::NEEDS_ANCHOR || (false #( || #all )*),
+                "this field needs the block's anchor (its type sets \
+                 `LedgerWidth::NEEDS_ANCHOR`) and no field is one (sets \
+                 `LedgerWidth::IS_ANCHOR`). Add the anchor field the slot's \
+                 type documents (for the Sig Network slots `Pending`, `Fired` \
+                 and `Outbox`, add `pub signet: Signet,`)."
+            );
+        }
     });
 
     let inits = fields.iter().zip(&starts).map(|(field, start)| {
@@ -129,6 +155,7 @@ pub fn expand(input: DeriveInput) -> syn::Result<TokenStream> {
             /// `const`, so a contract's ledger handle is a `const` item and
             /// costs nothing at run time.
             pub const fn new() -> Self {
+                #(#anchor_checks)*
                 const __TOTAL: usize = #total;
                 const __ANCHOR: usize = ::minocrab_std::v3::anchor_start(&[#(#anchor_rows),*]);
                 #name { #(#inits),* }
@@ -326,6 +353,16 @@ mod tests {
                 "const __ANCHOR : usize = :: minocrab_std :: v3 :: anchor_start (& [(< LedgerMap < B32 < Public > , VaultRecord > as \
                  :: minocrab_std :: v3 :: LedgerWidth > :: IS_ANCHOR , < LedgerMap < B32 < Public > , VaultRecord > as \
                  :: minocrab_std :: v3 :: LedgerWidth > :: NEEDS_ANCHOR , 0usize) , (< LedgerField as"
+            ),
+            "{expanded}"
+        );
+        // The rejections are two `const` assertions PER FIELD (spanned at the
+        // field's type): a second anchor checks only the fields before it.
+        assert_eq!(expanded.matches("const _ : () = :: core :: assert !").count(), 6, "{expanded}");
+        assert!(
+            expanded.contains(
+                "! (< LedgerField as :: minocrab_std :: v3 :: LedgerWidth > :: IS_ANCHOR && (false || \
+                 < LedgerMap < B32 < Public > , VaultRecord > as :: minocrab_std :: v3 :: LedgerWidth > :: IS_ANCHOR))"
             ),
             "{expanded}"
         );

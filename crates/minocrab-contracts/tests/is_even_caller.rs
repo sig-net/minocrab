@@ -10,7 +10,7 @@
 //!
 //! | # | the mistake                                              | caught by                                   |
 //! |---|----------------------------------------------------------|---------------------------------------------|
-//! | 1 | forgetting the `signet: Signet` slot in the block         | E0080, prescriptive (`anchor_start`)        |
+//! | 1 | forgetting the `signet: Signet` slot in the block         | E0080 at the field that needs it (the derive) |
 //! | 2 | a settle circuit taking another slot's ticket             | E0308 (`Succeeded<Call>` carries the call)   |
 //! | 3 | a response type that is not a Borsh record               | E0277 (`Attestable: CircuitBorsh`)           |
 //! | 4 | two slot filings with one kind byte                       | gone: a V1 record carries no kind byte      |

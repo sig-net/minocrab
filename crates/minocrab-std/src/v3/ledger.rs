@@ -785,8 +785,8 @@ pub fn repr_limbs<T: LedgerStore>() -> usize {
 /// slot with [`IS_ANCHOR`](Self::IS_ANCHOR), so it is handed that slot's
 /// start offset instead of taking it as an argument on every call. The
 /// derive finds the anchor through these consts, never through a type's
-/// name, and [`anchor_start`] rejects a block with two anchors or with a
-/// slot that needs one and none, at compile time.
+/// name, and rejects a block with two anchors or with a slot that needs one
+/// and none, at compile time, pointing at the offending field.
 pub trait LedgerWidth {
     /// Consecutive ledger fields this slot occupies.
     const WIDTH: usize = 1;
@@ -801,8 +801,9 @@ pub trait LedgerWidth {
 /// what `#[derive(Ledger)]` evaluates once per block, in a `const`.
 ///
 /// A block with no anchor gets `0`, which only an ordinary slot can receive
-/// and which it ignores. Panics, so E0080 when evaluated in a `const`, on
-/// the two blocks that cannot be laid out. Two anchors:
+/// and which it ignores. The two blocks that cannot be laid out are rejected
+/// (E0080) not here but by the derive's per-field `const` assertions, so the
+/// error points at the offending field. Two anchors (the second is flagged):
 ///
 /// ```compile_fail,E0080
 /// use minocrab_std::v3::{Ledger, LedgerCounter, LedgerWidth};
@@ -834,39 +835,15 @@ pub trait LedgerWidth {
 /// struct Block { n: LedgerCounter, hangs: Hangs }
 /// ```
 pub const fn anchor_start(fields: &[(bool, bool, usize)]) -> usize {
-    let mut anchor = None;
-    let mut needed = false;
     let mut i = 0;
     while i < fields.len() {
-        let (is_anchor, needs_anchor, start) = fields[i];
+        let (is_anchor, _, start) = fields[i];
         if is_anchor {
-            assert!(
-                anchor.is_none(),
-                "this ledger block has two anchor fields (types with \
-                 `LedgerWidth::IS_ANCHOR`), and a block has at most one: every \
-                 slot with `NEEDS_ANCHOR` is built against it. Delete one of \
-                 them (for the Sig Network slots, the block keeps one \
-                 `signet: Signet`)."
-            );
-            anchor = Some(start);
+            return start;
         }
-        needed |= needs_anchor;
         i += 1;
     }
-    match anchor {
-        Some(start) => start,
-        None => {
-            assert!(
-                !needed,
-                "a field of this ledger block needs the block's anchor (its \
-                 type sets `LedgerWidth::NEEDS_ANCHOR`) and no field is one \
-                 (sets `LedgerWidth::IS_ANCHOR`). Add the anchor field the \
-                 slot's type documents (for the Sig Network slots `Pending`, \
-                 `Fired` and `Outbox`, add `pub signet: Signet,`)."
-            );
-            0
-        }
-    }
+    0
 }
 
 /// `at_block`, `at_block_anchored` and a one-field [`LedgerWidth`] for each
