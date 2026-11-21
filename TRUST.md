@@ -54,6 +54,7 @@ suite warrants; this says where the suites stop.
 | `minocrab-std/src/v3/predicate.rs` | v3_predicates; every differential with a comparison | a comparison at the wrong width, or a message-carrying assert that binds outside its branch |
 | `minocrab-std/src/v3/slots.rs` | xcall_differential / xcall_with_payment_differential / xcontract_events_differential; interface_macro; contract_matches_its_interface | a leaf's slots (call limbs, ledger limbs, argument constraints) in the wrong order |
 | `minocrab-std/src/v3/disclose.rs` | v3_disclose; the generated set-equality tests | a leaf disclosed under fewer wires than it has |
+| `minocrab-std/src/v3/event.rs` | v3_event (ZKIR and disclosure record identical to the raw `emit_event` form, straight-line and under `when`, one to ten limbs; refused inside `when_private`); events_differential and xcontract_events_differential (the Borsh twins included) / signet_construction (the five emitting contracts byte-identical); the compile-fail doctest | an event wrapper with a version, tag or payload width compactc would not emit |
 | `minocrab-std/src/v3/hash.rs` | hashing_differential; every differential that hashes | a preimage aligned differently from compactc's |
 | `minocrab-macros/src/lib.rs` | **READING** | nothing beyond wrappers (the expansions are the modules below) |
 | `minocrab-macros/src/circuit.rs` | v3_circuit (the expansion lowers to ZKIR byte-identical to the hand-written twin); the generated per-circuit tests run on every circuit. The GENERATED TESTS' own bodies: **READING** | an expansion that declares an argument the twin would not, or a generated test that passes vacuously |
@@ -70,7 +71,7 @@ suite warrants; this says where the suites stop.
 | `minocrab-sim/src/v3/rowcost.rs` | calibrated against real proving (BENCHMARK.md); a MEASUREMENT model, not a correctness claim | a mis-priced primitive — a wrong k estimate, never a wrong circuit |
 | `minocrab-sim/src/bin/minocrab.rs` | **READING** | nothing a proof depends on (the CLI) |
 
-50 files in the eight crates; 17 of them have a warrant that is READING in whole or in part (the rows in bold).
+51 files in the eight crates; 17 of them have a warrant that is READING in whole or in part (the rows in bold).
 <!-- GENERATED END -->
 
 ## 2. The read order, with a time budget

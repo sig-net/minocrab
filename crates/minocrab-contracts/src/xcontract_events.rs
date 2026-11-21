@@ -38,13 +38,13 @@
 use minocrab::v3::Circuit3;
 use minocrab::{label, Private, Public};
 use minocrab_experimental::impact::raw::{
-    cell_write, counter_increment, counter_read, emit, emit_event, set_insert, ImpactElem,
+    cell_write, counter_increment, counter_read, emit, set_insert, ImpactElem,
     LedgerValue,
 };
 use minocrab_ledger::{XcallCommitment, XcallResult};
 use minocrab_std::v3::kernel;
 use minocrab_std::v3::{
-    contract, BytesN, ContractAddress, Disclose, Discloses, Serializer, Uint, B32,
+    contract, event, BytesN, ContractAddress, Disclose, Discloses, Serializer, Uint, B32,
 };
 
 use crate::events::{MISC_SIZE, MISC_TAG, MISC_VERSION};
@@ -163,11 +163,7 @@ impl XcontractEvents {
         misc.push_literal(c, &name);
         misc.push_bytes_n(&payload);
         let misc = misc.finish::<MISC_SIZE>(c);
-        let misc_val = LedgerValue::bytes(
-            MISC_SIZE as u32,
-            misc.limbs().iter().map(|&w| ImpactElem::Wire(w)).collect(),
-        );
-        emit(c, &emit_event(MISC_VERSION, MISC_TAG, &misc_val));
+        event::emit(c, MISC_VERSION, MISC_TAG, &misc);
 
         Discloses::of(event_hash)
     }

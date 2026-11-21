@@ -21,10 +21,10 @@
 use minocrab::v3::{Circuit3, Compiled3, FieldT, Wire3};
 use minocrab::{label, Private, Public};
 use minocrab_experimental::impact::raw::{
-    cell_write, counter_increment, counter_read, emit, emit_event, map_insert, ImpactElem,
+    cell_write, counter_increment, counter_read, emit, map_insert, ImpactElem,
     LedgerValue,
 };
-use minocrab_std::v3::{entry, CircuitArg, Disclose, Discloses, Serializer, Uint, B32};
+use minocrab_std::v3::{entry, event, CircuitArg, Disclose, Discloses, Serializer, Uint, B32};
 
 /// Ledger field indices, in declaration order.
 pub const CALL_COUNT: u8 = 0;
@@ -121,11 +121,7 @@ fn base_with_emits(emits: usize) -> Compiled3 {
                 s.push_b32(&r); // recipient: Bytes<32>
                 let serialized = s.finish::<MISC_SIZE>(c);
 
-                let payload = LedgerValue::bytes(
-                    MISC_SIZE as u32,
-                    serialized.limbs().iter().map(|&w| ImpactElem::Wire(w)).collect(),
-                );
-                emit(c, &emit_event(MISC_VERSION, MISC_TAG, &payload));
+                event::emit(c, MISC_VERSION, MISC_TAG, &serialized);
             });
         }
 

@@ -32,8 +32,7 @@
 
 use minocrab::v3::{Circuit3, FieldT, Wire3};
 use minocrab::{Private, Public};
-use minocrab_experimental::impact::raw::{emit, emit_event, ImpactElem, LedgerValue};
-use minocrab_std::v3::{contract, label, Disclose, Discloses, Serializer, B32};
+use minocrab_std::v3::{contract, event, label, Disclose, Discloses, Serializer, B32};
 use signet_signer_interface::{
     RequestId, RespondBidirectionalEventV1, SignBidirectionalEventNotification, Signature,
     SignatureRespondedEventV1,
@@ -78,11 +77,7 @@ fn emit_misc(c: &mut Circuit3, s: Serializer<Public>) {
     // (notes/edsl-trim.org §B, the removal's zero-movement gate).
     let _ = c.constant(1u64);
     let serialized = s.finish::<MISC_SIZE>(c);
-    let payload = LedgerValue::bytes(
-        MISC_SIZE as u32,
-        serialized.limbs().iter().map(|&w| ImpactElem::Wire(w)).collect(),
-    );
-    emit(c, &emit_event(MISC_VERSION, MISC_TAG, &payload));
+    event::emit(c, MISC_VERSION, MISC_TAG, &serialized);
 }
 
 fn misc_name(c: &mut Circuit3, name: &str) -> Serializer<Public> {

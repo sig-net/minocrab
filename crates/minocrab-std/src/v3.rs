@@ -83,6 +83,11 @@ mod vector;
 pub mod kernel;
 mod predicate;
 
+/// Compact's `emit <event>` — always written module-qualified
+/// (`event::emit(c, version, tag, &payload)`): an event is public output
+/// appended to the transaction's log, and the call site should say so.
+pub mod event;
+
 /// Canonical Borsh, restricted to the fixed-width subset a circuit can emit
 /// — the serialization layer (M11, notes/borsh-format.org). Read its module
 /// docs first: **this is Borsh, not a format of ours**, and the subset exists

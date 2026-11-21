@@ -36,13 +36,13 @@
 use minocrab::v3::{Circuit3, Compiled3, FieldT, Wire3};
 use minocrab::{Private, Public};
 use minocrab_experimental::impact::raw::{
-    cell_write, counter_increment, counter_read, emit, emit_event, map_insert, ImpactElem,
+    cell_write, counter_increment, counter_read, emit, map_insert, ImpactElem,
     LedgerValue,
 };
 // `CircuitBorsh` names both the trait and the derive macro (different
 // namespaces, one path), as `serde::Serialize` does.
 use minocrab_std::v3::borsh::{self, CircuitBorsh};
-use minocrab_std::v3::{entry, CircuitArg, Disclose, Discloses, Uint, Vis3, B32};
+use minocrab_std::v3::{entry, event, CircuitArg, Disclose, Discloses, Uint, Vis3, B32};
 
 // The labels and the declaration are the ORIGINAL's: the twin discloses the
 // same two values under the same two names, which is part of what "same
@@ -155,11 +155,7 @@ fn base_with_emits(emits: usize) -> Compiled3 {
                 };
                 let serialized = borsh::to_bytes::<MISC_SIZE, Public, _>(c, &misc);
 
-                let payload = LedgerValue::bytes(
-                    MISC_SIZE as u32,
-                    serialized.limbs().iter().map(|&w| ImpactElem::Wire(w)).collect(),
-                );
-                emit(c, &emit_event(MISC_VERSION, MISC_TAG, &payload));
+                event::emit(c, MISC_VERSION, MISC_TAG, &serialized);
             });
         }
 

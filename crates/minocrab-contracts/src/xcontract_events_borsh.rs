@@ -22,12 +22,12 @@
 use minocrab::v3::Circuit3;
 use minocrab::{Private, Public};
 use minocrab_experimental::impact::raw::{
-    cell_write, counter_increment, counter_read, emit, emit_event, set_insert, ImpactElem,
+    cell_write, counter_increment, counter_read, emit, set_insert, ImpactElem,
     LedgerValue,
 };
 // `CircuitBorsh` names both the trait and the derive macro.
 use minocrab_std::v3::borsh::{self, CircuitBorsh};
-use minocrab_std::v3::{contract, BytesN, ContractAddress, Disclose, Discloses, Uint, Vis3, B32};
+use minocrab_std::v3::{contract, event, BytesN, ContractAddress, Disclose, Discloses, Uint, Vis3, B32};
 
 use crate::events::{MISC_SIZE, MISC_TAG, MISC_VERSION};
 use crate::events_borsh::DepositEvent;
@@ -109,11 +109,7 @@ impl XcontractEventsBorsh {
             payload,
         };
         let misc = borsh::to_bytes::<MISC_SIZE, Public, _>(c, &misc);
-        let misc_val = LedgerValue::bytes(
-            MISC_SIZE as u32,
-            misc.limbs().iter().map(|&w| ImpactElem::Wire(w)).collect(),
-        );
-        emit(c, &emit_event(MISC_VERSION, MISC_TAG, &misc_val));
+        event::emit(c, MISC_VERSION, MISC_TAG, &misc);
 
         Discloses::of(event_hash)
     }
