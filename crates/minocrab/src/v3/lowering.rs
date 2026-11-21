@@ -4,11 +4,12 @@
 //! gadget a port could swap (notes/streamline-survey.org §7, "The one
 //! switch").
 //!
-//! The defaults are TODAY'S behaviour: every `kernel.self()` call reads,
-//! range constraints are not deduplicated, and the simplification pass is
-//! off. A circuit ported from
-//! Compact states compactc's settings explicitly, as its first line, through
-//! `minocrab_compat::profile`; nothing else needs to touch this.
+//! The defaults are the LEAN choices, for a contract written in MinoCrab
+//! (M48 C step 3): implied range constraints are dropped and the
+//! simplification pass runs. A circuit ported from Compact, and every circuit
+//! of the deployed signer, states compactc's settings explicitly, as its
+//! first line, through `minocrab_compat::profile`, so none of them moves;
+//! nothing else needs to touch this.
 
 use super::Circuit3;
 
@@ -38,15 +39,15 @@ pub struct Lowering {
     /// Whether [`Circuit3::finish`] runs the simplification pass
     /// (`minocrab_ir::v3::passes::simplify`, notes/ir-passes.org §14):
     /// pure instructions nothing reads are deleted, and an exact repeat of
-    /// an earlier computation reads the earlier one's result. OFF by
-    /// default in M48 F; compactc emits both, so a circuit with a Compact
-    /// twin leaves it off.
+    /// an earlier computation reads the earlier one's result. ON by default
+    /// (M48 C step 3); compactc emits both, so a circuit with a Compact twin
+    /// turns it off through `minocrab_compat::profile`.
     pub simplify: bool,
 }
 
 impl Default for Lowering {
     fn default() -> Self {
-        Lowering { self_address: SelfAddressReads::EveryCall, dedup_range_constraints: false, simplify: false }
+        Lowering { self_address: SelfAddressReads::EveryCall, dedup_range_constraints: true, simplify: true }
     }
 }
 

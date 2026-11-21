@@ -1359,8 +1359,14 @@ Top five by saving: =attest::sha_verify= 12,441 (dead =div_mod= chain, 87 instru
 | =drop_true_asserts= | neutral | always on, =run= preserved in Lean |
 | =simplify= | diverges from OUR ports' streams (see the correction below) | off; =Lowering::simplify=, no circuit turns it on yet |
 | =dedup_range_constraints= | prospective (§11) | opt-in, M10 warrant |
+| =simplify= | diverges (compactc emits what it deletes) | ON by default since M48 C step 3; =minocrab_compat::profile= turns it off for every port and the signer |
+| =dedup_range_constraints= | prospective (§11) | ON by default since M48 C step 3; off under the profile |
 
 No Lean theorem yet: the warrant is the table, the three kinds of evidence above, and review. It has no =Pass= value and no =by_name= entry (the survey's §5 direction is fewer spellings, not more).
+
+** The defaults flipped (M48 C step 3, 2026-11-21)
+
+=Lowering::default()= is now =simplify: true=, =dedup_range_constraints: true=. Measured on the 227-circuit dump: the twelve =erc20_vault_pending= circuits of the table above move, by exactly the table's 22 rows (deposit -2, withdraw/swap/supply/redeem -1 each, complete_swap -4, the other six -2 each), no k changes; the dedup adds nothing on top in this tree. =treasury= and =disclosure= do not move. The flip found two ports that had not stated compactc's lowering, =events_borsh= and =xcontract_events_borsh= (their differential is the parent port's file, so =circuit_closure.rs= did not count them as ports); both now do, and =circuit_closure.rs= counts a =<port>_borsh= module as a port and checks every listed module is a port or one of the three MinoCrab-only ones. =backend_folding.rs= measures the backend alone and so now builds under the profile.
 
 ** The spellings, checked for dead ones (rung F part 1)
 

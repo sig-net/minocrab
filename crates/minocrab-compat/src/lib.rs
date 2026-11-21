@@ -47,8 +47,10 @@ use minocrab::v3::{Circuit3, Lowering, SelfAddressReads};
 ///   compactc never caches it. The lean form reads it once per circuit. With
 ///   the profile set, `kernel::cache_self_address` is refused at build time.
 /// - repeated range constraints are KEPT (`dedup_range_constraints: false`):
-///   compactc re-emits them. The lean form drops the implied ones (two rows
-///   each).
+///   compactc re-emits them. The lean form, the default, drops the implied
+///   ones (two rows each).
+/// - the simplification pass is OFF (`simplify: false`): compactc emits the
+///   dead and repeated computations it deletes. It is on by default.
 ///
 /// The struct literal is exhaustive on purpose: a setting added to
 /// [`Lowering`] stops this compiling until it says what compactc does.

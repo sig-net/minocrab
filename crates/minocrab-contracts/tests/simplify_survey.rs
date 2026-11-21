@@ -152,6 +152,9 @@ fn simplify_row_table() {
 /// Rows of a circuit built by `build`, as `backend_folding.rs` measures.
 fn rows(build: impl FnOnce(&mut minocrab::v3::Circuit3)) -> usize {
     let mut c = minocrab::v3::Circuit3::new();
+    // The builder's own stream, with the M48 C step 3 lean defaults (the
+    // simplification and the range dedup) off: this measures what is emitted.
+    c.set_lowering(minocrab::v3::Lowering { simplify: false, dedup_range_constraints: false, ..c.lowering() });
     build(&mut c);
     minocrab_sim::v3::cost(&c.finish(true).ir).1
 }

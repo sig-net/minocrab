@@ -29,12 +29,18 @@ use minocrab_zkir::v3::{to_zkir_string, IrValue};
 /// The ZKIR a circuit body lowers to.
 fn ir_of(build: impl FnOnce(&mut Circuit3)) -> String {
     let mut c = Circuit3::new();
+    // The builder's own stream, with the M48 C step 3 lean defaults (the
+    // simplification and the range dedup) off: this measures what is emitted.
+    c.set_lowering(minocrab::v3::Lowering { simplify: false, dedup_range_constraints: false, ..c.lowering() });
     build(&mut c);
     to_zkir_string(&c.finish(false).ir).expect("IR serializes")
 }
 
 fn instructions(build: impl FnOnce(&mut Circuit3)) -> usize {
     let mut c = Circuit3::new();
+    // The builder's own stream, with the M48 C step 3 lean defaults (the
+    // simplification and the range dedup) off: this measures what is emitted.
+    c.set_lowering(minocrab::v3::Lowering { simplify: false, dedup_range_constraints: false, ..c.lowering() });
     build(&mut c);
     c.finish(false).ir.instructions.len()
 }

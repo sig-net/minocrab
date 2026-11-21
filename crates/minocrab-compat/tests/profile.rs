@@ -18,8 +18,9 @@ fn the_profile_is_compactcs() {
     assert!(c.lowering_chosen());
 }
 
-/// The profile changes nothing a fresh circuit would emit (the defaults are
-/// still compactc's in this rung), and two reads stay two reads.
+/// Under the profile two self reads stay two reads, which is also what a
+/// fresh circuit's default does (the read-once lowering is chosen, not
+/// defaulted).
 #[test]
 fn under_the_profile_every_self_read_is_emitted() {
     let mut once = Circuit3::new();

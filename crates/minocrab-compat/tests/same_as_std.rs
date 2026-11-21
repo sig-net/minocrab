@@ -15,7 +15,7 @@
 //! call's effects and the post-state; each accepted preimage is also checked
 //! by upstream's own `IrSource::check`.
 
-use minocrab::v3::{Circuit3, FieldT, Secp256k1PointT, Secp256k1ScalarT, Wire3};
+use minocrab::v3::{Circuit3, FieldT, Lowering, Secp256k1PointT, Secp256k1ScalarT, Wire3};
 use minocrab::{Private, Public};
 use minocrab_compat::{kernel as compat_kernel, merkle, secp as compat_secp};
 use minocrab_std::v3::kernel::{self as std_kernel, UnshieldedRecipient};
@@ -34,19 +34,39 @@ use minocrab::Fr;
 use midnight_transient_crypto::proofs::Zkir;
 use minocrab_sim::v3::exec::{self, Call, ExecError, Executed};
 
-/// The circuit `f` builds, serialized.
+/// The circuit `f` builds under compactc's lowering, serialized. Both sides
+/// of a `pin_*` comparison are built this way: the pin is about the GADGET
+/// emitting the same instructions, not about the lowering settings.
 fn build(f: impl FnOnce(&mut Circuit3)) -> String {
     let mut c = Circuit3::new();
+    minocrab_compat::profile(&mut c);
     f(&mut c);
     to_zkir_string(&c.finish(true).ir).expect("IR serializes")
 }
 
-/// The circuit `f` builds, finished without a communications commitment (so
-/// a call needs no randomness), for running.
-fn compile(f: impl FnOnce(&mut Circuit3)) -> Compiled3 {
+/// The circuit `f` builds under `lowering` (`None`: the defaults, which is
+/// what a MinoCrab-only circuit gets), finished without a communications
+/// commitment (so a call needs no randomness), for running.
+fn compile_with(lowering: Option<Lowering>, f: impl FnOnce(&mut Circuit3)) -> Compiled3 {
     let mut c = Circuit3::new();
+    if let Some(l) = lowering {
+        c.set_lowering(l);
+    }
     f(&mut c);
     c.finish(false)
+}
+
+/// compactc's lowering, as every port and the signer state it.
+fn compactc() -> Lowering {
+    let mut c = Circuit3::new();
+    minocrab_compat::profile(&mut c);
+    c.lowering()
+}
+
+/// The two sides of an `agree_*` test as each would be deployed: std's lean
+/// gadget under the defaults, compat's twin under compactc's lowering.
+fn compile(use_compat: bool, f: impl FnOnce(&mut Circuit3)) -> Compiled3 {
+    compile_with(use_compat.then(compactc), f)
 }
 
 /// The contract address every run executes as: `kernel.self()`.
@@ -212,7 +232,7 @@ fn agree_insert_index_default() {
     const MT: LedgerMerkleTree<4, B32<Public>> = LedgerMerkleTree::at(0);
     const HMT: LedgerHistoricMerkleTree<6, Uint<64, Public>> = LedgerHistoricMerkleTree::at(1);
     let side = |use_compat: bool| {
-        compile(move |c| {
+        compile(use_compat, move |c| {
             let w = inputs(c);
             MT.reset_to_default(c);
             HMT.reset_to_default(c);

@@ -2039,10 +2039,9 @@ impl Circuit3 {
     /// differential equality with compactc, instruction for instruction, and
     /// compactc RE-EMITS: this pass makes us strictly more deduplicated than
     /// the artifact we are checked against. So a circuit that must stay
-    /// instruction-comparable to compactc leaves it off, and the M10
-    /// lineage — spec-anchored, warranted by symbolic-effect equivalence
-    /// rather than PI-equality — is where it may go on. No shipped artifact
-    /// flips it today (notes/ir-passes.org §1, §11).
+    /// instruction-comparable to compactc turns it off
+    /// (`minocrab_compat::profile`); it is ON by default, for circuits with
+    /// no Compact twin (M48 C step 3; notes/ir-passes.org §1, §11).
     ///
     /// The flag is [`Lowering::dedup_range_constraints`], this circuit's
     /// lowering state; [`Circuit3::finish`] hands it to the builder.

@@ -169,6 +169,9 @@ fn random_programs_keep_each_message_on_its_assert_and_each_region_on_its_instru
         let dedup = seeds.below(2) == 0;
         deduped_programs += usize::from(dedup);
         let mut c = Circuit3::new();
+        // The simplification (on by default since M48 C step 3) is not part
+        // of what this generator models; only the dedup is.
+        c.set_lowering(minocrab::v3::Lowering { simplify: false, ..c.lowering() });
         c.dedup_range_constraints(dedup);
         let nargs = 1 + (seed % 6) as usize;
         let args = (0..nargs).map(|k| c.arg::<FieldT>(&format!("a{k}"))).collect();

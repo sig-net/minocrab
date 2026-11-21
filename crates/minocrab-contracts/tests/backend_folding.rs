@@ -42,9 +42,14 @@
 use minocrab::v3::{Circuit3, FieldT};
 use minocrab_sim::v3::cost;
 
-/// Rows of a circuit built by `build`.
+/// Rows of a circuit built by `build`, with OUR passes off
+/// (`minocrab_compat::profile`: no simplification, no range dedup), so what
+/// is measured is the backend alone. The lean defaults (M48 C step 3) delete
+/// the dead and repeated instructions and the repeated range constraint
+/// below before the backend sees them.
 fn rows(build: impl FnOnce(&mut Circuit3)) -> usize {
     let mut c = Circuit3::new();
+    minocrab_compat::profile(&mut c);
     build(&mut c);
     cost(&c.finish(true).ir).1
 }

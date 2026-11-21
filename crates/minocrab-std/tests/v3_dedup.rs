@@ -47,6 +47,9 @@ const LEN: usize = 132;
 
 fn ir_of(build: impl FnOnce(&mut Circuit3)) -> String {
     let mut c = Circuit3::new();
+    // The builder's own stream, with the M48 C step 3 lean defaults (the
+    // simplification and the range dedup) off: this measures what is emitted.
+    c.set_lowering(minocrab::v3::Lowering { simplify: false, dedup_range_constraints: false, ..c.lowering() });
     build(&mut c);
     to_zkir_string(&c.finish(false).ir).expect("IR serializes")
 }
@@ -54,6 +57,9 @@ fn ir_of(build: impl FnOnce(&mut Circuit3)) -> String {
 /// Same, with the opt profile on.
 fn ir_of_deduped(build: impl FnOnce(&mut Circuit3)) -> String {
     let mut c = Circuit3::new();
+    // The builder's own stream, with the M48 C step 3 lean defaults (the
+    // simplification and the range dedup) off: this measures what is emitted.
+    c.set_lowering(minocrab::v3::Lowering { simplify: false, dedup_range_constraints: false, ..c.lowering() });
     c.dedup_range_constraints(true);
     build(&mut c);
     to_zkir_string(&c.finish(false).ir).expect("IR serializes")
