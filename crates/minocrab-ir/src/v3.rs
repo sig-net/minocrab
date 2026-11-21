@@ -121,14 +121,34 @@ fn typed_identifier(name: &Identifier, ty: &IrType) -> TypedIdentifier {
     serde_json::from_value(value).expect("TypedIdentifier deserializes from name + type")
 }
 
+/// What the builder knows about one value, recorded when the value is
+/// minted ([`Builder3::fresh`]) and when the instruction that binds it is
+/// appended ([`Builder3::push`]).
+#[derive(Debug)]
+struct ValueDef {
+    /// `%label.N`, where `N` is the value's [`Val`] index.
+    name: Identifier,
+    ty: IrType,
+    /// The index in the built stream of the instruction that binds this
+    /// value; `None` for a circuit argument.
+    defined_at: Option<usize>,
+    /// The immediate this value names, when the instruction that binds it
+    /// is a `Copy` of an immediate.
+    constant: Option<Fr>,
+}
+
 /// Builds a ZKIR v3 instruction stream with statically-tracked, typed,
 /// named values.
 #[derive(Debug, Default)]
 pub struct Builder3 {
-    /// Name and type of every value, indexed by [`Val`]. The first
-    /// `inputs.len()` slots are the circuit arguments.
-    names: Vec<Identifier>,
-    types: Vec<IrType>,
+    /// The definition table, indexed by [`Val`]; the first `inputs.len()`
+    /// entries are the circuit arguments. Every instruction is appended
+    /// through [`Builder3::push`], which records its outputs here, so each
+    /// `defined_at` indexes `instructions` exactly. The builder only ever
+    /// appends: the passes that delete instructions run in
+    /// [`Builder3::finish_kept`], which consumes the builder, so no query
+    /// can see a stream the table does not describe.
+    values: Vec<ValueDef>,
     inputs: Vec<TypedIdentifier>,
     instructions: Vec<Instruction>,
     /// Set by [`Builder3::output`]; a v3 circuit has at most one Output
@@ -146,21 +166,69 @@ impl Builder3 {
 
     /// Register a fresh value named `%label.N` of type `ty`.
     fn fresh(&mut self, label: &str, ty: IrType) -> Val {
-        let index = self.names.len();
-        self.names.push(Identifier(format!("%{label}.{index}")));
-        self.types.push(ty);
+        let index = self.values.len();
+        self.values.push(ValueDef {
+            name: Identifier(format!("%{label}.{index}")),
+            ty,
+            defined_at: None,
+            constant: None,
+        });
         Val(index as u32)
     }
 
+    fn def(&self, v: Val) -> &ValueDef {
+        &self.values[v.0 as usize]
+    }
+
     fn name(&self, v: Val) -> Identifier {
-        self.names[v.0 as usize].clone()
+        self.def(v).name.clone()
+    }
+
+    /// The value a stream identifier names. Every name is `%label.N` with
+    /// `N` the value's index, so the suffix after the last `.` is the index;
+    /// the stored name is compared as well, so an identifier this builder
+    /// did not mint maps to nothing.
+    fn val_named(&self, name: &Identifier) -> Option<Val> {
+        let (_, index) = name.0.rsplit_once('.')?;
+        let index: usize = index.parse().ok()?;
+        (self.values.get(index)?.name == *name).then_some(Val(index as u32))
+    }
+
+    /// Append `instruction` and record, for each value it binds, where it
+    /// is bound and the immediate it names if the instruction is a `Copy`
+    /// of one. The only place an instruction enters the stream.
+    fn push(&mut self, instruction: Instruction) {
+        let at = self.instructions.len();
+        let constant = match &instruction {
+            Instruction::Copy {
+                val: Operand::Immediate(imm),
+                ..
+            } => Some(*imm),
+            _ => None,
+        };
+        for name in passes::defined_identifiers(&instruction) {
+            let v = self
+                .val_named(&name)
+                .expect("an instruction binds only values this builder minted");
+            debug_assert!(
+                (v.0 as usize) >= self.inputs.len(),
+                "{name:?} is a circuit argument, which no instruction binds"
+            );
+            let def = &mut self.values[v.0 as usize];
+            debug_assert!(
+                def.defined_at.is_none(),
+                "{name:?} is bound twice: each value has exactly one binding instruction"
+            );
+            def.defined_at = Some(at);
+            def.constant = constant;
+        }
+        self.instructions.push(instruction);
     }
 
     /// The identifier a value was registered under (`%label.N`) — the name
     /// the instruction stream refers to it by, and the key the simulator's
     /// value memory uses. Reads nothing and builds nothing; it exists so the
-    /// disclosure record can point at a value (v2 records a memory index,
-    /// which v3 does not have).
+    /// disclosure record can point at a value.
     pub fn identifier(&self, v: Val) -> Identifier {
         self.name(v)
     }
@@ -175,7 +243,7 @@ impl Builder3 {
     /// The type of an operand; immediates are native field elements.
     pub fn ty(&self, arg: impl Into<Arg>) -> IrType {
         match arg.into() {
-            Arg::Val(v) => self.types[v.0 as usize].clone(),
+            Arg::Val(v) => self.def(v).ty.clone(),
             Arg::Imm(_) => IrType::Native,
         }
     }
@@ -228,7 +296,7 @@ impl Builder3 {
     /// `Copy` gives one a reusable name without extending the circuit.
     pub fn imm(&mut self, imm: impl Into<Fr>) -> Val {
         let output = self.fresh("imm", IrType::Native);
-        self.instructions.push(Instruction::Copy {
+        self.push(Instruction::Copy {
             val: Operand::Immediate(imm.into()),
             output: self.name(output),
         });
@@ -239,35 +307,27 @@ impl Builder3 {
     /// question the disclosure layer asks before recording a wire, since the
     /// folding pass will inline such a copy away (`passes`).
     pub fn immediate_of(&self, val: Val) -> Option<Fr> {
-        let name = self.name(val);
-        self.instructions
-            .iter()
-            .rev()
-            .find_map(|instruction| match instruction {
-                Instruction::Copy {
-                    val: Operand::Immediate(imm),
-                    output,
-                } if *output == name => Some(*imm),
-                _ => None,
-            })
+        self.def(val).constant
     }
 
     /// Whether `val` is the output of a PUBLIC transcript read — a ledger
     /// read's witnessed value.
     pub fn is_public_input(&self, val: Val) -> bool {
-        let name = self.name(val);
-        self.instructions.iter().any(|instruction| {
-            matches!(instruction, Instruction::PublicInput { output, .. } if *output == name)
-        })
+        matches!(
+            self.defining_instruction(val),
+            Some(Instruction::PublicInput { .. })
+        )
     }
 
     /// The index of the instruction that binds `val`, if one does (a circuit
     /// argument has none).
     pub fn instruction_index_of(&self, val: Val) -> Option<usize> {
-        let name = self.name(val);
-        self.instructions
-            .iter()
-            .position(|instruction| passes::defined_identifiers(instruction).contains(&name))
+        self.def(val).defined_at
+    }
+
+    /// The instruction that binds `val`; `None` for a circuit argument.
+    fn defining_instruction(&self, val: Val) -> Option<&Instruction> {
+        self.def(val).defined_at.map(|at| &self.instructions[at])
     }
 
     /// The public transcript reads `val` DESCENDS FROM: every `public_input`
@@ -275,41 +335,27 @@ impl Builder3 {
     /// that built it, not looking behind any value for which `stop` holds.
     /// Dataflow provenance, the question the stale-read backstop asks
     /// (notes/hooks-design.org): the types track direct read results, this
-    /// tracks what was computed from them.
+    /// tracks what was computed from them. The walk is depth-first from
+    /// `val`, operands pushed in [`passes::operands`] order, and the reads
+    /// come back in the order it reaches them.
     pub fn transcript_reads_behind(&self, val: Val, stop: &dyn Fn(Val) -> bool) -> Vec<Val> {
-        use std::collections::{HashMap, HashSet};
-        let val_of: HashMap<&Identifier, Val> = self
-            .names
-            .iter()
-            .enumerate()
-            .map(|(i, name)| (name, Val(i as u32)))
-            .collect();
-        let mut defs: HashMap<&Identifier, usize> = HashMap::new();
-        for (i, instruction) in self.instructions.iter().enumerate() {
-            for name in passes::defined_identifiers(instruction) {
-                if let Some((key, _)) = val_of.get_key_value(&name) {
-                    defs.insert(key, i);
-                }
-            }
-        }
         let mut reads = Vec::new();
-        let mut seen: HashSet<Val> = HashSet::new();
+        let mut seen = std::collections::HashSet::new();
         let mut stack = vec![val];
         while let Some(v) = stack.pop() {
             if !seen.insert(v) || stop(v) {
                 continue;
             }
-            let Some(&i) = defs.get(&self.names[v.0 as usize]) else {
+            let Some(instruction) = self.defining_instruction(v) else {
                 continue; // a circuit argument
             };
-            let instruction = &self.instructions[i];
             if matches!(instruction, Instruction::PublicInput { .. }) {
                 reads.push(v);
                 continue;
             }
             for operand in passes::operands(instruction) {
                 if let Operand::Variable(id) = operand {
-                    if let Some(&w) = val_of.get(&id) {
+                    if let Some(w) = self.val_named(&id) {
                         stack.push(w);
                     }
                 }
@@ -330,31 +376,27 @@ impl Builder3 {
     /// and the rule is sound only for the SAME guard: a read guarded by an
     /// outer scope and checked under an inner one gets the select.
     pub fn is_read_guarded_by(&self, val: Val, guard: Val) -> bool {
-        let name = self.name(val);
-        let guard = self.name(guard);
-        self.instructions
-            .iter()
-            .rev()
-            .any(|instruction| match instruction {
+        let guard = &self.def(guard).name;
+        match self.defining_instruction(val) {
+            Some(
                 Instruction::PrivateInput {
                     guard: Some(Operand::Variable(g)),
-                    output,
                     ..
                 }
                 | Instruction::PublicInput {
                     guard: Some(Operand::Variable(g)),
-                    output,
                     ..
-                } => *output == name && *g == guard,
-                _ => false,
-            })
+                },
+            ) => g == guard,
+            _ => false,
+        }
     }
 
     /// Copy a value (does not extend the actual circuit).
     pub fn copy(&mut self, val: impl Into<Arg>) -> Val {
         let val = val.into();
         let output = self.fresh("copy", self.ty(val));
-        self.instructions.push(Instruction::Copy {
+        self.push(Instruction::Copy {
             val: self.operand(val),
             output: self.name(output),
         });
@@ -368,7 +410,7 @@ impl Builder3 {
         self.expect(b, supports_eq_add, "a field element or point", "add");
         let ty = self.expect_same(a, b, "add");
         let output = self.fresh("add", ty);
-        self.instructions.push(Instruction::Add {
+        self.push(Instruction::Add {
             a: self.operand(a),
             b: self.operand(b),
             output: self.name(output),
@@ -383,7 +425,7 @@ impl Builder3 {
         self.expect(b, supports_mul, "a field element", "mul");
         let ty = self.expect_same(a, b, "mul");
         let output = self.fresh("mul", ty);
-        self.instructions.push(Instruction::Mul {
+        self.push(Instruction::Mul {
             a: self.operand(a),
             b: self.operand(b),
             output: self.name(output),
@@ -396,7 +438,7 @@ impl Builder3 {
         let a = a.into();
         self.expect(a, supports_eq_add, "a field element or point", "neg");
         let output = self.fresh("neg", self.ty(a));
-        self.instructions.push(Instruction::Neg {
+        self.push(Instruction::Neg {
             a: self.operand(a),
             output: self.name(output),
         });
@@ -408,7 +450,7 @@ impl Builder3 {
         let a = a.into();
         self.expect(a, supports_mul, "a field element", "inv");
         let output = self.fresh("inv", self.ty(a));
-        self.instructions.push(Instruction::Inv {
+        self.push(Instruction::Inv {
             a: self.operand(a),
             output: self.name(output),
         });
@@ -420,7 +462,7 @@ impl Builder3 {
         let a = a.into();
         self.expect_native(a, "not");
         let output = self.fresh("not", IrType::Native);
-        self.instructions.push(Instruction::Not {
+        self.push(Instruction::Not {
             a: self.operand(a),
             output: self.name(output),
         });
@@ -434,7 +476,7 @@ impl Builder3 {
         self.expect(b, supports_eq_add, "a field element or point", "test_eq");
         self.expect_same(a, b, "test_eq");
         let output = self.fresh("eq", IrType::Native);
-        self.instructions.push(Instruction::TestEq {
+        self.push(Instruction::TestEq {
             a: self.operand(a),
             b: self.operand(b),
             output: self.name(output),
@@ -448,7 +490,7 @@ impl Builder3 {
         self.expect_native(a, "less_than");
         self.expect_native(b, "less_than");
         let output = self.fresh("lt", IrType::Native);
-        self.instructions.push(Instruction::LessThan {
+        self.push(Instruction::LessThan {
             a: self.operand(a),
             b: self.operand(b),
             bits,
@@ -470,7 +512,7 @@ impl Builder3 {
         self.expect(b, supports_eq_add, "a field element or point", "cond_select");
         let ty = self.expect_same(a, b, "cond_select");
         let output = self.fresh("sel", ty);
-        self.instructions.push(Instruction::CondSelect {
+        self.push(Instruction::CondSelect {
             bit: self.operand(bit),
             a: self.operand(a),
             b: self.operand(b),
@@ -485,7 +527,7 @@ impl Builder3 {
         self.expect_native(val, "div_mod_power_of_two");
         let div = self.fresh("div", IrType::Native);
         let modulus = self.fresh("mod", IrType::Native);
-        self.instructions.push(Instruction::DivModPowerOfTwo {
+        self.push(Instruction::DivModPowerOfTwo {
             val: self.operand(val),
             bits,
             outputs: vec![self.name(div), self.name(modulus)],
@@ -504,7 +546,7 @@ impl Builder3 {
         self.expect_native(divisor, "reconstitute_field");
         self.expect_native(modulus, "reconstitute_field");
         let output = self.fresh("recon", IrType::Native);
-        self.instructions.push(Instruction::ReconstituteField {
+        self.push(Instruction::ReconstituteField {
             divisor: self.operand(divisor),
             modulus: self.operand(modulus),
             bits,
@@ -519,7 +561,7 @@ impl Builder3 {
     pub fn transient_hash(&mut self, inputs: &[Arg]) -> Val {
         let inputs = self.natives(inputs, "transient_hash");
         let output = self.fresh("thash", IrType::Native);
-        self.instructions.push(Instruction::TransientHash {
+        self.push(Instruction::TransientHash {
             inputs,
             output: self.name(output),
         });
@@ -533,7 +575,7 @@ impl Builder3 {
         // preimage layout (zkir-v3 encodes each operand per its type).
         let inputs = inputs.iter().map(|&a| self.operand(a)).collect();
         let output = self.fresh("phash", IrType::Bytes(32));
-        self.instructions.push(Instruction::PersistentHash {
+        self.push(Instruction::PersistentHash {
             alignment,
             inputs,
             output: self.name(output),
@@ -545,7 +587,7 @@ impl Builder3 {
     pub fn keccak256(&mut self, alignment: Alignment, inputs: &[Arg]) -> Val {
         let inputs = inputs.iter().map(|&a| self.operand(a)).collect();
         let output = self.fresh("keccak", IrType::Bytes(32));
-        self.instructions.push(Instruction::Keccak256 {
+        self.push(Instruction::Keccak256 {
             alignment,
             inputs,
             output: self.name(output),
@@ -557,7 +599,7 @@ impl Builder3 {
     pub fn hash_to_curve(&mut self, inputs: &[Arg]) -> Val {
         let inputs = self.natives(inputs, "hash_to_curve");
         let output = self.fresh("h2c", IrType::JubjubPoint);
-        self.instructions.push(Instruction::HashToCurve {
+        self.push(Instruction::HashToCurve {
             inputs,
             output: self.name(output),
         });
@@ -578,7 +620,7 @@ impl Builder3 {
             "ec_mul: scalar must be {expected_scalar:?} for {pt:?}, got {st:?}"
         );
         let output = self.fresh("ecmul", pt);
-        self.instructions.push(Instruction::EcMul {
+        self.push(Instruction::EcMul {
             a: self.operand(point),
             scalar: self.operand(scalar),
             output: self.name(output),
@@ -598,7 +640,7 @@ impl Builder3 {
             t => panic!("ec_mul_generator: operand must be a Jubjub or Secp256k1 scalar, got {t:?}"),
         };
         let output = self.fresh("ecgen", point_ty);
-        self.instructions.push(Instruction::EcMulGenerator {
+        self.push(Instruction::EcMulGenerator {
             scalar: self.operand(scalar),
             output: self.name(output),
         });
@@ -614,7 +656,7 @@ impl Builder3 {
             .unwrap_or_else(|| panic!("into_coordinates: operand must be a point, got {pt:?}"));
         let x = self.fresh("x", coord.clone());
         let y = self.fresh("y", coord);
-        self.instructions.push(Instruction::IntoCoordinates {
+        self.push(Instruction::IntoCoordinates {
             point: self.operand(point),
             outputs: (self.name(x), self.name(y)),
         });
@@ -641,7 +683,7 @@ impl Builder3 {
             );
         }
         let output = self.fresh("pt", point_ty);
-        self.instructions.push(Instruction::FromCoordinates {
+        self.push(Instruction::FromCoordinates {
             inputs: (self.operand(x), self.operand(y)),
             output: self.name(output),
         });
@@ -664,7 +706,7 @@ impl Builder3 {
             "into_bytes32",
         );
         let output = self.fresh("bytes", IrType::Bytes(32));
-        self.instructions.push(Instruction::ToBytes {
+        self.push(Instruction::ToBytes {
             input: self.operand(input),
             output: self.name(output),
         });
@@ -686,7 +728,7 @@ impl Builder3 {
             "from_bytes32: target must be a prime-field type, got {ty:?}"
         );
         let output = self.fresh("field", ty.clone());
-        self.instructions.push(Instruction::FromBytes {
+        self.push(Instruction::FromBytes {
             bytes: self.operand(bytes),
             val_t: ty,
             output: self.name(output),
@@ -704,7 +746,7 @@ impl Builder3 {
             "reverse_bytes",
         );
         let output = self.fresh("rev", IrType::Bytes(32));
-        self.instructions.push(Instruction::Reverse {
+        self.push(Instruction::Reverse {
             bytes: self.operand(bytes),
             output: self.name(output),
         });
@@ -724,7 +766,7 @@ impl Builder3 {
         );
         let low = self.fresh("low", IrType::Native);
         let high = self.fresh("high", IrType::Native);
-        self.instructions.push(Instruction::BytesIntoNatives {
+        self.push(Instruction::BytesIntoNatives {
             bytes: self.operand(bytes),
             outputs: vec![self.name(low), self.name(high)],
         });
@@ -738,7 +780,7 @@ impl Builder3 {
         self.expect_native(low, "bytes32_from_low_high");
         self.expect_native(high, "bytes32_from_low_high");
         let output = self.fresh("bytes", IrType::Bytes(32));
-        self.instructions.push(Instruction::BytesFromNatives {
+        self.push(Instruction::BytesFromNatives {
             inputs: vec![self.operand(low), self.operand(high)],
             len: 32,
             output: self.name(output),
@@ -752,7 +794,7 @@ impl Builder3 {
         let native = native.into();
         self.expect_native(native, "jubjub_scalar_from_native");
         let output = self.fresh("jscalar", IrType::JubjubScalar);
-        self.instructions.push(Instruction::JubjubScalarFromNative {
+        self.push(Instruction::JubjubScalarFromNative {
             native: self.operand(native),
             output: self.name(output),
         });
@@ -765,7 +807,7 @@ impl Builder3 {
         let input = input.into();
         let len = self.ty(input).encoded_len();
         let outputs: Vec<Val> = (0..len).map(|_| self.fresh("enc", IrType::Native)).collect();
-        self.instructions.push(Instruction::Encode {
+        self.push(Instruction::Encode {
             input: self.operand(input),
             outputs: outputs.iter().map(|&v| self.name(v)).collect(),
         });
@@ -783,7 +825,7 @@ impl Builder3 {
         }
         let guard = guard.map(|g| self.operand(g));
         let output = self.fresh("w", ty.clone());
-        self.instructions.push(Instruction::PrivateInput {
+        self.push(Instruction::PrivateInput {
             guard,
             val_t: ty,
             output: self.name(output),
@@ -799,7 +841,7 @@ impl Builder3 {
         }
         let guard = guard.map(|g| self.operand(g));
         let output = self.fresh("pi", ty.clone());
-        self.instructions.push(Instruction::PublicInput {
+        self.push(Instruction::PublicInput {
             guard,
             val_t: ty,
             output: self.name(output),
@@ -813,7 +855,7 @@ impl Builder3 {
     pub fn assert(&mut self, cond: impl Into<Arg>) {
         let cond = cond.into();
         self.expect_native(cond, "assert");
-        self.instructions.push(Instruction::Assert {
+        self.push(Instruction::Assert {
             cond: self.operand(cond),
         });
     }
@@ -823,7 +865,7 @@ impl Builder3 {
         self.expect(a, supports_eq_add, "a field element or point", "constrain_eq");
         self.expect(b, supports_eq_add, "a field element or point", "constrain_eq");
         self.expect_same(a, b, "constrain_eq");
-        self.instructions.push(Instruction::ConstrainEq {
+        self.push(Instruction::ConstrainEq {
             a: self.operand(a),
             b: self.operand(b),
         });
@@ -832,7 +874,7 @@ impl Builder3 {
     pub fn constrain_bits(&mut self, val: impl Into<Arg>, bits: u32) {
         let val = val.into();
         self.expect_native(val, "constrain_bits");
-        self.instructions.push(Instruction::ConstrainBits {
+        self.push(Instruction::ConstrainBits {
             val: self.operand(val),
             bits,
         });
@@ -841,7 +883,7 @@ impl Builder3 {
     pub fn constrain_to_boolean(&mut self, val: impl Into<Arg>) {
         let val = val.into();
         self.expect_native(val, "constrain_to_boolean");
-        self.instructions.push(Instruction::ConstrainToBoolean {
+        self.push(Instruction::ConstrainToBoolean {
             val: self.operand(val),
         });
     }
@@ -854,7 +896,7 @@ impl Builder3 {
         let guard = guard.into();
         self.expect_native(guard, "impact guard");
         let inputs = self.natives(inputs, "impact");
-        self.instructions.push(Instruction::Impact {
+        self.push(Instruction::Impact {
             guard: self.operand(guard),
             inputs,
         });
@@ -869,7 +911,7 @@ impl Builder3 {
         );
         self.outputs = Some(vals.iter().map(|&v| self.ty(v)).collect());
         let vals = vals.iter().map(|&v| self.operand(v)).collect();
-        self.instructions.push(Instruction::Output { vals });
+        self.push(Instruction::Output { vals });
     }
 
     // --- finishing --------------------------------------------------------------------
@@ -984,3 +1026,4 @@ impl Builder3 {
         (ir, kept)
     }
 }
+
