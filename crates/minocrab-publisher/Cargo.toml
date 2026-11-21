@@ -5,11 +5,10 @@ name = "minocrab-publisher"
 # crate reads the Misc envelope and the three signer event names from
 # `signet-protocol` (publishable) rather than `minocrab-contracts` (a corpus,
 # `publish = false`) — the ONLY remaining edge to that crate is a
-# dev-dependency (tests/real_proof.rs, which keygens from the real circuit). So the same hold the rest of the workspace
-# carries applies here and nowhere further: PUBLISHING.md.
+# dev-dependency (tests/real_proof.rs, which keygens from the real circuit).
 version.workspace = true
-# Held until the owner lifts it (PUBLISHING.md); every `midnight-*` crate
-# it needs is on crates.io now.
+# Not in the crates.io set (PUBLISHING.md): its consumer links it by git, and
+# no published crate depends on it.
 publish = false
 edition.workspace = true
 license.workspace = true

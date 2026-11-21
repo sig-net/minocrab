@@ -2,9 +2,6 @@
 name = "minocrab-std"
 description = "MinoCrab L3: the standard library — ports of Compact's standard-library.compact, each differential-tested against compactc"
 version.workspace = true
-# Held until the owner lifts it (PUBLISHING.md); every `midnight-*` crate
-# it needs is on crates.io now.
-publish = false
 edition.workspace = true
 license.workspace = true
 repository.workspace = true

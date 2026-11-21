@@ -77,6 +77,10 @@ minocrab-taint = { path = "crates/minocrab-taint", version = "0.1.0" }
 minocrab-zkir = { path = "crates/minocrab-zkir", version = "0.1.0" }
 signet-protocol = { path = "crates/signet-protocol", version = "0.1.0" }
 signet-hashing = { path = "crates/signet-hashing", version = "0.1.0" }
+# NOT the workspace version: an interface crate is versioned per callee, by
+# the deployed contract's wire format (notes/interface-crates.org). The
+# workspace_versions test holds this number to the crate's own manifest.
+signet-signer-interface = { path = "crates/signet-signer-interface", version = "0.3.0" }
 
 # --- upstream -------------------------------------------------------------
 # Every midnight-* crate comes from crates.io at the version midnight-node
