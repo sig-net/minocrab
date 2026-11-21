@@ -677,8 +677,7 @@ impl Manager {
         let k = shielded_key(c, &acct, &coin.color);
         let prior = balance_at(c, &MANAGER.shielded_balances, &k).stale(c);
         let sum = c.add(prior, coin.value);
-        let new_balance = Uint::<128, Public>::from_field_unchecked(sum);
-        new_balance.constrain_input(c);
+        let new_balance = Uint::<128, Public>::from_field_checked(c, sum);
         MANAGER.shielded_balances.insert(c, &k, &new_balance);
 
         Discloses::of(())
@@ -707,8 +706,7 @@ impl Manager {
         let k = unshielded_key(c, &acct, &col);
         let prior = balance_at(c, &MANAGER.unshielded_balances, &k).stale(c);
         let sum = c.add(prior, amt.field());
-        let new_balance = Uint::<128, Public>::from_field_unchecked(sum);
-        new_balance.constrain_input(c);
+        let new_balance = Uint::<128, Public>::from_field_checked(c, sum);
         MANAGER.unshielded_balances.insert(c, &k, &new_balance);
 
         Discloses::of(())
@@ -911,8 +909,7 @@ impl Manager {
         // The checked nonce write, AFTER the custody dispatch.
         let one_c = c.constant(1u64);
         let incremented = c.add(p.nonce, one_c);
-        let inc_u64 = Uint::<64, Public>::from_field_unchecked(incremented);
-        inc_u64.constrain_input(c);
+        let inc_u64 = Uint::<64, Public>::from_field_checked(c, incremented);
         c.when(is_evm_action, |c| {
             let grows = gt(inc_u64, Uint::<64, Public>::from_field_unchecked(p.nonce))
                 .eval(c)

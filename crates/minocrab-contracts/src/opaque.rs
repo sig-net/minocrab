@@ -182,7 +182,7 @@ impl OpaqueLedger {
     #[circuit]
     pub fn op_map_key(c: &mut Circuit3, k: OpaqueStr) -> Discloses<Key> {
         let k = k.disclose_as::<Key>(c);
-        let one: Uint<64, Public> = Uint::from_field_unchecked(c.constant(minocrab::Fr::from(1u64)));
+        let one: Uint<64, Public> = Uint::constant(c, 1);
         OPAQUE.by_name.insert(c, &k, &one);
         Discloses::of(())
     }

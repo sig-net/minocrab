@@ -1,0 +1,83 @@
+#+TITLE: Uint::from_field_unchecked in minocrab-contracts/src: every site, classified
+#+DATE: 2026-11-21
+
+M48 rung H, the input for the integer API. Branch =sl-std=. Every non-comment =Uint::from_field_unchecked= (66 sites) in =crates/minocrab-contracts/src=, at this branch's line numbers. The survey's "115" counts every =from_field_unchecked= in that directory: 66 are =Uint=, 30 are =Bool= / =Bytes= / =Action= / =OpaqueStr= / the request-id newtype, and 19 are in doc comments (=evm.rs= examples).
+
+Categories: (i) wraps a constant; (ii) wraps an arithmetic or select result whose range the author argues; (iii) wraps a value just range-checked, a constrained circuit argument (often after =disclose_as= on its =.field()=, which drops the type), or a ledger read; (iv) other.
+
+Replaced on this branch, all with the 227-circuit =zkir_dump= byte-identical before and after: the ten (i) sites whose constant is a =u64= now call =Uint::constant=; three (ii) sites that wrote =from_field_unchecked= then a discarded =constrain_input= outside any =when= now call =Uint::from_field_checked= (the same instructions, and outside a =when= the constrained wire is the input wire).
+
+Not replaceable as the API stands: the two (i) sites with =u128= constants (=Uint::constant= takes a =u64=); the (ii) sites that call =constrain_input= inside a =when= (=from_field_checked= would carry the guarded select wire into the write, so the stream moves); everything in (iii) and (iv), which wraps a wire whose type was lost (a disclosed field, a raw ledger limb, a select), not a constant.
+
+| site | cat | reason |
+|------+-----+--------|
+| opaque.rs:185 | i | REPLACED: =Uint::constant(c, 1)= |
+| erc20_vault.rs:1045 | i | =DEFAULT_MAX_FEE_PER_GAS= is a =u128=; =Uint::constant= takes =u64=, kept |
+| erc20_vault.rs:1047 | i | =DEFAULT_MAX_PRIORITY_FEE_PER_GAS=, =u128=, kept |
+| erc20_vault.rs:1050 | i | REPLACED: =Uint::constant(c, DEFAULT_WITHDRAW_GAS)= |
+| erc20_vault.rs:1051 | i | REPLACED: =DEFAULT_APPROVE_GAS= |
+| erc20_vault.rs:1052 | i | REPLACED: =DEFAULT_SWAP_GAS= |
+| erc20_vault.rs:1053 | i | REPLACED: =DEFAULT_SUPPLY_GAS= |
+| erc20_vault.rs:1054 | i | REPLACED: =DEFAULT_REDEEM_GAS= |
+| erc20_vault.rs:1217 | i | REPLACED: =REPLACE_NONCE_GAS= |
+| evm_flow/outbox.rs:88 | i | REPLACED: =Uint::constant(c, 1)=, the stream delta |
+| evm_flow/outbox.rs:89 | i | REPLACED: =Uint::constant(c, 0)= |
+| evm_flow/outbox.rs:318 | i | REPLACED: =Uint::constant(c, 0)= |
+| manager.rs:680 | ii | REPLACED: ledger balance + coin value, then the 128-bit check; now =from_field_checked= |
+| manager.rs:709 | ii | REPLACED: ledger balance + amount, then the 128-bit check; now =from_field_checked= |
+| manager.rs:912 | ii | REPLACED: =nonce + 1= then the 64-bit check; now =from_field_checked= |
+| manager.rs:861 | ii | =valid_until - 3600=, may wrap on a native call; comment argues the only consumer is guarded |
+| manager.rs:921 | ii | =select(is1, 0, nonce + 1)=, both arms in range (the increment checked above) |
+| manager.rs:1345 | ii | sum of two guarded balance reads, at most one live, so one balance |
+| manager.rs:1403 | ii | =safe_give = select(pool_covers, val, 0)=, the clamp the comment argues |
+| manager.rs:1435 | ii | =safe_give= again, as the subtraction guard's right side |
+| manager.rs:1501 | ii | the same two-read sum (=debit_balance=) |
+| manager.rs:1509 | ii | =debit - val= after the messaged =ge= guard, then =constrain_input= inside =custody_dispatch='s =when=; checked form would move the stream |
+| manager.rs:1560 | ii | credit sum then =constrain_input= inside a =when=; checked form would store the select wire |
+| manager.rs:1568 | ii | the same, unshielded credit |
+| erc20_vault.rs:2108 | iv | =select(use_next, nonce read, queued nonce)=, both =Uint<64>= |
+| erc20_vault.rs:2129 | iv | =select(higher, record height, kept height)=, both =Uint<64>= |
+| erc20_vault.rs:610 | iv | =evm_nonce= parameter: an argument's field or a zero constant from the caller |
+| manager.rs:894 | iv | =f.is1= (a =test_eq= result, 0 or 1) reused as a =Uint<8>= mode |
+| manager.rs:562 | iii | account mode, a guarded ledger read |
+| manager.rs:564 | iii | next nonce, a guarded ledger read |
+| manager.rs:579 | iii | shielded balance, ledger read |
+| manager.rs:593 | iii | unshielded balance, ledger read |
+| manager.rs:606 | iii | pool coin value, guarded ledger read |
+| manager.rs:645 | iii | the coin argument's value (constrained at entry) |
+| manager.rs:849 | iii | payload =valid_until=, a constrained argument disclosed as a field |
+| manager.rs:914 | iii | payload =nonce=, constrained argument |
+| manager.rs:1012 | iii | payload selector |
+| manager.rs:1013 | iii | payload auth mode |
+| manager.rs:1014 | iii | payload recipient kind |
+| manager.rs:1015 | iii | payload =valid_until= |
+| manager.rs:1016 | iii | payload primary amount |
+| manager.rs:1017 | iii | payload want amount |
+| manager.rs:1297 | iii | payload primary amount |
+| manager.rs:1304 | iii | payload want amount |
+| manager.rs:1356 | iii | pooled coin value, ledger read |
+| manager.rs:1434 | iii | pooled coin value, ledger read |
+| nested.rs:158 | iii | nested map lookup limb |
+| nested.rs:199 | iii | nested map size read |
+| nested.rs:283 | iii | nested list length read |
+| nested.rs:412 | iii | nested counter read |
+| nested.rs:575 | iii | doubly nested map lookup limb |
+| signet_v1.rs:435 | iii | the nonce limb of a stored request record (ledger read) |
+| events_borsh.rs:151 | iii | disclosed =Uint<128>= argument's field |
+| events_borsh.rs:152 | iii | counter read |
+| xcontract_events.rs:109 | iii | disclosed =Uint<128>= argument's field |
+| xcontract_events_borsh.rs:87 | iii | disclosed argument's field |
+| xcontract_events_borsh.rs:88 | iii | counter read |
+| xcall.rs:134 | iii | disclosed argument's field |
+| xcall.rs:200 | iii | disclosed argument's field |
+| treasury.rs:125 | iii | disclosed =Uint<64>= argument's field |
+| erc20_vault_pending.rs:591 | iii | disclosed deposit amount's field |
+| erc20_vault_pending.rs:715 | iii | disclosed withdraw amount |
+| erc20_vault_pending.rs:844 | iii | disclosed swap amount out |
+| erc20_vault_pending.rs:845 | iii | disclosed swap amount in maximum |
+| erc20_vault_pending.rs:1036 | iii | disclosed supply amount |
+| erc20_vault_pending.rs:1156 | iii | disclosed redeem shares |
+
+Counts: (i) 12, ten replaced; (ii) 12, three replaced; (iii) 38; (iv) 4. 53 unchecked sites remain.
+
+What the counts say for the API: 23 of the 38 (iii) sites are a constrained argument whose type was dropped on the way (=disclose_as= on =.field()=, or the manager's =PublicPayload= of raw wires), which a typed disclosure of a =Uint= would keep; 15 are ledger reads that come back as raw limbs or wires (=nested.rs= uses raw =minocrab_ledger= reads, the manager its own guarded-lookup helper); the (ii) sites want =Uint= addition with the range check (=add= returning a checked =Uint<BITS>=) and a typed =cond_select=; a =u128= =Uint::constant= covers the last two constants.

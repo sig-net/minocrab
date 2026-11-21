@@ -85,8 +85,8 @@ impl<Env: LedgerRepr, const WORDS: usize> StreamSpec for OutboxSpec<Env, WORDS> 
 
     fn delta(c: &mut Circuit3, _head: &()) -> Self::State {
         (
-            Uint::from_field_unchecked(c.constant(1u64)),
-            Uint::from_field_unchecked(c.constant(0u64)),
+            Uint::constant(c, 1),
+            Uint::constant(c, 0),
         )
     }
 }
@@ -315,7 +315,7 @@ where
                 .gt(outcome.env.seen)
                 .message("Response not after the call"),
         );
-        let zero = Uint::from_field_unchecked(c.constant(0u64));
+        let zero = Uint::constant(c, 0);
         self.stream.combine(c, (zero, height));
     }
 }

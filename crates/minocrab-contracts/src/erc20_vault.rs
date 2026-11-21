@@ -1047,11 +1047,11 @@ impl Vault {
             let max_prio = Uint::<128, Public>::from_field_unchecked(c.constant(minocrab::Fr::from_le_bytes(&DEFAULT_MAX_PRIORITY_FEE_PER_GAS.to_le_bytes()).unwrap()));
             VAULT.vault_max_priority_fee_per_gas.write(c, &max_prio);
             let limits = VaultGasLimits {
-                withdraw: Uint::from_field_unchecked(c.constant(DEFAULT_WITHDRAW_GAS)),
-                approve: Uint::from_field_unchecked(c.constant(DEFAULT_APPROVE_GAS)),
-                swap: Uint::from_field_unchecked(c.constant(DEFAULT_SWAP_GAS)),
-                supply: Uint::from_field_unchecked(c.constant(DEFAULT_SUPPLY_GAS)),
-                redeem: Uint::from_field_unchecked(c.constant(DEFAULT_REDEEM_GAS)),
+                withdraw: Uint::constant(c, DEFAULT_WITHDRAW_GAS),
+                approve: Uint::constant(c, DEFAULT_APPROVE_GAS),
+                swap: Uint::constant(c, DEFAULT_SWAP_GAS),
+                supply: Uint::constant(c, DEFAULT_SUPPLY_GAS),
+                redeem: Uint::constant(c, DEFAULT_REDEEM_GAS),
             };
             VAULT.vault_gas_limits.write(c, &limits);
         });
@@ -1214,7 +1214,7 @@ impl Vault {
         let max_priority_fee_per_gas = VAULT.vault_max_priority_fee_per_gas.read(c).stale(c);
         let args = ReplaceNonceArgs {
             gas: StoredGas {
-                gas_limit: Uint::from_field_unchecked(c.constant(REPLACE_NONCE_GAS)),
+                gas_limit: Uint::constant(c, REPLACE_NONCE_GAS),
                 max_fee_per_gas,
                 max_priority_fee_per_gas,
             },
