@@ -32,14 +32,71 @@
 //! — but every member's content passes through untouched, so rust-analyzer
 //! sees the same methods, in the same order, at the same spans.
 
+//!
+//! THE LOWERING (M48 rung C, notes/streamline-survey.org §7): how a circuit
+//! is lowered is a property of the CONTRACT, so it is said once, on the
+//! block: `#[contract(lowering = minocrab_compat::profile)]`. The macro
+//! knows nothing about the path but its position: it splices a call to it on
+//! the circuit as the first statement of every `#[circuit]`'s entry closure
+//! (see [`crate::circuit::expand_in`]), and records it as the contract's
+//! `LOWERING` const so a test can ask which contracts chose one. This works
+//! because `#[contract]` expands the `#[circuit]` methods itself, so no
+//! second declaration per circuit is needed and none can be forgotten.
+
 use proc_macro2::TokenStream;
 use quote::{quote, ToTokens};
+use syn::parse::{Parse, ParseStream};
 use syn::spanned::Spanned;
-use syn::{FnArg, ImplItem, ItemFn, ItemImpl};
+use syn::{FnArg, Ident, ImplItem, ItemFn, ItemImpl};
 
 use crate::circuit::{CircuitAttr, Expansion};
 
-pub fn expand(item: ItemImpl) -> syn::Result<TokenStream> {
+/// `#[contract]` / `#[contract(lowering = path)]`.
+#[derive(Default)]
+pub struct ContractAttr {
+    /// A path to a `fn(&mut Circuit3)` every circuit of the contract calls
+    /// before its body. The macro only splices it; rustc checks its type.
+    lowering: Option<syn::Path>,
+}
+
+impl Parse for ContractAttr {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let expected = "expected `lowering = path::to::a_fn` inside #[contract(..)], where the \
+                        fn takes `&mut Circuit3` (e.g. `lowering = minocrab_compat::profile`)";
+        let mut attr = ContractAttr::default();
+        while !input.is_empty() {
+            let key: Ident = input
+                .parse()
+                .map_err(|e| syn::Error::new(e.span(), expected))?;
+            if key != "lowering" {
+                return Err(syn::Error::new(
+                    key.span(),
+                    format!("unsupported #[contract] argument `{key}`; {expected}"),
+                ));
+            }
+            if attr.lowering.is_some() {
+                return Err(syn::Error::new(key.span(), "`lowering` is given twice"));
+            }
+            input
+                .parse::<syn::Token![=]>()
+                .map_err(|e| syn::Error::new(e.span(), expected))?;
+            // A PATH, not an expression: a closure or a call here would run
+            // code the reader cannot see named, and a string would be a name
+            // rustc cannot check.
+            let path: syn::Path = input
+                .parse()
+                .map_err(|e| syn::Error::new(e.span(), expected))?;
+            attr.lowering = Some(path);
+            if input.is_empty() {
+                break;
+            }
+            input.parse::<syn::Token![,]>()?;
+        }
+        Ok(attr)
+    }
+}
+
+pub fn expand(attr: ContractAttr, item: ItemImpl) -> syn::Result<TokenStream> {
     if let Some((_, path, _)) = &item.trait_ {
         return Err(syn::Error::new(
             path.span(),
@@ -57,6 +114,7 @@ pub fn expand(item: ItemImpl) -> syn::Result<TokenStream> {
     }
 
     let self_ty = &item.self_ty;
+    let lowering = attr.lowering.as_ref();
     let mut items: Vec<TokenStream> = Vec::new();
     let mut tests: Vec<TokenStream> = Vec::new();
     // Declaration order IS the order the set is reported in, so a reader sees
@@ -109,7 +167,7 @@ pub fn expand(item: ItemImpl) -> syn::Result<TokenStream> {
             block: Box::new(method.block.clone()),
         };
         let Expansion { entry, tests: test } =
-            crate::circuit::expand_in(attr, function, Some(self_ty))?;
+            crate::circuit::expand_in(attr, function, Some(self_ty), lowering)?;
         items.push(entry);
         tests.extend(test);
         circuits.push((bare, name));
@@ -119,6 +177,10 @@ pub fn expand(item: ItemImpl) -> syn::Result<TokenStream> {
     let names = circuits.iter().map(|(bare, _)| bare);
     let idents = circuits.iter().map(|(_, ident)| ident);
     let count = circuits.len();
+    let lowering_value = match lowering {
+        Some(path) => quote!(::core::option::Option::Some(#path)),
+        None => quote!(::core::option::Option::None),
+    };
 
     Ok(quote! {
         impl #self_ty {
@@ -131,6 +193,15 @@ pub fn expand(item: ItemImpl) -> syn::Result<TokenStream> {
             /// without anyone maintaining a second list.
             pub const CIRCUITS: [(&'static str, fn() -> #root::__private::Compiled3); #count] =
                 [ #( (#names, Self::#idents) ),* ];
+
+            /// The lowering every circuit of this contract applies before its
+            /// body: `#[contract(lowering = path)]`, or `None` for the
+            /// defaults.
+            ///
+            /// Derived by `#[contract]` from its one argument, so a test can
+            /// ask which contracts chose a lowering.
+            pub const LOWERING: ::core::option::Option<fn(&mut #root::__private::Circuit3)> =
+                #lowering_value;
         }
 
         #(#tests)*
@@ -145,7 +216,7 @@ mod tests {
     use super::*;
 
     fn expansion(item: ItemImpl) -> String {
-        expand(item).expect("expands").to_string()
+        expand(ContractAttr::default(), item).expect("expands").to_string()
     }
 
     /// THE TOOLING PROPERTY (notes/evm-calls.org §6/§12), for a plain
@@ -216,7 +287,7 @@ mod tests {
 
     #[test]
     fn a_trait_impl_is_rejected() {
-        let err = expand(syn::parse_quote! {
+        let err = expand(ContractAttr::default(), syn::parse_quote! {
             impl SomeTrait for Vault {
                 #[circuit]
                 fn deposit(c: &mut Circuit3) {}
@@ -225,5 +296,82 @@ mod tests {
         .expect_err("only an inherent impl describes a contract's own circuits")
         .to_string();
         assert!(err.contains("#[interface]"), "{err}");
+    }
+
+    fn attr(tokens: proc_macro2::TokenStream) -> syn::Result<ContractAttr> {
+        syn::parse2(tokens)
+    }
+
+    fn deposit() -> ItemImpl {
+        syn::parse_quote! {
+            impl Vault {
+                #[circuit]
+                pub fn deposit(c: &mut Circuit3, amount: Uint<64>) {
+                    TREASURY.note(c, amount);
+                }
+                #[circuit]
+                pub fn withdraw(c: &mut Circuit3) {}
+            }
+        }
+    }
+
+    /// `lowering = path` puts ONE call to the path in EVERY circuit's entry
+    /// closure, as its first statement, ahead of the author's body: the
+    /// arguments are declared and constrained by `entry` before the closure
+    /// runs, and the lowering runs before anything in the body.
+    #[test]
+    fn the_lowering_is_called_first_in_every_circuit() {
+        let attr = attr(quote!(lowering = my_compat::profile)).expect("parses");
+        let expanded = expand(attr, deposit()).expect("expands").to_string();
+        let call = "my_compat :: profile (__c) ;";
+        assert_eq!(expanded.matches(call).count(), 2, "{expanded}");
+        assert!(
+            expanded.contains(&format!("| __c , __args : __deposit_Args | {{ {call} deposit (__c , __args . amount) }}")),
+            "the lowering is not the closure's first statement, before the body's call:\n{expanded}"
+        );
+        assert!(
+            expanded.contains("pub const LOWERING : :: core :: option :: Option < fn (& mut :: minocrab_std :: v3 :: __private :: Circuit3) > = :: core :: option :: Option :: Some (my_compat :: profile) ;"),
+            "{expanded}"
+        );
+    }
+
+    /// Without the argument, the closure is the one the macro always
+    /// emitted (byte identity of every contract that does not opt in), and
+    /// `LOWERING` says `None`.
+    #[test]
+    fn without_a_lowering_the_entry_is_unchanged() {
+        let expanded = expansion(deposit());
+        assert!(
+            expanded.contains("| __c , __args : __deposit_Args | deposit (__c , __args . amount))"),
+            "{expanded}"
+        );
+        assert!(!expanded.contains("profile"), "{expanded}");
+        assert!(expanded.contains("= :: core :: option :: Option :: None ;"), "{expanded}");
+    }
+
+    /// The malformed arguments are macro errors at the attribute, each
+    /// saying what is expected.
+    #[test]
+    fn a_malformed_lowering_is_rejected() {
+        let cases: [(proc_macro2::TokenStream, &str); 6] = [
+            (quote!(lowering = "minocrab_compat::profile"), "expected `lowering = path::to::a_fn`"),
+            (quote!(lowering = |c| profile(c)), "expected `lowering = path::to::a_fn`"),
+            (quote!(lowering), "expected `lowering = path::to::a_fn`"),
+            (quote!(lowering = ), "expected `lowering = path::to::a_fn`"),
+            (quote!(lowerin = profile), "unsupported #[contract] argument `lowerin`"),
+            (quote!(lowering = a::profile, lowering = b::profile), "`lowering` is given twice"),
+        ];
+        for (tokens, message) in cases {
+            let shown = tokens.to_string();
+            let err = match attr(tokens) {
+                Ok(_) => panic!("`{shown}` parsed"),
+                Err(e) => e.to_string(),
+            };
+            assert!(err.contains(message), "`{shown}`: {err}");
+        }
+        // A path followed by more tokens (a call, say) is not a path.
+        assert!(attr(quote!(lowering = profile(c))).is_err());
+        // Empty is the plain `#[contract]`.
+        assert!(attr(quote!()).expect("parses").lowering.is_none());
     }
 }

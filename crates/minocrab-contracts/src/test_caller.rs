@@ -52,7 +52,7 @@ pub use crate::common::secp256k1_point_atoms;
 /// The Signet caller contract — one circuit so far, `initialise`.
 pub struct TestCaller;
 
-#[contract]
+#[contract(lowering = minocrab_compat::profile)]
 impl TestCaller {
     /// `export circuit initialise(responseKey: Secp256k1Point): []`
     #[circuit]
@@ -60,7 +60,6 @@ impl TestCaller {
         c: &mut Circuit3,
         response_key: Secp256k1Point,
     ) -> Discloses<(MpcResponseKey,)> {
-        minocrab_compat::profile(c);
         let response_key = response_key.point();
         // Kept even though guard threading no longer uses it: dropping this
         // `Copy` would renumber every later identifier, moving the ZKIR

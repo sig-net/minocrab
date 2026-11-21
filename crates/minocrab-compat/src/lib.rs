@@ -18,7 +18,7 @@
 //! | [`merkle`] | `insertIndexDefault` with the default leaf hashed in circuit |
 //! | [`secp`] | `secp256k1EcdsaVerify` |
 //! | [`normalise`] | the copy fold the differentials apply to both streams |
-//! | [`profile`] | the first line of a ported circuit: compactc's lowering settings |
+//! | [`profile`] | compactc's lowering settings, one attribute on a ported contract |
 //!
 //! Nothing in the core depends on this crate (`cargo tree -i
 //! minocrab-compat` lists only the corpus of ports), so nothing compactc
@@ -31,8 +31,14 @@ pub mod secp;
 
 use minocrab::v3::{Circuit3, Lowering, SelfAddressReads};
 
-/// Set this circuit's lowering to compactc's — THE FIRST LINE of every
-/// circuit ported from Compact, and of the deployed signer's.
+/// Set this circuit's lowering to compactc's, for every circuit ported from
+/// Compact and every circuit of the deployed signer.
+///
+/// A ported contract says it ONCE, on its block:
+/// `#[contract(lowering = minocrab_compat::profile)]`, and `#[contract]`
+/// calls this on each of its circuits before the body. A circuit built by
+/// hand outside a `#[contract]` block (through `entry`, or `Circuit3::new()`)
+/// calls it itself, as the first statement of what it builds.
 ///
 /// The settings no gadget can carry, because shared helpers reach them
 /// through core ([`Circuit3::set_lowering`]):

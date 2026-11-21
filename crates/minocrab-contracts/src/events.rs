@@ -89,6 +89,7 @@ struct DepositArgs {
 /// [`DepositDisclosures`] is one (see [`Discloses`]).
 fn base_with_emits(emits: usize) -> Compiled3 {
     entry(|c, args: DepositArgs| -> DepositDisclosures {
+        // Explicit: built through `entry`, outside a `#[contract]` block, so no attribute reaches it.
         minocrab_compat::profile(c);
         let recipient = args.recipient;
         let amount = args.amount;

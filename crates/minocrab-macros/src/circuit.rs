@@ -134,16 +134,24 @@ pub fn expand(attr: CircuitAttr, item: ItemFn) -> syn::Result<TokenStream> {
 }
 
 pub fn expand_parts(attr: CircuitAttr, item: ItemFn) -> syn::Result<Expansion> {
-    expand_in(attr, item, None)
+    expand_in(attr, item, None, None)
 }
 
 /// [`expand_parts`] for a circuit that lives in a `#[contract]` block: `owner`
 /// is the impl's self type, which the generated test needs in order to name
 /// the constructor (`super::Vault::deposit`, not `super::deposit`).
+///
+/// `lowering` is the contract's `#[contract(lowering = path)]`, if it gave
+/// one: the path is spliced as a call on the circuit, `path(__c);`, as the
+/// first statement of the closure `entry` runs, so it runs after argument
+/// declaration and input constraints (neither consults the lowering) and
+/// before the author's body (which may). Without one, the expansion is the
+/// same tokens as before the argument existed.
 pub fn expand_in(
     attr: CircuitAttr,
     item: ItemFn,
     owner: Option<&syn::Type>,
+    lowering: Option<&syn::Path>,
 ) -> syn::Result<Expansion> {
     check_signature(&item.sig)?;
     check_circuit_param(&item.sig)?;
@@ -205,8 +213,20 @@ pub fn expand_in(
             ))
         }
     };
-    let call = quote! {
-        #entry_fn(#label_arg |__c, __args: #args_ty| #name(__c #(, __args.#idents)*))
+    let call = match lowering {
+        None => quote! {
+            #entry_fn(#label_arg |__c, __args: #args_ty| #name(__c #(, __args.#idents)*))
+        },
+        // The contract's lowering, before the body and before anything in
+        // it could consult the settings (`Circuit3::set_lowering` refuses a
+        // late call). The path's own tokens, so a path that is not a
+        // `fn(&mut Circuit3)` is a type error pointing at the attribute.
+        Some(lowering) => quote! {
+            #entry_fn(#label_arg |__c, __args: #args_ty| {
+                #lowering(__c);
+                #name(__c #(, __args.#idents)*)
+            })
+        },
     };
     let declaration_test = discloses_test(&item.sig, name, bare, &root, owner);
     let budget_test = max_k_test(attr.max_k.as_ref(), name, bare, owner);

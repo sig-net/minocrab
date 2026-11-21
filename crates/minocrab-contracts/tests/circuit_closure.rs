@@ -107,3 +107,160 @@ fn every_circuit_attribute_is_listed() {
         missing.join("\n  ")
     );
 }
+
+// ---------------------------------------------------------------------------
+// THE COMPACTC LOWERING on every port (M48 rung C). A circuit with a Compact
+// twin, and every circuit of the deployed signer, is built under
+// `minocrab_compat::profile`. For a `#[contract]` block that is ONE attribute,
+// `#[contract(lowering = minocrab_compat::profile)]`, which the macro applies
+// to each of its circuits; the few circuits built by hand outside a block
+// call it themselves. Forgetting either is invisible in the ZKIR while the
+// profile equals the defaults, so it is checked here.
+
+use minocrab::v3::Circuit3;
+use minocrab_contracts::{
+    adts, attest, bounded, bounded_ledger, coins, erc20_vault, hashing, kernel_tokens, manager,
+    mint_tokens, nested, opaque, serde_builtin, signet_contract, test_caller, xcall,
+    xcall_with_payment, xcontract_events,
+};
+
+/// The modules whose contracts have a Compact twin, from where the tests
+/// already say so: every `tests/<module>_differential.rs` whose stem is a
+/// module under `src/` compares that module against compactc's output.
+/// `lean` and `wide` are differential suites with no module of their own. The
+/// deployed signer (`signet_contract`) is added by name: its corpus check is
+/// `signet_construction.rs`, not a `_differential` file.
+fn ported_modules() -> BTreeSet<String> {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut ported = BTreeSet::from(["signet_contract".to_string()]);
+    for entry in std::fs::read_dir(root.join("tests")).expect("readable tests dir") {
+        let name = entry.expect("dir entry").file_name().to_string_lossy().into_owned();
+        let Some(module) = name.strip_suffix("_differential.rs") else {
+            continue;
+        };
+        if root.join("src").join(format!("{module}.rs")).exists() {
+            ported.insert(module.to_string());
+        }
+    }
+    ported
+}
+
+/// Every `#[contract]` block of a ported module, with what it says its
+/// lowering is. This list is the one place Rust names the ported contracts;
+/// [`every_ported_contract_is_listed`] checks it against the source, so a
+/// new port's block cannot be left out of it.
+const PORTED_CONTRACTS: [(&str, Option<fn(&mut Circuit3)>); 18] = [
+    ("adts", adts::Adts::LOWERING),
+    ("attest", attest::Attest::LOWERING),
+    ("bounded", bounded::Bounded::LOWERING),
+    ("bounded_ledger", bounded_ledger::BoundedLedger::LOWERING),
+    ("coins", coins::Coins::LOWERING),
+    ("erc20_vault", erc20_vault::Vault::LOWERING),
+    ("hashing", hashing::Hashing::LOWERING),
+    ("kernel_tokens", kernel_tokens::KernelTokens::LOWERING),
+    ("manager", manager::Manager::LOWERING),
+    ("mint_tokens", mint_tokens::MintTokens::LOWERING),
+    ("nested", nested::Nested::LOWERING),
+    ("opaque", opaque::OpaqueLedger::LOWERING),
+    ("serde_builtin", serde_builtin::SerdeBuiltin::LOWERING),
+    ("signet_contract", signet_contract::SignetContract::LOWERING),
+    ("test_caller", test_caller::TestCaller::LOWERING),
+    ("xcall", xcall::Xcall::LOWERING),
+    ("xcall_with_payment", xcall_with_payment::XcallWithPayment::LOWERING),
+    // `events` has no `#[contract]` block, only hand-built circuits (checked
+    // below).
+    ("xcontract_events", xcontract_events::XcontractEvents::LOWERING),
+];
+
+fn source_of(module: &str) -> String {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("src").join(format!("{module}.rs"));
+    std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
+}
+
+/// The list above is complete: each ported module has exactly as many
+/// entries as it has `#[contract` attributes, and no entry names a module
+/// that is not a port.
+#[test]
+fn every_ported_contract_is_listed() {
+    let ported = ported_modules();
+    assert!(ported.len() >= 19, "only {} ported modules found: the walk is broken", ported.len());
+    for module in &ported {
+        let blocks = source_of(module)
+            .lines()
+            .filter(|l| l.trim_start().starts_with("#[contract"))
+            .count();
+        let listed = PORTED_CONTRACTS.iter().filter(|(m, _)| m == module).count();
+        assert_eq!(
+            blocks, listed,
+            "src/{module}.rs has a Compact twin and {blocks} `#[contract]` block(s), but \
+             PORTED_CONTRACTS lists {listed}. fix: add each block as \
+             (\"{module}\", Type::LOWERING), and give the block \
+             `#[contract(lowering = minocrab_compat::profile)]`"
+        );
+    }
+    for (module, _) in PORTED_CONTRACTS {
+        assert!(ported.contains(module), "PORTED_CONTRACTS lists `{module}`, which has no Compact twin");
+    }
+}
+
+/// Every ported `#[contract]` block chose compactc's lowering: applying its
+/// `LOWERING` to a fresh circuit gives exactly what `minocrab_compat::profile`
+/// gives. (The macro applies it to every `#[circuit]` in the block, before the
+/// body; `contract_lowering.rs` shows that ordering.)
+#[test]
+fn every_ported_contract_is_lowered_as_compactc_does() {
+    let mut reference = Circuit3::new();
+    minocrab_compat::profile(&mut reference);
+    for (module, lowering) in PORTED_CONTRACTS {
+        let lowering = lowering.unwrap_or_else(|| {
+            panic!(
+                "src/{module}.rs has a Compact twin but its `#[contract]` chose no lowering, so \
+                 its circuits are lowered by the defaults rather than compactc's. fix: \
+                 `#[contract(lowering = minocrab_compat::profile)]`"
+            )
+        });
+        let mut c = Circuit3::new();
+        lowering(&mut c);
+        assert!(c.lowering_chosen(), "{module}: its lowering function sets nothing");
+        assert_eq!(c.lowering(), reference.lowering(), "{module}: not compactc's lowering");
+    }
+}
+
+/// A ported module's circuits built by hand (through `entry`, or
+/// `Circuit3::new()`) are outside every `#[contract]` block, so the attribute
+/// does not reach them: each must call `minocrab_compat::profile` as the
+/// first statement of what it builds. Textual, like the closure check above.
+#[test]
+fn every_hand_built_port_circuit_calls_the_profile_first() {
+    let mut found = 0;
+    for module in ported_modules() {
+        let text = source_of(&module);
+        let lines: Vec<&str> = text.lines().collect();
+        for (i, line) in lines.iter().enumerate() {
+            let t = line.trim_start();
+            if t.starts_with("//") {
+                continue;
+            }
+            let builds = t.contains("Circuit3::new()")
+                || t.starts_with("entry(")
+                || t.starts_with("entry_out(");
+            if !builds {
+                continue;
+            }
+            found += 1;
+            let next = lines[i + 1..]
+                .iter()
+                .map(|l| l.trim_start())
+                .find(|l| !l.is_empty() && !l.starts_with("//"))
+                .unwrap_or("");
+            assert!(
+                next.starts_with("minocrab_compat::profile("),
+                "src/{module}.rs:{}: a circuit of a port is built by hand here, outside its \
+                 `#[contract]` block, and its next statement is `{next}`. fix: make \
+                 `minocrab_compat::profile(..)` its first statement",
+                i + 1
+            );
+        }
+    }
+    assert_eq!(found, 3, "expected the three hand-built port circuits (events, hashing, xcall)");
+}

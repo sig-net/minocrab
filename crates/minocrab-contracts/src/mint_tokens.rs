@@ -94,7 +94,7 @@ fn mint_shielded_token(
 /// `mint-tokens` — the shielded-mint circuits.
 pub struct MintTokens;
 
-#[contract]
+#[contract(lowering = minocrab_compat::profile)]
 impl MintTokens {
     /// `export circuit mintWithRecipientArgument(recipient: ZswapCoinPublicKey,
     /// mintNonce: Bytes<32>): []`
@@ -104,7 +104,6 @@ impl MintTokens {
         recipient: ZswapCoinPublicKey<Private>,
         mint_nonce: CoinNonce<Private>,
     ) -> Discloses<(MintRecipient, MintNonce)> {
-        minocrab_compat::profile(c);
         let one = c.constant(1u64);
 
         let recipient = recipient.disclose_as::<MintRecipient>(c);
@@ -124,7 +123,6 @@ impl MintTokens {
         _recipient: B32<Private>,
         mint_nonce: CoinNonce<Private>,
     ) -> Discloses<(OwnKeyAsMintRecipient, OwnKeyOnLedger, MintNonce)> {
-        minocrab_compat::profile(c);
         let one = c.constant(1u64);
 
         // const mintRecipient = ownPublicKey();

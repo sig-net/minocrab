@@ -99,7 +99,7 @@ impl ShieldedCoinArg {
     }
 }
 
-#[contract]
+#[contract(lowering = minocrab_compat::profile)]
 impl KernelTokens {
     // ---- the kernel primitives --------------------------------------------------
 
@@ -110,7 +110,6 @@ impl KernelTokens {
         ds: TokenDomainSeparator<Private>,
         amount: Uint<64>,
     ) -> Discloses<(DomainSep, Amount)> {
-        minocrab_compat::profile(c);
         let ds = ds.disclose_as::<DomainSep>(c);
         let amount = amount.disclose_as::<Amount>(c);
         kernel::mint_unshielded(c, &ds, amount);
@@ -125,7 +124,6 @@ impl KernelTokens {
         addr: Either<minocrab_std::v3::ContractAddress<Private>, UserAddress<Private>, Private>,
         amount: Uint<128>,
     ) -> Discloses<(Color, Recipient, Amount)> {
-        minocrab_compat::profile(c);
         let color = color.disclose_as::<Color>(c);
         let addr = addr.disclose_as::<Recipient>(c);
         let amount = amount.disclose_as::<Amount>(c);
@@ -141,7 +139,6 @@ impl KernelTokens {
         color: CoinColor<Private>,
         amount: Uint<128>,
     ) -> Discloses<(Color, Amount)> {
-        minocrab_compat::profile(c);
         let color = color.disclose_as::<Color>(c);
         let amount = amount.disclose_as::<Amount>(c);
         let token = kernel::unshielded(c, color);
@@ -156,7 +153,6 @@ impl KernelTokens {
         color: CoinColor<Private>,
         amount: Uint<128>,
     ) -> Discloses<(Color, Amount)> {
-        minocrab_compat::profile(c);
         let color = color.disclose_as::<Color>(c);
         let amount = amount.disclose_as::<Amount>(c);
         let token = kernel::unshielded(c, color);
@@ -167,7 +163,6 @@ impl KernelTokens {
     /// `export circuit kBalance(color: Bytes<32>): Uint<128>`
     #[circuit(output = "balance")]
     pub fn k_balance(c: &mut Circuit3, color: CoinColor<Private>) -> Discloses<(Color,), Uint<128, Public>> {
-        minocrab_compat::profile(c);
         let color = color.disclose_as::<Color>(c);
         let token = kernel::unshielded(c, color);
         Discloses::of(*kernel::balance(c, &token))
@@ -180,7 +175,6 @@ impl KernelTokens {
         color: CoinColor<Private>,
         amount: Uint<128>,
     ) -> Discloses<(Color, Amount), Bool<Public>> {
-        minocrab_compat::profile(c);
         let color = color.disclose_as::<Color>(c);
         let amount = amount.disclose_as::<Amount>(c);
         let token = kernel::unshielded(c, color);
@@ -194,7 +188,6 @@ impl KernelTokens {
         color: CoinColor<Private>,
         amount: Uint<128>,
     ) -> Discloses<(Color, Amount), Bool<Public>> {
-        minocrab_compat::profile(c);
         let color = color.disclose_as::<Color>(c);
         let amount = amount.disclose_as::<Amount>(c);
         let token = kernel::unshielded(c, color);
@@ -207,7 +200,6 @@ impl KernelTokens {
         c: &mut Circuit3,
         t: Uint<64>,
     ) -> Discloses<(Time,), Bool<Public>> {
-        minocrab_compat::profile(c);
         let t = t.disclose_as::<Time>(c);
         Discloses::of(*kernel::block_time_less_than(c, t))
     }
@@ -218,7 +210,6 @@ impl KernelTokens {
         c: &mut Circuit3,
         t: Uint<64>,
     ) -> Discloses<(Time,), Bool<Public>> {
-        minocrab_compat::profile(c);
         let t = t.disclose_as::<Time>(c);
         Discloses::of(*kernel::block_time_greater_than(c, t))
     }
@@ -228,7 +219,6 @@ impl KernelTokens {
     /// `export circuit sBlockTimeLt(t): Boolean { return blockTimeLt(t); }`
     #[circuit(output = "lt")]
     pub fn s_block_time_lt(c: &mut Circuit3, t: Uint<64>) -> Discloses<(Time,), Bool<Public>> {
-        minocrab_compat::profile(c);
         let t = t.disclose_as::<Time>(c);
         Discloses::of(*compat::kernel::block_time_lt(c, t))
     }
@@ -236,7 +226,6 @@ impl KernelTokens {
     /// `export circuit sBlockTimeGte(t): Boolean { return blockTimeGte(t); }`
     #[circuit(output = "gte")]
     pub fn s_block_time_gte(c: &mut Circuit3, t: Uint<64>) -> Discloses<(Time,), Bool<Public>> {
-        minocrab_compat::profile(c);
         let t = t.disclose_as::<Time>(c);
         Discloses::of(*compat::kernel::block_time_gte(c, t))
     }
@@ -244,7 +233,6 @@ impl KernelTokens {
     /// `export circuit sBlockTimeGt(t): Boolean { return blockTimeGt(t); }`
     #[circuit(output = "gt")]
     pub fn s_block_time_gt(c: &mut Circuit3, t: Uint<64>) -> Discloses<(Time,), Bool<Public>> {
-        minocrab_compat::profile(c);
         let t = t.disclose_as::<Time>(c);
         Discloses::of(*compat::kernel::block_time_gt(c, t))
     }
@@ -252,7 +240,6 @@ impl KernelTokens {
     /// `export circuit sBlockTimeLte(t): Boolean { return blockTimeLte(t); }`
     #[circuit(output = "lte")]
     pub fn s_block_time_lte(c: &mut Circuit3, t: Uint<64>) -> Discloses<(Time,), Bool<Public>> {
-        minocrab_compat::profile(c);
         let t = t.disclose_as::<Time>(c);
         Discloses::of(*compat::kernel::block_time_lte(c, t))
     }
@@ -263,7 +250,6 @@ impl KernelTokens {
         c: &mut Circuit3,
         color: CoinColor<Private>,
     ) -> Discloses<(Color,), Uint<128, Public>> {
-        minocrab_compat::profile(c);
         let color = color.disclose_as::<Color>(c);
         Discloses::of(*compat::kernel::unshielded_balance(c, color))
     }
@@ -275,7 +261,6 @@ impl KernelTokens {
         color: CoinColor<Private>,
         a: Uint<128>,
     ) -> Discloses<(Color, Amount), Bool<Public>> {
-        minocrab_compat::profile(c);
         let color = color.disclose_as::<Color>(c);
         let a = a.disclose_as::<Amount>(c);
         Discloses::of(*compat::kernel::unshielded_balance_lt(c, color, a))
@@ -288,7 +273,6 @@ impl KernelTokens {
         color: CoinColor<Private>,
         a: Uint<128>,
     ) -> Discloses<(Color, Amount), Bool<Public>> {
-        minocrab_compat::profile(c);
         let color = color.disclose_as::<Color>(c);
         let a = a.disclose_as::<Amount>(c);
         Discloses::of(*compat::kernel::unshielded_balance_gte(c, color, a))
@@ -301,7 +285,6 @@ impl KernelTokens {
         color: CoinColor<Private>,
         a: Uint<128>,
     ) -> Discloses<(Color, Amount), Bool<Public>> {
-        minocrab_compat::profile(c);
         let color = color.disclose_as::<Color>(c);
         let a = a.disclose_as::<Amount>(c);
         Discloses::of(*compat::kernel::unshielded_balance_gt(c, color, a))
@@ -314,7 +297,6 @@ impl KernelTokens {
         color: CoinColor<Private>,
         a: Uint<128>,
     ) -> Discloses<(Color, Amount), Bool<Public>> {
-        minocrab_compat::profile(c);
         let color = color.disclose_as::<Color>(c);
         let a = a.disclose_as::<Amount>(c);
         Discloses::of(*compat::kernel::unshielded_balance_lte(c, color, a))
@@ -327,7 +309,6 @@ impl KernelTokens {
         color: CoinColor<Private>,
         a: Uint<128>,
     ) -> Discloses<(Color, Amount)> {
-        minocrab_compat::profile(c);
         let color = color.disclose_as::<Color>(c);
         let a = a.disclose_as::<Amount>(c);
         compat::kernel::receive_unshielded(c, color, a);
@@ -346,7 +327,6 @@ impl KernelTokens {
         a: Uint<128>,
         r: Either<minocrab_std::v3::ContractAddress<Private>, UserAddress<Private>, Private>,
     ) -> Discloses<(Color, Amount, Recipient)> {
-        minocrab_compat::profile(c);
         let color = color.disclose_as::<Color>(c);
         let a = a.disclose_as::<Amount>(c);
         let r = r.disclose_as::<Recipient>(c);
@@ -362,7 +342,6 @@ impl KernelTokens {
         a: Uint<64>,
         r: Either<minocrab_std::v3::ContractAddress<Private>, UserAddress<Private>, Private>,
     ) -> Discloses<(DomainSep, Amount, Recipient), CoinColor<Public>> {
-        minocrab_compat::profile(c);
         let ds = ds.disclose_as::<DomainSep>(c);
         let a = a.disclose_as::<Amount>(c);
         let r = r.disclose_as::<Recipient>(c);
@@ -376,7 +355,6 @@ impl KernelTokens {
         a: QualifiedCoinArg,
         b: QualifiedCoinArg,
     ) -> Discloses<(CoinA, CoinB), ShieldedCoinInfo3<Public>> {
-        minocrab_compat::profile(c);
         let a = a.disclose::<CoinA>(c);
         let b = b.disclose::<CoinB>(c);
         Discloses::of(compat::kernel::merge_coin(c, &a, &b))
@@ -390,7 +368,6 @@ impl KernelTokens {
         a: QualifiedCoinArg,
         b: ShieldedCoinArg,
     ) -> Discloses<(CoinA, CoinB), ShieldedCoinInfo3<Public>> {
-        minocrab_compat::profile(c);
         let a = a.disclose::<CoinA>(c);
         let b = b.disclose::<CoinB>(c);
         Discloses::of(compat::kernel::merge_coin_immediate(c, &a, &b))
@@ -410,7 +387,6 @@ impl KernelTokens {
         r: Either<ZswapCoinPublicKey<Private>, minocrab_std::v3::ContractAddress<Private>, Private>,
         v: Uint<128>,
     ) -> Discloses<(InputCoin, Recipient, Amount), ShieldedSendResult<Public>> {
-        minocrab_compat::profile(c);
         let input = input.disclose::<InputCoin>(c);
         let r = r.disclose_as::<Recipient>(c);
         let v = v.disclose_as::<Amount>(c);

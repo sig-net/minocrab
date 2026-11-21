@@ -977,7 +977,7 @@ struct FlushSlot {
     request_id: RequestId<Private>,
 }
 
-#[contract]
+#[contract(lowering = minocrab_compat::profile)]
 impl Vault {
     // ==== Admin without EVM transactions ================================================
 
@@ -1007,7 +1007,6 @@ impl Vault {
         MpcKeyVersion,
         EvmHeight,
     )> {
-        minocrab_compat::profile(c);
         // assert(!initialised, "Already initialised")
         c.region("initialised gate", |c| {
             let init = VAULT.initialised.read(c);
@@ -1074,7 +1073,6 @@ impl Vault {
         new_supply_gas_limit: Uint<64>,
         new_redeem_gas_limit: Uint<64>,
     ) -> Discloses<(MaxFeePerGas, MaxPriorityFeePerGas, GasLimits)> {
-        minocrab_compat::profile(c);
         require_initialised(c);
         assert_deployer(c);
         c.assert(new_max_fee_per_gas.gt(0u64).message("maxFeePerGas must be positive"));
@@ -1108,7 +1106,6 @@ impl Vault {
     /// deployer grows `allowedTokens`; the set only grows.
     #[circuit]
     pub fn add_allowed_token(c: &mut Circuit3, erc20_address: Bytes<20>) -> Discloses<(AllowedErc20,)> {
-        minocrab_compat::profile(c);
         require_initialised(c);
         assert_deployer(c);
         c.assert(erc20_address.ne(0u64).message("ERC20 address cannot be zero"));
@@ -1129,7 +1126,6 @@ impl Vault {
         c: &mut Circuit3,
         slots: [FlushSlot; FLUSH_SLOTS],
     ) -> Discloses<(FlushSlotChannel, FlushSlotInIndex, FlushSlotRequestId)> {
-        minocrab_compat::profile(c);
         require_initialised(c);
         for slot in slots {
             let channel = slot.channel.disclose_as::<FlushSlotChannel>(c);
@@ -1161,7 +1157,6 @@ impl Vault {
         #[arg(name = "respondBidirectionalEvent")] event: RespondBidirectionalEventV1<Private>,
         serialized_output: Bytes0,
     ) -> Discloses<(Attestation,)> {
-        minocrab_compat::profile(c);
         let _ = serialized_output;
         queue_attestation::<0>(c, &event, &[]);
         Discloses::of(())
@@ -1175,7 +1170,6 @@ impl Vault {
         #[arg(name = "respondBidirectionalEvent")] event: RespondBidirectionalEventV1<Private>,
         serialized_output: Bytes<1>,
     ) -> Discloses<(Attestation, SerializedOutput)> {
-        minocrab_compat::profile(c);
         queue_attestation::<1>(c, &event, &[serialized_output.field()]);
         Discloses::of(())
     }
@@ -1188,7 +1182,6 @@ impl Vault {
         #[arg(name = "respondBidirectionalEvent")] event: RespondBidirectionalEventV1<Private>,
         serialized_output: B32<Private>,
     ) -> Discloses<(Attestation, SerializedOutput)> {
-        minocrab_compat::profile(c);
         queue_attestation::<32>(c, &event, &[serialized_output.hi, serialized_output.lo]);
         Discloses::of(())
     }
@@ -1206,7 +1199,6 @@ impl Vault {
         request_id: RequestId<Private>,
         action: Action<Private>,
     ) -> Discloses<(ReplacedRequestId, ReplacedAction, InIndex, OwnershipCommitment)> {
-        minocrab_compat::profile(c);
         require_initialised(c);
         assert_deployer(c);
 
@@ -1241,7 +1233,6 @@ impl Vault {
         c: &mut Circuit3,
         out_index: RequestIndex<Private>,
     ) -> Discloses<(OutIndex, RequestIdDisclosed, RequestRecord, XcallCommitment)> {
-        minocrab_compat::profile(c);
         send_request::<VAULT_WORDS, Bytes<REPLACE_NONCE_SCHEMA_LEN, Private>, Bytes<REPLACE_NONCE_SCHEMA_LEN, Public>, ReplaceNonceArgs>(
             c,
             out_index,
@@ -1273,7 +1264,6 @@ impl Vault {
     /// the ownership commitment.
     #[circuit]
     pub fn complete_replace_nonce(c: &mut Circuit3, request_id: RequestId<Private>) -> Discloses<(SettleRequestId,)> {
-        minocrab_compat::profile(c);
         require_initialised(c);
         let request_id = request_id.disclose_as::<SettleRequestId>(c);
         let (entry, record) = settle_request(c, &request_id, action::REPLACE_NONCE);
@@ -1298,7 +1288,6 @@ impl Vault {
         in_index: Uint<64>,
         erc20_address: Bytes<20>,
     ) -> Discloses<(AllowedErc20, InIndex, OwnershipCommitment)> {
-        minocrab_compat::profile(c);
         require_initialised(c);
         c.assert(erc20_address.ne(0u64).message("ERC20 address cannot be zero"));
         // ApproveRequest { erc20Address, spender: uniswapRouter }
@@ -1313,7 +1302,6 @@ impl Vault {
     /// Deployer-gated.
     #[circuit]
     pub fn start_approve_stata(c: &mut Circuit3, in_index: Uint<64>) -> Discloses<(InIndex, OwnershipCommitment)> {
-        minocrab_compat::profile(c);
         require_initialised(c);
         // ApproveRequest { erc20Address: stataUnderlying, spender: stataToken }
         let underlying = VAULT.stata_underlying.read(c).stale(c);
@@ -1330,7 +1318,6 @@ impl Vault {
         c: &mut Circuit3,
         out_index: RequestIndex<Private>,
     ) -> Discloses<(OutIndex, RequestIdDisclosed, RequestRecord, XcallCommitment)> {
-        minocrab_compat::profile(c);
         send_request::<VAULT_WORDS, BytesN<Private, VAULT_SCHEMA_LEN>, BytesN<Public, VAULT_SCHEMA_LEN>, ApproveArgs>(
             c,
             out_index,
@@ -1362,7 +1349,6 @@ impl Vault {
         request_id: RequestId<Private>,
         serialized_output: Bytes<1>,
     ) -> Discloses<(SettleRequestId, SerializedOutput)> {
-        minocrab_compat::profile(c);
         require_initialised(c);
         let request_id = request_id.disclose_as::<SettleRequestId>(c);
         let (entry, record) = settle_request(c, &request_id, action::APPROVE);
@@ -1400,7 +1386,6 @@ impl Vault {
         EvmNonce,
         OwnershipCommitment,
     )> {
-        minocrab_compat::profile(c);
         require_initialised(c);
         let erc20 = deposit_request.erc20_address.disclose_as::<DepositedErc20>(c);
         c.region("guards", |c| {
@@ -1445,7 +1430,6 @@ impl Vault {
         c: &mut Circuit3,
         out_index: RequestIndex<Private>,
     ) -> Discloses<(OutIndex, RequestIdDisclosed, RequestRecord, XcallCommitment)> {
-        minocrab_compat::profile(c);
         send_request::<VAULT_WORDS, BytesN<Private, VAULT_SCHEMA_LEN>, BytesN<Public, VAULT_SCHEMA_LEN>, DepositArgs>(
             c,
             out_index,
@@ -1492,7 +1476,6 @@ impl Vault {
         ClaimRecipientContract,
         MintNonce,
     )> {
-        minocrab_compat::profile(c);
         require_initialised(c);
         let request_id = request_id.disclose_as::<SettleRequestId>(c);
         let (entry, record) = settle_request(c, &request_id, action::DEPOSIT);
@@ -1559,7 +1542,6 @@ impl Vault {
         WithdrawDestination,
         OwnershipCommitment,
     )> {
-        minocrab_compat::profile(c);
         require_initialised(c);
         c.region("guards", |c| {
             c.assert(withdraw_request.erc20_address.ne(0u64).message("ERC20 address cannot be zero"));
@@ -1606,7 +1588,6 @@ impl Vault {
         c: &mut Circuit3,
         out_index: RequestIndex<Private>,
     ) -> Discloses<(OutIndex, RequestIdDisclosed, RequestRecord, XcallCommitment)> {
-        minocrab_compat::profile(c);
         send_request::<VAULT_WORDS, BytesN<Private, VAULT_SCHEMA_LEN>, BytesN<Public, VAULT_SCHEMA_LEN>, WithdrawArgs>(
             c,
             out_index,
@@ -1641,7 +1622,6 @@ impl Vault {
         serialized_output: Bytes<1>,
         mint_nonce: CoinNonce<Private>,
     ) -> Discloses<(SettleRequestId, SerializedOutput, MintNonce, Recipient)> {
-        minocrab_compat::profile(c);
         require_initialised(c);
         let request_id = request_id.disclose_as::<SettleRequestId>(c);
         let (entry, record) = settle_request(c, &request_id, action::WITHDRAW);
@@ -1697,7 +1677,6 @@ impl Vault {
         SwapAmountInMaximum,
         OwnershipCommitment,
     )> {
-        minocrab_compat::profile(c);
         require_initialised(c);
         let token_out = swap_request.erc20_address_out.disclose_as::<BoughtErc20>(c);
         c.region("guards", |c| {
@@ -1751,7 +1730,6 @@ impl Vault {
         c: &mut Circuit3,
         out_index: RequestIndex<Private>,
     ) -> Discloses<(OutIndex, RequestIdDisclosed, RequestRecord, XcallCommitment)> {
-        minocrab_compat::profile(c);
         send_request::<SWAP_WORDS, BytesN<Private, SWAP_SCHEMA_LEN>, BytesN<Public, SWAP_SCHEMA_LEN>, SwapArgs>(
             c,
             out_index,
@@ -1799,7 +1777,6 @@ impl Vault {
         mint_nonce: CoinNonce<Private>,
         change_nonce: CoinNonce<Private>,
     ) -> Discloses<(SettleRequestId, Recipient, SerializedOutput, MintNonce, ChangeNonce)> {
-        minocrab_compat::profile(c);
         require_initialised(c);
         let request_id = request_id.disclose_as::<SettleRequestId>(c);
         let (entry, record) = settle_request(c, &request_id, action::SWAP);
@@ -1856,7 +1833,6 @@ impl Vault {
         SuppliedAmount,
         OwnershipCommitment,
     )> {
-        minocrab_compat::profile(c);
         require_initialised(c);
         c.region("guards", |c| {
             c.assert(supply_request.amount.gt(0u64).message("Amount must be positive"));
@@ -1897,7 +1873,6 @@ impl Vault {
         c: &mut Circuit3,
         out_index: RequestIndex<Private>,
     ) -> Discloses<(OutIndex, RequestIdDisclosed, RequestRecord, XcallCommitment)> {
-        minocrab_compat::profile(c);
         send_request::<SUPPLY_WORDS, BytesN<Private, SUPPLY_SCHEMA_LEN>, BytesN<Public, SUPPLY_SCHEMA_LEN>, SupplyArgs>(
             c,
             out_index,
@@ -1938,7 +1913,6 @@ impl Vault {
         serialized_output: B32<Private>,
         mint_nonce: CoinNonce<Private>,
     ) -> Discloses<(SettleRequestId, Recipient, SerializedOutput, MintNonce)> {
-        minocrab_compat::profile(c);
         require_initialised(c);
         let request_id = request_id.disclose_as::<SettleRequestId>(c);
         let (entry, record) = settle_request(c, &request_id, action::SUPPLY);
@@ -1989,7 +1963,6 @@ impl Vault {
         RedeemedShares,
         OwnershipCommitment,
     )> {
-        minocrab_compat::profile(c);
         require_initialised(c);
         c.region("guards", |c| {
             c.assert(redeem_request.shares.gt(0u64).message("shares must be positive"));
@@ -2030,7 +2003,6 @@ impl Vault {
         c: &mut Circuit3,
         out_index: RequestIndex<Private>,
     ) -> Discloses<(OutIndex, RequestIdDisclosed, RequestRecord, XcallCommitment)> {
-        minocrab_compat::profile(c);
         send_request::<REDEEM_WORDS, BytesN<Private, REDEEM_SCHEMA_LEN>, BytesN<Public, REDEEM_SCHEMA_LEN>, RedeemArgs>(
             c,
             out_index,
@@ -2075,7 +2047,6 @@ impl Vault {
         serialized_output: B32<Private>,
         mint_nonce: CoinNonce<Private>,
     ) -> Discloses<(SettleRequestId, Recipient, SerializedOutput, MintNonce)> {
-        minocrab_compat::profile(c);
         require_initialised(c);
         let request_id = request_id.disclose_as::<SettleRequestId>(c);
         let (entry, record) = settle_request(c, &request_id, action::REDEEM);

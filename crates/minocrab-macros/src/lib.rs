@@ -257,16 +257,31 @@ pub fn circuit(attr: TokenStream, item: TokenStream) -> TokenStream {
 /// same argument struct, same labels, same disclosure declaration, same
 /// `max_k` budget — except that its generated tests are emitted BESIDE the
 /// `impl`, since a `mod` cannot live inside one.
+///
+/// # `lowering` — one lowering for every circuit of the contract
+///
+/// ```text
+/// #[contract(lowering = minocrab_compat::profile)]
+/// impl Vault { … }
+/// ```
+///
+/// takes a PATH to a `fn(&mut Circuit3)`, and every `#[circuit]` in the
+/// block calls it on the circuit before its body: after the arguments are
+/// declared and constrained (neither consults the lowering), before anything
+/// the body does. How a circuit is lowered is a property of the contract, so
+/// it is said once here rather than as a first line in each circuit, where a
+/// newly added circuit could leave it out. The macro only splices the path;
+/// rustc checks that it is a `fn(&mut Circuit3)`. A circuit built by hand
+/// (through `entry`, or `Circuit3::new()`) is outside the block and calls the
+/// function itself.
+///
+/// The block also gets `Vault::LOWERING: Option<fn(&mut Circuit3)>`, the
+/// path given or `None`, so a test can ask which contracts chose a lowering.
 #[proc_macro_attribute]
 pub fn contract(attr: TokenStream, item: TokenStream) -> TokenStream {
-    if !attr.is_empty() {
-        let attr = proc_macro2::TokenStream::from(attr);
-        return syn::Error::new_spanned(attr, "#[contract] takes no arguments")
-            .to_compile_error()
-            .into();
-    }
+    let attr = syn::parse_macro_input!(attr as contract::ContractAttr);
     let item = syn::parse_macro_input!(item as syn::ItemImpl);
-    contract::expand(item)
+    contract::expand(attr, item)
         .unwrap_or_else(syn::Error::into_compile_error)
         .into()
 }

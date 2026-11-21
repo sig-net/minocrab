@@ -133,7 +133,7 @@ impl DisclosedSignature {
 /// circuits.
 pub struct SignetContract;
 
-#[contract]
+#[contract(lowering = minocrab_compat::profile)]
 impl SignetContract {
     /// `export circuit signBidirectional(requestId: RequestId,
     /// notification: SignBidirectionalEventNotification): []`
@@ -150,7 +150,6 @@ impl SignetContract {
         request_id: RequestId<Private>,
         notification: SignBidirectionalEventNotification<Private>,
     ) -> Discloses<(EmittedRequestId, NotificationVersion, NotificationPayload)> {
-        minocrab_compat::profile(c);
         let version = notification.version.field();
         let payload = notification.payload;
 
@@ -183,7 +182,6 @@ impl SignetContract {
         SignatureS,
         SignatureRecoveryId,
     )> {
-        minocrab_compat::profile(c);
         let event = signature_responded_event;
         let rid = event.request_id.disclose_as::<EmittedRequestId>(c);
         let sig = disclose_signature(c, event.signature);
@@ -221,7 +219,6 @@ impl SignetContract {
         SignatureS,
         SignatureRecoveryId,
     )> {
-        minocrab_compat::profile(c);
         let event = respond_bidirectional_event;
         let rid = event.request_id.disclose_as::<EmittedRequestId>(c);
         let height = event.block_height.field().disclose_as::<AttestationBlockHeight>(c);

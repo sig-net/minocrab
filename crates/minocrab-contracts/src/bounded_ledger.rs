@@ -41,14 +41,13 @@ pub struct BoundedLedger {
 /// The contract's ledger block.
 pub const BOUNDED_LEDGER: BoundedLedger = BoundedLedger::new();
 
-#[contract]
+#[contract(lowering = minocrab_compat::profile)]
 impl BoundedLedger {
     /// `export circuit blWrite(x: Uint<0..1>): [] { cell = disclose(x); }` —
     /// the write whose Impact op carries the alignment byte the M31 probe
     /// showed moving (`0x00` -> `0x01`).
     #[circuit]
     pub fn bl_write(c: &mut Circuit3, x: BoundedUint<1>) -> Discloses<X> {
-        minocrab_compat::profile(c);
         let x = x.disclose_as::<X>(c);
         BOUNDED_LEDGER.cell.write(c, &x);
         Discloses::of(())
@@ -59,7 +58,6 @@ impl BoundedLedger {
     /// same alignment byte in its own Impact op.
     #[circuit(output = "cell")]
     pub fn bl_read(c: &mut Circuit3) -> Assumed<BoundedUint<1, Public>> {
-        minocrab_compat::profile(c);
         BOUNDED_LEDGER.cell.read(c)
     }
 }
