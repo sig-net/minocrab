@@ -3285,8 +3285,6 @@ version = "0.0.1"
 dependencies = [
  "minocrab",
  "minocrab-ledger",
- "minocrab-std",
- "minocrab-zkir",
 ]
 
 [[package]]
