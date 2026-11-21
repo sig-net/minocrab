@@ -143,3 +143,26 @@ Three things cannot be a gadget, because shared helpers (=common.rs='s mint, bur
 - Uncached =idx= opcodes (56 sites in =minocrab-ledger=): the cached form is valid and cheaper in gas, but the op builders are pure functions and a switch would thread through all of them. DEFERRED, recorded here.
 - =Callee::Field='s fresh read per call site: the lean form, =.pin(c)=, already exists.
 - =Check::or= is NOT compactc's shape (compactc lowers =||= to one =cond_select=); it is simply expensive. Core makes it one =cond_select=. Its only caller is =evm_flow.rs:1452=.
+
+* 8. The value traits, as designed (2026-11-21, rung G, not started)
+
+** What is there
+Every leaf and record type answers the same three questions through differently named traits. Its static layout: =CircuitAbi= (=SLOTS=, atoms, prims). Its encoding to field slots: =CallArg::push_call_slots= at =Public=, =CircuitArg::push_slots= at =Private=, =LedgerRepr::push_limbs= at =Public= with the circuit in hand, =ProofWires::push_wires= for the bare values. Its decoding from slots: =CallResult::from_call_slots=, =LedgerRepr::from_limbs=, and =CircuitArg::declare= for a fresh argument. =LedgerRepr= and =ProofWires= are generated from the call traits by a macro for fourteen leaf types (=ledger.rs:124-176=), and contracts hand-write ten =LedgerRepr= and ten =ProofWires= impls because the derive rejects generics.
+
+** What replaces it
+- =CircuitAbi= stays: it is the layout.
+- =Encode<V>=: one method, the value's slots at visibility =V=. =CallArg= becomes =Encode<Public>=; =CircuitArg::push_slots= becomes =Encode<Private>=.
+- =Decode<V>=: one method, the value from its slots. =CallResult= becomes =Decode<Public>=.
+- The ledger pair is SPLIT, not merged: =LedgerWrite= (atoms and limbs; blanket over =Encode<Public>=, hand-written for the two point types, whose limbs come out of the =encode= gate) and =LedgerRead: LedgerWrite= (=from_limbs=, =witness_read=; blanket over =Decode<Public>=). The point types implement only =LedgerWrite=. =LedgerMap::lookup= and every other method that rebuilds a value asks for =LedgerRead=, so a map of points that is looked up stops compiling with a missing impl; today it compiles and reaches an =unreachable!()= (=ledger.rs:264,311=). Insert and member on such a map keep working. This ADDS a type restriction and removes a panic.
+- =ProofWires=: blanket over =Encode<Public>=, kept by hand for the points and the bare wire.
+- =CircuitArg= keeps =declare= and =constrain=: argument names come from field paths and a point argument is not flat slots, so it is not a decode.
+- ONE DERIVE produces =CircuitAbi=, =Encode= and =Decode= for a record, generic parameters allowed; the ledger and proof-wire impls then come from the blankets, and the hand-written ones in contracts go.
+
+** What must not move
+Slot order is the wire contract. Gates: the 227-circuit dump identical, =interface_snapshot= unchanged, =row_snapshot= unchanged. The old trait names stay as aliases or supertraits for one step if that keeps the passport port compiling; say which in the commit.
+
+** Order
+1. Introduce =Encode= / =Decode= and re-express the leaf table through them; old traits become blanket impls. No call site changes.
+2. Split =LedgerRepr=; bound the rebuilding methods on =LedgerRead=; a =compile_fail= doctest for the looked-up point map.
+3. The one derive; delete the hand-written impls in contracts.
+4. Remove the old names once nothing in the workspace uses them.
