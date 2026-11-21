@@ -40,7 +40,7 @@
 //! near it — not because the bytes differ but because the claim does. Both
 //! directions are compile errors:
 //!
-//! ```compile_fail
+//! ```compile_fail,E0277
 //! use minocrab::v3::Circuit3;
 //! use minocrab::{Private, Public};
 //! use minocrab_contracts::evm::{erc20, erc721, Filed};
@@ -77,7 +77,7 @@
 //!
 //! and the other way round, where the flag would be discarded:
 //!
-//! ```compile_fail
+//! ```compile_fail,E0277
 //! use minocrab::v3::Circuit3;
 //! use minocrab::{Private, Public};
 //! use minocrab_contracts::evm::{erc20, erc721, Filed};

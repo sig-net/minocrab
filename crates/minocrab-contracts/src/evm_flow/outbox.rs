@@ -138,7 +138,7 @@ impl<Env: LedgerRepr> LedgerRepr for Outstanding<Env> {
 ///
 /// A ticket for another filing, as for `Pending`:
 ///
-/// ```compile_fail
+/// ```compile_fail,E0308
 /// use minocrab::v3::Circuit3;
 /// use minocrab_contracts::evm::{erc20, Filed};
 /// use minocrab_contracts::evm_flow::{Outbox, Succeeded};

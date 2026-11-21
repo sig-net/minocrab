@@ -86,7 +86,7 @@
 //! at `Private`, so a secret cannot be captured across the suspension by
 //! accident — what Rust's own `async` would silently do):
 //!
-//! ```compile_fail
+//! ```compile_fail,E0277
 //! use minocrab::{Private, Public};
 //! use minocrab_std::v3::{LedgerRepr, Uint, B32};
 //!

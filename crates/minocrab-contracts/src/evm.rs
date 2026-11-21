@@ -83,7 +83,7 @@
 //! FIRST, and swapping the two is a type error, not a transaction that
 //! sends tokens to an address made out of an amount:
 //!
-//! ```compile_fail
+//! ```compile_fail,E0308
 //! use minocrab::v3::{Circuit3, FieldT};
 //! use minocrab::Private;
 //! use minocrab_contracts::evm::{build_tx, erc20};
@@ -103,7 +103,7 @@
 //! wrong one, and an inline-`const` assert makes that an `error[E0080]` at
 //! the call site:
 //!
-//! ```compile_fail
+//! ```compile_fail,E0080
 //! use minocrab::v3::{Circuit3, FieldT};
 //! use minocrab::Private;
 //! use minocrab_contracts::evm::{build_tx, erc20};
@@ -123,7 +123,7 @@
 //! succeeded" is right for most calls and wrong for an ERC-20 `transfer`,
 //! and a default would make the dangerous case the one nobody types:
 //!
-//! ```compile_fail
+//! ```compile_fail,E0046
 //! use minocrab_contracts::evm::{erc20, Address, EvmCall, U64};
 //! use minocrab_std::v3::Uint;
 //! use minocrab::Private;
@@ -146,7 +146,7 @@
 //! until then this type-checked and reached a build-time panic inside
 //! `Unit::word`, notes/evm-calls.org §10 item 3):
 //!
-//! ```compile_fail
+//! ```compile_fail,E0277
 //! use minocrab::v3::Circuit3;
 //! use minocrab::Private;
 //! use minocrab_contracts::evm::{always, erc20, EvmCall, Unit};
@@ -171,7 +171,7 @@
 //! arguments is the shape a "this one returns nothing" note would take if
 //! it were written in the wrong place:
 //!
-//! ```compile_fail
+//! ```compile_fail,E0277
 //! use minocrab::v3::Circuit3;
 //! use minocrab::Private;
 //! use minocrab_contracts::evm::{always, erc20, Address, EvmCall, Unit};
@@ -221,7 +221,7 @@
 //! for a `Bool` return and for nothing else, so a numeric call cannot
 //! quietly throw its answer away:
 //!
-//! ```compile_fail
+//! ```compile_fail,E0277
 //! use minocrab::v3::Circuit3;
 //! use minocrab::Private;
 //! use minocrab_contracts::evm::{always, erc20, Address, EvmCall, U64};
@@ -272,7 +272,7 @@
 //! to encode, so it is an [`AbiType`] and not an [`AbiArg`], and
 //! [`AbiTuple`] is over `AbiArg`:
 //!
-//! ```compile_fail
+//! ```compile_fail,E0277
 //! use minocrab::v3::Circuit3;
 //! use minocrab::Private;
 //! use minocrab_contracts::evm::{erc20, Address, Bool, EvmCall, Unit};
@@ -295,7 +295,7 @@
 //!
 //! …and alone, where the tuple is nothing else:
 //!
-//! ```compile_fail
+//! ```compile_fail,E0277
 //! use minocrab::v3::Circuit3;
 //! use minocrab::Private;
 //! use minocrab_contracts::evm::{erc20, Bool, EvmCall, Unit};
@@ -359,7 +359,7 @@
 //! way a non-zero `value` reaches an [`EvmTx`], and its `C: Payable` bound
 //! is a missing impl for every call but WETH's `deposit()`:
 //!
-//! ```compile_fail
+//! ```compile_fail,E0277
 //! use minocrab::v3::{Circuit3, FieldT};
 //! use minocrab::Private;
 //! use minocrab_contracts::evm::{build_tx_payable, erc20};

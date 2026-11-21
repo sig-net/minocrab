@@ -92,7 +92,7 @@
 //! the ladder (notes/evm-interfaces.org §2.5). `erc20::Transfer::Callee` is
 //! `Erc20`, and a Uniswap router is not one, so there is no `Extends` impl:
 //!
-//! ```compile_fail
+//! ```compile_fail,E0277
 //! use minocrab::v3::Circuit3;
 //! use minocrab::{Private, Public};
 //! use minocrab_contracts::evm::{erc20, uniswap_v3, Filed};
@@ -160,7 +160,7 @@
 //! here are the SAME Solidity call at two kinds, which is exactly the pair
 //! the deployed vault has (`transfer` as a claim and as a withdrawal):
 //!
-//! ```compile_fail
+//! ```compile_fail,E0308
 //! use minocrab::v3::Circuit3;
 //! use minocrab_contracts::evm::{erc20, Filed};
 //! use minocrab_contracts::signet_v1::schema;
@@ -213,7 +213,7 @@
 //! A `WORDS` that is not the call's argument-word count — `error[E0080]`
 //! from the slot's constructor, which `#[derive(Ledger)]` calls:
 //!
-//! ```compile_fail
+//! ```compile_fail,E0080
 //! use minocrab_contracts::evm::{erc20, Filed};
 //! use minocrab_contracts::signet_v1::schema;
 //! use minocrab_contracts::evm_flow::{Owned, Pending};
@@ -244,13 +244,13 @@
 //! [`AbiReturn`] is where those live. `Address` is an [`AbiType`] with no
 //! `AbiReturn` impl, so a call declaring it as a return cannot be filed:
 //!
-//! ```compile_fail
+//! ```compile_fail,E0277
 //! use minocrab::v3::Circuit3;
-//! use minocrab_contracts::evm::{erc20, always, Address, Check, EvmCall, Filed};
+//! use minocrab_contracts::evm::{erc20, always, Address, EvmCall, Filed};
 //! use minocrab_contracts::evm_flow::{Owned, Pending, Succeeded};
 //! use minocrab_contracts::signet_flow::Signet;
 //! use minocrab_contracts::signet_v1::schema;
-//! use minocrab_std::v3::{Bytes, Ledger, LedgerRepr, Uint};
+//! use minocrab_std::v3::{Bytes, Check, Ledger, LedgerRepr, Uint};
 //! use minocrab::{Private, Public};
 //!
 //! #[derive(LedgerRepr)] struct Amount { amount: Uint<64, Public> }
@@ -368,7 +368,7 @@
 //! has no impl, so an amount cannot be attached to a call that would
 //! ignore it and leave the ether with the contract (M38 rung B):
 //!
-//! ```compile_fail
+//! ```compile_fail,E0277
 //! use minocrab::v3::Circuit3;
 //! use minocrab::{Private, Public};
 //! use minocrab_contracts::evm::{erc20, Filed};
@@ -444,7 +444,7 @@
 //! kind — refunding a transfer that moved the tokens
 //! (notes/evm-calls.org §3.1, the dangerous direction):
 //!
-//! ```compile_fail
+//! ```compile_fail,E0277
 //! use minocrab::v3::Circuit3;
 //! use minocrab::{Private, Public};
 //! use minocrab_contracts::evm::{erc20, usdt, Filed};
@@ -475,7 +475,7 @@
 //! }
 //! ```
 //!
-//! ```compile_fail
+//! ```compile_fail,E0277
 //! use minocrab::v3::Circuit3;
 //! use minocrab::{Private, Public};
 //! use minocrab_contracts::evm::{erc20, usdt, Filed};
@@ -547,7 +547,7 @@
 //! A callee where a recipient belongs — `Contract<I>` and `Bytes<20>` are
 //! the same twenty bytes and do not unify:
 //!
-//! ```compile_fail
+//! ```compile_fail,E0308
 //! use minocrab::v3::{Circuit3, FieldT};
 //! use minocrab::Private;
 //! use minocrab_contracts::evm::erc20;
@@ -830,7 +830,7 @@ impl CommitTag for OwnerTag {
 ///
 /// Opening a commitment under another tag — the two are different types:
 ///
-/// ```compile_fail
+/// ```compile_fail,E0308
 /// use minocrab::v3::Circuit3;
 /// use minocrab_contracts::common::{witness_sk, SecretKey};
 /// use minocrab_contracts::evm_flow::{Commit, CommitTag};
