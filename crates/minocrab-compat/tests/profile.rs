@@ -18,9 +18,8 @@ fn the_profile_is_compactcs() {
     assert!(c.lowering_chosen());
 }
 
-/// Under the profile two self reads stay two reads, which is also what a
-/// fresh circuit's default does (the read-once lowering is chosen, not
-/// defaulted).
+/// Under the profile two self reads stay two reads, where a fresh
+/// circuit's default (read once per circuit) emits one.
 #[test]
 fn under_the_profile_every_self_read_is_emitted() {
     let mut once = Circuit3::new();
@@ -39,7 +38,7 @@ fn under_the_profile_every_self_read_is_emitted() {
     kernel::self_address(&mut plain);
 
     assert_eq!(two - one, one, "each call emits a full read");
-    assert_eq!(two, len(plain), "the profile matches today's default");
+    assert_eq!(len(plain), one, "the default reads once per circuit");
 }
 
 /// compactc never caches: a ported circuit asking to is refused, not

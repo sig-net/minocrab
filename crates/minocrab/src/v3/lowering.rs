@@ -5,8 +5,8 @@
 //! switch").
 //!
 //! The defaults are the LEAN choices, for a contract written in MinoCrab
-//! (M48 C step 3): implied range constraints are dropped and the
-//! simplification pass runs. A circuit ported from Compact, and every circuit
+//! (M48 C step 3): `kernel.self()` is read once per circuit, implied range
+//! constraints are dropped and the simplification pass runs. A circuit ported from Compact, and every circuit
 //! of the deployed signer, states compactc's settings explicitly, as its
 //! first line, through `minocrab_compat::profile`, so none of them moves;
 //! nothing else needs to touch this.
@@ -16,11 +16,13 @@ use super::Circuit3;
 /// How `minocrab_std::v3::kernel::self_address` reads `kernel.self()`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SelfAddressReads {
-    /// Every call emits a read. compactc's (it never caches), and the default.
+    /// Every call emits a read. compactc's (it never caches), so
+    /// `minocrab_compat::profile` chooses it.
     EveryCall,
     /// The first read made outside every `when` scope is kept, and later
     /// calls emit nothing. A read inside a scope is guarded (it yields the
-    /// default where the guard is false), so it is never the one kept.
+    /// default where the guard is false), so it is never the one kept. The
+    /// default (M48 C step 3).
     OncePerCircuit,
 }
 
@@ -47,7 +49,7 @@ pub struct Lowering {
 
 impl Default for Lowering {
     fn default() -> Self {
-        Lowering { self_address: SelfAddressReads::EveryCall, dedup_range_constraints: true, simplify: true }
+        Lowering { self_address: SelfAddressReads::OncePerCircuit, dedup_range_constraints: true, simplify: true }
     }
 }
 

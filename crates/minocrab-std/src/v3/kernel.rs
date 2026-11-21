@@ -162,11 +162,11 @@ impl Select<Public> for SelfAddress {
 ///
 /// How it reads is the circuit's lowering setting
 /// ([`Lowering::self_address`](minocrab::v3::Lowering::self_address)):
-/// [`SelfAddressReads::EveryCall`], the default and compactc's, emits a read
-/// per call, so the compat ports' per-call-site reads are reproduced by
-/// construction; [`SelfAddressReads::OncePerCircuit`] keeps the first read
+/// [`SelfAddressReads::OncePerCircuit`], the default, keeps the first read
 /// made outside every `when` scope (a read inside one is guarded, and is
-/// never kept).
+/// never kept); [`SelfAddressReads::EveryCall`], compactc's and so the
+/// compat profile's, emits a read per call, so the ports' per-call-site
+/// reads are reproduced by construction.
 pub fn self_address(c: &mut Circuit3) -> SelfAddress {
     if let Some(cached) = c.ext_get::<CachedSelfAddress>() {
         return cached.0;
@@ -199,6 +199,11 @@ fn read_and_keep(c: &mut Circuit3) -> SelfAddress {
 /// Read `kernel.self()` ONCE and make it the ambient answer for every
 /// later [`self_address`] call in this circuit (M18).
 ///
+/// Under the default lowering ([`SelfAddressReads::OncePerCircuit`]) that is
+/// what [`self_address`] does anyway, so this IS `self_address` plus the
+/// refusal below: it states the intent at the call site, and it emits the
+/// circuit's single read if none was kept yet.
+///
 /// The soundness paragraph is M10 rung i's, unchanged: the address is
 /// constant for the transaction and read count is FRAMING, not protocol —
 /// every read that IS emitted still reconciles through the ledger's
@@ -226,7 +231,7 @@ fn read_and_keep(c: &mut Circuit3) -> SelfAddress {
 pub fn cache_self_address(c: &mut Circuit3) -> SelfAddress {
     let lowering = c.consult_lowering();
     assert!(
-        !(c.lowering_chosen() && lowering.self_address == SelfAddressReads::EveryCall),
+        lowering.self_address == SelfAddressReads::OncePerCircuit,
         "cache_self_address in a circuit whose lowering reads kernel.self() at every call \
          (compactc's, set by minocrab_compat::profile): compactc never caches, so the cache \
          would swallow reads the Compact twin makes and move the stream. Remove the \
@@ -234,10 +239,9 @@ pub fn cache_self_address(c: &mut Circuit3) -> SelfAddress {
          circuit has no Compact twin, drop the profile and choose \
          SelfAddressReads::OncePerCircuit instead."
     );
-    if c.in_guarded_scope() {
-        return self_address(c);
-    }
-    read_and_keep(c)
+    // Kept, guarded or fresh exactly as `self_address` decides: inside a
+    // `when` nothing is kept.
+    self_address(c)
 }
 
 /// What [`caller`] returns: the ledger's `PublicAddress` under a `Maybe` —

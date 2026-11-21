@@ -27,15 +27,22 @@ fn a_cached_self_address_emits_no_second_read() {
     );
 }
 
-/// A circuit that never caches reads fresh at every call — the compat
-/// ports' per-call-site reads (compactc parity) cannot be affected.
+/// Under `EveryCall` (compactc's, the compat profile's) a circuit reads
+/// fresh at every call — the ports' per-call-site reads cannot be affected.
 #[test]
 fn an_uncached_circuit_reads_fresh_every_time() {
+    let every_call = |c: &mut Circuit3| {
+        let mut l = c.lowering();
+        l.self_address = SelfAddressReads::EveryCall;
+        c.set_lowering(l);
+    };
     let mut once = Circuit3::new();
+    every_call(&mut once);
     kernel::self_address(&mut once);
     let one_read = once.finish(true).ir.instructions.len();
 
     let mut twice = Circuit3::new();
+    every_call(&mut twice);
     kernel::self_address(&mut twice);
     kernel::self_address(&mut twice);
     let two_reads = twice.finish(true).ir.instructions.len();

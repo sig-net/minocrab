@@ -505,9 +505,16 @@ pub fn call_witnesses(cc_rand: Fr) -> Vec<Fr> {
 ///
 /// Confirmed instruction-for-instruction against `withdraw.zkir` (with an
 /// env insert) and `approve_router.zkir` (without one).
+///
+/// `self_kept`: the circuit already read `kernel.self()` unguarded before
+/// filing (the four burning requests, through `burn_vault_coin`). Under the
+/// default read-once lowering (M48 C step 3) that read is kept and the
+/// filing's `cache_self_address` emits nothing, so the stream starts at the
+/// chain id.
 #[allow(clippy::too_many_arguments)]
 pub fn file_request_ops(
     env: &Env,
+    self_kept: bool,
     records_field: u8,
     envs_field: Option<u8>,
     request_id: &[u8; 32],
@@ -516,7 +523,7 @@ pub fn file_request_ops(
     env_av: Option<AlignedValue>,
     cc_rand: Fr,
 ) -> Vec<VmOp> {
-    let mut o = env.kernel_self();
+    let mut o = if self_kept { Vec::new() } else { env.kernel_self() };
     o.extend(env.read_chain_id());
     o.extend(env.read_key_version());
     o.extend(ops::member(records_field, request_id, request_exists));
@@ -924,6 +931,7 @@ impl ApproveRouterScenario {
         let rid = self.request_id();
         o.extend(file_request_ops(
             &self.env,
+            false,
             APPROVALS,
             None,
             &rid,
@@ -1007,6 +1015,7 @@ impl ApproveStataScenario {
         let rid = self.request_id();
         o.extend(file_request_ops(
             &self.env,
+            false,
             APPROVALS,
             None,
             &rid,
@@ -1131,6 +1140,7 @@ impl StartDepositScenario {
         let rid = self.request_id();
         o.extend(file_request_ops(
             &self.env,
+            false,
             DEPOSITS_RECORDS,
             Some(DEPOSITS_ENVS),
             &rid,
@@ -1207,10 +1217,6 @@ impl ClaimScenario {
         coin_commitment_of(&b32_slots(&self.settle.mint_nonce), &color, u128::from(self.d.amount_u64()), is_left, &data)
     }
 
-    pub fn self_read_fires(&self) -> bool {
-        matches!(self.recipient, ClaimRecipient::Contract(_))
-    }
-
     pub fn auto_receive(&self) -> bool {
         matches!(self.recipient, ClaimRecipient::Contract(addr) if addr == self.d.env.self_addr)
     }
@@ -1246,9 +1252,8 @@ impl ClaimScenario {
         o.extend(consume_ops(&self.d.env, DEPOSITS_RECORDS, DEPOSITS_ENVS, &rid, self.settle.pending, self.d.req().av(&self.d.env), self.d.env_av()));
         o.extend(self.d.env.kernel_self());
         o.extend(ops::mint_and_spend(&vault_token_domain_sep(&self.d.erc20), self.d.amount_u64(), &cm));
-        if self.self_read_fires() {
-            o.extend(self.d.env.kernel_self());
-        }
+        // The auto-receive branch's guarded `kernel.self()` read is the kept
+        // address under the default read-once lowering: no second read.
         if self.auto_receive() {
             o.extend(ops::claim(1, &cm));
         }
@@ -1390,6 +1395,7 @@ impl StartWithdrawScenario {
         let rid = self.request_id();
         o.extend(file_request_ops(
             &self.env,
+            true,
             WITHDRAWALS_RECORDS,
             Some(WITHDRAWALS_ENVS),
             &rid,
@@ -1706,6 +1712,7 @@ impl StartSwapScenario {
         let rid = self.request_id();
         o.extend(file_request_ops(
             &self.env,
+            true,
             SWAPS_RECORDS,
             Some(SWAPS_ENVS),
             &rid,
@@ -2017,6 +2024,7 @@ impl StartSupplyScenario {
         let rid = self.request_id();
         o.extend(file_request_ops(
             &self.env,
+            true,
             SUPPLIES_RECORDS,
             Some(SUPPLIES_ENVS),
             &rid,
@@ -2302,6 +2310,7 @@ impl StartRedeemScenario {
         let rid = self.request_id();
         o.extend(file_request_ops(
             &self.env,
+            true,
             REDEEMS_RECORDS,
             Some(REDEEMS_ENVS),
             &rid,
