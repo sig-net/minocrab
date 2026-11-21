@@ -53,7 +53,7 @@ fn b32_ledger_value(b: &B32<Public>) -> LedgerValue {
 /// `xcontract-events`, through the Borsh API — the token-side callee.
 pub struct XcontractEventsBorsh;
 
-#[contract]
+#[contract(lowering = minocrab_compat::profile)]
 impl XcontractEventsBorsh {
     /// `export circuit deposit(amount: Uint<128>, caller: ContractAddress):
     /// Bytes<32>` — the token-side callee, with both serializations built from

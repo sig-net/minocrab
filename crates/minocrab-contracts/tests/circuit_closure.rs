@@ -121,7 +121,7 @@ use minocrab::v3::Circuit3;
 use minocrab_contracts::{
     adts, attest, bounded, bounded_ledger, coins, erc20_vault, hashing, kernel_tokens, manager,
     mint_tokens, nested, opaque, serde_builtin, signet_contract, test_caller, xcall,
-    xcall_with_payment, xcontract_events,
+    xcall_with_payment, xcontract_events, xcontract_events_borsh,
 };
 
 /// The modules whose contracts have a Compact twin, from where the tests
@@ -129,7 +129,11 @@ use minocrab_contracts::{
 /// module under `src/` compares that module against compactc's output.
 /// `lean` and `wide` are differential suites with no module of their own. The
 /// deployed signer (`signet_contract`) is added by name: its corpus check is
-/// `signet_construction.rs`, not a `_differential` file.
+/// `signet_construction.rs`, not a `_differential` file. A `<module>_borsh`
+/// twin of a port emits the port's bytes through the Borsh API and is held to
+/// them by the port's own differential file (`events_differential.rs`
+/// compares `events_borsh` too), so it is a port as well: the default flip of
+/// M48 C step 3 moved both until they said so.
 fn ported_modules() -> BTreeSet<String> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut ported = BTreeSet::from(["signet_contract".to_string()]);
@@ -138,18 +142,44 @@ fn ported_modules() -> BTreeSet<String> {
         let Some(module) = name.strip_suffix("_differential.rs") else {
             continue;
         };
-        if root.join("src").join(format!("{module}.rs")).exists() {
-            ported.insert(module.to_string());
+        for module in [module.to_string(), format!("{module}_borsh")] {
+            if root.join("src").join(format!("{module}.rs")).exists() {
+                ported.insert(module);
+            }
         }
     }
     ported
+}
+
+/// The modules with no Compact twin, the only ones whose circuits take the
+/// lean defaults (owner's ruling, 2026-11-21).
+const MINOCRAB_ONLY: [&str; 3] = ["disclosure", "erc20_vault_pending", "treasury"];
+
+/// Every module that builds a listed circuit is either a port or one of
+/// [`MINOCRAB_ONLY`], so no circuit takes the lean defaults by omission.
+#[test]
+fn every_listed_module_is_a_port_or_minocrab_only() {
+    let ported = ported_modules();
+    let modules: BTreeSet<String> = support::circuits()
+        .iter()
+        .map(|(name, _)| name.split("::").next().expect("a module").to_string())
+        .collect();
+    for module in &modules {
+        assert!(
+            ported.contains(module) != MINOCRAB_ONLY.contains(&module.as_str()),
+            "`{module}` builds listed circuits but is {}. fix: a port gets \
+             `#[contract(lowering = minocrab_compat::profile)]` (and a differential test); a \
+             contract with no Compact twin is added to MINOCRAB_ONLY",
+            if ported.contains(module) { "both a port and MinoCrab-only" } else { "neither a port nor MinoCrab-only" }
+        );
+    }
 }
 
 /// Every `#[contract]` block of a ported module, with what it says its
 /// lowering is. This list is the one place Rust names the ported contracts;
 /// [`every_ported_contract_is_listed`] checks it against the source, so a
 /// new port's block cannot be left out of it.
-const PORTED_CONTRACTS: [(&str, Option<fn(&mut Circuit3)>); 18] = [
+const PORTED_CONTRACTS: [(&str, Option<fn(&mut Circuit3)>); 19] = [
     ("adts", adts::Adts::LOWERING),
     ("attest", attest::Attest::LOWERING),
     ("bounded", bounded::Bounded::LOWERING),
@@ -170,6 +200,7 @@ const PORTED_CONTRACTS: [(&str, Option<fn(&mut Circuit3)>); 18] = [
     // `events` has no `#[contract]` block, only hand-built circuits (checked
     // below).
     ("xcontract_events", xcontract_events::XcontractEvents::LOWERING),
+    ("xcontract_events_borsh", xcontract_events_borsh::XcontractEventsBorsh::LOWERING),
 ];
 
 fn source_of(module: &str) -> String {
@@ -262,5 +293,5 @@ fn every_hand_built_port_circuit_calls_the_profile_first() {
             );
         }
     }
-    assert_eq!(found, 3, "expected the three hand-built port circuits (events, hashing, xcall)");
+    assert_eq!(found, 4, "expected the four hand-built port circuits (events, events_borsh, hashing, xcall)");
 }
