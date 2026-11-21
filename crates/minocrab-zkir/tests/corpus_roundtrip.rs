@@ -109,7 +109,9 @@ fn round_trips_entire_corpus() {
         // 897/897 → 938/938 with the mainnet pins (M48 L, notes/mainnet-pin.org):
         // signet-midnight-integration-v026 (signer 1, responder 2, test
         // callers 8 + 1) and signet-midnight-examples-v070 (the vault, 29).
-        (938, 938),
+        // 938/938 → 925/925 when the v0.25.0 pin (3) and fff3421c's signet
+        // contract and test callers (10) retired (M48 L).
+        (925, 925),
         "corpus size moved: {} files ({} v3). If the corpus was deliberately \
          recompiled or extended, update this assertion in the same commit and say \
          which source moved it; otherwise the checkout is incomplete.",

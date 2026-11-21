@@ -65,7 +65,7 @@ fn theirs(name: &str) -> IrSource {
 /// The corpus's own `test-caller-contract` artifact.
 fn corpus(name: &str) -> IrSource {
     let path = format!(
-        "{}/../../corpus/zkir/signet-midnight-integration/packages/test-caller-contract/\
+        "{}/../../corpus/zkir/signet-midnight-integration-v026/packages/test-caller-contract/\
          src/test-caller-contract/zkir/{name}.zkir",
         env!("CARGO_MANIFEST_DIR")
     );

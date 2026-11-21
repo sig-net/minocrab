@@ -12,10 +12,12 @@ use minocrab::v3::{Circuit3, FieldT, Secp256k1PointT, Secp256k1ScalarT, Wire3};
 use minocrab::Public;
 use minocrab_std::v3::{hash_to_secp256k1_scalar, Secp256k1EcdsaSignature, Vis3, B32};
 
-/// `pk != default<Secp256k1Point>`, asserted. compactc's: the default point
-/// is generator · 0, built as `to_bytes(0)` → `from_bytes` scalar →
-/// `ec_mul_generator`, where the lean form names the identity directly.
-fn assert_not_identity<V: Vis3>(c: &mut Circuit3, pk: Wire3<Secp256k1PointT, V>, message: Option<&'static str>) {
+/// `assert(pk != default<Secp256k1Point>, message)`. compactc's: the default
+/// point is generator · 0, built as `to_bytes(0)` → `from_bytes` scalar →
+/// `ec_mul_generator`, where the lean form names the identity directly. Also
+/// what a ported contract's own identity-key assert lowers to (the test
+/// caller's `initialise`).
+pub fn assert_not_identity<V: Vis3>(c: &mut Circuit3, pk: Wire3<Secp256k1PointT, V>, message: Option<&'static str>) {
     let zero = c.constant(0u64);
     let zero_bytes = c.into_bytes32(zero);
     let zero_scalar: Wire3<Secp256k1ScalarT, Public> = c.from_bytes32(zero_bytes);

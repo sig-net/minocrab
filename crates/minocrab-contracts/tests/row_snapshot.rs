@@ -134,7 +134,7 @@ const SNAPSHOT: &[(&str, u8, usize)] = &[
     ("mint_tokens::mint_with_recipient_argument", 14, 9663),
     ("mint_tokens::mint_with_recipient_own_public_key", 14, 9807),
     ("serde_builtin::check_roundtrip", 15, 21319),
-    ("test_caller::initialise", 11, 1720),
+    ("test_caller::initialise", 14, 13728),
     ("treasury::send", 11, 1551),
     ("treasury::complete", 16, 37486),
     ("treasury::refund", 16, 37899),

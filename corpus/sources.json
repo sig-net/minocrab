@@ -62,7 +62,10 @@
       "url": "https://github.com/sig-net/midnight-integration",
       "rev": "fff3421c610e508ad8cf01049bb88b153f170935",
       "license": "UNLICENSED (sig-net internal)",
-      "paths": []
+      "paths": [
+        "packages/signet-midnight"
+      ],
+      "note": "Restricted to the Signet module since M48 L (notes/mainnet-pin.org): it is what the shared @sig-net/midnight link resolves to, which signet-midnight-experiments (attest) imports. Its test callers and signet contract are superseded by the signet-midnight-integration-v026 pin."
     },
     {
       "name": "signet-midnight-integration-v0241",
@@ -77,20 +80,6 @@
         "@sig-net/midnight": "signet-midnight-integration-v0241/packages/signet-midnight"
       },
       "note": "Tag v0.24.1 (= main at 2026-10-07): the V1 wire vocabulary (SignBidirectionalEventV1, RequestIdPreimageV1, calculateEvmType2TxParamsDigestV1, RespondBidirectionalEventV1, OutputKind) the flush-pattern vault imports (M44)."
-    },
-    {
-      "name": "signet-midnight-integration-v0250",
-      "url": "https://github.com/sig-net/midnight-integration",
-      "rev": "b62e67e972867a888d9eb945f8337ad2bb521666",
-      "license": "UNLICENSED (sig-net internal)",
-      "paths": [
-        "packages/signet-contract",
-        "packages/signet-midnight"
-      ],
-      "compact_path_links": {
-        "@sig-net/midnight": "signet-midnight-integration-v0250/packages/signet-midnight"
-      },
-      "note": "Tag v0.25.0, the deployed @sig-net/midnight-contract 0.25.0 singleton: respondBidirectional attests outputHash beside the digest. The signer artifacts are ported from it."
     },
     {
       "name": "signet-midnight-integration-v026",

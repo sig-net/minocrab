@@ -92,7 +92,10 @@ fn every_circuit_s_messages_and_regions_name_its_finished_stream() {
     // 0.36's message. 411 → 412 regions: `serde_builtin::check_roundtrip`
     // names its compactc-shaped deserialize ("deserialize Mixed"), which its
     // differential compares with compactc's stream.
-    assert_eq!((circuits, messages, regions), (227, 474, 412));
+    // 474 → 475 messages and 412 → 413 regions: the test caller's
+    // `initialise` at v0.26 asserts its response key is not the identity
+    // ("Response key must not be the identity point", region "identity-key gate").
+    assert_eq!((circuits, messages, regions), (227, 475, 413));
     // The three messages that go: the `Always` outcome rule's `assert(imm 1)`,
     // deleted by the true-assert rule, takes its message with it.
     dropped.sort();

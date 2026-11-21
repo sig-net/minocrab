@@ -1,7 +1,9 @@
 //! test-caller-contract `initialise`: call-compatibility with the corpus
 //! artifact per notes/ledger-abi.org §6 — the first differential over
 //! ledger READS (Counter.read + Cell.read), plus acceptance agreement on
-//! the guard failures (already initialised, wrong deployer secret).
+//! the guard failures (already initialised, wrong deployer secret, the
+//! identity point as the response key). The artifact is
+//! signet-midnight-integration v0.26.0-rc.15's.
 
 #[path = "support/common.rs"]
 mod common;
@@ -33,7 +35,7 @@ use minocrab_zkir::v3::{IrSource, IrType, IrValue};
 type VmOp = Op<ResultModeVerify, InMemoryDB>;
 
 fn corpus_zkir() -> IrSource {
-    common::corpus_zkir("signet-midnight-integration/packages/test-caller-contract/src/test-caller-contract/zkir", "initialise")
+    common::corpus_zkir("signet-midnight-integration-v026/packages/test-caller-contract/src/test-caller-contract/zkir", "initialise")
 }
 
 fn cell(av: AlignedValue) -> StateValue {
@@ -255,6 +257,26 @@ fn initialise_rejects_wrong_deployer_secret() {
     let pi = preimage(
         natives(&s.point),
         vec![hi, lo],
+        transcript(&ops),
+        outputs(0, &s.commitment),
+    );
+    assert!(simulate(&ours, &pi).is_err(), "ours must reject");
+    assert!(simulate(&theirs, &pi).is_err(), "corpus must reject");
+}
+
+/// Both artifacts must reject the identity point as the response key
+/// (`assert(responseKey != default<Secp256k1Point>)`, new at v0.26).
+#[test]
+fn initialise_rejects_the_identity_key() {
+    let theirs = corpus_zkir();
+    let ours = test_caller::TestCaller::initialise().ir;
+    let mut s = Scenario::new();
+    s.point = ec_mul_offcircuit(&IrValue::Secp256k1Point(k256::K256::generator()), &scalar(0)).unwrap();
+
+    let ops = initialise_ops(0, &s.commitment, s.point_av());
+    let pi = preimage(
+        natives(&s.point),
+        s.witnesses(),
         transcript(&ops),
         outputs(0, &s.commitment),
     );

@@ -133,7 +133,9 @@ fn lean_dataflow_agrees_with_the_rust_functions_on_every_corpus_instruction() {
         // examples and test contracts added and removed.
         // 119109 → 128982 with the mainnet pins (M48 L): the v026 signer,
         // responder and test callers and the 0.7.0-rc.2 vault, 41 artifacts.
-        instructions, 128982,
+        // 128982 → 124300 when the v0.25.0 pin and fff3421c's signer, test
+        // callers and serde fixture retired (M48 L).
+        instructions, 124300,
         "corpus instruction count moved ({instructions}); recompiled or extended corpus?"
     );
     println!("lean and rust dataflow agree on {instructions} corpus instructions");
