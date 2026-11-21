@@ -135,3 +135,28 @@ fn lookup_required_keeps_its_message() {
         "the assert message is carried"
     );
 }
+
+/// `LedgerCell::increment` is the contracts' hand-written bump: the one
+/// named with `c.constant` first, then `add`, the range check, the write.
+#[test]
+fn cell_increment_is_the_hand_written_bump() {
+    let std_form = build(|c| NONCE.increment(c));
+    let by_hand = build(|c| {
+        let current = NONCE.read(c).stale(c);
+        let one = c.constant(1u64);
+        let bumped = c.add(current.field(), one);
+        let bumped = Uint::<64, Public>::from_field_checked(c, bumped);
+        NONCE.write(c, &bumped);
+    });
+    assert_eq!(std_form, by_hand);
+}
+
+/// Why `increment` is not `add(c, 1)`: the folded copy still took a wire
+/// name, so the two streams differ in their names and nothing else.
+#[test]
+fn cell_increment_differs_from_add_one_only_in_names() {
+    let increment = build(|c| NONCE.increment(c));
+    let add_one = build(|c| NONCE.add(c, 1));
+    assert_ne!(increment, add_one);
+    assert_eq!(increment.replace("%add.2", "%add.1"), add_one);
+}

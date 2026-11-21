@@ -1913,6 +1913,17 @@ impl<const BITS: u32> LedgerCell<crate::v3::Uint<BITS, minocrab::Public>> {
         let next = crate::v3::Uint::<BITS, minocrab::Public>::from_field_checked(c, sum);
         self.write(c, &next);
     }
+
+    /// `cell = (cell + 1) as Uint<BITS>`: the read, `c.constant(1)`, `add`, the `BITS`-bit range check, the write, with the read acknowledged as [`add`](Self::add) does.
+    ///
+    /// The same instructions as `add(c, 1)` once the constant's copy folds, but the copy takes a wire name, so the serialized ZKIR differs from `add`'s in the names after it; this is the spelling the in-repo ports and the passport port wrote, kept so they stay byte-identical.
+    pub fn increment(&self, c: &mut Circuit3) {
+        let prior = self.read(c).stale(c);
+        let one = c.constant(1u64);
+        let sum = c.add(prior.field(), one);
+        let next = crate::v3::Uint::<BITS, minocrab::Public>::from_field_checked(c, sum);
+        self.write(c, &next);
+    }
 }
 
 pub struct LedgerCounter<P = FieldPath> {
