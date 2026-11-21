@@ -210,12 +210,12 @@ impl Builder3 {
             let v = self
                 .val_named(&name)
                 .expect("an instruction binds only values this builder minted");
-            debug_assert!(
+            assert!(
                 (v.0 as usize) >= self.inputs.len(),
                 "{name:?} is a circuit argument, which no instruction binds"
             );
             let def = &mut self.values[v.0 as usize];
-            debug_assert!(
+            assert!(
                 def.defined_at.is_none(),
                 "{name:?} is bound twice: each value has exactly one binding instruction"
             );
