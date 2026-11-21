@@ -35,6 +35,10 @@
 //!    upstream, and everything in `minocrab_std::v3::Opaque`'s docs rests on
 //!    it.
 
+#[path = "support/common.rs"]
+mod common;
+use common::*;
+
 use std::borrow::Cow;
 
 use midnight_base_crypto::fab::{
@@ -165,45 +169,6 @@ fn cell_write_transcript(index: u8, value: AlignedValue) -> Vec<Fr> {
             n: 1,
         },
     ])
-}
-
-/// Serialized ZKIR with every `%name.index` identifier replaced by
-/// `%<order of first appearance>` — the same canonicalization
-/// `bounded_differential.rs` uses, and for the same reason: names are the only
-/// thing the two artifacts may differ in, and they are cosmetic to the ABI.
-fn canonical(ir: &IrSource) -> String {
-    // BOTH SIDES are folded first (notes/ir-passes.org §2 ii): our builder
-    // inlines a `Copy` of an immediate at `finish`, and compactc names some of
-    // the constants it inlines elsewhere, so the comparison is instruction for
-    // instruction MODULO the naming of constants — a rename with no rows, no
-    // public input and no semantics. Everything else still compares exactly.
-    let ir = &minocrab_ir::v3::passes::folded(ir);
-    let text = to_zkir_string(ir).expect("serializes");
-    let mut renames: Vec<(String, String)> = Vec::new();
-    let mut out = String::with_capacity(text.len());
-    let mut rest = text.as_str();
-    while let Some(at) = rest.find('%') {
-        out.push_str(&rest[..at]);
-        rest = &rest[at..];
-        let end = rest[1..]
-            .find(|ch: char| !(ch.is_alphanumeric() || ch == '_' || ch == '.'))
-            .map(|i| i + 1)
-            .unwrap_or(rest.len());
-        let name = &rest[..end];
-        let next = renames.len();
-        let canon = match renames.iter().find(|(from, _)| from == name) {
-            Some((_, to)) => to.clone(),
-            None => {
-                let to = format!("%{next}");
-                renames.push((name.to_string(), to.clone()));
-                to
-            }
-        };
-        out.push_str(&canon);
-        rest = &rest[end..];
-    }
-    out.push_str(rest);
-    out
 }
 
 /// Every circuit of the fixture: compactc's artifact name and our builder.

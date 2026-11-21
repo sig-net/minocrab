@@ -3,10 +3,14 @@
 //! ledger READS (Counter.read + Cell.read), plus acceptance agreement on
 //! the guard failures (already initialised, wrong deployer secret).
 
+#[path = "support/common.rs"]
+mod common;
+use common::*;
+
 use std::borrow::Cow;
 
 use midnight_base_crypto::fab::{
-    Alignment, AlignmentAtom, AlignmentSegment, AlignedValue, Value, ValueAtom,
+    Alignment, AlignmentSegment, AlignedValue,
 };
 use midnight_curves::k256;
 use midnight_onchain_state::state::StateValue;
@@ -29,35 +33,11 @@ use minocrab_zkir::v3::{IrSource, IrType, IrValue};
 type VmOp = Op<ResultModeVerify, InMemoryDB>;
 
 fn corpus_zkir() -> IrSource {
-    let path = format!(
-        "{}/../../corpus/zkir/signet-midnight-integration/packages/test-caller-contract/src/test-caller-contract/zkir/initialise.zkir",
-        env!("CARGO_MANIFEST_DIR")
-    );
-    minocrab_zkir::v3::read_zkir(&path).expect("corpus golden parses")
-}
-
-fn atom(n: u32) -> AlignmentSegment {
-    AlignmentSegment::Atom(AlignmentAtom::Bytes { length: n })
-}
-
-fn bytesn_value(n: u32, bytes: &[u8]) -> AlignedValue {
-    AlignedValue::new(
-        Value(vec![ValueAtom(bytes.to_vec()).normalize()]),
-        Alignment(vec![atom(n)]),
-    )
-    .unwrap()
+    common::corpus_zkir("signet-midnight-integration/packages/test-caller-contract/src/test-caller-contract/zkir", "initialise")
 }
 
 fn cell(av: AlignedValue) -> StateValue {
     StateValue::Cell(Sp::new(av))
-}
-
-/// [hi, lo] Fr slot pair of a Bytes<32>.
-fn b32_slots(bytes: &[u8; 32]) -> (Fr, Fr) {
-    (
-        Fr::from(u64::from(bytes[31])),
-        Fr::from_le_bytes(&bytes[..31]).unwrap(),
-    )
 }
 
 /// `pad(32, s)`: string at the front, zero-filled.

@@ -2,6 +2,9 @@
 //! artifact per notes/ledger-abi.org §6, plus rejection agreement on
 //! non-canonical encodings.
 
+#[path = "support/common.rs"]
+mod common;
+
 use std::borrow::Cow;
 
 use midnight_base_crypto::fab::{
@@ -21,11 +24,7 @@ use minocrab_zkir::v3::IrSource;
 type VmOp = Op<ResultModeVerify, InMemoryDB>;
 
 fn corpus_zkir() -> IrSource {
-    let path = format!(
-        "{}/../../corpus/zkir/signet-midnight-experiments/experiments/serde-builtin/contract/src/serde-builtin/zkir/checkRoundtrip.zkir",
-        env!("CARGO_MANIFEST_DIR")
-    );
-    minocrab_zkir::v3::read_zkir(&path).expect("corpus golden parses")
+    common::corpus_zkir("signet-midnight-experiments/experiments/serde-builtin/contract/src/serde-builtin/zkir", "checkRoundtrip")
 }
 
 /// A canonical Mixed encoding: flag=1, amount, small, tag, zero padding.

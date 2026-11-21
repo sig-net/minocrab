@@ -10,7 +10,7 @@
 //! `HashDomain` tag. What stays protocol-pinned and SHA-256 is the ledger's
 //! own: `tokenType`, the coin commitment and nullifier.
 
-use midnight_base_crypto::fab::{Alignment, AlignmentAtom, AlignmentSegment, AlignedValue, Value, ValueAtom};
+use midnight_base_crypto::fab::{Alignment, AlignmentSegment, AlignedValue};
 use midnight_base_crypto::repr::BinaryHashRepr;
 use midnight_curves::k256;
 use midnight_onchain_state::state::StateValue;
@@ -34,22 +34,20 @@ use minocrab_contracts::signet_v1::{hash_domain, ETHEREUM_CAIP2_ID};
 use minocrab_zkir::v3::{IrSource, IrType, IrValue};
 use sha2::{Digest, Sha256};
 
+// The FAB encodings every suite shares (`atom`, `bytesn_value`,
+// `b32_slots`), declared by path so the binaries that include this file
+// need not declare `support`.
+// A binary that also declares `support` loads the file twice, as two
+// distinct modules of plain functions; that is harmless.
+#[path = "../support/common.rs"]
+#[allow(clippy::duplicate_mod)]
+mod common;
+pub use common::{atom, b32_slots, bytesn_value};
+
 pub type VmOp = Op<ResultModeVerify, InMemoryDB>;
 
 pub fn corpus_zkir_named(name: &str) -> IrSource {
-    let path = format!(
-        "{}/../../corpus/zkir/signet-midnight-examples/examples/erc20-vault/contract/src/erc20-vault/zkir/{name}.zkir",
-        env!("CARGO_MANIFEST_DIR")
-    );
-    minocrab_zkir::v3::read_zkir(&path).expect("corpus golden parses")
-}
-
-pub fn atom(n: u32) -> AlignmentSegment {
-    AlignmentSegment::Atom(AlignmentAtom::Bytes { length: n })
-}
-
-pub fn bytesn_value(n: u32, bytes: &[u8]) -> AlignedValue {
-    AlignedValue::new(Value(vec![ValueAtom(bytes.to_vec()).normalize()]), Alignment(vec![atom(n)])).unwrap()
+    common::corpus_zkir("signet-midnight-examples/examples/erc20-vault/contract/src/erc20-vault/zkir", name)
 }
 
 /// A multi-atom value from its limbs and atom widths.
@@ -71,11 +69,6 @@ fn aligned_padded(widths: &[u32], limbs: &[Fr]) -> AlignedValue {
 
 pub fn cell(av: AlignedValue) -> StateValue {
     StateValue::Cell(Sp::new(av))
-}
-
-/// [hi, lo] Fr slot pair of a Bytes<32>.
-pub fn b32_slots(bytes: &[u8; 32]) -> (Fr, Fr) {
-    (Fr::from(u64::from(bytes[31])), Fr::from_le_bytes(&bytes[..31]).unwrap())
 }
 
 /// A `Bytes<20>` as its single limb.

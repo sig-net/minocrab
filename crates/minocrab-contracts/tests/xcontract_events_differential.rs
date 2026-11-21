@@ -4,6 +4,10 @@
 //! bound by the communication commitment) plus Set.insert, against real
 //! compactc artifacts, with rejection agreement on tampering.
 
+#[path = "support/common.rs"]
+mod common;
+use common::*;
+
 use std::borrow::Cow;
 
 use midnight_base_crypto::fab::{
@@ -30,21 +34,7 @@ use sha2::{Digest, Sha256};
 type VmOp = Op<ResultModeVerify, InMemoryDB>;
 
 fn corpus_zkir(side: &str, name: &str) -> IrSource {
-    let path = format!(
-        "{}/../../corpus/zkir/signet-midnight-experiments/experiments/xcontract-events/contract/src/{side}/zkir/{name}.zkir",
-        env!("CARGO_MANIFEST_DIR")
-    );
-    minocrab_zkir::v3::read_zkir(&path).expect("corpus golden parses")
-}
-
-fn bytesn_value(n: u32, bytes: &[u8]) -> AlignedValue {
-    AlignedValue::new(
-        Value(vec![ValueAtom(bytes.to_vec()).normalize()]),
-        Alignment(vec![AlignmentSegment::Atom(AlignmentAtom::Bytes {
-            length: n,
-        })]),
-    )
-    .unwrap()
+    common::corpus_zkir(&format!("signet-midnight-experiments/experiments/xcontract-events/contract/src/{side}/zkir"), name)
 }
 
 fn cell(av: AlignedValue) -> StateValue<InMemoryDB, AlignedValueChecked> {
@@ -53,13 +43,6 @@ fn cell(av: AlignedValue) -> StateValue<InMemoryDB, AlignedValueChecked> {
 
 fn key(i: u8) -> Key {
     Key::Value(bytesn_value(1, &[i]).try_into().expect("a canonical test key"))
-}
-
-fn b32_slots(bytes: &[u8; 32]) -> (Fr, Fr) {
-    (
-        Fr::from(u64::from(bytes[31])),
-        Fr::from_le_bytes(&bytes[..31]).unwrap(),
-    )
 }
 
 /// The `rt-aligned-concat addr ‖ entry_point ‖ comm` 3-atom cell value.

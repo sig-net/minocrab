@@ -23,6 +23,10 @@
 //! workspace ships, and the frozen snapshots are a statement about the
 //! latter.
 
+#[path = "support/common.rs"]
+mod common;
+use common::*;
+
 use minocrab::v3::{Circuit3, Compiled3};
 use minocrab::{Private, Public};
 use minocrab_std::v3::{contract, label, Disclose, Discloses, Ledger, LedgerCell, Uint};
@@ -84,39 +88,6 @@ fn theirs(name: &str) -> IrSource {
         env!("CARGO_MANIFEST_DIR")
     );
     minocrab_zkir::v3::read_zkir(&path).expect("the pinned compactc's artifact parses")
-}
-
-/// Serialized ZKIR with every `%name.index` identifier replaced by
-/// `%<order of first appearance>` — the canonicalization every differential
-/// here uses, over both sides' folded IR.
-fn canonical(ir: &IrSource) -> String {
-    let ir = &minocrab_ir::v3::passes::folded(ir);
-    let text = to_zkir_string(ir).expect("serializes");
-    let mut renames: Vec<(String, String)> = Vec::new();
-    let mut out = String::with_capacity(text.len());
-    let mut rest = text.as_str();
-    while let Some(at) = rest.find('%') {
-        out.push_str(&rest[..at]);
-        rest = &rest[at..];
-        let end = rest[1..]
-            .find(|ch: char| !(ch.is_alphanumeric() || ch == '_' || ch == '.'))
-            .map(|i| i + 1)
-            .unwrap_or(rest.len());
-        let name = &rest[..end];
-        let next = renames.len();
-        let canon = match renames.iter().find(|(from, _)| from == name) {
-            Some((_, to)) => to.clone(),
-            None => {
-                let to = format!("%{next}");
-                renames.push((name.to_string(), to.clone()));
-                to
-            }
-        };
-        out.push_str(&canon);
-        rest = &rest[end..];
-    }
-    out.push_str(rest);
-    out
 }
 
 /// THE HEADLINE: the derive's paths are compactc's, on the wire.

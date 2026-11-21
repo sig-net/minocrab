@@ -10,6 +10,7 @@
 //! free to differ, which they deliberately do (the port uses the keccak
 //! chip's in-chip packing where compactc splices bytes).
 
+
 use std::borrow::Cow;
 
 use midnight_base_crypto::fab::{
@@ -34,11 +35,7 @@ mod vault;
 use vault::prims::{atom, b32_slots, bytesn_value, cell, VmOp};
 
 fn corpus_zkir(name: &str) -> IrSource {
-    let path = format!(
-        "{}/../../corpus/zkir/aa-midnight-evm-experiment/contracts/manager/zkir/{name}.zkir",
-        env!("CARGO_MANIFEST_DIR")
-    );
-    minocrab_zkir::v3::read_zkir(&path).expect("corpus golden parses")
+    support::common::corpus_zkir("aa-midnight-evm-experiment/contracts/manager/zkir", name)
 }
 
 /// Both artifacts must REJECT the preimage.

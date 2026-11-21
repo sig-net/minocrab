@@ -34,6 +34,10 @@
 //!    constraint says; these two are the pair that an off-by-one in either
 //!    direction fails.
 
+#[path = "support/common.rs"]
+mod common;
+use common::*;
+
 use std::borrow::Cow;
 
 use midnight_base_crypto::fab::{
@@ -50,7 +54,7 @@ use minocrab::v3::Compiled3;
 use minocrab::Fr;
 use minocrab_contracts::bounded;
 use minocrab_sim::v3::{assert_call_compatible, simulate};
-use minocrab_zkir::v3::{to_zkir_string, IrSource};
+use minocrab_zkir::v3::IrSource;
 
 type VmOp = Op<ResultModeVerify, InMemoryDB>;
 
@@ -125,49 +129,6 @@ fn flag_write_transcript(less: bool) -> Vec<Fr> {
             n: 1,
         },
     ])
-}
-
-/// Serialized ZKIR with every `%name.index` identifier replaced by
-/// `%<order of first appearance>`.
-///
-/// Names are the ONLY thing the two artifacts are allowed to differ in, and
-/// they are cosmetic to the ledger ABI (order and type are the contract —
-/// notes/contract-api.org §ArgPath). Everything else — the op sequence, the
-/// immediates, the widths, which operand sits where — survives this and is
-/// therefore asserted.
-fn canonical(ir: &IrSource) -> String {
-    // BOTH SIDES are folded first (notes/ir-passes.org §2 ii): our builder
-    // inlines a `Copy` of an immediate at `finish`, and compactc names some of
-    // the constants it inlines elsewhere, so the comparison is instruction for
-    // instruction MODULO the naming of constants — a rename with no rows, no
-    // public input and no semantics. Everything else still compares exactly.
-    let ir = &minocrab_ir::v3::passes::folded(ir);
-    let text = to_zkir_string(ir).expect("serializes");
-    let mut renames: Vec<(String, String)> = Vec::new();
-    let mut out = String::with_capacity(text.len());
-    let mut rest = text.as_str();
-    while let Some(at) = rest.find('%') {
-        out.push_str(&rest[..at]);
-        rest = &rest[at..];
-        let end = rest[1..]
-            .find(|ch: char| !(ch.is_alphanumeric() || ch == '_' || ch == '.'))
-            .map(|i| i + 1)
-            .unwrap_or(rest.len());
-        let name = &rest[..end];
-        let next = renames.len();
-        let canon = match renames.iter().find(|(from, _)| from == name) {
-            Some((_, to)) => to.clone(),
-            None => {
-                let to = format!("%{next}");
-                renames.push((name.to_string(), to.clone()));
-                to
-            }
-        };
-        out.push_str(&canon);
-        rest = &rest[end..];
-    }
-    out.push_str(rest);
-    out
 }
 
 /// Every single-argument circuit of the fixture: our builder, compactc's

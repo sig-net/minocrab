@@ -7,9 +7,9 @@
 //! encodings, hash constructions and signature helpers they hold are
 //! protocol-level (Poseidon commitments, ECDSA, coin commitments), not
 //! specific to the 21-field block, so they are declared here by path
-//! rather than copied. `ops` IS copied (`tests/vault_pending/ops.rs`)
-//! because its one field-count constant differs (22, not 21); every
-//! builder in it is otherwise identical, byte for byte.
+//! rather than copied. `ops` sets the block's field count (21, where the
+//! flush vault's is 35) over the builders all the harnesses share,
+//! `tests/support/ledger_ops.rs`.
 #![allow(dead_code)]
 
 #[path = "../vault/prims.rs"]

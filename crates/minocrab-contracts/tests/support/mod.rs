@@ -11,8 +11,11 @@
 // The signet signer's calls, built through the LEDGER's own
 // `ContractCallPrototype`/`construct_proof` (M29 rung C). Every signet signer
 // proof preimage in the suite comes from here.
+pub mod common;
 pub mod proving;
 pub mod signet_call;
+
+pub use common::{b32_slots, bytesn_value};
 
 use midnight_transient_crypto::proofs::ProofPreimage;
 

@@ -52,6 +52,8 @@ use midnight_storage::storage::Array;
 use midnight_transient_crypto::commitment::PedersenRandomness;
 use midnight_transient_crypto::proofs::{ProofPreimage, VerifierKey};
 use minocrab::Fr;
+
+pub use super::common::b32_slots;
 use minocrab_publisher::call::{Attestation, EcdsaSignature};
 use rand::rngs::StdRng;
 use rand::SeedableRng;
@@ -88,14 +90,6 @@ pub fn singleton_address() -> ContractAddress {
 }
 
 // ---- limb arithmetic, the construction gate's second reading ---------------
-
-/// A `Bytes<32>`'s two FAB slots: hi = byte 31, lo = bytes 0..31 LE.
-pub fn b32_slots(bytes: &[u8; 32]) -> (Fr, Fr) {
-    (
-        Fr::from(u64::from(bytes[31])),
-        Fr::from_le_bytes(&bytes[..31]).expect("31 bytes fit"),
-    )
-}
 
 /// A `Bytes<128>`'s five FAB slots: 31-byte chunks from the front, limb 0
 /// the trailing leftover.

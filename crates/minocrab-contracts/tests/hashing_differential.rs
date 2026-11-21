@@ -2,6 +2,10 @@
 //! circuits (controls, persistentHash, keccak256, transientHash,
 //! persistentVec8) per notes/ledger-abi.org §6.
 
+#[path = "support/common.rs"]
+mod common;
+use common::*;
+
 use std::borrow::Cow;
 
 use midnight_base_crypto::fab::{
@@ -24,21 +28,7 @@ use sha2::Digest as _;
 type VmOp = Op<ResultModeVerify, InMemoryDB>;
 
 fn corpus_zkir(experiment: &str, name: &str) -> IrSource {
-    let path = format!(
-        "{}/../../corpus/zkir/signet-midnight-experiments/experiments/{experiment}/contract/src/{experiment}/zkir/{name}.zkir",
-        env!("CARGO_MANIFEST_DIR")
-    );
-    minocrab_zkir::v3::read_zkir(&path).expect("corpus golden parses")
-}
-
-fn bytesn_value(n: u32, bytes: &[u8]) -> AlignedValue {
-    AlignedValue::new(
-        Value(vec![ValueAtom(bytes.to_vec()).normalize()]),
-        Alignment(vec![AlignmentSegment::Atom(AlignmentAtom::Bytes {
-            length: n,
-        })]),
-    )
-    .unwrap()
+    common::corpus_zkir(&format!("signet-midnight-experiments/experiments/{experiment}/contract/src/{experiment}/zkir"), name)
 }
 
 fn field_value(f: Fr) -> AlignedValue {

@@ -2,6 +2,10 @@
 //! verifyOnly) per notes/ledger-abi.org §6, plus acceptance-behavior
 //! agreement on bad signatures.
 
+#[path = "support/common.rs"]
+mod common;
+use common::*;
+
 use std::borrow::Cow;
 
 use midnight_base_crypto::fab::{
@@ -32,11 +36,7 @@ use minocrab_zkir::v3::{IrSource, IrType, IrValue};
 type VmOp = Op<ResultModeVerify, InMemoryDB>;
 
 fn corpus_zkir(name: &str) -> IrSource {
-    let path = format!(
-        "{}/../../corpus/zkir/signet-midnight-experiments/experiments/attest/contract/src/attest/zkir/{name}.zkir",
-        env!("CARGO_MANIFEST_DIR")
-    );
-    minocrab_zkir::v3::read_zkir(&path).expect("corpus golden parses")
+    common::corpus_zkir("signet-midnight-experiments/experiments/attest/contract/src/attest/zkir", name)
 }
 
 fn bytes1_value(v: u8) -> AlignedValue {
@@ -88,14 +88,6 @@ fn attest_transcript(request_id: &[u8; 32]) -> Vec<Fr> {
         op.field_repr(&mut out);
     }
     out
-}
-
-/// [hi, lo] Fr slot pair of a Bytes<32>.
-fn b32_slots(bytes: &[u8; 32]) -> (Fr, Fr) {
-    (
-        Fr::from(u64::from(bytes[31])),
-        Fr::from_le_bytes(&bytes[..31]).unwrap(),
-    )
 }
 
 fn preimage(inputs: Vec<Fr>, transcript: Vec<Fr>) -> ProofPreimage {

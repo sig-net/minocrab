@@ -30,6 +30,10 @@
 //! `0x00` (what the reverted formula emits) inside the `impact`
 //! instruction's operands — restoring the fix makes both pass again.
 
+#[path = "support/common.rs"]
+mod common;
+use common::*;
+
 use std::borrow::Cow;
 
 use midnight_base_crypto::fab::{AlignedValue, Alignment, AlignmentAtom, AlignmentSegment, Value, ValueAtom};
@@ -43,7 +47,7 @@ use midnight_transient_crypto::repr::FieldRepr;
 use minocrab::Fr;
 use minocrab_contracts::bounded_ledger::BoundedLedger;
 use minocrab_sim::v3::assert_call_compatible;
-use minocrab_zkir::v3::{to_zkir_string, IrSource};
+use minocrab_zkir::v3::IrSource;
 
 type VmOp = Op<ResultModeVerify, InMemoryDB>;
 
@@ -115,43 +119,6 @@ fn write_transcript(v: u8) -> Vec<Fr> {
 
 fn fr(v: u128) -> Fr {
     Fr::from_le_bytes(&v.to_le_bytes()).expect("16 bytes fit the native field")
-}
-
-/// Serialized ZKIR with every `%name.index` identifier replaced by
-/// `%<order of first appearance>` — the same canonicalization
-/// `bounded_differential.rs` and `opaque_differential.rs` use. Names are the
-/// only thing the two artifacts may differ in; the `impact` instruction's
-/// OWN OPERANDS — including the alignment byte this fixture is about — are
-/// not identifiers and survive untouched, so this comparison pins them
-/// exactly.
-fn canonical(ir: &IrSource) -> String {
-    let ir = &minocrab_ir::v3::passes::folded(ir);
-    let text = to_zkir_string(ir).expect("serializes");
-    let mut renames: Vec<(String, String)> = Vec::new();
-    let mut out = String::with_capacity(text.len());
-    let mut rest = text.as_str();
-    while let Some(at) = rest.find('%') {
-        out.push_str(&rest[..at]);
-        rest = &rest[at..];
-        let end = rest[1..]
-            .find(|ch: char| !(ch.is_alphanumeric() || ch == '_' || ch == '.'))
-            .map(|i| i + 1)
-            .unwrap_or(rest.len());
-        let name = &rest[..end];
-        let next = renames.len();
-        let canon = match renames.iter().find(|(from, _)| from == name) {
-            Some((_, to)) => to.clone(),
-            None => {
-                let to = format!("%{next}");
-                renames.push((name.to_string(), to.clone()));
-                to
-            }
-        };
-        out.push_str(&canon);
-        rest = &rest[end..];
-    }
-    out.push_str(rest);
-    out
 }
 
 /// THE HEADLINE CLAIM: our lowering of a `Uint<0..1>` LEDGER cell is

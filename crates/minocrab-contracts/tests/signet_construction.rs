@@ -25,6 +25,7 @@
 //! compactc's executor emits on chain (rung D), or anything about the
 //! contract's state, since these three circuits have none.
 
+
 use midnight_base_crypto::fab::AlignedValue;
 use midnight_transient_crypto::proofs::ProofPreimage;
 use minocrab::Fr;
@@ -40,11 +41,7 @@ use support::signet_call::{
 };
 
 fn corpus_zkir(name: &str) -> IrSource {
-    let path = format!(
-        "{}/../../corpus/zkir/signet-midnight-integration-v0250/packages/signet-contract/src/signet-contract/zkir/{name}.zkir",
-        env!("CARGO_MANIFEST_DIR")
-    );
-    minocrab_zkir::v3::read_zkir(&path).expect("corpus golden parses")
+    support::common::corpus_zkir("signet-midnight-integration-v0250/packages/signet-contract/src/signet-contract/zkir", name)
 }
 
 /// `pad(32, name)` into the first 32 misc bytes.
