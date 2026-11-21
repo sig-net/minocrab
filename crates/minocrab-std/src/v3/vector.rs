@@ -41,7 +41,7 @@
 //! [`NonEmpty::split`] takes one to `REST + 1`, both refusing anything else
 //! before a proof is attempted.
 
-use minocrab::v3::{Circuit3, CircuitAbi, Disclose, DisclosureLabel, FieldT, Prim, Select, Wire3};
+use minocrab::v3::{Circuit3, CircuitAbi, Disclose, DisclosureLabel, Encode, FieldT, Prim, Select, Wire3};
 use minocrab::{AlignmentAtom, Private, Public};
 
 use super::entry::{ArgPath, CircuitArg};
@@ -198,6 +198,14 @@ impl<T: CircuitAbi, const MAX: usize, V: Vis3> CircuitAbi for Bounded<T, MAX, V>
     }
 }
 
+/// The length's slot, then every element's, as `CircuitAbi` lays them out.
+impl<T: Encode<Private>, const MAX: usize> Encode<Private> for Bounded<T, MAX, Private> {
+    fn encode(&self, slots: &mut Vec<Wire3<FieldT, Private>>) {
+        slots.push(self.len.field());
+        self.slots.encode(slots);
+    }
+}
+
 impl<T: CircuitArg, const MAX: usize> CircuitArg for Bounded<T, MAX, Private> {
     fn declare(c: &mut Circuit3, path: &ArgPath) -> Self {
         const {
@@ -210,11 +218,6 @@ impl<T: CircuitArg, const MAX: usize> CircuitArg for Bounded<T, MAX, Private> {
             len: <Uint<8, Private>>::declare(c, &path.field("len")),
             slots: <[T; MAX]>::declare(c, path),
         }
-    }
-
-    fn push_slots(&self, slots: &mut Vec<Wire3<FieldT, Private>>) {
-        slots.push(self.len.field());
-        self.slots.push_slots(slots);
     }
 }
 
@@ -336,17 +339,19 @@ impl<T: CircuitAbi, const REST: usize, V: Vis3> CircuitAbi for NonEmpty<T, REST,
     }
 }
 
+impl<T: Encode<Private>, const REST: usize> Encode<Private> for NonEmpty<T, REST, Private> {
+    fn encode(&self, slots: &mut Vec<Wire3<FieldT, Private>>) {
+        self.head.encode(slots);
+        self.tail.encode(slots);
+    }
+}
+
 impl<T: CircuitArg, const REST: usize> CircuitArg for NonEmpty<T, REST, Private> {
     fn declare(c: &mut Circuit3, path: &ArgPath) -> Self {
         NonEmpty {
             head: T::declare(c, &path.field("head")),
             tail: <Bounded<T, REST, Private>>::declare(c, &path.field("tail")),
         }
-    }
-
-    fn push_slots(&self, slots: &mut Vec<Wire3<FieldT, Private>>) {
-        self.head.push_slots(slots);
-        self.tail.push_slots(slots);
     }
 }
 

@@ -35,7 +35,7 @@ use quote::{format_ident, quote};
 use syn::spanned::Spanned;
 use syn::{Attribute, Data, DeriveInput, Fields, GenericParam, Ident, LitStr, Path, Type};
 
-use crate::circuit_arg::{arg_fields, bounded_by_vis3, impl_arg_traits_for, ArgBounds, ArgField};
+use crate::circuit_arg::{arg_fields, bounded_by_vis3, impl_arg_traits_for, ArgBounds, ArgField, Target};
 
 pub fn expand(input: DeriveInput) -> syn::Result<TokenStream> {
     if let Data::Enum(_) = &input.data {
@@ -63,32 +63,33 @@ pub fn expand(input: DeriveInput) -> syn::Result<TokenStream> {
     // at `Private`, since arguments are witness data. A visibility-generic
     // struct gets that as a where-clause rather than a substitution: the impl
     // is written once and rustc decides where it applies.
-    let types: Vec<&Type> = fields.iter().map(|f| &f.ty).collect();
-    // The ARGUMENT half — including its visibility-generic where-clauses —
-    // is `#[derive(CircuitArg)]`'s own code path, so the two derives cannot
-    // drift and a `CircuitBorsh` record is usable in both directions of a
-    // cross-contract call for free.
-    #[allow(clippy::type_complexity)]
-    let (borsh_generics, borsh_vis, self_ty, private_self_ty, arg_generics, bounds) = match &vis {
+    //
+    // The ARGUMENT half is `#[derive(Value)]`'s own code path, so the two
+    // derives cannot drift and a visibility-generic `CircuitBorsh` record is
+    // usable in both directions of a cross-contract call for free.
+    let (borsh_generics, borsh_vis, self_ty, private_self_ty, bounds) = match &vis {
         Some(param) => (
             quote!(<#param: #root::Vis3>),
             quote!(#param),
             quote!(#name<#param>),
             quote!(#name<#root::__private::Private>),
-            quote!(<#param: #root::Vis3>),
-            ArgBounds::visibility_generic(&input.generics, &types),
+            ArgBounds::PerField,
         ),
         None => (
             quote!(),
             quote!(#root::__private::Private),
             quote!(#name),
             quote!(#name),
-            quote!(),
-            ArgBounds::plain(&quote!()),
+            ArgBounds::Plain,
         ),
     };
 
-    let arg_impls = impl_arg_traits_for(&arg_generics, &self_ty, &bounds, &fields);
+    let arg_impls = impl_arg_traits_for(&Target {
+        generics: &input.generics,
+        self_ty: self_ty.clone(),
+        fields: &fields,
+        bounds,
+    });
     let borsh_impl = impl_borsh(
         &root,
         &borsh_generics,
@@ -208,9 +209,9 @@ fn spec_check(
 
 /// The struct's visibility parameter, if it has one: `struct Payload<V: Vis3>`
 /// serializes at every visibility, a plain struct at `Private`. Unlike
-/// `#[derive(CircuitArg)]`, which simply declines visibility-generic mode
-/// for a shape it does not recognize, a serialized record has nothing else
-/// to be generic IN — so anything else is an error here.
+/// `#[derive(Value)]`, which takes any generic parameters, a serialized
+/// record has nothing else to be generic IN — so anything else is an error
+/// here.
 fn visibility_param(input: &DeriveInput) -> syn::Result<Option<Ident>> {
     let params: Vec<&GenericParam> = input.generics.params.iter().collect();
     match params.as_slice() {
@@ -397,7 +398,7 @@ mod tests {
         // The argument impls apply only where every field is an argument —
         // which is at Private, stated as a where-clause.
         assert!(
-            expanded.contains("CircuitArg for Payload < V > where Uint < 8 , V > : :: minocrab_std :: v3 :: CircuitArg"),
+            expanded.contains("CircuitArg for Payload < V > where for < '__w > Uint < 8 , V > : :: minocrab_std :: v3 :: CircuitArg"),
             "{expanded}"
         );
     }

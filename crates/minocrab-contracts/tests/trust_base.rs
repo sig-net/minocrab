@@ -78,7 +78,7 @@ const ROWS: &[Row] = &[
     Row { path: "minocrab-std/src/v3/vector.rs", warrant: "v3_vector (fold and for_each on the VM: live slots only, the guard and the select; the all-dead case unexpressible); v3_bounded", hides: "a fold applying its step, or a ledger op, on a dead slot" },
     Row { path: "minocrab-std/src/v3/entry.rs", warrant: "interface_snapshot (every circuit's argument schema frozen); v3_entry; every differential", hides: "an argument declared in a different slot order than the wire" },
     Row { path: "minocrab-std/src/v3/predicate.rs", warrant: "v3_predicates; every differential with a comparison", hides: "a comparison at the wrong width, or a message-carrying assert that binds outside its branch" },
-    Row { path: "minocrab-std/src/v3/call.rs", warrant: "xcall_differential / xcall_with_payment_differential / xcontract_events_differential; interface_macro; contract_matches_its_interface", hides: "call limbs hashed into the communications commitment in the wrong order" },
+    Row { path: "minocrab-std/src/v3/slots.rs", warrant: "xcall_differential / xcall_with_payment_differential / xcontract_events_differential; interface_macro; contract_matches_its_interface", hides: "a leaf's slots (call limbs, ledger limbs, argument constraints) in the wrong order" },
     Row { path: "minocrab-std/src/v3/disclose.rs", warrant: "v3_disclose; the generated set-equality tests", hides: "a leaf disclosed under fewer wires than it has" },
     Row { path: "minocrab-std/src/v3/hash.rs", warrant: "hashing_differential; every differential that hashes", hides: "a preimage aligned differently from compactc's" },
     // ---- the decorators ------------------------------------------------------------------
@@ -88,7 +88,8 @@ const ROWS: &[Row] = &[
     Row { path: "minocrab-macros/src/circuit_borsh.rs", warrant: "v3_borsh_derive (twin) + the generated schema cross-check", hides: "a Borsh field encoded at the wrong width" },
     Row { path: "minocrab-macros/src/interface.rs", warrant: "interface_macro (twin, byte-identical ZKIR); contract_matches_its_interface", hides: "a call handle passing limbs in an order the callee does not expect" },
     Row { path: "minocrab-macros/src/ledger.rs", warrant: "the derive's unit tests; in_block pinned against `batch` for every block size (minocrab-std); the sixteen-field compactc probe", hides: "a ledger field laid out at a path compactc would not use" },
-    Row { path: "minocrab-macros/src/ledger_repr.rs", warrant: "v3_ledger `derived_repr` (atoms and limb round trip); the erc20_vault_pending lineage's slots", hides: "an environment's limbs split at the wrong boundaries on read-back" },
+    Row { path: "minocrab-macros/src/ledger_repr.rs", warrant: READING, hides: "nothing beyond the check it adds to `value.rs`" },
+    Row { path: "minocrab-macros/src/value.rs", warrant: "v3_ledger `derived_repr` (atoms and limb round trip); v3_derive (twin); the erc20_vault_pending lineage's slots; the 227-circuit dump", hides: "an environment's limbs split at the wrong boundaries on read-back, or an impl that holds where a field's does not" },
     Row { path: "minocrab-macros/src/contract.rs", warrant: "circuit_closure (every #[circuit] is listed) + the derived sets feeding both snapshots", hides: "a circuit missing from its contract's set" },
     // ---- L5: the simulator ---------------------------------------------------------------
     Row { path: "minocrab-sim/src/lib.rs", warrant: READING, hides: "nothing beyond the Profile types" },

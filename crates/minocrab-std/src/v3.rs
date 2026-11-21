@@ -22,7 +22,7 @@ pub mod __derive {
     pub use minocrab::{AlignmentAtom, Public};
 }
 
-mod call;
+mod slots;
 mod disclose;
 mod entry;
 mod ledger;
@@ -62,7 +62,7 @@ pub use blind::{Monoid, Primitive};
 pub use hook::{CellArith, Hook, HookValue, Reachable};
 pub use stream::{ContentionFree, Fold, Serial, Step, Stream, StreamSpec};
 pub use vector::{Bounded, NonEmpty};
-pub use entry::{entry, entry_out, ArgPath, CircuitArg, CircuitArgs, CircuitOut, Decode, Encode};
+pub use entry::{entry, entry_out, ArgPath, CircuitArg, CircuitArgs, CircuitOut};
 
 /// The ledger block as types: `#[derive(Ledger)]`'s declaration-order
 /// indices and the typed slots ([`LedgerMap`] and [`LedgerSet`] with Compact's
@@ -109,9 +109,9 @@ pub use minocrab::v3::{
 /// the port of `emit-constraints-for` plus the traits `minocrab_ledger::call`
 /// has to name) and is re-exported here because this is where argument types
 /// are WRITTEN: a [`CircuitAbi`] impl names [`Prim`]s, `contract_call` takes
-/// [`LimbConstraint`]s, and [`CircuitArg`] / [`CallArg`] are the two
-/// visibility-specific halves of one schema.
-pub use minocrab::v3::{CallArg, CallArgs, CallResult, CircuitAbi, LimbConstraint, Prim};
+/// [`LimbConstraint`]s, and [`Encode`] / [`Decode`] are a value's slots at a
+/// visibility (see the value model above).
+pub use minocrab::v3::{CallArgs, CircuitAbi, Decode, Encode, LimbConstraint, Prim};
 
 /// The if / else-if / else chain (`c.when(..).else_when(..).otherwise(..)`)
 /// and the trait that lets its arms be written as wires or as [`Check`]s.
@@ -123,9 +123,13 @@ pub use minocrab::v3::{Branches, GuardCond, Select, Selected, ValueBranches};
 /// [`LedgerCounter`] returns one.
 pub use minocrab::v3::Guarded;
 
-/// `#[derive(CircuitArg)]` — the struct impls of [`CircuitArg`] and
-/// [`CircuitArgs`], generated from the fields (field order is the wire
-/// contract). Named the same as the trait it implements, the way
+/// `#[derive(Value)]` — a record's value impls, field by field (field order
+/// is the wire contract): see the value model in the crate docs.
+#[cfg(feature = "macros")]
+pub use minocrab_macros::Value;
+
+/// `#[derive(CircuitArg)]` — [`Value`](macro@Value), checked to be a
+/// circuit argument. Named the same as the trait it promises, the way
 /// `serde::Serialize` is; one `use minocrab_std::v3::CircuitArg;` brings
 /// both.
 #[cfg(feature = "macros")]
@@ -1096,8 +1100,8 @@ impl<V: Vis3> B32<V> {
 ///   Compact's *struct* shape (`declare(c, &path.field("bytes"))`) would add
 ///   a `_bytes` segment and move that snapshot; this deliberately does not.
 /// - No impl adds a `constrain_input` the site did not already have.
-///   `CircuitArg::constrain` is a provided body over `push_prims`/
-///   `push_slots`, so delegation gives the identical constraint sequence.
+///   `CircuitArg::constrain` is a provided body over `push_prims` and the
+///   encoded slots, so delegation gives the identical constraint sequence.
 ///
 /// The precedent is [`ContractAddress`] below, hand-written in exactly this
 /// shape; this macro is that impl set, once, in the idiom `select_via_field!`
@@ -1203,29 +1207,19 @@ macro_rules! b32_newtype {
                 // THE CALLER'S PATH, VERBATIM — see the macro's docs.
                 $name(<$crate::v3::B32<::minocrab::Private> as $crate::v3::CircuitArg>::declare(c, path))
             }
+        }
 
-            fn push_slots(
-                &self,
-                slots: &mut Vec<::minocrab::v3::Wire3<::minocrab::v3::FieldT, ::minocrab::Private>>,
-            ) {
-                $crate::v3::CircuitArg::push_slots(&self.0, slots)
+        impl<V: $crate::v3::Vis3> ::minocrab::v3::Encode<V> for $name<V> {
+            fn encode(&self, slots: &mut Vec<::minocrab::v3::Wire3<::minocrab::v3::FieldT, V>>) {
+                ::minocrab::v3::Encode::<V>::encode(&self.0, slots)
             }
         }
 
-        impl ::minocrab::v3::CallArg for $name<::minocrab::Public> {
-            fn push_call_slots(
-                &self,
-                slots: &mut Vec<::minocrab::v3::Wire3<::minocrab::v3::FieldT, ::minocrab::Public>>,
-            ) {
-                ::minocrab::v3::CallArg::push_call_slots(&self.0, slots)
-            }
-        }
-
-        impl ::minocrab::v3::CallResult for $name<::minocrab::Public> {
-            fn from_call_slots(
+        impl ::minocrab::v3::Decode<::minocrab::Public> for $name<::minocrab::Public> {
+            fn decode(
                 slots: &[::minocrab::v3::Wire3<::minocrab::v3::FieldT, ::minocrab::Public>],
             ) -> Self {
-                $name(<$crate::v3::B32<::minocrab::Public> as ::minocrab::v3::CallResult>::from_call_slots(slots))
+                $name(<$crate::v3::B32<::minocrab::Public> as ::minocrab::v3::Decode<::minocrab::Public>>::decode(slots))
             }
         }
 
@@ -1964,7 +1958,7 @@ impl<V: Vis3> Default for Serializer<V> {
 /// way matters: its slot is not a `Wire3<FieldT, _>`, so it carries no range
 /// constraint at all (`Prim::Point` → `LimbConstraint::None`, which is
 /// compactc's own `[(tpoint ,ctype) instr*]` line) and
-/// [`CircuitArg::push_slots`] hands back nothing for it. Everything else — a
+/// its [`Encode<Private>`] hands back nothing for it. Everything else — a
 /// slot in the argument list, an entry in the FAB alignment — is as usual.
 ///
 /// The FAB atoms are `encode()`'s five limbs (x as bytes 24+8, y as bytes

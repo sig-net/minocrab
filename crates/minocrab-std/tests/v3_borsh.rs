@@ -21,7 +21,7 @@ use std::borrow::Cow;
 use borsh::BorshSerialize;
 use midnight_transient_crypto::hash::transient_hash as native_transient_hash;
 use midnight_transient_crypto::proofs::{KeyLocation, ProofPreimage};
-use minocrab::v3::{Circuit3, FieldT, Prim, Wire3};
+use minocrab::v3::{Circuit3, Encode, FieldT, Prim, Wire3};
 use minocrab::{Alignment, AlignmentAtom, AlignmentSegment, Fr, Private};
 use minocrab_sim::v3::simulate;
 use minocrab_std::v3::borsh::{
@@ -112,6 +112,20 @@ where
     }
 }
 
+impl Encode<Private> for Record<Private> {
+    fn encode(&self, slots: &mut Vec<Wire3<FieldT, Private>>) {
+        self.version.encode(slots);
+        self.flag.encode(slots);
+        self.kind.encode(slots);
+        self.amount.encode(slots);
+        self.addr.encode(slots);
+        self.id.encode(slots);
+        self.payload.encode(slots);
+        self.words.encode(slots);
+        self.calldata.encode(slots);
+    }
+}
+
 impl CircuitArg for Record<Private> {
     fn declare(c: &mut Circuit3, path: &ArgPath) -> Self {
         Record {
@@ -125,18 +139,6 @@ impl CircuitArg for Record<Private> {
             words: CircuitArg::declare(c, &path.field("words")),
             calldata: CircuitArg::declare(c, &path.field("calldata")),
         }
-    }
-
-    fn push_slots(&self, slots: &mut Vec<Wire3<FieldT, Private>>) {
-        self.version.push_slots(slots);
-        self.flag.push_slots(slots);
-        self.kind.push_slots(slots);
-        self.amount.push_slots(slots);
-        self.addr.push_slots(slots);
-        self.id.push_slots(slots);
-        self.payload.push_slots(slots);
-        self.words.push_slots(slots);
-        self.calldata.push_slots(slots);
     }
 }
 
@@ -1016,7 +1018,7 @@ fn persistent_hash_is_sha256_of_the_borsh_encoding() {
 /// for a value whose FAB alignment is all `bytes<n>` atoms, `binary_repr` IS
 /// the Borsh encoding (notes/borsh-format.org, finding #1). The two sides are
 /// built from independent descriptions — `CircuitBorsh::push_limbs` on one,
-/// `CircuitAbi::atoms` plus `CircuitArg::push_slots` on the other — so this
+/// `CircuitAbi::atoms` plus `Encode<Private>` on the other — so this
 /// is agreement between two statements of the layout, not a tautology.
 #[test]
 fn the_persistent_flavors_agree_on_the_subset() {
@@ -1028,7 +1030,7 @@ fn the_persistent_flavors_agree_on_the_subset() {
     let fab_flavor = ir_of(|c| {
         let record = <Record<Private> as CircuitArg>::declare(c, &ArgPath::root("record"));
         let mut slots = Vec::new();
-        record.push_slots(&mut slots);
+        record.encode(&mut slots);
         let slots: Vec<_> = slots.iter().map(|w| w.erase()).collect();
         let alignment = Alignment(
             <Record<Private> as CircuitAbi>::atoms()
@@ -1081,7 +1083,7 @@ fn the_transient_flavors_disagree() {
     });
     let fab_digest = run_record(&spec, |c, record| {
         let mut slots = Vec::new();
-        record.push_slots(&mut slots);
+        record.encode(&mut slots);
         let digest = hash::transient_hash_compact(c, &slots);
         let public = c.disclose(digest, "digest");
         c.output(public, "digest");

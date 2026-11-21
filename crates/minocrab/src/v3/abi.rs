@@ -237,12 +237,11 @@ fn fr_from_u128(v: u128) -> Fr {
 /// The ABI of a Compact type: how many native slots it occupies, the FAB
 /// atoms of those slots, and the flattened PRIMITIVE type of each one.
 ///
-/// This is the visibility-INDEPENDENT half of an argument type — a schema
-/// says nothing about who may see the value — so it is implemented for
-/// every visibility, and both directions of the wire build on it:
-/// `minocrab_std::v3::CircuitArg` (the callee's own arguments, `Private`)
-/// adds declaration and constraints, and [`CallArg`] / [`CallResult`] (the
-/// caller's side of a cross-contract call, `Public`) add flattening. One
+/// This is the visibility-INDEPENDENT half of a value type — a schema says
+/// nothing about who may see the value — so it is implemented for every
+/// visibility, and everything else builds on it: [`Encode`] and [`Decode`]
+/// (the slots, at a visibility), and `minocrab_std::v3::CircuitArg` (the
+/// callee's own arguments, which adds declaration and constraints). One
 /// type therefore describes both sides of a call and cannot describe them
 /// differently.
 ///
@@ -283,21 +282,59 @@ pub trait CircuitAbi {
     }
 }
 
-// ---- the caller's side of a cross-contract call -----------------------------
+// ---- the value traits ------------------------------------------------------
 //
-// Both traits are implemented at `Public` ONLY, and that is a soundness
-// statement, not a convenience: everything that crosses the contract
-// boundary enters the communications commitment the ledger matches
-// publicly, so passing a value cross-contract DISCLOSES it. A private value
-// has to go through `Circuit3::disclose` first, and forgetting is a compile
-// error rather than a leak — the same rule, for the same reason, as
-// `CircuitOut`.
+// A value's layout is [`CircuitAbi`]; [`Encode`] and [`Decode`] are its
+// slots, out and back in. Both are parameterised by the visibility of the
+// slots, and a leaf implements them at its OWN visibility only
+// (`impl<V> Encode<V> for Uint<BITS, V>`), so `Encode<Public>` holds exactly
+// for public values. That is the soundness statement of the call side:
+// everything that crosses the contract boundary enters the communications
+// commitment the ledger matches publicly, so passing a value cross-contract
+// DISCLOSES it. A private value has to go through `Circuit3::disclose`
+// first, and forgetting is a compile error rather than a leak.
 
-/// A value that can be PASSED to another contract's circuit.
-pub trait CallArg: CircuitAbi {
-    /// This value's slots, in slot order — exactly [`CircuitAbi::SLOTS`] of
-    /// them, in the order the callee will declare its arguments.
-    fn push_call_slots(&self, slots: &mut Vec<Wire3<FieldT, Public>>);
+/// A value's NATIVE FIELD SLOTS at visibility `V`, in slot order: what a
+/// cross-contract argument, a ledger write, a hash preimage and a circuit
+/// argument's input constraints are made of.
+///
+/// That is every slot of [`CircuitAbi`] except the curve-point ones, whose
+/// wires are not field elements: a point is encoded at `Private` (as an
+/// argument it contributes no native slot, and no constraint) and not at
+/// `Public`, so it is not a cross-contract argument.
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` has no field slots at `{V}`",
+    label = "not a value at this visibility",
+    note = "a leaf has slots at its own visibility only: a value passed to \
+            another contract or stored is `Public`, so a private one has to \
+            pass `disclose_as` first",
+    note = "a record gets its slots from `#[derive(Value)]`, field by field; \
+            a hand-written argument type implements `Encode<Private>` beside \
+            its `CircuitArg`"
+)]
+pub trait Encode<V: Visibility>: CircuitAbi {
+    /// Append this value's slots, in slot order.
+    fn encode(&self, slots: &mut Vec<Wire3<FieldT, V>>);
+}
+
+/// A value REBUILT from its native field slots at visibility `V`, in slot
+/// order: exactly [`CircuitAbi::SLOTS`] of them. What a cross-contract
+/// call's result and a ledger read are.
+///
+/// The caller of a cross-contract call witnesses one field element per slot
+/// and constrains each with [`CircuitAbi::prims`] run through the SAME table
+/// that constrains the callee's own arguments, so the constraint on a
+/// returned `Uint<128>` is the constraint on a passed one, by construction.
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` cannot be rebuilt from field slots at `{V}`",
+    label = "not decodable at this visibility",
+    note = "a call result and a ledger read are `Public`; a point cannot be \
+            rebuilt from slots at all (`encode` has no inverse)",
+    note = "a record gets its impls from `#[derive(Value)]`, field by field"
+)]
+pub trait Decode<V: Visibility>: CircuitAbi + Sized {
+    /// The value whose slots these are.
+    fn decode(slots: &[Wire3<FieldT, V>]) -> Self;
 }
 
 /// A whole cross-contract argument list: the callee's parameters, in
@@ -305,8 +342,8 @@ pub trait CallArg: CircuitAbi {
 ///
 /// Implemented for tuples (`()` for a parameterless circuit, `(a,)` for
 /// one), which is what a typed call method builds from its own parameters.
-/// A single struct standing for the whole list is a [`CallArg`], and
-/// `(that,)` makes it an argument list.
+/// A single struct standing for the whole list is an [`Encode<Public>`]
+/// value, and `(that,)` makes it an argument list.
 pub trait CallArgs {
     /// Total slots — the sum of the members'.
     const SLOTS: usize;
@@ -337,22 +374,10 @@ pub trait CallArgs {
     }
 }
 
-/// A value a callee circuit RETURNS.
-///
-/// The caller witnesses one field element per slot and constrains each with
-/// [`CircuitAbi::prims`] run through the SAME table that constrains the
-/// callee's own arguments — which is the point of `CircuitAbi` being the
-/// shared half: the constraint on a returned `Uint<128>` is the constraint
-/// on a passed one, by construction rather than by hand.
-pub trait CallResult: CircuitAbi + Sized {
-    /// Rebuild from the witnessed result slots, in slot order. `slots` has
-    /// exactly [`CircuitAbi::SLOTS`] entries.
-    fn from_call_slots(slots: &[Wire3<FieldT, Public>]) -> Self;
-}
-
 /// Compact's `Vector<N, T>`: `N` copies of `T` back to back. Arrays are a
 /// foreign type, so the impl lives with the trait rather than with the
 /// leaves (`minocrab_std::v3` has the matching `CircuitArg` half).
+/// An array is not decoded: nothing returns or stores one.
 impl<T: CircuitAbi, const N: usize> CircuitAbi for [T; N] {
     const SLOTS: usize = T::SLOTS * N;
 
@@ -369,10 +394,10 @@ impl<T: CircuitAbi, const N: usize> CircuitAbi for [T; N] {
     }
 }
 
-impl<T: CallArg, const N: usize> CallArg for [T; N] {
-    fn push_call_slots(&self, slots: &mut Vec<Wire3<FieldT, Public>>) {
+impl<T: Encode<V>, V: Visibility, const N: usize> Encode<V> for [T; N] {
+    fn encode(&self, slots: &mut Vec<Wire3<FieldT, V>>) {
         for element in self {
-            element.push_call_slots(slots);
+            element.encode(slots);
         }
     }
 }
@@ -386,23 +411,23 @@ impl CircuitAbi for () {
     fn push_prims(_prims: &mut Vec<Prim>) {}
 }
 
-impl CallArg for () {
-    fn push_call_slots(&self, _slots: &mut Vec<Wire3<FieldT, Public>>) {}
+impl<V: Visibility> Encode<V> for () {
+    fn encode(&self, _slots: &mut Vec<Wire3<FieldT, V>>) {}
 }
 
-impl CallResult for () {
-    fn from_call_slots(_slots: &[Wire3<FieldT, Public>]) -> Self {}
+impl Decode<Public> for () {
+    fn decode(_slots: &[Wire3<FieldT, Public>]) -> Self {}
 }
 
 macro_rules! call_args_tuple {
     ($($name:ident),*) => {
         #[allow(non_snake_case, unused_variables)]
-        impl<$($name: CallArg),*> CallArgs for ($($name,)*) {
+        impl<$($name: Encode<Public>),*> CallArgs for ($($name,)*) {
             const SLOTS: usize = 0usize $( + <$name as CircuitAbi>::SLOTS )*;
 
             fn push_call_slots(&self, slots: &mut Vec<Wire3<FieldT, Public>>) {
                 let ($($name,)*) = self;
-                $( <$name as CallArg>::push_call_slots($name, slots); )*
+                $( <$name as Encode<Public>>::encode($name, slots); )*
             }
 
             fn push_atoms(atoms: &mut Vec<AlignmentAtom>) {

@@ -8,7 +8,7 @@
 //! proves the derive is those impls. Together they say the derive emits
 //! canonical Borsh.
 
-use minocrab::v3::{Circuit3, FieldT, Prim, Wire3};
+use minocrab::v3::{Circuit3, Encode, FieldT, Prim, Wire3};
 use minocrab::{AlignmentAtom, Private, Public};
 use minocrab_std::v3::borsh::{
     limbs_of, read_split, read_witness_checked, to_bytes, BorshReader, CircuitBorsh,
@@ -87,6 +87,20 @@ where
     }
 }
 
+impl Encode<Private> for Hand<Private> {
+    fn encode(&self, slots: &mut Vec<Wire3<FieldT, Private>>) {
+        self.version.encode(slots);
+        self.flag.encode(slots);
+        self.kind.encode(slots);
+        self.amount.encode(slots);
+        self.addr.encode(slots);
+        self.id.encode(slots);
+        self.payload.encode(slots);
+        self.words.encode(slots);
+        self.calldata.encode(slots);
+    }
+}
+
 impl CircuitArg for Hand<Private> {
     fn declare(c: &mut Circuit3, path: &ArgPath) -> Self {
         Hand {
@@ -100,18 +114,6 @@ impl CircuitArg for Hand<Private> {
             words: CircuitArg::declare(c, &path.field("words")),
             calldata: CircuitArg::declare(c, &path.field("calldata")),
         }
-    }
-
-    fn push_slots(&self, slots: &mut Vec<Wire3<FieldT, Private>>) {
-        self.version.push_slots(slots);
-        self.flag.push_slots(slots);
-        self.kind.push_slots(slots);
-        self.amount.push_slots(slots);
-        self.addr.push_slots(slots);
-        self.id.push_slots(slots);
-        self.payload.push_slots(slots);
-        self.words.push_slots(slots);
-        self.calldata.push_slots(slots);
     }
 }
 

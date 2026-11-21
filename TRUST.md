@@ -52,7 +52,7 @@ suite warrants; this says where the suites stop.
 | `minocrab-std/src/v3/vector.rs` | v3_vector (fold and for_each on the VM: live slots only, the guard and the select; the all-dead case unexpressible); v3_bounded | a fold applying its step, or a ledger op, on a dead slot |
 | `minocrab-std/src/v3/entry.rs` | interface_snapshot (every circuit's argument schema frozen); v3_entry; every differential | an argument declared in a different slot order than the wire |
 | `minocrab-std/src/v3/predicate.rs` | v3_predicates; every differential with a comparison | a comparison at the wrong width, or a message-carrying assert that binds outside its branch |
-| `minocrab-std/src/v3/call.rs` | xcall_differential / xcall_with_payment_differential / xcontract_events_differential; interface_macro; contract_matches_its_interface | call limbs hashed into the communications commitment in the wrong order |
+| `minocrab-std/src/v3/slots.rs` | xcall_differential / xcall_with_payment_differential / xcontract_events_differential; interface_macro; contract_matches_its_interface | a leaf's slots (call limbs, ledger limbs, argument constraints) in the wrong order |
 | `minocrab-std/src/v3/disclose.rs` | v3_disclose; the generated set-equality tests | a leaf disclosed under fewer wires than it has |
 | `minocrab-std/src/v3/hash.rs` | hashing_differential; every differential that hashes | a preimage aligned differently from compactc's |
 | `minocrab-macros/src/lib.rs` | **READING** | nothing beyond wrappers (the expansions are the modules below) |
@@ -61,7 +61,8 @@ suite warrants; this says where the suites stop.
 | `minocrab-macros/src/circuit_borsh.rs` | v3_borsh_derive (twin) + the generated schema cross-check | a Borsh field encoded at the wrong width |
 | `minocrab-macros/src/interface.rs` | interface_macro (twin, byte-identical ZKIR); contract_matches_its_interface | a call handle passing limbs in an order the callee does not expect |
 | `minocrab-macros/src/ledger.rs` | the derive's unit tests; in_block pinned against `batch` for every block size (minocrab-std); the sixteen-field compactc probe | a ledger field laid out at a path compactc would not use |
-| `minocrab-macros/src/ledger_repr.rs` | v3_ledger `derived_repr` (atoms and limb round trip); the erc20_vault_pending lineage's slots | an environment's limbs split at the wrong boundaries on read-back |
+| `minocrab-macros/src/ledger_repr.rs` | **READING** | nothing beyond the check it adds to `value.rs` |
+| `minocrab-macros/src/value.rs` | v3_ledger `derived_repr` (atoms and limb round trip); v3_derive (twin); the erc20_vault_pending lineage's slots; the 227-circuit dump | an environment's limbs split at the wrong boundaries on read-back, or an impl that holds where a field's does not |
 | `minocrab-macros/src/contract.rs` | circuit_closure (every #[circuit] is listed) + the derived sets feeding both snapshots | a circuit missing from its contract's set |
 | `minocrab-sim/src/lib.rs` | **READING** | nothing beyond the Profile types |
 | `minocrab-sim/src/v3.rs` | cross-checked against Midnight's reference VM (`IrSource::check`) on every accepted run — link 2 of erc20_vault_pending_spec, link 3 of executor_vault, and every differential; v3_end_to_end. It is never trusted alone | a simulator accepting what the reference VM rejects (caught) — or both agreeing on a wrong statement (out of scope here; the differentials' job) |
@@ -69,7 +70,7 @@ suite warrants; this says where the suites stop.
 | `minocrab-sim/src/v3/rowcost.rs` | calibrated against real proving (BENCHMARK.md); a MEASUREMENT model, not a correctness claim | a mis-priced primitive — a wrong k estimate, never a wrong circuit |
 | `minocrab-sim/src/bin/minocrab.rs` | **READING** | nothing a proof depends on (the CLI) |
 
-49 files in the eight crates; 16 of them have a warrant that is READING in whole or in part (the rows in bold).
+50 files in the eight crates; 17 of them have a warrant that is READING in whole or in part (the rows in bold).
 <!-- GENERATED END -->
 
 ## 2. The read order, with a time budget

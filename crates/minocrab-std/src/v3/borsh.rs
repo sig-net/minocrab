@@ -102,8 +102,8 @@ pub mod schema;
 pub use minocrab_macros::CircuitBorsh;
 
 use super::{
-    ArgPath, Bool, BoundedUint, Bytes, BytesN, CircuitAbi, CircuitArg, Maybe, Serializer, Uint,
-    Vis3, B32,
+    ArgPath, Bool, BoundedUint, Bytes, BytesN, CircuitAbi, CircuitArg, Encode, Maybe, Serializer,
+    Uint, Vis3, B32,
 };
 
 // ---- the trait ---------------------------------------------------------------
@@ -1036,13 +1036,15 @@ impl<const K: u32, V: Vis3> CircuitAbi for Tag<K, V> {
     }
 }
 
+impl<const K: u32> Encode<Private> for Tag<K, Private> {
+    fn encode(&self, slots: &mut Vec<Wire3<FieldT, Private>>) {
+        slots.push(self.field());
+    }
+}
+
 impl<const K: u32> CircuitArg for Tag<K, Private> {
     fn declare(c: &mut Circuit3, path: &ArgPath) -> Self {
         Tag::from_field_unchecked(c.arg::<FieldT>(path.as_str()))
-    }
-
-    fn push_slots(&self, slots: &mut Vec<Wire3<FieldT, Private>>) {
-        slots.push(self.field());
     }
 }
 

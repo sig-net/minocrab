@@ -711,7 +711,7 @@ use minocrab::{Private, Public};
 use minocrab_std::v3::hash::{transient_hash_compact, upgrade_from_transient};
 use minocrab_std::v3::{
     eq, is_true, label, not, own_public_key, repr_limbs, ArgPath, Bool, Bytes, CircuitAbi,
-    CircuitArg, Assumed, Disclose, DisclosureLabel, FieldPath, LedgerMap, LedgerRepr, LedgerWidth,
+    CircuitArg, Assumed, Disclose, DisclosureLabel, Encode, FieldPath, LedgerMap, LedgerRepr, LedgerWidth,
     Prim, ProofWires, Uint, Vis3, ZswapCoinPublicKey, B32,
 };
 use minocrab::v3::Val;
@@ -826,16 +826,18 @@ impl<I: Interface> CircuitAbi for Contract<I> {
     }
 }
 
+impl<I: Interface> Encode<Private> for Contract<I> {
+    fn encode(&self, slots: &mut Vec<Wire3<FieldT, Private>>) {
+        self.address.encode(slots);
+    }
+}
+
 impl<I: Interface> CircuitArg for Contract<I> {
     fn declare(c: &mut Circuit3, path: &ArgPath) -> Self {
         Contract {
             address: <Bytes<20, Private>>::declare(c, path),
             _interface: PhantomData,
         }
-    }
-
-    fn push_slots(&self, slots: &mut Vec<Wire3<FieldT, Private>>) {
-        self.address.push_slots(slots);
     }
 }
 
@@ -886,6 +888,16 @@ macro_rules! ticket {
             }
         }
 
+        impl<F: Filing> Encode<Private> for $name<F>
+        where
+            Returned<F>: AbiReturn,
+        {
+            fn encode(&self, slots: &mut Vec<Wire3<FieldT, Private>>) {
+                self.respond.encode(slots);
+                self.output.encode(slots);
+            }
+        }
+
         impl<F: Filing> CircuitArg for $name<F>
         where
             Returned<F>: AbiReturn,
@@ -899,11 +911,6 @@ macro_rules! ticket {
                     output: <Serialized<F>>::declare(c, &path.field("serializedOutput")),
                     _filing: PhantomData,
                 }
-            }
-
-            fn push_slots(&self, slots: &mut Vec<Wire3<FieldT, Private>>) {
-                self.respond.push_slots(slots);
-                self.output.push_slots(slots);
             }
         }
     };
@@ -1043,7 +1050,7 @@ impl<T: CircuitArg, Tag: CommitTag> Commit<T, Tag> {
         c.region("signet flow: commitment", |c| {
             let pad = B32::pad(c, Tag::PAD);
             let mut inputs = vec![pad.hi.private(), pad.lo.private()];
-            value.push_slots(&mut inputs);
+            value.encode(&mut inputs);
             bind.push_binding(&mut inputs);
             let f = c.transient_hash(&inputs);
             let (hi, lo) = c.div_mod_power_of_two(f, 248);
@@ -1760,13 +1767,15 @@ impl<V: Vis3> CircuitAbi for Handle<V> {
     }
 }
 
+impl Encode<Private> for Handle<Private> {
+    fn encode(&self, slots: &mut Vec<Wire3<FieldT, Private>>) {
+        slots.push(self.0);
+    }
+}
+
 impl CircuitArg for Handle<Private> {
     fn declare(c: &mut Circuit3, path: &ArgPath) -> Self {
         Handle(c.arg::<FieldT>(path.as_str()))
-    }
-
-    fn push_slots(&self, slots: &mut Vec<Wire3<FieldT, Private>>) {
-        slots.push(self.0);
     }
 }
 

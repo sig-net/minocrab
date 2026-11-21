@@ -28,7 +28,7 @@ use minocrab::Public;
 use minocrab_std::v3::{interface, ContractAddress, ShieldedCoinInfo3, Uint, B32};
 
 /// The `xcontract-events` token — the one callee in the corpus with a
-/// RETURN VALUE, and so the one that exercises `CallResult`:
+/// RETURN VALUE, and so the one that exercises `Decode<Public>`:
 ///
 /// ```text
 /// contract Token { circuit deposit(amount: Uint<128>, caller: ContractAddress): Bytes<32>; }

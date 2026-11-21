@@ -18,18 +18,15 @@
 //! 2. `push_atoms` describes exactly those slots, in the same order (the
 //!    FAB atoms of the Compact type the argument stands for), and
 //!    `push_prims` gives the flattened primitive type of each one.
-//! 3. `push_slots` hands back exactly those slots' wires, in the same
-//!    order — every slot except the curve-point ones, whose wires are not
-//!    field elements (see [`CircuitArg::push_slots`]).
+//! 3. its [`Encode<Private>`] hands back exactly those slots' wires, in the
+//!    same order — every slot except the curve-point ones, whose wires are
+//!    not field elements.
 //!
-//! Law 3 used to read "`constrain` emits exactly the input constraints
-//! compactc emits for that Compact type" — every impl carried its own copy
-//! of a rule that lives in one place in compactc (`emit-constraints-for`,
-//! reduce-to-zkir.ss:640-667). Since M12 stage 1 it does not:
+//! An impl never says how its slots are constrained:
 //! [`CircuitArg::constrain`] is a provided method that zips `push_prims`
-//! against `push_slots` and runs [`minocrab::v3::Prim::constraint`], so an
-//! impl only says WHAT its slots are, never how they are constrained. The
-//! same table is what `minocrab_ledger::contract_call` runs over a
+//! against the encoded slots and runs [`minocrab::v3::Prim::constraint`],
+//! compactc's one table (`emit-constraints-for`, reduce-to-zkir.ss:640-667).
+//! The same table is what `minocrab_ledger::contract_call` runs over a
 //! cross-contract call's result limbs.
 //!
 //! [`entry`] enforces the parts of law 1 that are checkable — the slot
@@ -38,10 +35,10 @@
 //! to get right.
 
 use minocrab::v3::{
-    uint_atom_bytes, CallArg, CallResult, Circuit3, CircuitAbi, Compiled3, FieldT, JubjubPointT, Prim,
-    Secp256k1PointT, Secp256k1ScalarT, Wire3,
+    uint_atom_bytes, Circuit3, CircuitAbi, Compiled3, Encode, FieldT, JubjubPointT, Prim,
+    Secp256k1PointT, Secp256k1ScalarT,
 };
-use minocrab::{AlignmentAtom, Private, Public, Visibility};
+use minocrab::{AlignmentAtom, Private, Public};
 
 use super::{
     Bool, BoundedUint, Bytes, Bytes0, BytesN, ContractAddress, Either, JubjubPoint, Maybe,
@@ -110,10 +107,12 @@ impl std::fmt::Display for ArgPath {
 
 // ---- CircuitArg -------------------------------------------------------------
 
-/// A type usable as (part of) a circuit argument: its ABI ([`CircuitAbi`]),
-/// how it is declared, and which wires its slots are — one trait, so a
+/// A type usable as (part of) a circuit argument: how it is DECLARED, on top
+/// of its layout ([`CircuitAbi`]) and its slots ([`Encode<Private>`]), so a
 /// schema and its materialization cannot drift apart (the `CandidType`
-/// lesson, notes/contract-api.org §Survey).
+/// lesson, notes/contract-api.org §Survey). Declaration is not a decode:
+/// each slot is labelled from the argument's path, and a point argument is
+/// one typed input, not field slots.
 ///
 /// Implemented for [`Private`] leaves only: circuit arguments are witness
 /// data, so [`Circuit3::arg`] can only hand back private wires.
@@ -126,27 +125,13 @@ impl std::fmt::Display for ArgPath {
             at `Private` ONLY: write `Uint<64>` / `B32<Private>` / \
             `Bytes<20>`, not their `Public` spellings (`Uint<64>`'s \
             visibility already defaults to `Private`)",
-    note = "a struct becomes an argument type with `#[derive(CircuitArg)]`, \
-            which needs every field to be one in turn — field order is the \
-            wire contract"
+    note = "a struct becomes an argument type with `#[derive(Value)]` (or \
+            `#[derive(CircuitArg)]`, which also checks it), which needs every \
+            field to be one in turn — field order is the wire contract"
 )]
-pub trait CircuitArg: CircuitAbi + Sized {
+pub trait CircuitArg: Encode<Private> + Sized {
     /// Declare the slots — `Circuit3::arg` calls and nothing else.
     fn declare(c: &mut Circuit3, path: &ArgPath) -> Self;
-
-    /// This value's NATIVE slots, in slot order — matching
-    /// [`CircuitAbi::push_prims`] one for one, skipping the slots whose
-    /// primitive type is [`Prim::Point`].
-    ///
-    /// The skip is not an exception to law 3, it is the only way to state
-    /// it: a curve-point slot holds a `Wire3<Secp256k1PointT, _>`, not a
-    /// field element, and compactc's constraint table has nothing to say
-    /// about it (`(tpoint …) → no constraint`). Everything a slot list is
-    /// used for — emitting constraints, hashing a value's FAB
-    /// representation — is native-field work, so a point contributes no
-    /// entry. `Prim::Point` marks exactly those positions, which is what
-    /// [`CircuitArg::constrain`] filters on.
-    fn push_slots(&self, slots: &mut Vec<Wire3<FieldT, Private>>);
 
     /// Emit compactc's input constraints for this type, in slot order.
     ///
@@ -157,10 +142,12 @@ pub trait CircuitArg: CircuitAbi + Sized {
     /// deleted.
     fn constrain(&self, c: &mut Circuit3) {
         let mut slots = Vec::with_capacity(Self::SLOTS);
-        self.push_slots(&mut slots);
-        // Point slots are not field wires and carry no constraint, so
-        // `push_slots` never hands one back (see its docs); the rest line up
-        // with the remaining primitive types one for one.
+        self.encode(&mut slots);
+        // A slot whose primitive type is `Prim::Point` holds a curve point
+        // or scalar, not a field element: compactc's table has nothing to
+        // say about it (`(tpoint …) → no constraint`) and `Encode<Private>`
+        // hands back no wire for it. The rest line up with the remaining
+        // primitive types one for one.
         let prims: Vec<Prim> = Self::prims()
             .into_iter()
             .filter(|prim| !matches!(prim, Prim::Point))
@@ -168,7 +155,7 @@ pub trait CircuitArg: CircuitAbi + Sized {
         assert_eq!(
             slots.len(),
             prims.len(),
-            "CircuitArg::push_slots gave {} slots for {} native primitive types",
+            "Encode<Private> gave {} slots for {} native primitive types",
             slots.len(),
             prims.len()
         );
@@ -193,10 +180,6 @@ impl<const BITS: u32, V: Vis3> CircuitAbi for Uint<BITS, V> {
 impl<const BITS: u32> CircuitArg for Uint<BITS, Private> {
     fn declare(c: &mut Circuit3, path: &ArgPath) -> Self {
         Uint::from_field_unchecked(c.arg::<FieldT>(path.as_str()))
-    }
-
-    fn push_slots(&self, slots: &mut Vec<Wire3<FieldT, Private>>) {
-        slots.push(self.field());
     }
 }
 
@@ -227,10 +210,6 @@ impl<const BOUND: u128> CircuitArg for BoundedUint<BOUND, Private> {
     fn declare(c: &mut Circuit3, path: &ArgPath) -> Self {
         BoundedUint::from_field_unchecked(c.arg::<FieldT>(path.as_str()))
     }
-
-    fn push_slots(&self, slots: &mut Vec<Wire3<FieldT, Private>>) {
-        slots.push(self.field());
-    }
 }
 
 impl<V: Vis3> CircuitAbi for Bool<V> {
@@ -248,10 +227,6 @@ impl<V: Vis3> CircuitAbi for Bool<V> {
 impl CircuitArg for Bool<Private> {
     fn declare(c: &mut Circuit3, path: &ArgPath) -> Self {
         Bool::from_field_unchecked(c.arg::<FieldT>(path.as_str()))
-    }
-
-    fn push_slots(&self, slots: &mut Vec<Wire3<FieldT, Private>>) {
-        slots.push(self.field());
     }
 }
 
@@ -272,8 +247,6 @@ impl CircuitArg for Bytes0<Private> {
     fn declare(_c: &mut Circuit3, _path: &ArgPath) -> Self {
         Bytes0::new()
     }
-
-    fn push_slots(&self, _slots: &mut Vec<Wire3<FieldT, Private>>) {}
 }
 
 impl<const N: usize, V: Vis3> CircuitAbi for Bytes<N, V> {
@@ -291,10 +264,6 @@ impl<const N: usize, V: Vis3> CircuitAbi for Bytes<N, V> {
 impl<const N: usize> CircuitArg for Bytes<N, Private> {
     fn declare(c: &mut Circuit3, path: &ArgPath) -> Self {
         Bytes::from_field_unchecked(c.arg::<FieldT>(path.as_str()))
-    }
-
-    fn push_slots(&self, slots: &mut Vec<Wire3<FieldT, Private>>) {
-        slots.push(self.field());
     }
 }
 
@@ -318,11 +287,6 @@ impl CircuitArg for B32<Private> {
             hi: c.arg::<FieldT>(path.suffix("hi").as_str()),
             lo: c.arg::<FieldT>(path.suffix("lo").as_str()),
         }
-    }
-
-    fn push_slots(&self, slots: &mut Vec<Wire3<FieldT, Private>>) {
-        slots.push(self.hi);
-        slots.push(self.lo);
     }
 }
 
@@ -349,10 +313,6 @@ impl CircuitArg for Secp256k1Point<Private> {
     fn declare(c: &mut Circuit3, path: &ArgPath) -> Self {
         Secp256k1Point::from_point(c.arg::<Secp256k1PointT>(path.as_str()))
     }
-
-    /// A point slot is not a native field wire: nothing to constrain, and
-    /// nothing a slot list could carry it as.
-    fn push_slots(&self, _slots: &mut Vec<Wire3<FieldT, Private>>) {}
 }
 
 /// Compact's `Secp256k1Scalar`: ONE slot that is not a field element, the
@@ -378,10 +338,6 @@ impl CircuitArg for Secp256k1Scalar<Private> {
     fn declare(c: &mut Circuit3, path: &ArgPath) -> Self {
         Secp256k1Scalar::from_scalar(c.arg::<Secp256k1ScalarT>(path.as_str()))
     }
-
-    /// A scalar slot is not a native field wire: nothing to constrain, and
-    /// nothing a slot list could carry it as.
-    fn push_slots(&self, _slots: &mut Vec<Wire3<FieldT, Private>>) {}
 }
 
 /// Compact's `JubjubPoint`: the same one-non-field-slot story as
@@ -403,8 +359,6 @@ impl CircuitArg for JubjubPoint<Private> {
     fn declare(c: &mut Circuit3, path: &ArgPath) -> Self {
         JubjubPoint::from_point(c.arg::<JubjubPointT>(path.as_str()))
     }
-
-    fn push_slots(&self, _slots: &mut Vec<Wire3<FieldT, Private>>) {}
 }
 
 /// Compact's `Opaque<'ts-type'>`: ONE native slot carrying the value's
@@ -412,8 +366,8 @@ impl CircuitArg for JubjubPoint<Private> {
 /// `[(topaque ,opaque-type) instr*]` line, so the table emits nothing and this
 /// impl says nothing about it.
 ///
-/// Unlike [`Secp256k1Point`], the slot IS a field wire, so `push_slots` pushes
-/// it in the ordinary way; what makes it constraint-free is the PRIM, which is
+/// Unlike [`Secp256k1Point`], the slot IS a field wire, so it encodes in the
+/// ordinary way; what makes it constraint-free is the PRIM, which is
 /// where that decision belongs.
 impl<T: TsType, V: Vis3> CircuitAbi for Opaque<T, V> {
     const SLOTS: usize = 1;
@@ -430,10 +384,6 @@ impl<T: TsType, V: Vis3> CircuitAbi for Opaque<T, V> {
 impl<T: TsType> CircuitArg for Opaque<T, Private> {
     fn declare(c: &mut Circuit3, path: &ArgPath) -> Self {
         Opaque::from_field_unchecked(c.arg::<FieldT>(path.as_str()))
-    }
-
-    fn push_slots(&self, slots: &mut Vec<Wire3<FieldT, Private>>) {
-        slots.push(self.field());
     }
 }
 
@@ -457,10 +407,6 @@ impl CircuitArg for MerkleTreeDigest<Private> {
     fn declare(c: &mut Circuit3, path: &ArgPath) -> Self {
         MerkleTreeDigest::from_field_unchecked(c.arg::<FieldT>(path.as_str()))
     }
-
-    fn push_slots(&self, slots: &mut Vec<Wire3<FieldT, Private>>) {
-        slots.push(self.field());
-    }
 }
 
 /// Compact's `ContractAddress`: a struct of one `Bytes<32>`, which flattens
@@ -480,10 +426,6 @@ impl<V: Vis3> CircuitAbi for ContractAddress<V> {
 impl CircuitArg for ContractAddress<Private> {
     fn declare(c: &mut Circuit3, path: &ArgPath) -> Self {
         ContractAddress(B32::declare(c, path))
-    }
-
-    fn push_slots(&self, slots: &mut Vec<Wire3<FieldT, Private>>) {
-        self.0.push_slots(slots);
     }
 }
 
@@ -505,10 +447,6 @@ impl<V: Vis3> CircuitAbi for UserAddress<V> {
 impl CircuitArg for UserAddress<Private> {
     fn declare(c: &mut Circuit3, path: &ArgPath) -> Self {
         UserAddress(B32::declare(c, path))
-    }
-
-    fn push_slots(&self, slots: &mut Vec<Wire3<FieldT, Private>>) {
-        self.0.push_slots(slots);
     }
 }
 
@@ -536,10 +474,6 @@ impl<const N: usize> CircuitArg for BytesN<Private, N> {
                 .collect(),
         )
     }
-
-    fn push_slots(&self, slots: &mut Vec<Wire3<FieldT, Private>>) {
-        slots.extend_from_slice(self.limbs());
-    }
 }
 
 /// Compact's `Vector<N, T>`: `N` copies of `T` back to back, each element
@@ -557,12 +491,6 @@ impl<T: CircuitArg, const N: usize> CircuitArg for [T; N] {
         match <[T; N]>::try_from(elements) {
             Ok(array) => array,
             Err(_) => unreachable!("N elements were pushed"),
-        }
-    }
-
-    fn push_slots(&self, slots: &mut Vec<Wire3<FieldT, Private>>) {
-        for element in self {
-            element.push_slots(slots);
         }
     }
 }
@@ -595,11 +523,6 @@ impl<T: CircuitArg> CircuitArg for Maybe<T, Private> {
             value: T::declare(c, path),
         }
     }
-
-    fn push_slots(&self, slots: &mut Vec<Wire3<FieldT, Private>>) {
-        self.is_some.push_slots(slots);
-        self.value.push_slots(slots);
-    }
 }
 
 /// Compact's `Either<A, B>`: the `is_left` tag followed by both arms, each
@@ -629,12 +552,6 @@ impl<A: CircuitArg, B: CircuitArg> CircuitArg for Either<A, B, Private> {
             right: B::declare(c, &path.field("right")),
         }
     }
-
-    fn push_slots(&self, slots: &mut Vec<Wire3<FieldT, Private>>) {
-        self.is_left.push_slots(slots);
-        self.left.push_slots(slots);
-        self.right.push_slots(slots);
-    }
 }
 
 /// Compact's `[]` value (Rust's `()`) as an argument leaf: a ZERO-SLOT
@@ -644,85 +561,12 @@ impl<A: CircuitArg, B: CircuitArg> CircuitArg for Either<A, B, Private> {
 /// impl is the missing other half, needed so a `Pending` over a
 /// `Unit`-returning call can form a ticket (notes/evm-calls.org §10, item 3,
 /// second paragraph — recorded there as not done because nothing in the
-/// corpus filed a no-return call). `declare` touches no slots and
-/// `push_slots` pushes nothing, which is law 1 and law 3 satisfied by
+/// corpus filed a no-return call). `declare` touches no slots and its
+/// encoding is empty, which is law 1 and law 3 satisfied by
 /// vacuously doing nothing: there is nothing to declare and nothing to
 /// constrain.
 impl CircuitArg for () {
     fn declare(_c: &mut Circuit3, _path: &ArgPath) -> Self {}
-
-    fn push_slots(&self, _slots: &mut Vec<Wire3<FieldT, Private>>) {}
-}
-
-// ---- Encode / Decode ------------------------------------------------------
-//
-// The two value traits (notes/streamline-survey.org §8): [`Encode`], a
-// value's native field slots at a visibility, and [`Decode`], the value
-// rebuilt from them. [`CircuitAbi`](minocrab::v3::CircuitAbi) stays the
-// static layout (slot count, atoms, prims).
-//
-// Today they are VIEWS of the traits every leaf and every downstream record
-// already implements, by blanket impl and nothing else:
-//
-// | new | from | what it is |
-// |-----|------|------------|
-// | `Encode<Public>` | [`CallArg::push_call_slots`] | what a cross-contract argument, a ledger write and a proof-wire walk all push |
-// | `Encode<Private>` | [`CircuitArg::push_slots`] | a circuit argument's native slots (point slots skipped, see there) |
-// | `Decode<Public>` | [`CallResult::from_call_slots`] | what a call result and a ledger read rebuild |
-//
-// So a leaf's slots are still written once per visibility and direction,
-// in `call.rs` and `entry.rs`, and everything else in std that needs them
-// (the ledger leaf table, the proof wires, the coin operands) is written
-// against these two names.
-//
-// WHY THE BLANKETS RUN OLD → NEW, and why the traits live in std rather than
-// beside `CallArg` in core: the old traits are what downstream code
-// implements by hand (`#[derive(CircuitArg)]` expands to `CallArg` /
-// `CallResult` / `CircuitArg` in the user's crate, and the passport port and
-// the contracts write `CircuitArg` impls). A blanket the other way
-// (`impl<T: Encode<Public>> CallArg for T`) leaves those types without an
-// `Encode` impl, so `Maybe<T>`, `Either<A, B>` and `[T; N]` over them would
-// stop being call arguments the moment their own impls moved onto `Encode`.
-// Old → new makes every type that is a `CallArg` today an `Encode<Public>`,
-// downstream ones included. The `Private` blanket must sit in the crate that
-// owns `Encode` (orphan rule: `impl<T: CircuitArg> Encode<Private> for T`
-// names no local type), and `CircuitArg` is std's, so `Encode` is too.
-// Flipping the direction is step 3 of §8, with the one derive.
-
-/// A value's NATIVE FIELD SLOTS at visibility `V`, in slot order.
-///
-/// At `Public` that is every slot of [`CircuitAbi`](minocrab::v3::CircuitAbi);
-/// at `Private` it is every slot except the curve-point ones, whose wires
-/// are not field elements (see [`CircuitArg::push_slots`]).
-pub trait Encode<V: Visibility> {
-    /// Append this value's slots, in slot order.
-    fn encode(&self, slots: &mut Vec<Wire3<FieldT, V>>);
-}
-
-/// A value REBUILT from its native field slots at visibility `V`, in slot
-/// order — exactly [`CircuitAbi::SLOTS`](minocrab::v3::CircuitAbi::SLOTS)
-/// of them.
-pub trait Decode<V: Visibility>: Sized {
-    /// The value whose slots these are.
-    fn decode(slots: &[Wire3<FieldT, V>]) -> Self;
-}
-
-impl<T: CallArg> Encode<Public> for T {
-    fn encode(&self, slots: &mut Vec<Wire3<FieldT, Public>>) {
-        self.push_call_slots(slots)
-    }
-}
-
-impl<T: CircuitArg> Encode<Private> for T {
-    fn encode(&self, slots: &mut Vec<Wire3<FieldT, Private>>) {
-        self.push_slots(slots)
-    }
-}
-
-impl<T: CallResult> Decode<Public> for T {
-    fn decode(slots: &[Wire3<FieldT, Public>]) -> Self {
-        T::from_call_slots(slots)
-    }
 }
 
 // ---- CircuitArgs ------------------------------------------------------------

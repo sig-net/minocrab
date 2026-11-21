@@ -28,7 +28,7 @@ mod lowering;
 pub use lowering::{Lowering, SelfAddressReads};
 
 pub use abi::{
-    uint_atom_bytes, uint_compare_bits, CallArg, CallArgs, CallResult, CircuitAbi, LimbConstraint,
+    uint_atom_bytes, uint_compare_bits, CallArgs, CircuitAbi, Decode, Encode, LimbConstraint,
     Prim,
 };
 

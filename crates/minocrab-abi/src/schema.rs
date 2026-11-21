@@ -19,14 +19,15 @@
 //! construction rather than by judgement. See
 //! notes/interface-crates.org §"Versioning and publishing".
 
-use minocrab::v3::{CallArgs, CallResult, LimbConstraint, Prim};
+use minocrab::v3::{CallArgs, Decode, LimbConstraint, Prim};
+use minocrab::Public;
 
 use minocrab_ledger::EntryPoint;
 
 use crate::check::{atom_name, prim_name};
 
 /// One circuit's block of the snapshot.
-pub fn circuit_schema<A: CallArgs, R: CallResult>(entry_point: EntryPoint) -> String {
+pub fn circuit_schema<A: CallArgs, R: Decode<Public>>(entry_point: EntryPoint) -> String {
     let mut arg_prims = Vec::with_capacity(A::SLOTS);
     A::push_prims(&mut arg_prims);
     let mut out = String::new();

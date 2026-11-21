@@ -24,8 +24,8 @@
 
 use std::path::{Path, PathBuf};
 
-use minocrab::v3::{CallArgs, CallResult, Prim};
-use minocrab::AlignmentAtom;
+use minocrab::v3::{CallArgs, Decode, Prim};
+use minocrab::{AlignmentAtom, Public};
 use minocrab_ledger::EntryPoint;
 
 use crate::info::{flatten_all, ContractInfo, Flattened};
@@ -135,7 +135,7 @@ impl Artifact {
     /// method's parameter types) and `R` its result type — the SAME types
     /// the generated call passes, so agreement here is agreement about the
     /// call.
-    pub fn check<A: CallArgs, R: CallResult>(&self, entry_point: EntryPoint) -> Result<(), Problems> {
+    pub fn check<A: CallArgs, R: Decode<Public>>(&self, entry_point: EntryPoint) -> Result<(), Problems> {
         let name = entry_point.name();
         let mut problems = Problems::default();
 
@@ -212,7 +212,7 @@ impl Artifact {
     }
 
     /// [`Artifact::check`], as an assertion.
-    pub fn assert_interface_matches<A: CallArgs, R: CallResult>(&self, entry_point: EntryPoint) {
+    pub fn assert_interface_matches<A: CallArgs, R: Decode<Public>>(&self, entry_point: EntryPoint) {
         if let Err(problems) = self.check::<A, R>(entry_point) {
             panic!("{} does not match the pinned artifact:\n{problems}", entry_point.name());
         }
@@ -231,7 +231,7 @@ impl Artifact {
 ///
 /// `A` is the circuit's argument list and `R` its result, exactly as in
 /// [`Artifact::check`].
-pub fn check_ir<A: CallArgs, R: CallResult>(
+pub fn check_ir<A: CallArgs, R: Decode<Public>>(
     ir: &minocrab_zkir::v3::IrSource,
     entry_point: EntryPoint,
 ) -> Result<(), Problems> {
@@ -250,7 +250,7 @@ pub fn check_ir<A: CallArgs, R: CallResult>(
 }
 
 /// [`check_ir`], as an assertion.
-pub fn assert_ir_matches_interface<A: CallArgs, R: CallResult>(
+pub fn assert_ir_matches_interface<A: CallArgs, R: Decode<Public>>(
     ir: &minocrab_zkir::v3::IrSource,
     entry_point: EntryPoint,
 ) {

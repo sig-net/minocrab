@@ -39,22 +39,34 @@ mod circuit_borsh;
 mod interface;
 mod ledger;
 mod ledger_repr;
+mod value;
 
-/// Derive [`CircuitArg`] (one nested argument) and `CircuitArgs` (a whole
-/// argument list) for a struct with named fields.
+/// Derive the VALUE impls of a struct with named fields: its layout
+/// (`CircuitAbi`), its slots at each visibility the fields support
+/// (`Encode` / `Decode`), its declaration as a circuit argument
+/// (`CircuitArg`, and `CircuitArgs` for a whole argument list), and its
+/// ledger form (`LedgerRepr`, `ProofWires`).
 ///
-/// **Field order is the wire contract.** The fields are declared and
-/// constrained in declaration order, and that order feeds the input schema,
-/// the communications commitment and the proof preimage — reordering the
-/// struct silently changes the circuit's ABI.
+/// Every impl holds exactly where every field's impl of the same trait
+/// does, so the record is whatever its fields allow: a struct of `Public`
+/// fields is a ledger value and a cross-contract argument, a struct of
+/// `Private` fields a circuit argument, a struct generic in `<V: Vis3>`
+/// each at its own visibility, and a struct generic in a payload
+/// (`Owned<E>`) a ledger value exactly where `E` is. Type and const
+/// parameters and where-clauses are carried into every impl.
 ///
-/// Each field's label is its name mapped `snake_case` → `lowerCamelCase`
-/// (`erc20_address` → `erc20Address`), which is the Compact field name for
-/// every argument in the corpus; `#[arg(name = "…")]` overrides one field's
-/// segment where the frozen label differs.
+/// **Field order is the wire contract.** The fields are declared,
+/// constrained, encoded and stored in declaration order, and that order
+/// feeds the input schema, the communications commitment, the ledger layout
+/// and the proof preimage — reordering the struct silently changes the ABI.
+///
+/// Each field's argument label is its name mapped `snake_case` →
+/// `lowerCamelCase` (`erc20_address` → `erc20Address`), which is the Compact
+/// field name for every argument in the corpus; `#[arg(name = "…")]`
+/// overrides one field's segment where the frozen label differs.
 ///
 /// ```ignore
-/// #[derive(CircuitArg)]
+/// #[derive(Value)]
 /// struct DepositRequest {
 ///     erc20_address: Bytes<20>,   // depositRequest_erc20Address
 ///     amount: Uint<128>,          // depositRequest_amount
@@ -64,6 +76,20 @@ mod ledger_repr;
 /// The `CircuitArgs` impl is the same list with its fields at the root
 /// (`evmNonce` rather than `args_evmNonce`), so one derive serves both a
 /// circuit's parameter list and a struct nested inside one.
+#[proc_macro_derive(Value, attributes(arg))]
+pub fn derive_value(input: TokenStream) -> TokenStream {
+    let input = syn::parse_macro_input!(input as syn::DeriveInput);
+    value::expand(input)
+        .unwrap_or_else(syn::Error::into_compile_error)
+        .into()
+}
+
+/// [`macro@Value`], plus the check that the struct IS a circuit argument:
+/// for a struct without generic parameters, a field that is not one (a
+/// `Public` leaf, say) is an error here rather than at the circuit that
+/// takes it. Deriving it beside `Value`, `LedgerRepr` or `CircuitBorsh` is a
+/// conflicting-implementation error; keep the one that says what the record
+/// is for.
 #[proc_macro_derive(CircuitArg, attributes(arg))]
 pub fn derive_circuit_arg(input: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(input as syn::DeriveInput);
@@ -80,9 +106,9 @@ pub fn derive_circuit_arg(input: TokenStream) -> TokenStream {
 /// reordering the struct changes the format.
 ///
 /// ONE DERIVE, BOTH FAMILIES: the argument impls come from the same code path
-/// as [`macro@CircuitArg`], so a type never has both derives — deriving both
-/// is a conflicting-implementation error, and `#[derive(CircuitBorsh)]` is
-/// the one to keep.
+/// as [`macro@Value`], so a type never has both derives — deriving both is a
+/// conflicting-implementation error, and `#[derive(CircuitBorsh)]` is the one
+/// to keep.
 ///
 /// ```ignore
 /// #[derive(CircuitBorsh)]
@@ -121,6 +147,18 @@ pub fn derive_circuit_borsh(input: TokenStream) -> TokenStream {
         .into()
 }
 
+/// [`macro@Value`], plus the check that the struct IS a ledger value (a
+/// `Map` value, a `Cell` type): for a struct without generic parameters,
+/// every field must be `Public` — `LedgerRepr` exists for public leaves
+/// only, so a private field is a type error at the derive, not a leak.
+#[proc_macro_derive(LedgerRepr, attributes(arg))]
+pub fn derive_ledger_repr(input: TokenStream) -> TokenStream {
+    let input = syn::parse_macro_input!(input as syn::DeriveInput);
+    ledger_repr::expand(input)
+        .unwrap_or_else(syn::Error::into_compile_error)
+        .into()
+}
+
 /// Derive a contract's LEDGER BLOCK from a struct mirroring Compact's
 /// `export ledger` declarations.
 ///
@@ -146,18 +184,6 @@ pub fn derive_circuit_borsh(input: TokenStream) -> TokenStream {
 /// (`LedgerMap`/`LedgerCell`/`LedgerCounter`, and `LedgerField` for a field
 /// this layer does not model yet); anything with a `const fn at(u8) -> Self`
 /// works, since that is all the expansion calls.
-/// Make a struct of ledger-storable fields a ledger-storable VALUE (a `Map`
-/// value, a `Cell` type): atoms and limbs in declaration order. Fields must
-/// be `Public` — `LedgerRepr` exists for public leaves only, so a private
-/// field is a type error, not a leak.
-#[proc_macro_derive(LedgerRepr)]
-pub fn derive_ledger_repr(input: TokenStream) -> TokenStream {
-    let input = syn::parse_macro_input!(input as syn::DeriveInput);
-    ledger_repr::expand(input)
-        .unwrap_or_else(syn::Error::into_compile_error)
-        .into()
-}
-
 #[proc_macro_derive(Ledger)]
 pub fn derive_ledger(input: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(input as syn::DeriveInput);

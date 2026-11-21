@@ -84,7 +84,7 @@ use super::{
 /// `x.ledger_value(c)` on a leaf ambiguous.
 ///
 /// Implemented at [`Public`] only, and that is the same soundness statement
-/// `CallArg` makes: what the ledger holds is public, so a private value has
+/// `Encode<Public>` makes: what the ledger holds is public, so a private value has
 /// to pass `disclose` before it can be written — forgetting is a compile
 /// error rather than a leak.
 #[diagnostic::on_unimplemented(
@@ -267,11 +267,10 @@ pub trait LedgerRepr: Sized {
 /// The leaf impls: [`ProofWires`] and [`LedgerRepr`] for a type that is
 /// already [`CircuitAbi`] + [`Encode<Public>`](super::Encode) +
 /// [`Decode<Public>`](super::Decode), by delegation only, so a leaf's atoms
-/// and limb order are stated in exactly one place (`entry.rs` / `call.rs`).
+/// and limb order are stated in exactly one place (`entry.rs` / `slots.rs`).
 ///
 /// The where-clause is on the TYPE, not on its parameters: `Maybe<T>` is a
-/// ledger leaf exactly where `Maybe<T>` encodes and decodes, which is where
-/// its `CallArg` / `CallResult` impls say. Exported (hidden) because
+/// ledger leaf exactly where `Maybe<T>` encodes and decodes at `Public`. Exported (hidden) because
 /// `b32_newtype!` expands it in other crates; every path is absolute.
 #[doc(hidden)]
 #[macro_export]

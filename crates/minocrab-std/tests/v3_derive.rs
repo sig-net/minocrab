@@ -5,7 +5,7 @@
 //! ZKIR pins the argument LABELS too (`%name.index`), so the camelCase rule
 //! and the `#[arg(name = "…")]` override are checked by the same equality.
 
-use minocrab::v3::{Circuit3, Compiled3, FieldT, Prim, Wire3};
+use minocrab::v3::{Circuit3, Compiled3, Encode, FieldT, Prim, Wire3};
 use minocrab::{AlignmentAtom, Private};
 use minocrab_std::v3::{
     entry, ArgPath, Bool, Bytes, BytesN, CircuitAbi, CircuitArg, CircuitArgs, Uint, B32,
@@ -55,17 +55,19 @@ impl CircuitAbi for HandRequest {
     }
 }
 
+impl Encode<Private> for HandRequest {
+    fn encode(&self, slots: &mut Vec<Wire3<FieldT, Private>>) {
+        self.erc20_address.encode(slots);
+        self.amount.encode(slots);
+    }
+}
+
 impl CircuitArg for HandRequest {
     fn declare(c: &mut Circuit3, path: &ArgPath) -> Self {
         HandRequest {
             erc20_address: CircuitArg::declare(c, &path.field("erc20Address")),
             amount: CircuitArg::declare(c, &path.field("amount")),
         }
-    }
-
-    fn push_slots(&self, slots: &mut Vec<Wire3<FieldT, Private>>) {
-        self.erc20_address.push_slots(slots);
-        self.amount.push_slots(slots);
     }
 }
 

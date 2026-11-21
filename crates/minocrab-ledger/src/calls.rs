@@ -3,7 +3,7 @@
 
 use midnight_base_crypto::fab::AlignmentAtom;
 use midnight_onchain_state::state::EntryPointBuf;
-use minocrab::v3::{CallArgs, CallResult, Circuit3, Disclose, FieldT, Prim, Wire3};
+use minocrab::v3::{CallArgs, Circuit3, Decode, Disclose, FieldT, Prim, Wire3};
 use minocrab::v3::{ImpactElem, LimbConstraint};
 use minocrab::{Fr, Public};
 
@@ -182,7 +182,7 @@ impl Callee {
 /// `entry_point` is the callee circuit's name; [`contract_call`] bakes its
 /// hash into the claim as a constant, so the proof binds the call to that
 /// circuit and to no other entry point of the callee.
-pub fn call<A: CallArgs, R: CallResult>(
+pub fn call<A: CallArgs, R: Decode<Public>>(
     c: &mut Circuit3,
     callee: Callee,
     entry_point: EntryPoint,
@@ -196,7 +196,7 @@ pub fn call<A: CallArgs, R: CallResult>(
         .collect();
     let results = contract_call(c, addr, entry_point, &arg_slots, &constraints);
     debug_assert_eq!(results.len(), R::SLOTS, "contract_call returned {} slots", results.len());
-    R::from_call_slots(&results)
+    R::decode(&results)
 }
 
 /// A callee circuit's ENTRY POINT: its Compact name, and the `Bytes<32>`

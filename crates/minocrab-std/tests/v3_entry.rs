@@ -5,7 +5,7 @@
 //! `assert_bits` block. Serialized-ZKIR equality also pins the argument
 //! LABELS, which appear in the stream as `%name.index`.
 
-use minocrab::v3::{Circuit3, Compiled3, FieldT, Prim, Secp256k1PointT, Wire3};
+use minocrab::v3::{Circuit3, Compiled3, Encode, FieldT, Prim, Secp256k1PointT, Wire3};
 use minocrab::{AlignmentAtom, Private, Public};
 use minocrab_std::v3::{
     entry, entry_out, ArgPath, Bool, Bytes, BytesN, CircuitAbi, CircuitArg, CircuitArgs, Either,
@@ -39,17 +39,19 @@ impl CircuitAbi for Request {
     }
 }
 
+impl Encode<Private> for Request {
+    fn encode(&self, slots: &mut Vec<Wire3<FieldT, Private>>) {
+        self.erc20_address.encode(slots);
+        self.amount.encode(slots);
+    }
+}
+
 impl CircuitArg for Request {
     fn declare(c: &mut Circuit3, path: &ArgPath) -> Self {
         Request {
             erc20_address: CircuitArg::declare(c, &path.field("erc20Address")),
             amount: CircuitArg::declare(c, &path.field("amount")),
         }
-    }
-
-    fn push_slots(&self, slots: &mut Vec<Wire3<FieldT, Private>>) {
-        self.erc20_address.push_slots(slots);
-        self.amount.push_slots(slots);
     }
 }
 
@@ -380,6 +382,19 @@ impl CircuitAbi for RequestWithMarker {
     }
 }
 
+impl Encode<Private> for RequestWithMarker {
+    // The unit field's own `encode` is a no-op, but the call is kept
+    // here to exercise the trait method over a real `()`-typed field rather
+    // than assuming its absence — clippy sees a unit-typed receiver either
+    // way, which is the point being tested.
+    #[allow(clippy::unit_arg)]
+    fn encode(&self, slots: &mut Vec<Wire3<FieldT, Private>>) {
+        self.erc20_address.encode(slots);
+        self.marker.encode(slots);
+        self.amount.encode(slots);
+    }
+}
+
 impl CircuitArg for RequestWithMarker {
     fn declare(c: &mut Circuit3, path: &ArgPath) -> Self {
         RequestWithMarker {
@@ -387,17 +402,6 @@ impl CircuitArg for RequestWithMarker {
             marker: CircuitArg::declare(c, &path.field("marker")),
             amount: CircuitArg::declare(c, &path.field("amount")),
         }
-    }
-
-    // The unit field's own `push_slots` is a no-op, but the call is kept
-    // here to exercise the trait method over a real `()`-typed field rather
-    // than assuming its absence — clippy sees a unit-typed receiver either
-    // way, which is the point being tested.
-    #[allow(clippy::unit_arg)]
-    fn push_slots(&self, slots: &mut Vec<Wire3<FieldT, Private>>) {
-        self.erc20_address.push_slots(slots);
-        self.marker.push_slots(slots);
-        self.amount.push_slots(slots);
     }
 }
 
