@@ -2095,7 +2095,11 @@ fn flush_request(c: &mut Circuit3, in_index: &Uint<64, Public>) {
     let evm_nonce = c.cond_select(use_next, next_nonce, queued.evm_nonce.field());
     // if (queued.useNextVaultAccountNonce) { vaultAccountNonce = (vaultAccountNonce + 1) as Uint<64>; }
     c.when(use_next, |c| {
-        VAULT.vault_account_nonce.increment(c);
+        let current = VAULT.vault_account_nonce.read(c).stale(c);
+        let one = c.constant(1u64);
+        let bumped = c.add(current.field(), one);
+        let bumped = Uint::<64, Public>::from_field_checked(c, bumped);
+        VAULT.vault_account_nonce.write(c, &bumped);
     });
 
     let out_index = request_index(c, evm_nonce, &queued.args_hash);
