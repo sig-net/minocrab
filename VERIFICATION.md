@@ -51,9 +51,7 @@ make specific error classes unwritable rather than merely untested.
 - **Instrument** — every accepted run is re-validated by upstream's own
   `IrSource::check` on the same `ProofPreimage`, and the returned `pi_skips`
   must equal the simulator's. This is inside `assert_call_compatible` (quoted in
-  the [README porting kit](README.md#porting-kit)) and is link 4 of the spec
-  harness's per-case checks
-  ([erc20_vault_spec.rs](crates/minocrab-contracts/tests/erc20_vault_spec.rs)).
+  the [README porting kit](README.md#porting-kit)), is link 2 of the Pending lineage's property harness ([erc20_vault_pending_spec.rs](crates/minocrab-contracts/tests/erc20_vault_pending_spec.rs)) and link 3 of the executor gate ([executor_vault.rs](crates/minocrab-contracts/tests/executor_vault.rs)).
 - **Consequence** — a MinoCrab simulator bug cannot hide a circuit bug; the two
   would have to agree on the same wrong answer.
 - **Command** — any differential target, e.g.
@@ -99,7 +97,7 @@ verdict and the three reasons, each sufficient alone):
 
 | lineage | criterion | gate |
 |---|---|---|
-| compactc ≡ `erc20_vault` (the compat port, 17 circuits) | PI-equality on a shared preimage, every circuit, every branch | [erc20_vault_differential.rs](crates/minocrab-contracts/tests/erc20_vault_differential.rs) (57 tests) |
+| compactc ≡ `erc20_vault` (the compat port, 29 circuits on the flush pattern since M44) | PI-equality on a shared preimage, every circuit, every branch | [erc20_vault_differential.rs](crates/minocrab-contracts/tests/erc20_vault_differential.rs) (85 tests) |
 | `erc20_vault_pending` (the typed EVM-call API, 17 circuits) | proves its own preimage: the reference model's op stream through the pinned ledger; the V2 record and kind-tagged outputs of [spec/borsh-subset.md](spec/borsh-subset.md) | [erc20_vault_pending_spec.rs](crates/minocrab-contracts/tests/erc20_vault_pending_spec.rs) (18 properties, four links); [erc20_vault_pending.rs](crates/minocrab-contracts/tests/erc20_vault_pending.rs) — each request/settle pair pinned to the port's `(k, rows)`; the record bytes and ids in `serialization_conformance` and [signet_flow.rs](crates/minocrab-contracts/tests/signet_flow.rs) |
 
 - **What the Pending lineage is not**: PI-equal to compactc. It writes the V2
@@ -114,57 +112,23 @@ verdict and the three reasons, each sufficient alone):
   operands and every Impact operand's accounting; its completeness gate refuses a
   witness-dependent wire reaching the public statement without a declared label,
   and its corpus-twin gate asserts compactc's artifact has the same surface
-  counts on all seventeen ([notes/zkir-semantics.org §7.2](notes/zkir-semantics.org)).
+  counts on all twenty-nine ([notes/zkir-semantics.org §7.2](notes/zkir-semantics.org)).
 - **Command** — `cargo test -p minocrab-contracts --test erc20_vault_differential
   --test erc20_vault_pending --test leakage_inventory`
 
 ### (e) The spec and property harness
 
-- **Claim** — for all seventeen vault circuits, on generated inputs, the circuit
-  does what a Rust specification says, the ledger agrees, and compactc agrees.
-- **Five independent links per generated case**
-  ([erc20_vault_spec.rs](crates/minocrab-contracts/tests/erc20_vault_spec.rs)):
-  1. acceptance agreement — spec (a total function) and circuit agree both ways;
-  2. PI-equality re-anchored to `Op::field_repr` of **our** reference op stream,
-     so the check survives an artifact that deviates from compactc;
-  3. ledger execution — the same op stream runs through the pinned Impact VM
-     (`QueryContext::query` / `run_program`, `ResultModeVerify`) against a real
-     pre-state, and the `Effects` must be exactly the ones the spec declared;
-  4. reference VM — `IrSource::check` on every accepted run;
-  5. compactc — every accepted case through the comparator against compactc's
-     own artifact.
-- **Scale, executed** — the re-ported vault's elevated run to date is
-  `PROPTEST_CASES=2000` in release: 17 properties, **34,000 cases**, 17.5 s
-  ([notes/vault-refresh.org §1](notes/vault-refresh.org)). The previous
-  nine-circuit vault's full gate ran `PROPTEST_CASES=1000000` — 9,000,000
-  cases, 3,121.83 s, exit 0 ([notes/vault-optimization.org §"Full-scale gating
-  run"](notes/vault-optimization.org)); that number has **not** been re-run on
-  the seventeen and is not claimed for them.
-- **Adversarial** — 19 tests in
-  [erc20_vault_adversarial.rs](crates/minocrab-contracts/tests/erc20_vault_adversarial.rs):
-  argument and witness malleability on `completeDeposit` (out-of-range key
-  limbs, garbage `recoveryId`), `s = 0` and `r`/`s` above the curve order on
-  every settle circuit, the identity response key, settling without a pending
-  entry, the forged-membership answer, the four refunds against success-shaped
-  outputs, the non-boolean success byte, Poseidon-commitment injectivity over
-  the generated corpus, and six named boundary tests on `completeSwap`'s
-  `amountInMaximum − amountIn`.
-- **What the sweeps pinned**, as evidence they are not decorative: an identity
-  `mpcResponseKey` authenticates any signature and `initialize` does not reject
-  one (deployer-gated, one-shot); at `signetRequestNonce == u64::MAX` every
-  circuit assert passes and only the Impact VM refuses; a **forged membership
-  answer** yields a valid proof and is caught only by
-  `ResultModeVerify::process_read` — the single best argument for the
-  `run_program` link existing at all; ECDSA `s = 0` aborts rather than returning
-  false, and `(r, n − s)` rejects. All are now tests. The property run's first
-  execution also caught a bug in the reference model itself
-  ([notes/vault-optimization.org §"Findings the sweeps pinned"](notes/vault-optimization.org)).
-- **Commands** — default (48 cases/property, keeps the workspace under 90 s):
-  `cargo test -p minocrab-contracts --test erc20_vault_spec --test erc20_vault_adversarial`.
-  Elevated: `PROPTEST_CASES=2000 cargo test --release -p minocrab-contracts
-  --test erc20_vault_spec --test erc20_vault_adversarial` (also `./bump.sh gates
-  --heavy`). The settle circuits simulate an in-circuit secp256k1 verification
-  per case, so the count scales the wall clock linearly from the 17.5 s above.
+- **The flush vault has no property harness yet.** The seventeen-circuit spec and adversarial suites of the previous compat port were removed with the M44 re-port to the flush pattern; their successor is milestone M44 rung F, which is open. What gates `erc20_vault` today is the differential of (c) and (d): per circuit, PI-equality against compactc's artifact on the reference model's preimage, the guard failures both artifacts must reject, and a tamper sweep over every transcript and witness element with zero acceptance disagreements ([erc20_vault_differential.rs](crates/minocrab-contracts/tests/erc20_vault_differential.rs), 85 tests over the 29 circuits; the scenario builders are in `tests/vault/model.rs`). Its inputs are hand-built scenarios, not generated ones.
+- **Claim, for the Pending lineage** — for all seventeen `erc20_vault_pending` circuits, on generated inputs, the circuit does what a Rust specification says and the ledger agrees. There is no compactc link: this lineage has no compactc twin.
+- **Four links per generated case** ([erc20_vault_pending_spec.rs](crates/minocrab-contracts/tests/erc20_vault_pending_spec.rs), 18 properties: one per circuit, and `claim` a second time with an auto-receiving generator):
+  1. acceptance agreement — the spec (a total function) and `simulate` agree on accept or reject;
+  2. reference VM — `IrSource::check` on every accepted run, with `pi_skips` equal to the simulator's;
+  3. PI-equality re-anchored to **our** op stream — the preimage's transcript is `Op::field_repr` of the reference op stream, and the PI vector is exactly that transcript plus the skipped Impacts' zeros;
+  4. ledger execution — the same op stream runs through the pinned Impact VM against a real pre-state, must fit the guaranteed section, and the `Effect`s it produced must be exactly the ones the spec declared.
+- **The executor gate** ([executor_vault.rs](crates/minocrab-contracts/tests/executor_vault.rs), 18 properties on the same generators): the transcript `minocrab_sim::v3::exec` derives from ledger state must equal the hand model's op for op (each `popeq`'s expected value included); both public transcript halves and the communications commitment must equal the model's; `IrSource::check` must accept the executor's preimage; its post-state must equal the model's; and a case the spec rejects must be rejected by the executor (or, for a counter at its maximum, refused by the ledger exactly as the model's op stream is).
+- **Scale** — 48 cases per property by default (`DEFAULT_CASES` in `tests/vault_pending/gen.rs`); the nightly job runs both files at `PROPTEST_CASES=100000` in release ([nightly.yml](.github/workflows/nightly.yml)) and `./bump.sh gates --heavy` at 20,000. The scale figures recorded for the retired harnesses (34,000 cases on the seventeen-circuit port, 9,000,000 on the nine-circuit vault before it; [notes/vault-refresh.org §1](notes/vault-refresh.org), [notes/vault-optimization.org §"Full-scale gating run"](notes/vault-optimization.org)) are history and are not claimed for either current vault.
+- **What the retired sweeps pinned** — the old adversarial suite found that an identity `mpcResponseKey` authenticates any signature, that at `signetRequestNonce == u64::MAX` only the Impact VM refuses, that a forged membership answer yields a valid proof caught only by `ResultModeVerify::process_read`, and that ECDSA `s = 0` aborts rather than returning false; the first property run also caught a bug in the reference model itself ([notes/vault-optimization.org §"Findings the sweeps pinned"](notes/vault-optimization.org)). Those tests were removed with the suite in M44 and are not claimed for the flush vault until rung F re-establishes them.
+- **Commands** — default: `cargo test -p minocrab-contracts --test erc20_vault_pending_spec --test executor_vault`. Elevated: `PROPTEST_CASES=2000 cargo test --release -p minocrab-contracts --test erc20_vault_pending_spec --test executor_vault` (or `./bump.sh gates --heavy`). The wall clock scales linearly with the count.
 
 ### (f) Disclosure enforcement
 
@@ -394,11 +358,7 @@ is [TRUST.md](TRUST.md), generated and closure-tested.
   warrant than PI-equality on a shared preimage: no compactc artifact proves
   the V2 record's statement. What stands in: the per-pair cost pins against the
   port, the record-byte and request-id equalities of the Borsh spec suite, the
-  reader/responder round trip in `signet-sim`, and the interface snapshot. The
-  port's seventeen-property harness has a twin on this lineage
-  ([erc20_vault_pending_spec.rs](crates/minocrab-contracts/tests/erc20_vault_pending_spec.rs):
-  18 properties, four links — acceptance, reference VM, PI re-anchored to the
-  model's op stream, ledger `Effects` — and no compactc link, by construction).
+  reader/responder round trip in `signet-sim`, and the interface snapshot. The lineage has its own property harness ([erc20_vault_pending_spec.rs](crates/minocrab-contracts/tests/erc20_vault_pending_spec.rs): 18 properties, four links — acceptance, reference VM, PI re-anchored to the model's op stream, ledger `Effects` — and no compactc link, by construction); the port's seventeen-circuit harness it was modelled on was removed in M44.
   It is labelled per circuit in [BENCHMARK.md](BENCHMARK.md). Read
   its numbers as "same operation, re-framed, proved cheaper", never as "same
   statement, proved cheaper".
@@ -473,7 +433,7 @@ is [TRUST.md](TRUST.md), generated and closure-tested.
 3. `cargo test -p minocrab-ledger` — entry-point hash rule over 325 contracts, plus the Impact op baseline.
 4. `cargo test --workspace` — the differentials, the Pending lineage's pair pins, the leakage inventory, the artifact-agreement suites, the disclosure set-equality tests, `serialization_conformance`.
 5. `cargo test --release -p minocrab-contracts --test row_snapshot --test interface_snapshot` — the two frozen tables.
-6. `PROPTEST_CASES=2000 cargo test --release -p minocrab-contracts --test erc20_vault_spec --test erc20_vault_adversarial` — the elevated property run (34,000 cases, ~20 s; §2(e)). Raise the count for a longer gate; the wall clock is linear in it.
+6. `PROPTEST_CASES=2000 cargo test --release -p minocrab-contracts --test erc20_vault_pending_spec --test executor_vault` — the elevated property run on the Pending lineage (36 properties × 2,000 cases; §2(e)). Raise the count for a longer gate; the wall clock is linear in it. The flush vault has no property run yet (M44 rung F).
 7. `./corpus/compile.sh` — recompile the corpus with the pinned compiler and check `git status --short corpus/zkir` is empty (3 m 11 s). This is the determinism claim, verified rather than trusted.
 
 Or, in one command with a PASS/FAIL/seconds summary and a taxonomy line per

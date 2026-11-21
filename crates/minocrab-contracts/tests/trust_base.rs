@@ -1,13 +1,15 @@
 //! M33 — the trusted-computing-base inventory, generated not typed.
 //!
 //! `TRUST.md` at the repository root carries a table, one row per source
-//! file of the seven eDSL crates: its lines, WHAT WARRANTS IT (which test,
-//! proof or gate would catch a wrong line), and the failure that would hide
-//! there if it were wrong. The rows whose warrant is READING are the trusted
+//! file of the seven eDSL crates: WHAT WARRANTS IT (which test, proof or
+//! gate would catch a wrong line), and the failure that would hide there if
+//! it were wrong. The rows whose warrant is READING are the trusted
 //! computing base — the part a human reviewer has to read.
 //!
-//! The classification is DATA in this file ([`ROWS`]); the line counts are
-//! measured; the table in `TRUST.md` is regenerated between its markers by
+//! The classification is DATA in this file ([`ROWS`]); the table carries no
+//! line counts, so editing a source file does not make it stale — only
+//! adding, removing or reclassifying a file does. The table in `TRUST.md`
+//! is regenerated between its markers by
 //! `MINOCRAB_TRUST_BASE=1 cargo test -p minocrab-contracts --test trust_base`
 //! (the same reviewable-diff rule as the snapshots). The test fails when:
 //! a classified file no longer exists, a source file of those crates is not
@@ -18,7 +20,7 @@
 //! there: where unsure, a row says READING and a reviewer downgrades it,
 //! never the reverse (milestones.org M33).
 
-use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 /// A source file of the eDSL: path under `crates/`, its warrant, the
@@ -39,13 +41,13 @@ const ROWS: &[Row] = &[
     Row { path: "minocrab-zkir/src/lib.rs", warrant: "corpus_roundtrip (855 v3 artifacts, count asserted); lean_roundtrip (byte-exact Lean syntax, M27 rung 1)", hides: "a `.zkir` envelope or version read wrongly — every differential reads compactc's artifacts through here" },
     Row { path: "minocrab-zkir/src/v3.rs", warrant: "corpus_roundtrip; lean_roundtrip; every differential (reads compactc's artifact through this pair)", hides: "an IR re-emitted differently from what was parsed" },
     // ---- L1: the builder -----------------------------------------------------------------
-    Row { path: "minocrab-ir/src/lib.rs", warrant: READING, hides: "nothing beyond re-exports (41 lines)" },
+    Row { path: "minocrab-ir/src/lib.rs", warrant: READING, hides: "nothing beyond re-exports" },
     Row { path: "minocrab-ir/src/v3.rs", warrant: "every instruction-level differential (the emitted stream equals compactc's); v3_builder. The operand-type TABLES themselves: READING against midnight-zkir's src/ir_vm.rs", hides: "an instruction emitted with an operand type the VM rejects, on a path no fixture takes" },
     Row { path: "minocrab-ir/src/v3/passes.rs", warrant: "Lean (crates/minocrab-ir/lean, the pass theorems, M25/M27); v3_passes; the zkir dump + row snapshot (every pass is zero-movement on the shipped artifacts)", hides: "a pass that changes a circuit's statement while preserving its rows" },
     Row { path: "minocrab-ir/src/v3/passes/kept.rs", warrant: "its unit tests (each pass's map on a fixed stream and on 100,000 random streams per pass, composition, the panics); the debug-build checks in Builder3::finish_kept and Circuit3::finish, run on every circuit metadata_indices builds; v3_metadata (5,000 random Circuit3 programs)", hides: "an assert message or region moved onto the wrong instruction of the finished stream" },
     Row { path: "minocrab-ir/src/v3/taint.rs", warrant: "Kani harnesses (./kani.sh, M23 R4) + unit tests for the Max arithmetic; 23 unit tests over the marking rules, the three subtraction warrants' near-miss refusals and the observability walk's refused sinks; the MARKING RULES' warrants are cited in-file per rule and are READING. The observability walk (M23 R3 Class A) reads operands through passes::operands / defined_identifiers, which the Lean dataflow gate diffs", hides: "a limb marked bounded that is not, or a guarded read discharged as unobservable whose digest in fact reaches an effect the walk's sink classification waves through — a false negative in the one lint that sees what honest inputs cannot" },
     // ---- L2: the eDSL --------------------------------------------------------------------
-    Row { path: "minocrab/src/lib.rs", warrant: "compile_fail doctests (a private wire cannot reach an output); READING for the lattice itself (194 lines)", hides: "a Meet impl that lets private meet public as public" },
+    Row { path: "minocrab/src/lib.rs", warrant: "compile_fail doctests (a private wire cannot reach an output); READING for the lattice itself", hides: "a Meet impl that lets private meet public as public" },
     Row { path: "minocrab/src/v3.rs", warrant: "every differential (the streams Circuit3 emits); v3_guard_scope (guard scopes); the generated disclosure set-equality tests + compile_fail (the disclose gate). The instruction methods' operand/immediate handling and public_input minting: READING against reduce-to-zkir.ss", hides: "a guard dropped on one effect inside `when`; a public input minted in the wrong order" },
     Row { path: "minocrab/src/v3/abi.rs", warrant: "v3_entry / v3_leaves / v3_bounded (the constraint table pinned to compactc's, notes/builtin-lowering.org §9); interface_snapshot", hides: "an argument type constrained to the wrong width" },
     Row { path: "minocrab/src/v3/disclose.rs", warrant: "the generated set-equality test on every circuit; disclosure_report; v3_disclose", hides: "a disclosure recorded under a label the signature does not name" },
@@ -54,7 +56,7 @@ const ROWS: &[Row] = &[
     // M26: split from one 3724-line lib.rs into modules by concern (zero
     // behavioural movement) — the warrant below is the whole op layer's and
     // applies unchanged to every file it was split across.
-    Row { path: "minocrab-ledger/src/lib.rs", warrant: READING, hides: "nothing beyond the crate doc and mod/pub-use plumbing (102 lines)" },
+    Row { path: "minocrab-ledger/src/lib.rs", warrant: READING, hides: "nothing beyond the crate doc and mod/pub-use plumbing" },
     Row { path: "minocrab-ledger/src/impact.rs", warrant: "differential_baseline (call-compatibility with compactc's artifacts); every contract differential; nested_differential + nested_typed (nested paths); entry_point (325 contracts). Ops no fixture reaches (VERIFICATION.md §5 'unported constructs'): READING against midnight-ledger.ss vm-code", hides: "an Impact op encoded so the ledger applies a different state change than the circuit claims" },
     Row { path: "minocrab-ledger/src/ops.rs", warrant: "differential_baseline (call-compatibility with compactc's artifacts); every contract differential; nested_differential + nested_typed (nested paths); entry_point (325 contracts). Ops no fixture reaches (VERIFICATION.md §5 'unported constructs'): READING against midnight-ledger.ss vm-code", hides: "an Impact op encoded so the ledger applies a different state change than the circuit claims" },
     Row { path: "minocrab-ledger/src/reads.rs", warrant: "differential_baseline (call-compatibility with compactc's artifacts); every contract differential; nested_differential + nested_typed (nested paths); entry_point (325 contracts). Ops no fixture reaches (VERIFICATION.md §5 'unported constructs'): READING against midnight-ledger.ss vm-code", hides: "an Impact op encoded so the ledger applies a different state change than the circuit claims" },
@@ -62,7 +64,7 @@ const ROWS: &[Row] = &[
     Row { path: "minocrab-ledger/src/calls.rs", warrant: "differential_baseline (call-compatibility with compactc's artifacts); every contract differential; nested_differential + nested_typed (nested paths); entry_point (325 contracts). Ops no fixture reaches (VERIFICATION.md §5 'unported constructs'): READING against midnight-ledger.ss vm-code", hides: "an Impact op encoded so the ledger applies a different state change than the circuit claims" },
     Row { path: "minocrab-ledger/src/tests.rs", warrant: READING, hides: "a unit test that pins the wrong constant or asserts a weaker property than intended, unnoticed because it still passes" },
     // ---- L3: the standard library ---------------------------------------------------------
-    Row { path: "minocrab-std/src/lib.rs", warrant: READING, hides: "nothing beyond re-exports (51 lines)" },
+    Row { path: "minocrab-std/src/lib.rs", warrant: READING, hides: "nothing beyond re-exports" },
     Row { path: "minocrab-std/src/v3.rs", warrant: "every differential; v3_leaves / v3_bounded / v3_literals / v3_secp; lean_claims (the typed-leaf claims, crates/minocrab-std/lean). `from_field_unchecked` sites: READING (the grep in TRUST.md §3)", hides: "a leaf whose type promises a bound its constructor did not constrain" },
     Row { path: "minocrab-std/src/v3/ledger.rs", warrant: "every contract differential; v3_ledger; nested_typed; the derive's layout pinned against compactc's `batch` for all 256 block sizes and the sixteen-field probe", hides: "a typed slot reading the wrong field, or a segmented path computed differently from compactc" },
     Row { path: "minocrab-std/src/v3/borsh.rs", warrant: "serialization_conformance (vectors shared with the published TypeScript decoder, spec/ts); v3_borsh; the borsh differentials", hides: "a non-canonical encoding accepted, breaking the digest's injectivity (api-safety-survey §B3)" },
@@ -88,8 +90,8 @@ const ROWS: &[Row] = &[
     Row { path: "minocrab-macros/src/ledger_repr.rs", warrant: "v3_ledger `derived_repr` (atoms and limb round trip); the erc20_vault_pending lineage's slots", hides: "an environment's limbs split at the wrong boundaries on read-back" },
     Row { path: "minocrab-macros/src/contract.rs", warrant: "circuit_closure (every #[circuit] is listed) + the derived sets feeding both snapshots", hides: "a circuit missing from its contract's set" },
     // ---- L5: the simulator ---------------------------------------------------------------
-    Row { path: "minocrab-sim/src/lib.rs", warrant: READING, hides: "nothing beyond the Profile types (129 lines)" },
-    Row { path: "minocrab-sim/src/v3.rs", warrant: "cross-checked against Midnight's reference VM (`IrSource::check`) on every accepted run — spec-harness link 4 and every differential; v3_end_to_end. It is never trusted alone", hides: "a simulator accepting what the reference VM rejects (caught) — or both agreeing on a wrong statement (out of scope here; the differentials' job)" },
+    Row { path: "minocrab-sim/src/lib.rs", warrant: READING, hides: "nothing beyond the Profile types" },
+    Row { path: "minocrab-sim/src/v3.rs", warrant: "cross-checked against Midnight's reference VM (`IrSource::check`) on every accepted run — link 2 of erc20_vault_pending_spec, link 3 of executor_vault, and every differential; v3_end_to_end. It is never trusted alone", hides: "a simulator accepting what the reference VM rejects (caught) — or both agreeing on a wrong statement (out of scope here; the differentials' job)" },
     Row { path: "minocrab-sim/src/v3/exec.rs", warrant: "executor_vault (the transcript it derives from state equals the vault harness's hand model, op for op, on seventeen circuits) + IrSource::check on every preimage it produces; impact_roundtrip (the decoder is the exact inverse of minocrab-ledger's encoder, one fixture per Op::field_repr branch). Test-side only: nothing a deployed circuit links", hides: "a mis-decoded Impact op — a transcript that gathers a read from the wrong slot, agreeing with nothing (caught by the harness) unless the hand model is wrong the same way" },
     Row { path: "minocrab-sim/src/v3/rowcost.rs", warrant: "calibrated against real proving (BENCHMARK.md); a MEASUREMENT model, not a correctness claim", hides: "a mis-priced primitive — a wrong k estimate, never a wrong circuit" },
     Row { path: "minocrab-sim/src/bin/minocrab.rs", warrant: READING, hides: "nothing a proof depends on (the CLI)" },
@@ -101,8 +103,8 @@ fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").canonicalize().expect("repo root")
 }
 
-fn source_files(crates_dir: &Path) -> BTreeMap<String, usize> {
-    let mut out = BTreeMap::new();
+fn source_files(crates_dir: &Path) -> BTreeSet<String> {
+    let mut out = BTreeSet::new();
     for krate in CRATES {
         let src = crates_dir.join(krate).join("src");
         let mut stack = vec![src.clone()];
@@ -113,8 +115,7 @@ fn source_files(crates_dir: &Path) -> BTreeMap<String, usize> {
                     stack.push(path);
                 } else if path.extension().is_some_and(|e| e == "rs") {
                     let rel = path.strip_prefix(crates_dir).expect("under crates/").to_string_lossy().replace('\\', "/");
-                    let lines = std::fs::read_to_string(&path).expect("readable").lines().count();
-                    out.insert(rel, lines);
+                    out.insert(rel);
                 }
             }
         }
@@ -122,21 +123,21 @@ fn source_files(crates_dir: &Path) -> BTreeMap<String, usize> {
     out
 }
 
-/// The table body, from the classification and the measured line counts.
-fn table(files: &BTreeMap<String, usize>) -> String {
-    let mut body = String::from("| file | lines | what warrants it | the failure that would hide there |\n|---|---:|---|---|\n");
+/// The table body, from the classification alone. The closing sentence
+/// counts FILES, which move only when a file is added, removed or
+/// reclassified.
+fn table() -> String {
+    let mut body = String::from("| file | what warrants it | the failure that would hide there |\n|---|---|---|\n");
     let mut reading = 0usize;
-    let mut total = 0usize;
     for row in ROWS {
-        let lines = files[row.path];
-        total += lines;
         if row.warrant == READING || row.warrant.contains(": READING") {
-            reading += lines;
+            reading += 1;
         }
         let warrant = if row.warrant == READING { "**READING**".to_string() } else { row.warrant.replace(": READING", ": **READING**") };
-        body.push_str(&format!("| `{}` | {} | {} | {} |\n", row.path, lines, warrant, row.hides));
+        body.push_str(&format!("| `{}` | {} | {} |\n", row.path, warrant, row.hides));
     }
-    body.push_str(&format!("\n{total} lines in the seven crates; {reading} of them in files whose warrant is READING in whole or in part (the rows in bold).\n"));
+    let total = ROWS.len();
+    body.push_str(&format!("\n{total} files in the seven crates; {reading} of them have a warrant that is READING in whole or in part (the rows in bold).\n"));
     body
 }
 
@@ -155,14 +156,14 @@ fn the_classification_is_closed_over_the_edsl_sources() {
     let files = source_files(&repo_root().join("crates"));
     let classified: Vec<&str> = ROWS.iter().map(|r| r.path).collect();
     for row in ROWS {
-        assert!(files.contains_key(row.path), "classified file no longer exists: {}", row.path);
+        assert!(files.contains(row.path), "classified file no longer exists: {}", row.path);
     }
-    let unclassified: Vec<&String> = files.keys().filter(|f| !classified.contains(&f.as_str())).collect();
+    let unclassified: Vec<&String> = files.iter().filter(|f| !classified.contains(&f.as_str())).collect();
     assert!(
         unclassified.is_empty(),
         "source files of the eDSL crates with no row in trust_base.rs (add a row; say READING if unsure): {unclassified:?}"
     );
-    let mut seen = std::collections::BTreeSet::new();
+    let mut seen = BTreeSet::new();
     for row in ROWS {
         assert!(seen.insert(row.path), "duplicate row: {}", row.path);
         assert!(!row.hides.is_empty(), "{}: every row names the failure it would hide", row.path);
@@ -172,8 +173,7 @@ fn the_classification_is_closed_over_the_edsl_sources() {
 #[test]
 fn trust_md_table_is_current() {
     let root = repo_root();
-    let files = source_files(&root.join("crates"));
-    let expected = format!("\n{}", table(&files));
+    let expected = format!("\n{}", table());
     let path = root.join("TRUST.md");
     let text = std::fs::read_to_string(&path).expect("TRUST.md exists");
     let (a, b) = generated_region(&text);
