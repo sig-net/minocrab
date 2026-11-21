@@ -6,7 +6,9 @@
 //! MPC's attestation over the result and consumes the record. This crate is
 //! that round trip, built on the typed EVM calls of [`minocrab_evm`].
 //!
-//! The wire vocabulary is V1, `@sig-net/midnight` 0.24.1 ([`signet_v1`]).
+//! The wire vocabulary is V1, `@sig-net/midnight` 0.26.0-rc.15 ([`signet_v1`]):
+//! a request notifies the signet signer, and the MPC posts the attestation a
+//! settle verifies to the signet responder.
 //!
 //! - [`signet_v1`]: the V1 request record, request id, attestation digest
 //!   and verification, as a mechanical port of `Signet.compact` at that pin;

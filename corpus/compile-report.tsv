@@ -583,7 +583,6 @@ src/passport-account-custody/experiments/minocrab-account-custody/reference/cont
 src/passport-account-custody/experiments/minocrab-account-custody/reference/contracts/account.compact	ok	
 src/passport-account-custody/experiments/minocrab-account-custody/reference/contracts/webauthn.compact	ok	
 src/signet-midnight-examples-v070/examples/erc20-vault/contract/src/erc20-vault.compact	ok	
-src/signet-midnight-examples/examples/erc20-vault/contract/src/erc20-vault.compact	ok	
 src/signet-midnight-experiments/experiments/attest/contract/src/attest.compact	ok	
 src/signet-midnight-experiments/experiments/baseline/contract/src/baseline.compact	ok	
 src/signet-midnight-experiments/experiments/events/contract/src/events.compact	ok	
@@ -597,9 +596,6 @@ src/signet-midnight-experiments/experiments/xcall/contract/src/caller.compact	ok
 src/signet-midnight-experiments/experiments/xcall/contract/src/target.compact	ok	
 src/signet-midnight-experiments/experiments/xcontract-events/contract/src/token.compact	ok	
 src/signet-midnight-experiments/experiments/xcontract-events/contract/src/vault.compact	ok	
-src/signet-midnight-integration-v0241/packages/signet-contract/src/signet-contract.compact	ok	
-src/signet-midnight-integration-v0241/packages/signet-midnight/src/Signet.compact	ok	
-src/signet-midnight-integration-v0241/packages/signet-midnight/src/circuits.compact	ok	
 src/signet-midnight-integration-v026/packages/signet-midnight/src/Signet.compact	ok	
 src/signet-midnight-integration-v026/packages/signet-midnight/src/circuits.compact	ok	
 src/signet-midnight-integration-v026/packages/signet-responder/src/signet-responder.compact	ok	

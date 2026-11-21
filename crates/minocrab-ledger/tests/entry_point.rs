@@ -100,9 +100,10 @@ fn ep_hash_matches_upstream_for_every_corpus_circuit() {
     // The compiler itself moved no artifact.
     // +7 with the mainnet pins (M48 L): the v026 signer, responder and two
     // test callers, and the 0.7.0-rc.2 vault. -7 when the v0.25.0 pin and
-    // fff3421c's signet contract, test callers and serde fixture retired.
+    // fff3421c's signet contract, test callers and serde fixture retired;
+    // -4 when the 375071b vault and the v0.24.1 pin (three) retired.
     assert_eq!(
-        artifacts, 412,
+        artifacts, 408,
         "the corpus artifact count moved; re-read notes/corpus-sources.org before \
          refreshing this number"
     );

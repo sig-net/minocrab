@@ -536,7 +536,7 @@ cargo test --workspace --release
 | circuit | k mc/cc | prove mc | prove cc | RAM mc | RAM cc |
 |---|---|---|---|---|---|
 | signBidirectional (signet signer) | **11 / 16** | **0.14s** | 2.83s | **51MB** | 1,021MB |
-| respond (signet signer) | **10 / 16** | **0.09s** | 2.69s | **41MB** | 904MB |
+| respond (signet responder) | **10 / 16** | **0.09s** | 2.69s | **41MB** | 904MB |
 | startDeposit | **11 / 14** | **0.15s** | 0.76s | **53MB** | 205MB |
 | approveRouter | **11 / 14** | **0.14s** | 0.74s | **54MB** | 223MB |
 | startSwap | **15 / 16** | **1.82s** | 3.35s | **674MB** | 1,189MB |

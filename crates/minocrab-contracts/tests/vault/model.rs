@@ -45,27 +45,29 @@ pub const UNISWAP_ROUTER: u8 = 10;
 pub const STATA_UNDERLYING: u8 = 11;
 pub const STATA_TOKEN: u8 = 12;
 pub const ALLOWED_TOKENS: u8 = 13;
-pub const GLOBAL_LAST_SEEN: u8 = 14;
-pub const VAULT_ACCOUNT_NONCE: u8 = 15;
-pub const INPUT_REQUEST_BUFFER: u8 = 16;
-pub const OUTPUT_REQUEST_BUFFER: u8 = 17;
-pub const INPUT_ATTESTATION_BUFFER: u8 = 18;
-pub const OUTPUT_ATTESTATION_BUFFER: u8 = 19;
-pub const EVICTION_MAP: u8 = 20;
-pub const REPLACE_NONCE_MAP: u8 = 21;
-pub const REPLACE_NONCE_ARGS: u8 = 22;
-pub const APPROVE_MAP: u8 = 23;
-pub const APPROVE_ARGS: u8 = 24;
-pub const DEPOSIT_MAP: u8 = 25;
-pub const DEPOSIT_ARGS: u8 = 26;
-pub const WITHDRAW_MAP: u8 = 27;
-pub const WITHDRAW_ARGS: u8 = 28;
-pub const SWAP_MAP: u8 = 29;
-pub const SWAP_ARGS: u8 = 30;
-pub const SUPPLY_MAP: u8 = 31;
-pub const SUPPLY_ARGS: u8 = 32;
-pub const REDEEM_MAP: u8 = 33;
-pub const REDEEM_ARGS: u8 = 34;
+pub const FEE_RECIPIENT_COIN_KEY: u8 = 14;
+pub const FEE_RECIPIENT_ENCRYPTION_KEY: u8 = 15;
+pub const GLOBAL_LAST_SEEN: u8 = 16;
+pub const VAULT_ACCOUNT_NONCE: u8 = 17;
+pub const INPUT_REQUEST_BUFFER: u8 = 18;
+pub const OUTPUT_REQUEST_BUFFER: u8 = 19;
+pub const INPUT_ATTESTATION_BUFFER: u8 = 20;
+pub const OUTPUT_ATTESTATION_BUFFER: u8 = 21;
+pub const EVICTION_MAP: u8 = 22;
+pub const REPLACE_NONCE_MAP: u8 = 23;
+pub const REPLACE_NONCE_ARGS: u8 = 24;
+pub const APPROVE_MAP: u8 = 25;
+pub const APPROVE_ARGS: u8 = 26;
+pub const DEPOSIT_MAP: u8 = 27;
+pub const DEPOSIT_ARGS: u8 = 28;
+pub const WITHDRAW_MAP: u8 = 29;
+pub const WITHDRAW_ARGS: u8 = 30;
+pub const SWAP_MAP: u8 = 31;
+pub const SWAP_ARGS: u8 = 32;
+pub const SUPPLY_MAP: u8 = 33;
+pub const SUPPLY_ARGS: u8 = 34;
+pub const REDEEM_MAP: u8 = 35;
+pub const REDEEM_ARGS: u8 = 36;
 
 /// `enum Action`, with each action's two maps.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -150,8 +152,17 @@ pub struct Env {
     pub router: [u8; 20],
     pub stata_underlying: [u8; 20],
     pub stata_token: [u8; 20],
-    /// An ERC20 `addAllowedToken` admitted (beside the underlying).
+    /// An ERC20 `addAllowedToken` admitted (beside the two stata tokens).
     pub allowed_erc20: [u8; 20],
+    /// `TokenFees { withdraw, swap, supply, redeem }` of the underlying, the
+    /// wrapper and the admitted ERC20: some zero (no fee coin is minted),
+    /// some not.
+    pub fees_underlying: [u64; 4],
+    pub fees_token: [u64; 4],
+    pub fees_allowed: [u64; 4],
+    /// `feeRecipientCoinPublicKey` / `feeRecipientEncryptionPublicKey`.
+    pub fee_recipient_key: [u8; 32],
+    pub fee_recipient_enc: [u8; 32],
     pub global_last_seen: u64,
     pub vault_account_nonce: u64,
     /// The secret whose commitment the `deployer` cell holds.
@@ -190,6 +201,11 @@ impl Env {
             stata_underlying: *b"stata-underlying-usd",
             stata_token: *b"stata-token-wrapper!",
             allowed_erc20: *b"erc20-token-address!",
+            fees_underlying: [0, 500, 0, 0],
+            fees_token: [0, 0, 0, 400],
+            fees_allowed: [1_000, 2_000, 0, 0],
+            fee_recipient_key: tagged32(b"fee-recipient", 0x71),
+            fee_recipient_enc: tagged32(b"fee-recipient-enc", 0x72),
             global_last_seen: 7_000_000,
             vault_account_nonce: 4,
             deployer_sk: tagged32(b"deployer", 0x11),
@@ -216,7 +232,7 @@ impl Env {
         user_commitment(&self.deployer_sk)
     }
 
-    /// The ledger with every cell set, the two allowed tokens, and every
+    /// The ledger with every cell set, the three allowed tokens, and every
     /// map empty.
     pub fn pre_state(&self) -> PreState {
         PreState {
@@ -233,7 +249,13 @@ impl Env {
             uniswap_router: self.router,
             stata_underlying: self.stata_underlying,
             stata_token: self.stata_token,
-            allowed_tokens: vec![self.stata_underlying, self.allowed_erc20],
+            allowed_tokens: vec![
+                (self.stata_underlying, self.fees_underlying),
+                (self.stata_token, self.fees_token),
+                (self.allowed_erc20, self.fees_allowed),
+            ],
+            fee_recipient_coin_key: self.fee_recipient_key,
+            fee_recipient_encryption_key: self.fee_recipient_enc,
             global_last_seen: self.global_last_seen,
             vault_account_nonce: self.vault_account_nonce,
             ..Default::default()
@@ -340,23 +362,6 @@ impl Env {
         vec![cc_rand]
     }
 
-    /// `tokenType(…, kernel.self())`'s read, then `receiveShielded(coin);
-    /// sendImmediateShielded(coin, burn, value)` — the custody claim, the
-    /// nullifier, the evolved-nonce output.
-    pub fn coin_ops(&self, coin: &Coin) -> Vec<VmOp> {
-        let nonce_slots = b32_slots(&coin.nonce);
-        let cm_receive = coin_commitment_of(&nonce_slots, &coin.color, coin.value, false, &self.self_addr);
-        let nullifier = coin_nullifier_of(&nonce_slots, &coin.color, coin.value, &self.self_addr);
-        let cm_burn = coin_commitment_of(&evolved_nonce(&coin.nonce), &coin.color, coin.value, true, &[0u8; 32]);
-        let mut o = self.kernel_self();
-        o.extend(self.kernel_self());
-        o.extend(ops::claim(1, &cm_receive));
-        o.extend(self.kernel_self());
-        o.extend(ops::claim(0, &nullifier));
-        o.extend(ops::claim(2, &cm_burn));
-        o
-    }
-
     /// `mintShieldedToken(vaultTokenDomainSeparator(erc20), amount, nonce,
     /// left(pk))`: `kernel.self()`, the mint, the spend claim.
     pub fn mint_to_key_ops(&self, erc20: &[u8; 20], amount: u64, nonce: &[u8; 32], pk: &[u8; 32]) -> Vec<VmOp> {
@@ -364,6 +369,45 @@ impl Env {
         let cm = coin_commitment_of(&b32_slots(nonce), &color, u128::from(amount), true, pk);
         let mut o = self.kernel_self();
         o.extend(ops::mint_and_spend(&vault_domain_sep(erc20), amount, &cm));
+        o
+    }
+
+    /// `allowedTokens[erc20].fees` — `[withdraw, swap, supply, redeem]`.
+    pub fn fees_of(&self, erc20: &[u8; 20]) -> [u64; 4] {
+        if *erc20 == self.stata_underlying {
+            self.fees_underlying
+        } else if *erc20 == self.stata_token {
+            self.fees_token
+        } else if *erc20 == self.allowed_erc20 {
+            self.fees_allowed
+        } else {
+            panic!("{erc20:?} is not an allowed token")
+        }
+    }
+
+    /// `tokenFees(erc20)`: the member check and the lookup.
+    pub fn token_fees_ops(&self, erc20: &[u8; 20]) -> Vec<VmOp> {
+        let mut o = ops::member(ALLOWED_TOKENS, key20(erc20), true);
+        o.extend(ops::lookup(ALLOWED_TOKENS, key20(erc20), fees_av(&self.fees_of(erc20))));
+        o
+    }
+
+    /// `takeFee(erc20, coin, fee)`: the receive and the whole burn, then,
+    /// for a non-zero fee, the fee recipient read and the fee coin's mint.
+    pub fn take_fee_ops(&self, erc20: &[u8; 20], coin: &Coin, fee: u64) -> Vec<VmOp> {
+        let nonce_slots = b32_slots(&coin.nonce);
+        let cm_receive = coin_commitment_of(&nonce_slots, &coin.color, coin.value, false, &self.self_addr);
+        let nullifier = coin_nullifier_of(&nonce_slots, &coin.color, coin.value, &self.self_addr);
+        let cm_burn = coin_commitment_of(&evolved_nonce(&coin.nonce), &coin.color, coin.value, true, &[0u8; 32]);
+        let mut o = self.kernel_self();
+        o.extend(ops::claim(1, &cm_receive));
+        o.extend(self.kernel_self());
+        o.extend(ops::claim(0, &nullifier));
+        o.extend(ops::claim(2, &cm_burn));
+        if fee > 0 {
+            o.extend(ops::read(FEE_RECIPIENT_COIN_KEY, false, bytesn_value(32, &self.fee_recipient_key)));
+            o.extend(self.mint_to_key_ops(erc20, fee, &fee_mint_nonce(&coin.nonce), &self.fee_recipient_key));
+        }
         o
     }
 
@@ -375,6 +419,19 @@ impl Env {
             value,
         }
     }
+}
+
+/// A `TokenFees` (or `AllowedTokenConfig`) value.
+pub fn fees_av(fees: &[u64; 4]) -> AlignedValue {
+    let limbs: Vec<Fr> = fees.iter().map(|f| Fr::from(*f)).collect();
+    aligned(&[8, 8, 8, 8], &limbs)
+}
+
+/// `feeMintNonce(coinNonce)` — `[pad(32, "erc20:vault:fee"), coinNonce]`.
+pub fn fee_mint_nonce(coin_nonce: &[u8; 32]) -> [u8; 32] {
+    let (p_hi, p_lo) = b32_slots(&pad32(v::FEE_MINT_PAD));
+    let (n_hi, n_lo) = b32_slots(coin_nonce);
+    transient_upgrade(&[p_hi, p_lo, n_hi, n_lo])
 }
 
 /// A `Secp256k1Point` as its cell value.
@@ -445,10 +502,10 @@ pub enum Args {
     ReplaceNonce { gas: Gas },
     Approve { erc20: [u8; 20], spender: [u8; 20], gas: Gas },
     Deposit { erc20: [u8; 20], amount: u128, path: [u8; 32], gas: Gas },
-    Withdraw { erc20: [u8; 20], amount: u128, dest: [u8; 20], gas: Gas },
-    Swap { token_in: [u8; 20], token_out: [u8; 20], fee: u128, amount_out: u128, amount_in_max: u128, gas: Gas },
-    Supply { amount: u128, gas: Gas },
-    Redeem { shares: u128, gas: Gas },
+    Withdraw { erc20: [u8; 20], amount: u128, dest: [u8; 20], gas: Gas, vault_fee: u64 },
+    Swap { token_in: [u8; 20], token_out: [u8; 20], fee: u128, amount_out: u128, amount_in_max: u128, gas: Gas, vault_fee: u64 },
+    Supply { amount: u128, gas: Gas, vault_fee: u64 },
+    Redeem { shares: u128, gas: Gas, vault_fee: u64 },
 }
 
 impl Args {
@@ -509,7 +566,22 @@ impl Args {
             Args::Redeem { shares, .. } => vec![u128_limb(*shares)],
         };
         l.extend(self.gas().limbs());
+        if let Some(fee) = self.vault_fee() {
+            l.push(Fr::from(fee));
+        }
         l
+    }
+
+    /// The fee a vault-paid start took (`WithdrawArgs.fee` and its three
+    /// siblings), `None` for the actions that take none.
+    pub fn vault_fee(&self) -> Option<u64> {
+        match self {
+            Args::Withdraw { vault_fee, .. }
+            | Args::Swap { vault_fee, .. }
+            | Args::Supply { vault_fee, .. }
+            | Args::Redeem { vault_fee, .. } => Some(*vault_fee),
+            _ => None,
+        }
     }
 
     pub fn widths(&self) -> Vec<u32> {
@@ -522,6 +594,9 @@ impl Args {
             Args::Supply { .. } | Args::Redeem { .. } => vec![16],
         };
         w.extend(Gas::WIDTHS);
+        if self.vault_fee().is_some() {
+            w.push(8);
+        }
         w
     }
 
@@ -577,18 +652,23 @@ impl Entry {
     }
 }
 
-/// `struct AttestationRecord { blockHeight, outputKind, digest }`.
+/// `struct AttestationRecord { blockHeight, outputKind,
+/// serializedOutputLength, outputHash }`.
 #[derive(Clone, Debug)]
 pub struct Record {
     pub block_height: u64,
     pub output_kind: u64,
-    pub digest: [u8; 32],
+    pub length: u64,
+    pub output_hash: [u8; 32],
 }
 
 impl Record {
     pub fn av(&self) -> AlignedValue {
-        let (d_hi, d_lo) = b32_slots(&self.digest);
-        aligned(&[8, 1, 32], &[Fr::from(self.block_height), Fr::from(self.output_kind), d_hi, d_lo])
+        let (h_hi, h_lo) = b32_slots(&self.output_hash);
+        aligned(
+            &[8, 1, 8, 32],
+            &[Fr::from(self.block_height), Fr::from(self.output_kind), Fr::from(self.length), h_hi, h_lo],
+        )
     }
 }
 
@@ -620,7 +700,6 @@ impl Req {
     pub fn limbs(&self, env: &Env) -> Vec<Fr> {
         let (self_hi, self_lo) = b32_slots(&env.self_addr);
         let (path_hi, path_lo) = b32_slots(&self.path);
-        let (caip2_hi, caip2_lo) = b32_slots(&pad32(minocrab_contracts::signet_v1::ETHEREUM_CAIP2_ID));
         let (is_some, selector, words): (u64, Fr, Vec<[u8; 32]>) = match &self.tx.calldata {
             Some((sel, words)) => (1, Fr::from_le_bytes(sel).unwrap(), words.clone()),
             None => (0, Fr::from(0u64), vec![]),
@@ -650,7 +729,7 @@ impl Req {
             limbs.extend([hi, lo]);
         }
         limbs.push(Fr::from(0u64)); // accessListEntryCount
-        limbs.extend([caip2_hi, caip2_lo]); // executionDest
+        limbs.extend(execution_dest_limbs()); // executionDest: Bytes<64>
         limbs.push(Fr::from(0u64)); // signatureDest: unused
         limbs.extend([Fr::from(0u64); 3]); // params: pad(64, "")
         limbs.extend(schema_limbs(self.out_schema));
@@ -661,7 +740,7 @@ impl Req {
     pub fn widths(&self) -> Vec<u32> {
         let mut a = vec![1, 32, 32, 1, 1, 8, 8, 16, 16, 8, 20, 16, 1, 4, 2];
         a.extend(std::iter::repeat_n(32u32, self.tx.capacity));
-        a.extend([1, 32, 1, 64, self.out_schema.len() as u32, 0]);
+        a.extend([1, 64, 1, 64, self.out_schema.len() as u32, 0]);
         a
     }
 
@@ -686,7 +765,7 @@ impl Req {
 
     /// `calculateEvmType2RequestIdV1(request)`.
     pub fn request_id(&self, env: &Env) -> [u8; 32] {
-        request_id_v1(self.key_version, &env.self_addr, &self.path, &self.tx_digest(env))
+        request_id_v026(self.key_version, &env.self_addr, &self.path, &self.tx_digest(env))
     }
 }
 
@@ -959,6 +1038,7 @@ impl Sent {
                 amount: 250_000,
                 dest: *b"dest-evm-address-20b",
                 gas: env.vault_gas(Action::Withdraw),
+                vault_fee: env.fees_allowed[0],
             },
             sk: tagged32(b"withdrawer", 0x22),
             in_index: 0x77,
@@ -979,6 +1059,7 @@ impl Sent {
                 amount_out: 5_000,
                 amount_in_max: 6_000,
                 gas: env.vault_gas(Action::Swap),
+                vault_fee: env.fees_underlying[1],
             },
             sk: tagged32(b"swapper", 0x23),
             in_index: 0x88,
@@ -995,6 +1076,7 @@ impl Sent {
             args: Args::Supply {
                 amount: 42_000,
                 gas: env.vault_gas(Action::Supply),
+                vault_fee: env.fees_underlying[2],
             },
             sk: tagged32(b"supplier", 0x24),
             in_index: 0x99,
@@ -1011,6 +1093,7 @@ impl Sent {
             args: Args::Redeem {
                 shares: 41_000,
                 gas: env.vault_gas(Action::Redeem),
+                vault_fee: env.fees_token[3],
             },
             sk: tagged32(b"redeemer", 0x25),
             in_index: 0xaa,
@@ -1124,6 +1207,11 @@ impl InitialiseScenario {
         inputs.extend(natives(&self.point));
         inputs.push(Fr::from(u64::from(self.key_version)));
         inputs.push(Fr::from(self.evm_height));
+        inputs.extend(self.env.fees_underlying.iter().map(|f| Fr::from(*f)));
+        inputs.extend(self.env.fees_token.iter().map(|f| Fr::from(*f)));
+        let (k_hi, k_lo) = b32_slots(&self.env.fee_recipient_key);
+        let (e_hi, e_lo) = b32_slots(&self.env.fee_recipient_enc);
+        inputs.extend([k_hi, k_lo, e_hi, e_lo]);
         inputs
     }
 
@@ -1140,7 +1228,10 @@ impl InitialiseScenario {
         o.extend(ops::cell_write(UNISWAP_ROUTER, bytesn_value(20, &self.swap_router)));
         o.extend(ops::cell_write(STATA_UNDERLYING, bytesn_value(20, &self.stata_underlying)));
         o.extend(ops::cell_write(STATA_TOKEN, bytesn_value(20, &self.stata_token)));
-        o.extend(ops::set_insert(ALLOWED_TOKENS, key20(&self.stata_underlying)));
+        o.extend(ops::insert(ALLOWED_TOKENS, key20(&self.stata_underlying), fees_av(&self.env.fees_underlying)));
+        o.extend(ops::insert(ALLOWED_TOKENS, key20(&self.stata_token), fees_av(&self.env.fees_token)));
+        o.extend(ops::cell_write(FEE_RECIPIENT_COIN_KEY, bytesn_value(32, &self.env.fee_recipient_key)));
+        o.extend(ops::cell_write(FEE_RECIPIENT_ENCRYPTION_KEY, bytesn_value(32, &self.env.fee_recipient_enc)));
         o.extend(ops::cell_write(EVM_CHAIN_ID, bytesn_value(8, &self.chain_id.to_le_bytes())));
         o.extend(ops::cell_write(MPC_RESPONSE_KEY, point_av(&self.point)));
         o.extend(ops::cell_write(MPC_KEY_VERSION, bytesn_value(1, &[self.key_version])));
@@ -1223,12 +1314,19 @@ impl SetGasParamsScenario {
     }
 }
 
-/// `addAllowedToken(erc20Address)`.
+/// `addAllowedToken(erc20Address, fees)`, and `setTokenFees(erc20Address,
+/// fees)` with [`Self::reprice`] (the same arguments, a membership check
+/// before the insert).
 #[derive(Clone, Debug)]
 pub struct AddAllowedTokenScenario {
     pub env: Env,
     pub sk: [u8; 32],
     pub erc20: [u8; 20],
+    pub fees: [u64; 4],
+    /// `setTokenFees` rather than `addAllowedToken`.
+    pub reprice: bool,
+    /// For a reprice: is the token allowed?
+    pub allowed: bool,
 }
 
 impl AddAllowedTokenScenario {
@@ -1237,12 +1335,27 @@ impl AddAllowedTokenScenario {
         AddAllowedTokenScenario {
             sk: env.deployer_sk,
             erc20: *b"another-erc20-token!",
+            fees: [11, 22, 33, 44],
+            reprice: false,
+            allowed: true,
             env,
         }
     }
 
+    /// `setTokenFees` on the admitted ERC20.
+    pub fn reprice() -> AddAllowedTokenScenario {
+        let base = AddAllowedTokenScenario::new();
+        AddAllowedTokenScenario {
+            erc20: base.env.allowed_erc20,
+            reprice: true,
+            ..base
+        }
+    }
+
     pub fn inputs(&self) -> Vec<Fr> {
-        vec![b20(&self.erc20)]
+        let mut inputs = vec![b20(&self.erc20)];
+        inputs.extend(self.fees.iter().map(|f| Fr::from(*f)));
+        inputs
     }
 
     pub fn witnesses(&self) -> Vec<Fr> {
@@ -1253,12 +1366,67 @@ impl AddAllowedTokenScenario {
     pub fn ops(&self) -> Vec<VmOp> {
         let mut o = self.env.read_initialised();
         o.extend(self.env.read_deployer());
-        o.extend(ops::set_insert(ALLOWED_TOKENS, key20(&self.erc20)));
+        if self.reprice {
+            o.extend(ops::member(ALLOWED_TOKENS, key20(&self.erc20), self.allowed));
+        }
+        o.extend(ops::insert(ALLOWED_TOKENS, key20(&self.erc20), fees_av(&self.fees)));
         o
     }
 
     pub fn preimage(&self) -> ProofPreimage {
         preimage_of(self.inputs(), self.witnesses(), &self.ops(), Fr::from(0xadd0u64))
+    }
+
+    pub fn pre_state(&self) -> PreState {
+        let mut pre = self.env.pre_state();
+        if !self.allowed {
+            pre.allowed_tokens.retain(|(k, _)| *k != self.erc20);
+        }
+        pre
+    }
+}
+
+/// `setFeeRecipient(coinPublicKey, encryptionPublicKey)`.
+#[derive(Clone, Debug)]
+pub struct SetFeeRecipientScenario {
+    pub env: Env,
+    pub sk: [u8; 32],
+    pub key: [u8; 32],
+    pub enc: [u8; 32],
+}
+
+impl SetFeeRecipientScenario {
+    pub fn new() -> SetFeeRecipientScenario {
+        let env = Env::new();
+        SetFeeRecipientScenario {
+            sk: env.deployer_sk,
+            key: tagged32(b"new-fee-recipient", 0x73),
+            enc: tagged32(b"new-fee-enc", 0x74),
+            env,
+        }
+    }
+
+    pub fn inputs(&self) -> Vec<Fr> {
+        let (k_hi, k_lo) = b32_slots(&self.key);
+        let (e_hi, e_lo) = b32_slots(&self.enc);
+        vec![k_hi, k_lo, e_hi, e_lo]
+    }
+
+    pub fn witnesses(&self) -> Vec<Fr> {
+        let (hi, lo) = b32_slots(&self.sk);
+        vec![hi, lo]
+    }
+
+    pub fn ops(&self) -> Vec<VmOp> {
+        let mut o = self.env.read_initialised();
+        o.extend(self.env.read_deployer());
+        o.extend(ops::cell_write(FEE_RECIPIENT_COIN_KEY, bytesn_value(32, &self.key)));
+        o.extend(ops::cell_write(FEE_RECIPIENT_ENCRYPTION_KEY, bytesn_value(32, &self.enc)));
+        o
+    }
+
+    pub fn preimage(&self) -> ProofPreimage {
+        preimage_of(self.inputs(), self.witnesses(), &self.ops(), Fr::from(0xfeeu64))
     }
 
     pub fn pre_state(&self) -> PreState {
@@ -1303,10 +1471,16 @@ pub struct StartScenario {
 impl StartScenario {
     pub fn of(sent: Sent) -> StartScenario {
         let coin = match &sent.args {
-            Args::Withdraw { erc20, amount, .. } => Some(sent.env.coin(erc20, *amount, 0x51)),
-            Args::Swap { token_in, amount_in_max, .. } => Some(sent.env.coin(token_in, *amount_in_max, 0x52)),
-            Args::Supply { amount, .. } => Some(sent.env.coin(&sent.env.stata_underlying, *amount, 0x53)),
-            Args::Redeem { shares, .. } => Some(sent.env.coin(&sent.env.stata_token, *shares, 0x54)),
+            Args::Withdraw { erc20, amount, vault_fee, .. } => Some(sent.env.coin(erc20, *amount + u128::from(*vault_fee), 0x51)),
+            Args::Swap { token_in, amount_in_max, vault_fee, .. } => {
+                Some(sent.env.coin(token_in, *amount_in_max + u128::from(*vault_fee), 0x52))
+            }
+            Args::Supply { amount, vault_fee, .. } => {
+                Some(sent.env.coin(&sent.env.stata_underlying, *amount + u128::from(*vault_fee), 0x53))
+            }
+            Args::Redeem { shares, vault_fee, .. } => {
+                Some(sent.env.coin(&sent.env.stata_token, *shares + u128::from(*vault_fee), 0x54))
+            }
             _ => None,
         };
         StartScenario {
@@ -1409,27 +1583,43 @@ impl StartScenario {
                 o.extend(ops::member(ALLOWED_TOKENS, key20(erc20), self.allowed));
                 o.extend(index_free_ops(a.args_field(), s.in_index, self.queued, self.in_args));
             }
-            Args::Withdraw { .. } => {
-                o.extend(env.coin_ops(self.coin.as_ref().unwrap()));
+            Args::Withdraw { erc20, vault_fee, .. } => {
+                let coin = self.coin.as_ref().unwrap();
                 o.extend(index_free_ops(a.args_field(), s.in_index, self.queued, self.in_args));
+                o.extend(env.kernel_self()); // the colour's tokenType
+                o.extend(env.token_fees_ops(erc20));
+                o.extend(env.take_fee_ops(erc20, coin, *vault_fee));
                 o.extend(env.read_vault_gas());
             }
-            Args::Swap { token_out, .. } => {
+            Args::Swap { token_in, token_out, vault_fee, .. } => {
+                let coin = self.coin.as_ref().unwrap();
                 o.extend(ops::member(ALLOWED_TOKENS, key20(token_out), self.allowed));
-                o.extend(env.coin_ops(self.coin.as_ref().unwrap()));
                 o.extend(index_free_ops(a.args_field(), s.in_index, self.queued, self.in_args));
+                o.extend(env.kernel_self());
+                o.extend(env.token_fees_ops(token_in));
+                o.extend(env.take_fee_ops(token_in, coin, *vault_fee));
                 o.extend(env.read_vault_gas());
             }
-            Args::Supply { .. } => {
+            Args::Supply { vault_fee, .. } => {
+                let coin = self.coin.as_ref().unwrap();
+                o.extend(index_free_ops(a.args_field(), s.in_index, self.queued, self.in_args));
                 o.extend(env.read_b20(STATA_UNDERLYING));
-                o.extend(env.coin_ops(self.coin.as_ref().unwrap()));
-                o.extend(index_free_ops(a.args_field(), s.in_index, self.queued, self.in_args));
+                o.extend(env.kernel_self());
+                o.extend(env.read_b20(STATA_UNDERLYING));
+                o.extend(env.token_fees_ops(&env.stata_underlying));
+                o.extend(env.read_b20(STATA_UNDERLYING));
+                o.extend(env.take_fee_ops(&env.stata_underlying, coin, *vault_fee));
                 o.extend(env.read_vault_gas());
             }
-            Args::Redeem { .. } => {
-                o.extend(env.read_b20(STATA_TOKEN));
-                o.extend(env.coin_ops(self.coin.as_ref().unwrap()));
+            Args::Redeem { vault_fee, .. } => {
+                let coin = self.coin.as_ref().unwrap();
                 o.extend(index_free_ops(a.args_field(), s.in_index, self.queued, self.in_args));
+                o.extend(env.read_b20(STATA_TOKEN));
+                o.extend(env.kernel_self());
+                o.extend(env.read_b20(STATA_TOKEN));
+                o.extend(env.token_fees_ops(&env.stata_token));
+                o.extend(env.read_b20(STATA_TOKEN));
+                o.extend(env.take_fee_ops(&env.stata_token, coin, *vault_fee));
                 o.extend(env.read_vault_gas());
             }
             Args::Approve { spender, .. } => {
@@ -1602,25 +1792,33 @@ impl Attestation {
         }
     }
 
-    pub fn digest(&self, request_id: &[u8; 32]) -> [u8; 32] {
-        attestation_digest(request_id, self.block_height, self.output_kind, self.width, &self.output)
+    /// `calculateAttestedOutputHashV1(output)`.
+    pub fn output_hash(&self) -> [u8; 32] {
+        attested_output_hash(&self.output)
     }
 
-    pub fn record(&self, request_id: &[u8; 32]) -> Record {
+    pub fn digest(&self, request_id: &[u8; 32]) -> [u8; 32] {
+        attestation_digest_v026(request_id, self.block_height, self.output_kind, self.width, &self.output_hash())
+    }
+
+    pub fn record(&self, _request_id: &[u8; 32]) -> Record {
         Record {
             block_height: self.block_height,
             output_kind: self.output_kind,
-            digest: self.digest(request_id),
+            length: self.width as u64,
+            output_hash: self.output_hash(),
         }
     }
 
-    /// The `RespondBidirectionalEventV1` argument's fourteen limbs: the id,
-    /// the height, the verdict, the width, the digest, then the signature's
-    /// `bigR.x`, `bigR.y`, `s` (little-endian) and `recoveryId`.
+    /// The `RespondBidirectionalEventV1` argument's sixteen limbs: the id,
+    /// the height, the verdict, the width, the output hash, the digest, then
+    /// the signature's `bigR.x`, `bigR.y`, `s` (little-endian) and
+    /// `recoveryId`.
     pub fn event_inputs(&self, env: &Env, request_id: &[u8; 32]) -> Vec<Fr> {
         let digest = self.digest(request_id);
         let (r_le, s_le, _pk) = sign(&digest, &scalar(env.key_seed), &scalar(self.k_seed));
         let (rid_hi, rid_lo) = b32_slots(request_id);
+        let (h_hi, h_lo) = b32_slots(&self.output_hash());
         let (d_hi, d_lo) = b32_slots(&digest);
         let (r_hi, r_lo) = b32_slots(&r_le);
         let (s_hi, s_lo) = b32_slots(&s_le);
@@ -1630,6 +1828,8 @@ impl Attestation {
             Fr::from(self.block_height),
             Fr::from(self.output_kind),
             Fr::from(self.width as u64),
+            h_hi,
+            h_lo,
             d_hi,
             d_lo,
             r_hi,
@@ -1643,7 +1843,7 @@ impl Attestation {
     }
 }
 
-/// `queueAttestation{0,1,32}(event, output)`.
+/// `queueAttestation(event)`.
 #[derive(Clone, Debug)]
 pub struct QueueAttestationScenario {
     pub sent: Sent,
@@ -1667,9 +1867,7 @@ impl QueueAttestationScenario {
     }
 
     pub fn inputs(&self) -> Vec<Fr> {
-        let mut inputs = self.attestation.event_inputs(&self.sent.env, &self.sent.request_id());
-        inputs.extend(self.attestation.output.iter().copied());
-        inputs
+        self.attestation.event_inputs(&self.sent.env, &self.sent.request_id())
     }
 
     pub fn ops(&self) -> Vec<VmOp> {
@@ -1970,7 +2168,7 @@ impl CompleteScenario {
         let own_key_witnessed = match self.sent.action() {
             Action::ReplaceNonce | Action::Approve => false,
             Action::Deposit => self.executed() && self.success() && matches!(self.recipient, ClaimRecipient::None(_)),
-            Action::Withdraw => self.refunds() || !self.success(),
+            Action::Withdraw => self.refunds() || !(self.executed() && self.success()),
             Action::Swap | Action::Supply | Action::Redeem => true,
         };
         if own_key_witnessed {
@@ -2041,7 +2239,7 @@ impl CompleteScenario {
             }
             Args::Withdraw { erc20, amount, .. } => {
                 o.extend(self.consume_ops(true));
-                if self.refunds() || !self.success() {
+                if self.refunds() || !(self.executed() && self.success()) {
                     o.extend(env.mint_to_key_ops(erc20, *amount as u64, &self.mint_nonce, &self.own_pk));
                 }
             }
@@ -2124,6 +2322,7 @@ scenario! {
     InitialiseScenario => env,
     SetGasParamsScenario => env,
     AddAllowedTokenScenario => env,
+    SetFeeRecipientScenario => env,
     StartScenario => sent.env,
     SendScenario => sent.env,
     QueueAttestationScenario => sent.env,

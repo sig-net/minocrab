@@ -54,6 +54,18 @@ in  chainId: Scalar<BLS12-381>
 in  responseKey: Point<Secp256k1>
 in  responseKeyVersion: Scalar<BLS12-381>
 in  evmHeight: Scalar<BLS12-381>
+in  stataUnderlyingFees_withdraw: Scalar<BLS12-381>
+in  stataUnderlyingFees_swap: Scalar<BLS12-381>
+in  stataUnderlyingFees_supply: Scalar<BLS12-381>
+in  stataUnderlyingFees_redeem: Scalar<BLS12-381>
+in  stataTokenFees_withdraw: Scalar<BLS12-381>
+in  stataTokenFees_swap: Scalar<BLS12-381>
+in  stataTokenFees_supply: Scalar<BLS12-381>
+in  stataTokenFees_redeem: Scalar<BLS12-381>
+in  feeRecipientCoinKey_hi: Scalar<BLS12-381>
+in  feeRecipientCoinKey_lo: Scalar<BLS12-381>
+in  feeRecipientEncryptionKey_hi: Scalar<BLS12-381>
+in  feeRecipientEncryptionKey_lo: Scalar<BLS12-381>
 wit Scalar<BLS12-381>
 wit Scalar<BLS12-381>
 ",
@@ -76,6 +88,33 @@ wit Scalar<BLS12-381>
         "erc20_vault::add_allowed_token",
         "\
 in  erc20Address: Scalar<BLS12-381>
+in  fees_withdraw: Scalar<BLS12-381>
+in  fees_swap: Scalar<BLS12-381>
+in  fees_supply: Scalar<BLS12-381>
+in  fees_redeem: Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+",
+    ),
+    (
+        "erc20_vault::set_token_fees",
+        "\
+in  erc20Address: Scalar<BLS12-381>
+in  fees_withdraw: Scalar<BLS12-381>
+in  fees_swap: Scalar<BLS12-381>
+in  fees_supply: Scalar<BLS12-381>
+in  fees_redeem: Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+",
+    ),
+    (
+        "erc20_vault::set_fee_recipient",
+        "\
+in  coinPublicKey_hi: Scalar<BLS12-381>
+in  coinPublicKey_lo: Scalar<BLS12-381>
+in  encryptionPublicKey_hi: Scalar<BLS12-381>
+in  encryptionPublicKey_lo: Scalar<BLS12-381>
 wit Scalar<BLS12-381>
 wit Scalar<BLS12-381>
 ",
@@ -126,13 +165,15 @@ in  slots_9_requestId_lo: Scalar<BLS12-381>
 ",
     ),
     (
-        "erc20_vault::queue_attestation0",
+        "erc20_vault::queue_attestation",
         "\
 in  respondBidirectionalEvent_requestId_hi: Scalar<BLS12-381>
 in  respondBidirectionalEvent_requestId_lo: Scalar<BLS12-381>
 in  respondBidirectionalEvent_blockHeight: Scalar<BLS12-381>
 in  respondBidirectionalEvent_outputKind: Scalar<BLS12-381>
 in  respondBidirectionalEvent_serializedOutputLength: Scalar<BLS12-381>
+in  respondBidirectionalEvent_outputHash_hi: Scalar<BLS12-381>
+in  respondBidirectionalEvent_outputHash_lo: Scalar<BLS12-381>
 in  respondBidirectionalEvent_digest_hi: Scalar<BLS12-381>
 in  respondBidirectionalEvent_digest_lo: Scalar<BLS12-381>
 in  respondBidirectionalEvent_signature_bigR_x_hi: Scalar<BLS12-381>
@@ -142,47 +183,6 @@ in  respondBidirectionalEvent_signature_bigR_y_lo: Scalar<BLS12-381>
 in  respondBidirectionalEvent_signature_s_hi: Scalar<BLS12-381>
 in  respondBidirectionalEvent_signature_s_lo: Scalar<BLS12-381>
 in  respondBidirectionalEvent_signature_recoveryId: Scalar<BLS12-381>
-",
-    ),
-    (
-        "erc20_vault::queue_attestation1",
-        "\
-in  respondBidirectionalEvent_requestId_hi: Scalar<BLS12-381>
-in  respondBidirectionalEvent_requestId_lo: Scalar<BLS12-381>
-in  respondBidirectionalEvent_blockHeight: Scalar<BLS12-381>
-in  respondBidirectionalEvent_outputKind: Scalar<BLS12-381>
-in  respondBidirectionalEvent_serializedOutputLength: Scalar<BLS12-381>
-in  respondBidirectionalEvent_digest_hi: Scalar<BLS12-381>
-in  respondBidirectionalEvent_digest_lo: Scalar<BLS12-381>
-in  respondBidirectionalEvent_signature_bigR_x_hi: Scalar<BLS12-381>
-in  respondBidirectionalEvent_signature_bigR_x_lo: Scalar<BLS12-381>
-in  respondBidirectionalEvent_signature_bigR_y_hi: Scalar<BLS12-381>
-in  respondBidirectionalEvent_signature_bigR_y_lo: Scalar<BLS12-381>
-in  respondBidirectionalEvent_signature_s_hi: Scalar<BLS12-381>
-in  respondBidirectionalEvent_signature_s_lo: Scalar<BLS12-381>
-in  respondBidirectionalEvent_signature_recoveryId: Scalar<BLS12-381>
-in  serializedOutput: Scalar<BLS12-381>
-",
-    ),
-    (
-        "erc20_vault::queue_attestation32",
-        "\
-in  respondBidirectionalEvent_requestId_hi: Scalar<BLS12-381>
-in  respondBidirectionalEvent_requestId_lo: Scalar<BLS12-381>
-in  respondBidirectionalEvent_blockHeight: Scalar<BLS12-381>
-in  respondBidirectionalEvent_outputKind: Scalar<BLS12-381>
-in  respondBidirectionalEvent_serializedOutputLength: Scalar<BLS12-381>
-in  respondBidirectionalEvent_digest_hi: Scalar<BLS12-381>
-in  respondBidirectionalEvent_digest_lo: Scalar<BLS12-381>
-in  respondBidirectionalEvent_signature_bigR_x_hi: Scalar<BLS12-381>
-in  respondBidirectionalEvent_signature_bigR_x_lo: Scalar<BLS12-381>
-in  respondBidirectionalEvent_signature_bigR_y_hi: Scalar<BLS12-381>
-in  respondBidirectionalEvent_signature_bigR_y_lo: Scalar<BLS12-381>
-in  respondBidirectionalEvent_signature_s_hi: Scalar<BLS12-381>
-in  respondBidirectionalEvent_signature_s_lo: Scalar<BLS12-381>
-in  respondBidirectionalEvent_signature_recoveryId: Scalar<BLS12-381>
-in  serializedOutput_hi: Scalar<BLS12-381>
-in  serializedOutput_lo: Scalar<BLS12-381>
 ",
     ),
     (

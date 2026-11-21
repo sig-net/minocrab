@@ -149,8 +149,8 @@ pub mod circuits {
     }
 }
 
-/// The Signet module's protocol enums (midnight-integration v0.25.0,
-/// `Signet.compact`), each carried on the ledger and in every hash as its
+/// The Signet module's protocol enums (midnight-integration v0.25.0, unchanged
+/// at v0.26.0-rc.15, `Signet.compact`), each carried on the ledger and in every hash as its
 /// variant INDEX in one byte. The source says of every one of them: append
 /// variants only.
 ///

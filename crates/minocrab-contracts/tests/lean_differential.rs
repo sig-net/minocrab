@@ -61,7 +61,7 @@ const CHUNK: usize = 8;
 
 /// The corpus directory each family's `.zkir` lives in, repo-relative.
 const VAULT_DIR: &str =
-    "corpus/zkir/signet-midnight-examples/examples/erc20-vault/contract/src/erc20-vault/zkir";
+    "corpus/zkir/signet-midnight-examples-v070/examples/erc20-vault/contract/src/erc20-vault/zkir";
 const SIGNER_DIR: &str =
     "corpus/zkir/signet-midnight-integration-v026/packages/signet-signer/src/signet-signer/zkir";
 const RESPONDER_DIR: &str =
@@ -74,17 +74,17 @@ const MANAGER_DIR: &str = "corpus/zkir/aa-midnight-evm-experiment/contracts/mana
 /// differential suites already prove PI-equal on these preimages.
 fn corpus_table() -> Vec<(&'static str, String)> {
     let mut t: Vec<(&'static str, String)> = Vec::new();
-    // The twenty-nine vault circuits (the M44 flush-pattern shape). The
+    // The twenty-nine vault circuits (the flush pattern at 0.7.0-rc.2). The
     // preimage stem is `Circuit::zkir_name`, which is also compactc's file
     // stem.
     for name in [
         "initialise",
         "setGasParams",
         "addAllowedToken",
+        "setTokenFees",
+        "setFeeRecipient",
         "flushQueue",
-        "queueAttestation0",
-        "queueAttestation1",
-        "queueAttestation32",
+        "queueAttestation",
         "startReplaceNonce",
         "sendReplaceNonce",
         "completeReplaceNonce",

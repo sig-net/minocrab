@@ -100,7 +100,10 @@ fn every_circuit_s_messages_and_regions_name_its_finished_stream() {
     // the treasury's) asserts "Output does not match the attestation", and
     // the attested-output hash and check are regions of their own in every
     // settle that verifies one.
-    assert_eq!((circuits, messages, regions), (227, 480, 440));
+    // 480 → 473 messages, 440 → 454 regions with the erc20 vault at
+    // 0.7.0-rc.2: three `queueAttestation*` became one, two admin circuits
+    // came in, and the four vault-paid starts gained the fee path's regions.
+    assert_eq!((circuits, messages, regions), (227, 473, 454));
     // The three messages that go: the `Always` outcome rule's `assert(imm 1)`,
     // deleted by the true-assert rule, takes its message with it.
     dropped.sort();

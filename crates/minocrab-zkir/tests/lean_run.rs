@@ -47,7 +47,7 @@ fn lean_agrees_with_the_rust_oracle_on_every_run_record() {
     let records_dir = lean_dir.join("differential");
     let repo = crate_dir.join("../..");
     let corpus = repo.join("corpus/zkir");
-    if !corpus.join("signet-midnight-examples").exists() {
+    if !corpus.join("signet-midnight-examples-v070").exists() {
         eprintln!(
             "skipping: no corpus at {} (run corpus/compile.sh)",
             corpus.display()

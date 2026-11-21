@@ -86,7 +86,8 @@
 //!   - it discharges the READ wire, not a wire merely DERIVED from one. A
 //!     `cond_select` of a confined read that feeds a hash limb keeps its
 //!     finding — the safe direction, and why the `manager::*` `%sel.*`
-//!     residue stands.
+//!     residue stands — UNLESS the select's bit is an IMMEDIATE, which makes
+//!     the output the chosen operand exactly (an alias, not a derivation).
 //!   - "zero whenever `g` is zero" is SYNTACTIC, through
 //!     `cond_select{a: _, b: 0, bit: k}` chains only. A guard that is
 //!     semantically but not syntactically dominated marks nothing.
@@ -826,11 +827,45 @@ fn confined_reads(instructions: &[Instruction], shapes: &Shapes, flow: &Flow) ->
             }
         }
     }
-    guarded
+    let mut discharged: BTreeSet<String> = guarded
         .into_iter()
         .filter(|(read, g)| confined(instructions, shapes, flow, read, g))
         .map(|(read, _)| read)
-        .collect()
+        .collect();
+    // A `cond_select` whose BIT IS AN IMMEDIATE is its chosen operand, exactly:
+    // the synthesis arm assigns an immediate as a FIXED cell
+    // (`resolve_operand`, zkir-v3 3.2.0 `ir_vm.rs:956-968`) and selects with it
+    // (`I::CondSelect`, `ir_vm.rs:1064-1071`), so the output is constrained
+    // equal to `a` when the bit is 1 and to `b` when it is 0, whatever the
+    // prover holds. Such a wire is the confined read under another name: the
+    // walk that confined the read already followed it, and the limb it feeds is
+    // the read's own value. Only the identity aliases; a select on a WIRE bit
+    // stays a derived wire and keeps its finding (the stated limit above).
+    // `std::v3::coin_commitment`'s `is_left ? left : right` with a constant
+    // `is_left` is the shape that needs it (M48 L, notes/taint-lint.org §12).
+    loop {
+        let mut grew = false;
+        for ins in instructions {
+            if let Instruction::CondSelect { bit: Operand::Immediate(v), a, b, output } = ins {
+                let chosen = if *v == Fr::from(1u64) {
+                    a
+                } else if *v == Fr::from(0u64) {
+                    b
+                } else {
+                    continue;
+                };
+                if let Operand::Variable(id) = chosen {
+                    if discharged.contains(&id.0) {
+                        grew |= discharged.insert(output.0.clone());
+                    }
+                }
+            }
+        }
+        if !grew {
+            break;
+        }
+    }
+    discharged
 }
 
 /// Is everything derived from `read` inert whenever `g` is false?
@@ -2190,6 +2225,37 @@ mod tests {
             let findings = audit(&with(tail.clone()));
             assert_eq!(findings.len(), 1, "{tail:?} should keep the finding: {findings:?}");
         }
+    }
+
+    /// A `cond_select` on an IMMEDIATE bit is its chosen operand exactly, so a
+    /// confined read selected that way is still the confined read (M48 L: the
+    /// erc20 vault's fee mint, whose coin commitment selects the recipient key
+    /// with a constant `is_left`). A select on a WIRE bit is a derivation and
+    /// keeps its finding; so does a constant select that picks the OTHER,
+    /// unconfined operand.
+    #[test]
+    fn an_immediate_select_of_a_confined_read_is_the_read() {
+        let selected = |bit: Operand, a: &str, b: &str| {
+            vec![
+                Instruction::PublicInput {
+                    guard: Some(var("g")),
+                    val_t: IrType::Native,
+                    output: id("pi"),
+                },
+                popeq_u64(var("g"), "pi"),
+                Instruction::PublicInput { guard: None, val_t: IrType::Native, output: id("free") },
+                Instruction::CondSelect { bit, a: var(a), b: var(b), output: id("sel") },
+                keccak(vec![bytes_atom(8)], vec![var("sel")]),
+                Instruction::Impact {
+                    guard: var("g"),
+                    inputs: vec![imm(0x10), imm(1), imm(1), imm(0x20), var("digest")],
+                },
+            ]
+        };
+        assert_eq!(audit(&selected(imm(1), "pi", "free")), vec![]);
+        assert_eq!(audit(&selected(imm(0), "free", "pi")), vec![]);
+        assert_eq!(audit(&selected(var("w"), "pi", "free")).len(), 1);
+        assert_eq!(audit(&selected(imm(1), "free", "pi")).len(), 1);
     }
 }
 

@@ -411,10 +411,10 @@ fn the_vaults_own_initialize_now_flattens() {
     use minocrab::v3::{CircuitAbi, Prim};
     use minocrab::Public;
     use minocrab_abi::info::ContractInfo;
-    use minocrab_std::v3::{Bytes, Secp256k1Point, Uint};
+    use minocrab_std::v3::{Bytes, Secp256k1Point, Uint, B32};
 
     let text = std::fs::read_to_string(format!(
-        "{}/../../corpus/zkir/signet-midnight-examples/examples/erc20-vault/contract/\
+        "{}/../../corpus/zkir/signet-midnight-examples-v070/examples/erc20-vault/contract/\
          src/erc20-vault/compiler/contract-info.json",
         env!("CARGO_MANIFEST_DIR")
     ))
@@ -423,8 +423,9 @@ fn the_vaults_own_initialize_now_flattens() {
     let initialize = info.circuit("initialise").expect("the vault exports initialise");
 
     // `responseKey: Secp256k1Point`, published as an `Opaque` under an alias.
-    // Seventh of eight arguments since M44 — `evmHeight` follows it — so pick
-    // it out by name rather than by position.
+    // Sixth of twelve arguments since 0.7.0-rc.2 (the key version, the EVM
+    // height, two `TokenFees` and the fee recipient's two keys follow it), so
+    // pick it out by name rather than by position.
     let response_key = &initialize
         .arguments
         .iter()
@@ -468,17 +469,28 @@ fn the_vaults_own_initialize_now_flattens() {
         ),
         (<Uint<8, Public> as CircuitAbi>::atoms(), <Uint<8, Public> as CircuitAbi>::prims()),
         (<Uint<64, Public> as CircuitAbi>::atoms(), <Uint<64, Public> as CircuitAbi>::prims()),
+        // stataUnderlyingFees, stataTokenFees: four `Uint<64>` each.
+        (<Uint<64, Public> as CircuitAbi>::atoms(), <Uint<64, Public> as CircuitAbi>::prims()),
+        (<Uint<64, Public> as CircuitAbi>::atoms(), <Uint<64, Public> as CircuitAbi>::prims()),
+        (<Uint<64, Public> as CircuitAbi>::atoms(), <Uint<64, Public> as CircuitAbi>::prims()),
+        (<Uint<64, Public> as CircuitAbi>::atoms(), <Uint<64, Public> as CircuitAbi>::prims()),
+        (<Uint<64, Public> as CircuitAbi>::atoms(), <Uint<64, Public> as CircuitAbi>::prims()),
+        (<Uint<64, Public> as CircuitAbi>::atoms(), <Uint<64, Public> as CircuitAbi>::prims()),
+        (<Uint<64, Public> as CircuitAbi>::atoms(), <Uint<64, Public> as CircuitAbi>::prims()),
+        (<Uint<64, Public> as CircuitAbi>::atoms(), <Uint<64, Public> as CircuitAbi>::prims()),
+        // feeRecipientCoinKey: ZswapCoinPublicKey, feeRecipientEncryptionKey: Bytes<32>.
+        (<B32<Public> as CircuitAbi>::atoms(), <B32<Public> as CircuitAbi>::prims()),
+        (<B32<Public> as CircuitAbi>::atoms(), <B32<Public> as CircuitAbi>::prims()),
     ] {
         atoms.extend(a);
         prims.extend(p);
     }
     assert_eq!(flat.atoms, atoms, "the vault's initialize atoms");
     assert_eq!(flat.prims, prims, "the vault's initialize prims");
-    // The response key is the sixth argument of eight since the flush
-    // pattern (the key version and the EVM height follow it): a point slot,
-    // not an opaque one.
+    // The response key is the sixth argument: a point slot, not an opaque
+    // one, after the four addresses and the chain id.
     assert_eq!(
-        prims.get(prims.len() - 3),
+        prims.get(5),
         Some(&Prim::Point),
         "the response key is a point slot, not an opaque one"
     );

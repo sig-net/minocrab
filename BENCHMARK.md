@@ -1,6 +1,6 @@
 # erc20-vault proving cost: compactc vs the MinoCrab port
 
-> **Dated record (2026-09-05).** These numbers are the seventeen-circuit vault of sig-net/midnight-examples `0d9c1660`. The vault was re-ported to upstream's flush-pattern redesign (29 circuits, `375071b`) in M44 — see `notes/vault-flush.org` — and the re-run on those circuits is that milestone's open item; the row counts the test suite freezes today are in `crates/minocrab-contracts/tests/row_snapshot.rs`.
+> **Dated record (2026-09-05).** These numbers are the seventeen-circuit vault of sig-net/midnight-examples `0d9c1660`. The vault was re-ported to upstream's flush-pattern redesign (29 circuits, `375071b`) in M44 and to erc20-vault v0.7.0-rc.2 (`6054146`, per-token fees, one `queueAttestation`) in M48 L — see `notes/vault-flush.org` — and the re-run on those circuits is that milestone's open item; the row counts the test suite freezes today are in `crates/minocrab-contracts/tests/row_snapshot.rs`.
 
 MinoCrab is a Rust eDSL for Midnight that compiles to ZKIR, replacing the
 Compact language. This report benchmarks the real sig-net cross-chain

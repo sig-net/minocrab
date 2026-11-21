@@ -379,7 +379,7 @@ optional hardening.
 **Generated** from the same schema walk the conformance suite checks — this section is not hand-maintained, and a test fails if the committed tables stop matching the format. The `AttestationPreimage<T>` rows are V2's signed preimage; their `output.*` rows are the attested output at offset 32. V1's digest has no table here because it has no byte preimage (§5); what V1 publishes is the OUTPUT — `EmptyOutput`, `BoolOutput`, `WordOutput` — and a `width 0` row is a field that is present and empty, never a formatting slip.
 
 <!-- BEGIN GENERATED: offset tables -->
-### `VaultEventV1` — 362 bytes
+### `VaultEventV1` — 394 bytes
 
 | offset | width | field | type |
 |---:|---:|---|---|
@@ -401,41 +401,41 @@ optional hardening.
 | 166 | 32 | `tx_params.calldata.value.words[0]` | `[u8; 32]` |
 | 198 | 32 | `tx_params.calldata.value.words[1]` | `[u8; 32]` |
 | 230 | 1 | `tx_params.access_list_entry_count` | `u8` |
-| 231 | 32 | `execution_dest` | `[u8; 32]` |
-| 263 | 1 | `signature_dest` | `u8` |
-| 264 | 64 | `params` | `[u8; 64]` |
-| 328 | 34 | `output_deserialization_schema` | `[u8; 34]` |
+| 231 | 64 | `execution_dest` | `[u8; 64]` |
+| 295 | 1 | `signature_dest` | `u8` |
+| 296 | 64 | `params` | `[u8; 64]` |
+| 360 | 34 | `output_deserialization_schema` | `[u8; 34]` |
+| 394 | 0 | `respond_serialization_schema` | `[u8; 0]` |
+
+### `ReplaceNonceEventV1` — 362 bytes
+
+| offset | width | field | type |
+|---:|---:|---|---|
+| 0 | 1 | `key_version` | `u8` |
+| 1 | 32 | `sender` | `[u8; 32]` |
+| 33 | 32 | `path` | `[u8; 32]` |
+| 65 | 1 | `algo` | `u8` |
+| 66 | 1 | `tx_param_type` | `u8` |
+| 67 | 8 | `tx_params.chain_id` | `u64` |
+| 75 | 8 | `tx_params.nonce` | `u64` |
+| 83 | 16 | `tx_params.max_priority_fee_per_gas` | `u128` |
+| 99 | 16 | `tx_params.max_fee_per_gas` | `u128` |
+| 115 | 8 | `tx_params.gas_limit` | `u64` |
+| 123 | 20 | `tx_params.to` | `[u8; 20]` |
+| 143 | 16 | `tx_params.value` | `u128` |
+| 159 | 1 | `tx_params.calldata.is_some` | `bool` |
+| 160 | 4 | `tx_params.calldata.value.selector` | `[u8; 4]` |
+| 164 | 2 | `tx_params.calldata.value.no_words` | `u16` |
+| 166 | 32 | `tx_params.calldata.value.words[0]` | `[u8; 32]` |
+| 198 | 32 | `tx_params.calldata.value.words[1]` | `[u8; 32]` |
+| 230 | 1 | `tx_params.access_list_entry_count` | `u8` |
+| 231 | 64 | `execution_dest` | `[u8; 64]` |
+| 295 | 1 | `signature_dest` | `u8` |
+| 296 | 64 | `params` | `[u8; 64]` |
+| 360 | 2 | `output_deserialization_schema` | `[u8; 2]` |
 | 362 | 0 | `respond_serialization_schema` | `[u8; 0]` |
 
-### `ReplaceNonceEventV1` — 330 bytes
-
-| offset | width | field | type |
-|---:|---:|---|---|
-| 0 | 1 | `key_version` | `u8` |
-| 1 | 32 | `sender` | `[u8; 32]` |
-| 33 | 32 | `path` | `[u8; 32]` |
-| 65 | 1 | `algo` | `u8` |
-| 66 | 1 | `tx_param_type` | `u8` |
-| 67 | 8 | `tx_params.chain_id` | `u64` |
-| 75 | 8 | `tx_params.nonce` | `u64` |
-| 83 | 16 | `tx_params.max_priority_fee_per_gas` | `u128` |
-| 99 | 16 | `tx_params.max_fee_per_gas` | `u128` |
-| 115 | 8 | `tx_params.gas_limit` | `u64` |
-| 123 | 20 | `tx_params.to` | `[u8; 20]` |
-| 143 | 16 | `tx_params.value` | `u128` |
-| 159 | 1 | `tx_params.calldata.is_some` | `bool` |
-| 160 | 4 | `tx_params.calldata.value.selector` | `[u8; 4]` |
-| 164 | 2 | `tx_params.calldata.value.no_words` | `u16` |
-| 166 | 32 | `tx_params.calldata.value.words[0]` | `[u8; 32]` |
-| 198 | 32 | `tx_params.calldata.value.words[1]` | `[u8; 32]` |
-| 230 | 1 | `tx_params.access_list_entry_count` | `u8` |
-| 231 | 32 | `execution_dest` | `[u8; 32]` |
-| 263 | 1 | `signature_dest` | `u8` |
-| 264 | 64 | `params` | `[u8; 64]` |
-| 328 | 2 | `output_deserialization_schema` | `[u8; 2]` |
-| 330 | 0 | `respond_serialization_schema` | `[u8; 0]` |
-
-### `SwapEventV1` — 526 bytes
+### `SwapEventV1` — 558 bytes
 
 | offset | width | field | type |
 |---:|---:|---|---|
@@ -462,13 +462,13 @@ optional hardening.
 | 326 | 32 | `tx_params.calldata.value.words[5]` | `[u8; 32]` |
 | 358 | 32 | `tx_params.calldata.value.words[6]` | `[u8; 32]` |
 | 390 | 1 | `tx_params.access_list_entry_count` | `u8` |
-| 391 | 32 | `execution_dest` | `[u8; 32]` |
-| 423 | 1 | `signature_dest` | `u8` |
-| 424 | 64 | `params` | `[u8; 64]` |
-| 488 | 38 | `output_deserialization_schema` | `[u8; 38]` |
-| 526 | 0 | `respond_serialization_schema` | `[u8; 0]` |
+| 391 | 64 | `execution_dest` | `[u8; 64]` |
+| 455 | 1 | `signature_dest` | `u8` |
+| 456 | 64 | `params` | `[u8; 64]` |
+| 520 | 38 | `output_deserialization_schema` | `[u8; 38]` |
+| 558 | 0 | `respond_serialization_schema` | `[u8; 0]` |
 
-### `SupplyEventV1` — 364 bytes
+### `SupplyEventV1` — 396 bytes
 
 | offset | width | field | type |
 |---:|---:|---|---|
@@ -490,13 +490,13 @@ optional hardening.
 | 166 | 32 | `tx_params.calldata.value.words[0]` | `[u8; 32]` |
 | 198 | 32 | `tx_params.calldata.value.words[1]` | `[u8; 32]` |
 | 230 | 1 | `tx_params.access_list_entry_count` | `u8` |
-| 231 | 32 | `execution_dest` | `[u8; 32]` |
-| 263 | 1 | `signature_dest` | `u8` |
-| 264 | 64 | `params` | `[u8; 64]` |
-| 328 | 36 | `output_deserialization_schema` | `[u8; 36]` |
-| 364 | 0 | `respond_serialization_schema` | `[u8; 0]` |
+| 231 | 64 | `execution_dest` | `[u8; 64]` |
+| 295 | 1 | `signature_dest` | `u8` |
+| 296 | 64 | `params` | `[u8; 64]` |
+| 360 | 36 | `output_deserialization_schema` | `[u8; 36]` |
+| 396 | 0 | `respond_serialization_schema` | `[u8; 0]` |
 
-### `RedeemEventV1` — 396 bytes
+### `RedeemEventV1` — 428 bytes
 
 | offset | width | field | type |
 |---:|---:|---|---|
@@ -519,11 +519,11 @@ optional hardening.
 | 198 | 32 | `tx_params.calldata.value.words[1]` | `[u8; 32]` |
 | 230 | 32 | `tx_params.calldata.value.words[2]` | `[u8; 32]` |
 | 262 | 1 | `tx_params.access_list_entry_count` | `u8` |
-| 263 | 32 | `execution_dest` | `[u8; 32]` |
-| 295 | 1 | `signature_dest` | `u8` |
-| 296 | 64 | `params` | `[u8; 64]` |
-| 360 | 36 | `output_deserialization_schema` | `[u8; 36]` |
-| 396 | 0 | `respond_serialization_schema` | `[u8; 0]` |
+| 263 | 64 | `execution_dest` | `[u8; 64]` |
+| 327 | 1 | `signature_dest` | `u8` |
+| 328 | 64 | `params` | `[u8; 64]` |
+| 392 | 36 | `output_deserialization_schema` | `[u8; 36]` |
+| 428 | 0 | `respond_serialization_schema` | `[u8; 0]` |
 
 ### `EmptyOutput` — 0 bytes
 

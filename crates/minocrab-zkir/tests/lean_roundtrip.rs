@@ -18,7 +18,7 @@ fn lean_syntax_round_trips_the_v3_corpus_byte_for_byte() {
     let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let lean_dir = crate_dir.join("lean");
     let corpus = crate_dir.join("../../corpus/zkir");
-    if !corpus.join("signet-midnight-examples").exists() {
+    if !corpus.join("signet-midnight-examples-v070").exists() {
         eprintln!("skipping: no corpus at {} (run corpus/compile.sh)", corpus.display());
         return;
     }
@@ -70,9 +70,10 @@ fn lean_syntax_round_trips_the_v3_corpus_byte_for_byte() {
     // 907 → 897 when the compact source moved to compactc-v0.36.1 (7fa3a117);
     // corpus_roundtrip.rs names what was added and removed.
     // 897 → 938 with the mainnet pins (M48 L), named in corpus_roundtrip.rs;
-    // 938 → 925 when the v0.25.0 and fff3421c signers and test callers retired.
+    // 938 → 925 when the v0.25.0 and fff3421c signers and test callers retired;
+    // 925 → 893 when the 375071b vault and the v0.24.1 pin retired.
     assert!(
-        stdout.starts_with("925 ok, 0 failed, 0 v2 skipped"),
+        stdout.starts_with("893 ok, 0 failed, 0 v2 skipped"),
         "unexpected round-trip summary (corpus size moved?): {stdout}"
     );
 

@@ -1,79 +1,89 @@
-//! `erc20-vault` (signet-midnight-examples `375071b`, main at 2026-10-07) —
-//! THE benchmark target, on the FLUSH PATTERN and the Signet V1 vocabulary
-//! (M44). Ported circuit by circuit, instruction order following the Compact
-//! source; each port carries a differential test against compactc's artifact
+//! `erc20-vault` (signet-midnight-examples tag `erc20-vault-v0.7.0-rc.2`,
+//! `6054146`, on `@sig-net/midnight` 0.26.0-rc.15) — THE benchmark target,
+//! on the FLUSH PATTERN, the Signet V1 vocabulary and per-token fees. Ported
+//! circuit by circuit, instruction order following the Compact source; each
+//! port carries a differential test against compactc's artifact
 //! (`tests/erc20_vault_differential.rs`).
 //!
 //! TWENTY-NINE CIRCUITS. Admin without EVM transactions: `initialise`,
-//! `setGasParams`, `addAllowedToken`. The request queue every action shares:
-//! `flushQueue` and the three `queueAttestation{0,1,32}`. Then seven actions,
-//! each a START (queue the request under a caller-chosen index), a SEND
-//! (record the flushed request's Signet event and notify the MPC) and a
-//! COMPLETE (consume the flushed attestation and settle): nonce replacement
-//! (`startReplaceNonce` / `sendReplaceNonce` / `completeReplaceNonce`),
-//! approvals (`startApproveRouter` + `startApproveStata` / `sendApprove` /
-//! `completeApprove`), deposit, withdraw, swap, supply and redeem.
+//! `setGasParams`, `addAllowedToken`, `setTokenFees`, `setFeeRecipient`.
+//! The request queue every action shares: `flushQueue` and
+//! `queueAttestation`. Then seven actions, each a START (queue the request
+//! under a caller-chosen index), a SEND (record the flushed request's Signet
+//! event and notify the MPC) and a COMPLETE (consume the flushed attestation
+//! and settle): nonce replacement (`startReplaceNonce` / `sendReplaceNonce` /
+//! `completeReplaceNonce`), approvals (`startApproveRouter` +
+//! `startApproveStata` / `sendApprove` / `completeApprove`), deposit,
+//! withdraw, swap, supply and redeem.
 //!
-//! WHAT CHANGED FROM THE SEVENTEEN-CIRCUIT VAULT (notes/vault-flush.org):
-//! the six steps of every action are start → flush → send → queue the
-//! attestation → flush → complete, so a user circuit writes only entries
-//! keyed by its own request and reads configuration only the deployer
-//! changes, and `flushQueue` is the ONE circuit that touches the two
-//! contended cells (`globalLastSeen`, `vaultAccountNonce`). Requests are
-//! identified three ways along the way: the caller's `inIndex` (a
-//! `Uint<64>`), the flush's `requestIndex` (Poseidon over the nonce and the
-//! args hash) and the Signet request id (the V1 preimage hash). Every settle
-//! is bound to the attested block height, strictly above the `globalLastSeen`
-//! the flush pinned into the request; the MPC's verdict ([`OutputKind`]) picks
-//! the completion's arms, so there are no `refund*` circuits. Gas is the
-//! vault's setting at start (`vaultGasLimits`, the two fee cells) and travels
-//! in the args; the request nonce and the caip2 cell are gone (the
-//! executionDest is the constant `ethereumCaip2Id()`); `initialised` is a
-//! `Boolean`; `allowedTokens` gates what a deposit may bring in and a swap
-//! may buy.
+//! THE FLUSH PATTERN (notes/vault-flush.org): the six steps of every action
+//! are start → flush → send → queue the attestation → flush → complete, so a
+//! user circuit writes only entries keyed by its own request and reads
+//! configuration only the deployer changes, and `flushQueue` is the ONE
+//! circuit that touches the two contended cells (`globalLastSeen`,
+//! `vaultAccountNonce`). Requests are identified three ways along the way:
+//! the caller's `inIndex` (a `Uint<64>`), the flush's `requestIndex`
+//! (Poseidon over the nonce and the args hash) and the Signet request id
+//! (the V1 preimage hash). Every settle is bound to the attested block
+//! height, strictly above the `globalLastSeen` the flush pinned into the
+//! request; the MPC's verdict ([`OutputKind`]) picks the completion's arms.
 //!
-//! The ledger block is 35 fields, which compactc SEGMENTS three ways (five at
-//! `[0, i]`, fifteen at `[1, i − 5]`, fifteen at `[2, i − 20]`) —
+//! WHAT 0.7.0-rc.2 CHANGED FROM `375071b` (notes/mainnet-pin.org §2): one
+//! `queueAttestation` for every output width, verifying the attestation
+//! WITHOUT the output (the signature covers the output's width and hash) and
+//! recording the width and hash, against which every complete checks the
+//! output it is given (`verifyAttestedOutputV1`); `allowedTokens` is a map
+//! to each token's `TokenFees`, and the four vault-paid starts take a coin
+//! of principal + fee, burn it whole and mint the fee to the fee recipient
+//! (`takeFee`); `setTokenFees` and `setFeeRecipient` are new; the record's
+//! `executionDest` is 64 bytes; `completeDeposit` and `completeWithdraw`
+//! deserialize the response unguarded over `executed ? output : 0`
+//! (upstream's compact#856 workaround, kept although 0.36.1 fixed #856).
+//!
+//! The ledger block is 37 fields, which compactc SEGMENTS three ways (seven
+//! at `[0, i]`, fifteen at `[1, i − 7]`, fifteen at `[2, i − 22]`) —
 //! `#[derive(Ledger)]` computes the same paths, and every notification's
 //! depth and path bytes are read off the map handle.
 //!
 //! The Compact ledger block, in declaration order (the field index):
 //! ```text
-//! sealed ledger signetSigner: SignetSigner;                        // 0  [0,0]
-//! export ledger mpcResponseKey: Secp256k1Point;                    // 1  [0,1]
-//! export ledger vaultMaxFeePerGas: Uint<128>;                      // 2  [0,2]
-//! export ledger vaultMaxPriorityFeePerGas: Uint<128>;              // 3  [0,3]
-//! export ledger vaultGasLimits: VaultGasLimits;                    // 4  [0,4]
-//! export ledger initialised: Boolean;                              // 5  [1,0]
-//! export ledger vaultEvmAddress: Bytes<20>;                        // 6  [1,1]
-//! export ledger evmChainId: Uint<64>;                              // 7  [1,2]
-//! export ledger mpcKeyVersion: Uint<8>;                            // 8  [1,3]
-//! sealed ledger deployer: Bytes<32>;                               // 9  [1,4]
-//! export ledger uniswapRouter: Bytes<20>;                          // 10 [1,5]
-//! export ledger stataUnderlying: Bytes<20>;                        // 11 [1,6]
-//! export ledger stataToken: Bytes<20>;                             // 12 [1,7]
-//! export ledger allowedTokens: Set<Bytes<20>>;                     // 13 [1,8]
-//! export ledger globalLastSeen: Uint<64>;                          // 14 [1,9]
-//! export ledger vaultAccountNonce: Uint<64>;                       // 15 [1,10]
-//! export ledger inputRequestBuffer: Map<Uint<64>, RequestBufferEntry>;      // 16 [1,11]
-//! export ledger outputRequestBuffer: Map<Bytes<32>, OutputRequestEntry>;    // 17 [1,12]
-//! export ledger inputAttestationBuffer: Map<RequestId, AttestationRecord>;  // 18 [1,13]
-//! export ledger outputAttestationBuffer: Map<RequestId, AttestationRecord>; // 19 [1,14]
-//! export ledger evictionMap: Map<RequestId, Bytes<32>>;            // 20 [2,0]
-//! export ledger bidirectionalReplaceNonceMap: …<EvmType2TxParams<2,0,0>, 2>;  // 21 [2,1]
-//! export ledger replaceNonceArgsMap: Map<Uint<64>, ReplaceNonceArgs>;        // 22 [2,2]
-//! export ledger bidirectionalApproveMap: …<EvmType2TxParams<2,0,0>, 34>;      // 23 [2,3]
-//! export ledger approveArgsMap: Map<Uint<64>, ApproveArgs>;                  // 24 [2,4]
-//! export ledger bidirectionalDepositMap: …<EvmType2TxParams<2,0,0>, 34>;      // 25 [2,5]
-//! export ledger depositArgsMap: Map<Uint<64>, DepositArgs>;                  // 26 [2,6]
-//! export ledger bidirectionalWithdrawMap: …<EvmType2TxParams<2,0,0>, 34>;     // 27 [2,7]
-//! export ledger withdrawArgsMap: Map<Uint<64>, WithdrawArgs>;                // 28 [2,8]
-//! export ledger bidirectionalSwapMap: …<EvmType2TxParams<7,0,0>, 38>;         // 29 [2,9]
-//! export ledger swapArgsMap: Map<Uint<64>, SwapArgs>;                        // 30 [2,10]
-//! export ledger bidirectionalSupplyMap: …<EvmType2TxParams<2,0,0>, 36>;       // 31 [2,11]
-//! export ledger supplyArgsMap: Map<Uint<64>, SupplyArgs>;                    // 32 [2,12]
-//! export ledger bidirectionalRedeemMap: …<EvmType2TxParams<3,0,0>, 36>;       // 33 [2,13]
-//! export ledger redeemArgsMap: Map<Uint<64>, RedeemArgs>;                    // 34 [2,14]
+//! sealed ledger signetSigner: SignetSigner;                              // 0  [0,0]
+//! export ledger mpcResponseKey: Secp256k1Point;                          // 1  [0,1]
+//! export ledger vaultMaxFeePerGas: Uint<128>;                            // 2  [0,2]
+//! export ledger vaultMaxPriorityFeePerGas: Uint<128>;                    // 3  [0,3]
+//! export ledger vaultGasLimits: VaultGasLimits;                          // 4  [0,4]
+//! export ledger initialised: Boolean;                                    // 5  [0,5]
+//! export ledger vaultEvmAddress: Bytes<20>;                              // 6  [0,6]
+//! export ledger evmChainId: Uint<64>;                                    // 7  [1,0]
+//! export ledger mpcKeyVersion: Uint<8>;                                  // 8  [1,1]
+//! sealed ledger deployer: Bytes<32>;                                     // 9  [1,2]
+//! export ledger uniswapRouter: Bytes<20>;                                // 10 [1,3]
+//! export ledger stataUnderlying: Bytes<20>;                              // 11 [1,4]
+//! export ledger stataToken: Bytes<20>;                                   // 12 [1,5]
+//! export ledger allowedTokens: Map<Bytes<20>, AllowedTokenConfig>;       // 13 [1,6]
+//! export ledger feeRecipientCoinPublicKey: ZswapCoinPublicKey;           // 14 [1,7]
+//! export ledger feeRecipientEncryptionPublicKey: Bytes<32>;              // 15 [1,8]
+//! export ledger globalLastSeen: Uint<64>;                                // 16 [1,9]
+//! export ledger vaultAccountNonce: Uint<64>;                             // 17 [1,10]
+//! export ledger inputRequestBuffer: Map<Uint<64>, RequestBufferEntry>;   // 18 [1,11]
+//! export ledger outputRequestBuffer: Map<Bytes<32>, OutputRequestEntry>; // 19 [1,12]
+//! export ledger inputAttestationBuffer: Map<RequestId, AttestationRecord>; // 20 [1,13]
+//! export ledger outputAttestationBuffer: Map<RequestId, AttestationRecord>; // 21 [1,14]
+//! export ledger evictionMap: Map<RequestId, Bytes<32>>;                  // 22 [2,0]
+//! export ledger bidirectionalReplaceNonceMap: …<EvmType2TxParams<2,0,0>, 2>; // 23 [2,1]
+//! export ledger replaceNonceArgsMap: Map<Uint<64>, ReplaceNonceArgs>;    // 24 [2,2]
+//! export ledger bidirectionalApproveMap: …<EvmType2TxParams<2,0,0>, 34>; // 25 [2,3]
+//! export ledger approveArgsMap: Map<Uint<64>, ApproveArgs>;              // 26 [2,4]
+//! export ledger bidirectionalDepositMap: …<EvmType2TxParams<2,0,0>, 34>; // 27 [2,5]
+//! export ledger depositArgsMap: Map<Uint<64>, DepositArgs>;              // 28 [2,6]
+//! export ledger bidirectionalWithdrawMap: …<EvmType2TxParams<2,0,0>, 34>; // 29 [2,7]
+//! export ledger withdrawArgsMap: Map<Uint<64>, WithdrawArgs>;            // 30 [2,8]
+//! export ledger bidirectionalSwapMap: …<EvmType2TxParams<7,0,0>, 38>;    // 31 [2,9]
+//! export ledger swapArgsMap: Map<Uint<64>, SwapArgs>;                    // 32 [2,10]
+//! export ledger bidirectionalSupplyMap: …<EvmType2TxParams<2,0,0>, 36>;  // 33 [2,11]
+//! export ledger supplyArgsMap: Map<Uint<64>, SupplyArgs>;                // 34 [2,12]
+//! export ledger bidirectionalRedeemMap: …<EvmType2TxParams<3,0,0>, 36>;  // 35 [2,13]
+//! export ledger redeemArgsMap: Map<Uint<64>, RedeemArgs>;                // 36 [2,14]
 //! ```
 
 use minocrab::v3::{Circuit3, FieldT, Wire3};
@@ -83,8 +93,8 @@ use minocrab_std::v3::hash::upgrade_from_transient;
 use minocrab_std::v3::kernel;
 use minocrab_std::v3::{
     b32_newtype, contract, eq, is_true, label, not, own_public_key, Bool, BoundedUint, Bytes,
-    Bytes0, BytesN, CircuitArg, CoinColor, CoinNonce, CoinRecipient, Disclose, Discloses,
-    Either, Ledger, LedgerCell, LedgerField, LedgerMap, LedgerRepr, LedgerSet, Maybe,
+    BytesN, CircuitArg, CoinColor, CoinNonce, CoinRecipient, Disclose, Discloses,
+    Either, Ledger, LedgerCell, LedgerField, LedgerMap, LedgerRepr, Maybe,
     Secp256k1Point, TokenDomainSeparator, Uint, B32,
 };
 
@@ -92,9 +102,9 @@ use signet_signer_interface::notification::construct_notification_v1;
 use signet_signer_interface::SignetSigner;
 
 use crate::common::{self, SigningPath, UserCommitment};
-use crate::signet_v1::{self, output_kind, SchemaBytes};
-// The 0.24.1 record and attestation, frozen for this port until its re-port.
-use crate::signet_v1_0241::{self, EventRecordV1, RespondBidirectionalEventV1};
+use crate::signet_v1::{
+    self, output_kind, EventRecordV1, RespondBidirectionalEventV1, SchemaBytes,
+};
 
 pub use crate::signet_v1::RequestId;
 
@@ -116,6 +126,9 @@ label! {
     MaxPriorityFeePerGas = "the vault account's maxPriorityFeePerGas";
     GasLimits = "the per-action gas limits";
     AllowedErc20 = "an ERC20 admitted to the vault";
+    TokenFeesSet = "an allowed ERC20's per-action fees";
+    FeeRecipientKey = "the fee recipient's coin public key";
+    FeeRecipientEncryptionKey = "the fee recipient's encryption public key";
     InIndex = "the caller-chosen request index";
     OutIndex = "the flushed request's index";
     EvmNonce = "the caller's EVM account nonce";
@@ -143,7 +156,7 @@ label! {
     FlushSlotChannel = "a flush slot's channel";
     FlushSlotInIndex = "a flush slot's request index";
     FlushSlotRequestId = "a flush slot's request id";
-    Attestation = "the MPC's attestation (id, height, verdict, width, digest, signature)";
+    Attestation = "the MPC's attestation (id, height, verdict, width, output hash)";
     SerializedOutput = "the attested serialised output";
     RequestIdDisclosed = "request id";
     RequestRecord = "request record";
@@ -164,6 +177,8 @@ label! {
 pub const USER_PAD: &str = "vault:user:";
 /// The domain-separation prefix of `vaultTokenDomainSeparator`.
 pub const TOKEN_PAD: &str = "erc20:vault:";
+/// The domain-separation prefix of `feeMintNonce`.
+pub const FEE_MINT_PAD: &str = "erc20:vault:fee";
 /// The domain-separation suffix of `ownershipCommitment`.
 pub const REQUEST_PAD: &str = "vault:request:";
 /// The domain-separation prefix of `requestIndex`.
@@ -217,8 +232,8 @@ pub const REDEEM_WORDS: usize = 3;
 /// `initialise()`'s fee envelope and gas limits.
 pub const DEFAULT_MAX_FEE_PER_GAS: u128 = 150_000_000_000;
 pub const DEFAULT_MAX_PRIORITY_FEE_PER_GAS: u128 = 1_000_000_000;
-pub const DEFAULT_WITHDRAW_GAS: u64 = 100_000;
-pub const DEFAULT_APPROVE_GAS: u64 = 100_000;
+pub const DEFAULT_WITHDRAW_GAS: u64 = 200_000;
+pub const DEFAULT_APPROVE_GAS: u64 = 200_000;
 pub const DEFAULT_SWAP_GAS: u64 = 700_000;
 pub const DEFAULT_SUPPLY_GAS: u64 = 500_000;
 pub const DEFAULT_REDEEM_GAS: u64 = 500_000;
@@ -265,12 +280,12 @@ pub type SupplyRecord = EventRecordV1<SUPPLY_WORDS, BytesN<Public, SUPPLY_SCHEMA
 pub type RedeemRecord = EventRecordV1<REDEEM_WORDS, BytesN<Public, REDEEM_SCHEMA_LEN>>;
 
 /// The in-circuit (private) event each record is the disclosure of.
-pub type VaultEvent = signet_v1_0241::SignBidirectionalEventV1<Private, VAULT_WORDS, BytesN<Private, VAULT_SCHEMA_LEN>>;
+pub type VaultEvent = signet_v1::SignBidirectionalEventV1<Private, VAULT_WORDS, BytesN<Private, VAULT_SCHEMA_LEN>>;
 pub type ReplaceNonceEvent =
-    signet_v1_0241::SignBidirectionalEventV1<Private, VAULT_WORDS, Bytes<REPLACE_NONCE_SCHEMA_LEN, Private>>;
-pub type SwapEvent = signet_v1_0241::SignBidirectionalEventV1<Private, SWAP_WORDS, BytesN<Private, SWAP_SCHEMA_LEN>>;
-pub type SupplyEvent = signet_v1_0241::SignBidirectionalEventV1<Private, SUPPLY_WORDS, BytesN<Private, SUPPLY_SCHEMA_LEN>>;
-pub type RedeemEvent = signet_v1_0241::SignBidirectionalEventV1<Private, REDEEM_WORDS, BytesN<Private, REDEEM_SCHEMA_LEN>>;
+    signet_v1::SignBidirectionalEventV1<Private, VAULT_WORDS, Bytes<REPLACE_NONCE_SCHEMA_LEN, Private>>;
+pub type SwapEvent = signet_v1::SignBidirectionalEventV1<Private, SWAP_WORDS, BytesN<Private, SWAP_SCHEMA_LEN>>;
+pub type SupplyEvent = signet_v1::SignBidirectionalEventV1<Private, SUPPLY_WORDS, BytesN<Private, SUPPLY_SCHEMA_LEN>>;
+pub type RedeemEvent = signet_v1::SignBidirectionalEventV1<Private, REDEEM_WORDS, BytesN<Private, REDEEM_SCHEMA_LEN>>;
 
 pub use crate::common::secp256k1_point_atoms;
 
@@ -327,13 +342,34 @@ pub struct OutputRequestEntry {
     pub last_seen: Uint<64, Public>,
 }
 
-/// `struct AttestationRecord { blockHeight; outputKind; digest }` — a
-/// verified attestation under its request id, holding no output.
+/// `struct AttestationRecord { blockHeight; outputKind;
+/// serializedOutputLength; outputHash }` — a verified attestation under its
+/// request id. The signature covers the output's width and hash, so the
+/// record keeps those and no output, and a complete checks the output it is
+/// given against them.
 #[derive(Clone, LedgerRepr)]
 pub struct AttestationRecord {
     pub block_height: Uint<64, Public>,
     pub output_kind: OutputKind<Public>,
-    pub digest: B32<Public>,
+    pub serialized_output_length: Uint<64, Public>,
+    pub output_hash: B32<Public>,
+}
+
+/// `struct TokenFees { withdraw, swap, supply, redeem: Uint<64> }` — the
+/// flat fee, in the token's base units, a start takes on top of the
+/// surrendered principal for each vault-paid action. Zero charges nothing.
+#[derive(Clone, LedgerRepr)]
+pub struct TokenFees {
+    pub withdraw: Uint<64, Public>,
+    pub swap: Uint<64, Public>,
+    pub supply: Uint<64, Public>,
+    pub redeem: Uint<64, Public>,
+}
+
+/// `struct AllowedTokenConfig { fees: TokenFees }` — `allowedTokens`' value.
+#[derive(Clone, LedgerRepr)]
+pub struct AllowedTokenConfig {
+    pub fees: TokenFees,
 }
 
 /// `struct ReplaceNonceArgs { gas }`.
@@ -380,11 +416,12 @@ pub struct StoredWithdrawRequest {
     pub dest_evm_address: Bytes<20, Public>,
 }
 
-/// `struct WithdrawArgs { request; gas }`.
+/// `struct WithdrawArgs { request; gas; fee }`.
 #[derive(Clone, LedgerRepr)]
 pub struct WithdrawArgs {
     pub request: StoredWithdrawRequest,
     pub gas: StoredGas,
+    pub fee: Uint<64, Public>,
 }
 
 /// `struct SwapRequest { erc20AddressIn; erc20AddressOut; fee; amountOut;
@@ -398,11 +435,12 @@ pub struct StoredSwapRequest {
     pub amount_in_maximum: Uint<128, Public>,
 }
 
-/// `struct SwapArgs { request; gas }`.
+/// `struct SwapArgs { request; gas; fee }`.
 #[derive(Clone, LedgerRepr)]
 pub struct SwapArgs {
     pub request: StoredSwapRequest,
     pub gas: StoredGas,
+    pub fee: Uint<64, Public>,
 }
 
 /// `struct SupplyRequest { amount }` as stored.
@@ -411,11 +449,12 @@ pub struct StoredSupplyRequest {
     pub amount: Uint<128, Public>,
 }
 
-/// `struct SupplyArgs { request; gas }`.
+/// `struct SupplyArgs { request; gas; fee }`.
 #[derive(Clone, LedgerRepr)]
 pub struct SupplyArgs {
     pub request: StoredSupplyRequest,
     pub gas: StoredGas,
+    pub fee: Uint<64, Public>,
 }
 
 /// `struct RedeemRequest { shares }` as stored.
@@ -424,11 +463,12 @@ pub struct StoredRedeemRequest {
     pub shares: Uint<128, Public>,
 }
 
-/// `struct RedeemArgs { request; gas }`.
+/// `struct RedeemArgs { request; gas; fee }`.
 #[derive(Clone, LedgerRepr)]
 pub struct RedeemArgs {
     pub request: StoredRedeemRequest,
     pub gas: StoredGas,
+    pub fee: Uint<64, Public>,
 }
 
 // ---- the ledger block ------------------------------------------------------------------
@@ -455,7 +495,9 @@ pub struct Vault {
     pub uniswap_router: LedgerCell<Bytes<20, Public>>,
     pub stata_underlying: LedgerCell<Bytes<20, Public>>,
     pub stata_token: LedgerCell<Bytes<20, Public>>,
-    pub allowed_tokens: LedgerSet<Bytes<20, Public>>,
+    pub allowed_tokens: LedgerMap<Bytes<20, Public>, AllowedTokenConfig>,
+    pub fee_recipient_coin_public_key: LedgerCell<minocrab_std::v3::ZswapCoinPublicKey<Public>>,
+    pub fee_recipient_encryption_public_key: LedgerCell<B32<Public>>,
     pub global_last_seen: LedgerCell<Uint<64, Public>>,
     pub vault_account_nonce: LedgerCell<Uint<64, Public>>,
     pub input_request_buffer: LedgerMap<Uint<64, Public>, RequestBufferEntry>,
@@ -718,16 +760,16 @@ fn send_request<const WORDS: usize, SP, SR, A>(
     // constructSignBidirectionalEventV1(mpcKeyVersion, kernel.self(), path, …)
     let key_version = VAULT.mpc_key_version.read(c).stale(c);
     let sender = kernel::self_address(c).private();
-    let dest = signet_v1_0241::ethereum_caip2_id::<Private>(c);
+    let dest = signet_v1::ethereum_caip2_id::<Private>(c);
     // The reserved-path assert is folded for the vault's own constant path,
     // as compactc folds it; the calldata word count is a literal in every send.
     let kv = key_version.field().private();
-    let request: signet_v1_0241::SignBidirectionalEventV1<Private, WORDS, SP> = if path_is_const {
-        signet_v1_0241::construct_sign_bidirectional_event_v1_const_path(c, kv, sender, path, tx, dest, output_schema)
+    let request: signet_v1::SignBidirectionalEventV1<Private, WORDS, SP> = if path_is_const {
+        signet_v1::construct_sign_bidirectional_event_v1_const_path(c, kv, sender, path, tx, dest, output_schema)
     } else {
-        signet_v1_0241::construct_sign_bidirectional_event_v1(c, kv, sender, path, tx, dest, output_schema)
+        signet_v1::construct_sign_bidirectional_event_v1(c, kv, sender, path, tx, dest, output_schema)
     };
-    let request_id = signet_v1_0241::calculate_evm_type2_request_id_v1(c, &request, Some(words_used)).disclose_as::<RequestIdDisclosed>(c);
+    let request_id = signet_v1::calculate_evm_type2_request_id_v1(c, &request, Some(words_used)).disclose_as::<RequestIdDisclosed>(c);
 
     c.region("record: freshness and insert", |c| {
         let sent = request_map.member(c, &request_id);
@@ -778,18 +820,17 @@ fn outcome_refunds(c: &mut Circuit3, record: &AttestationRecord) -> Wire3<FieldT
     c.cond_select(is_failed, one, is_unviable)
 }
 
-/// `assert(calculateSignetAttestationDigestV1<LEN>(requestId, record.blockHeight,
-/// record.outputKind, output) == record.digest, "Output does not match the
-/// attestation")` — inside whatever guard the caller opened.
-fn assert_output_matches<const LEN: usize>(c: &mut Circuit3, request_id: &RequestId<Public>, record: &AttestationRecord, output_limbs: &[Wire3<FieldT, Public>]) {
-    let digest = signet_v1_0241::calculate_attestation_digest_v1::<Public, LEN>(
+/// `assert(verifyAttestedOutputV1<LEN>(output, record.serializedOutputLength,
+/// record.outputHash), "Output does not match the attestation")` — inside
+/// whatever guard the caller opened.
+fn assert_output_matches<const LEN: usize>(c: &mut Circuit3, record: &AttestationRecord, output_limbs: &[Wire3<FieldT, Public>]) {
+    let matches = signet_v1::verify_attested_output_v1::<Public, LEN>(
         c,
-        request_id,
-        record.block_height.field(),
-        record.output_kind.field(),
         output_limbs,
+        record.serialized_output_length.field(),
+        &record.output_hash,
     );
-    c.assert(digest.equals(record.digest).message("Output does not match the attestation"));
+    c.assert_with(matches, Some("Output does not match the attestation"));
 }
 
 /// `deserialize<VaultResponse, 1>(output).success` — the byte must be 0 or 1
@@ -823,28 +864,49 @@ struct ShieldedCoinArg {
     value: Uint<128>,
 }
 
-/// `color = tokenType(vaultTokenDomainSeparator(erc20), kernel.self());
-/// assert(coin.color == color); assert(coin.value == amount)` — the
-/// surrendered coin must be THIS vault token, of exactly `amount`.
-fn assert_vault_coin(
-    c: &mut Circuit3,
-    erc20: Wire3<FieldT, Public>,
-    amount: Wire3<FieldT, Private>,
-    coin: &ShieldedCoinArg,
-    color_message: &'static str,
-    value_message: &'static str,
-) {
+/// `assert(coin.color == tokenType(vaultTokenDomainSeparator(erc20),
+/// kernel.self()), message)` — the surrendered coin must be THIS vault's
+/// token for `erc20`.
+fn assert_vault_color(c: &mut Circuit3, erc20: Wire3<FieldT, Public>, coin: &ShieldedCoinArg, message: &'static str) {
     let domain_sep = vault_token_domain_separator(c, erc20);
     let me = kernel::self_address(c);
     let color = minocrab_std::v3::token_type(c, &domain_sep, &me.bytes());
-    c.assert(coin.color.bytes().equals(color.private().bytes()).message(color_message));
-    c.assert(eq(coin.value.field(), amount).message(value_message));
+    c.assert(coin.color.bytes().equals(color.private().bytes()).message(message));
 }
 
-/// `receiveShielded(disclose(coin)); sendImmediateShielded(disclose(coin),
-/// shieldedBurnAddress(), disclose(coin).value)` — custody, then the
-/// full-value burn.
-fn burn_surrendered_coin(c: &mut Circuit3, coin: ShieldedCoinArg) {
+/// `requireTokenAllowed(erc20Address)` —
+/// `assert(allowedTokens.member(disclose(erc20Address)), "ERC20 not allowed")`.
+fn require_token_allowed(c: &mut Circuit3, erc20: &Bytes<20, Public>) {
+    let allowed = VAULT.allowed_tokens.member(c, erc20);
+    c.assert(is_true(allowed).message("ERC20 not allowed"));
+}
+
+/// `tokenFees(erc20Address)` — the allowed check, then
+/// `allowedTokens.lookup(disclose(erc20Address)).fees`.
+fn token_fees(c: &mut Circuit3, erc20: &Bytes<20, Public>) -> TokenFees {
+    require_token_allowed(c, erc20);
+    VAULT.allowed_tokens.lookup(c, erc20).stale(c).fees
+}
+
+/// `feeMintNonce(coinNonce)` — `upgradeFromTransient(transientHash<Vector<2,
+/// Bytes<32>>>([pad(32, "erc20:vault:fee"), coinNonce]))`: the fee coin's
+/// nonce, fresh per surrendered coin.
+fn fee_mint_nonce(c: &mut Circuit3, coin_nonce: &CoinNonce<Public>) -> CoinNonce<Public> {
+    c.region("fee mint nonce (transientHash)", |c| {
+        let pad = B32::pad(c, FEE_MINT_PAD);
+        let n = coin_nonce.bytes();
+        let f = c.transient_hash(&[pad.hi, pad.lo, n.hi, n.lo]);
+        CoinNonce(upgrade_from_transient(c, f))
+    })
+}
+
+/// `takeFee(erc20Address, coin, fee)` — `receiveShielded(disclose(coin));
+/// sendImmediateShielded(disclose(coin), shieldedBurnAddress(),
+/// disclose(coin).value)`, then, if `fee > 0`, `mintShieldedToken(
+/// vaultTokenDomainSeparator(erc20), fee, feeMintNonce(coin.nonce),
+/// left(feeRecipientCoinPublicKey))`: the whole coin burns and only the fee
+/// is minted back, to the fee recipient.
+fn take_fee(c: &mut Circuit3, erc20: Wire3<FieldT, Public>, coin: ShieldedCoinArg, fee: Uint<64, Public>) {
     let one = c.constant(1u64);
     let coin = minocrab_std::v3::ShieldedCoinInfo3 {
         nonce: coin.nonce.disclose_as::<SurrenderedCoinNonce>(c),
@@ -853,25 +915,41 @@ fn burn_surrendered_coin(c: &mut Circuit3, coin: ShieldedCoinArg) {
     };
     common::receive_shielded(c, &coin);
     common::burn_coin(c, one, &coin);
+    let zero = c.constant(0u64);
+    let charged = c.less_than(zero, fee.field(), 64);
+    c.when(charged, |c| {
+        let domain_sep = vault_token_domain_separator(c, erc20);
+        let nonce = fee_mint_nonce(c, &coin.nonce);
+        let recipient = VAULT.fee_recipient_coin_public_key.read(c).stale(c);
+        common::mint_shielded_token_to_key(c, &domain_sep, fee, &nonce, &recipient);
+    });
 }
 
-/// The attestation-queueing body the three `queueAttestation*` share:
-/// `requireInitialised`, the verify against `mpcResponseKey`, the digest and
-/// `recordAttestation`. `output_limbs` is the disclosed output at width `LEN`.
-fn queue_attestation<const LEN: usize>(c: &mut Circuit3, event: &RespondBidirectionalEventV1<Private>, output_limbs: &[Wire3<FieldT, Private>]) {
+/// `assert(coin.value == (amount + fee) as Uint<128>, message)` — the
+/// surrendered coin is the principal plus the fee. The sum's cast is a range
+/// check, as compactc's downcast is.
+fn assert_coin_covers(c: &mut Circuit3, coin: &ShieldedCoinArg, amount: Wire3<FieldT, Private>, fee: Uint<64, Public>, message: &'static str) {
+    let total = c.add(amount, fee.field().private());
+    let total = Uint::<128, Private>::from_field_checked(c, total);
+    c.assert(eq(coin.value.field(), total.field()).message(message));
+}
+
+/// `queueAttestation(respondBidirectionalEvent)`'s body:
+/// `requireInitialised`, the verify against `mpcResponseKey`, and the
+/// attestation recorded by width and hash.
+fn queue_attestation_body(c: &mut Circuit3, event: &RespondBidirectionalEventV1<Private>) {
     require_initialised(c);
     let mpc_key = VAULT.mpc_response_key.read(c);
-    let valid = signet_v1_0241::verify_respond_bidirectional_event_v1::<Private, LEN>(c, output_limbs, event, mpc_key.point().private());
+    let valid = signet_v1::verify_respond_bidirectional_attestation_v1(c, event, mpc_key.point().private());
     c.assert_with(valid, Some("Invalid attestation signature"));
 
-    // The disclosed attestation: every field of the event is public input.
+    // The disclosed attestation: every field the record keeps is public input.
     let request_id = event.request_id.disclose_as::<Attestation>(c);
     let block_height = event.block_height.disclose_as::<Attestation>(c);
     let kind = event.output_kind.disclose_as::<Attestation>(c);
-    let output_public: Vec<Wire3<FieldT, Public>> = output_limbs.to_vec().disclose_as::<SerializedOutput>(c);
-    let digest = signet_v1_0241::calculate_attestation_digest_v1::<Public, LEN>(c, &request_id, block_height.field(), kind.field(), &output_public);
+    let length = event.serialized_output_length.disclose_as::<Attestation>(c);
+    let output_hash = event.output_hash.disclose_as::<Attestation>(c);
 
-    // recordAttestation(attestation, digest)
     c.region("record attestation", |c| {
         let out_index = VAULT.eviction_map.lookup_required(c, &request_id, "Request not sent").stale(c);
         let out = VAULT.output_request_buffer.lookup_required(c, &out_index, "Request not open").stale(c);
@@ -884,7 +962,8 @@ fn queue_attestation<const LEN: usize>(c: &mut Circuit3, event: &RespondBidirect
         let record = AttestationRecord {
             block_height,
             output_kind: kind,
-            digest,
+            serialized_output_length: length,
+            output_hash,
         };
         VAULT.input_attestation_buffer.insert(c, &request_id, &record);
     });
@@ -968,6 +1047,30 @@ struct RedeemRequest {
     shares: Uint<128>,
 }
 
+/// `struct TokenFees { withdraw, swap, supply, redeem: Uint<64> }` as a
+/// circuit argument.
+#[derive(CircuitArg)]
+pub struct TokenFeesArg {
+    withdraw: Uint<64>,
+    swap: Uint<64>,
+    supply: Uint<64>,
+    redeem: Uint<64>,
+}
+
+impl TokenFeesArg {
+    /// `disclose(AllowedTokenConfig { fees })` — the stored value.
+    fn disclosed(self, c: &mut Circuit3) -> AllowedTokenConfig {
+        AllowedTokenConfig {
+            fees: TokenFees {
+                withdraw: self.withdraw.disclose_as::<TokenFeesSet>(c),
+                swap: self.swap.disclose_as::<TokenFeesSet>(c),
+                supply: self.supply.disclose_as::<TokenFeesSet>(c),
+                redeem: self.redeem.disclose_as::<TokenFeesSet>(c),
+            },
+        }
+    }
+}
+
 /// `struct FlushSlot { channel: FlushChannel; inIndex: Uint<64>; requestId:
 /// RequestId }`.
 #[derive(CircuitArg)]
@@ -983,8 +1086,10 @@ impl Vault {
 
     /// `export circuit initialise(vaultEvm, swapRouter, stataUnderlyingAddr,
     /// stataTokenAddr: Bytes<20>, chainId: Uint<64>, responseKey:
-    /// Secp256k1Point, responseKeyVersion: Uint<8>, evmHeight: Uint<64>): []`
-    /// — one-shot, deployer-gated post-deploy configuration.
+    /// Secp256k1Point, responseKeyVersion: Uint<8>, evmHeight: Uint<64>,
+    /// stataUnderlyingFees, stataTokenFees: TokenFees, feeRecipientCoinKey:
+    /// ZswapCoinPublicKey, feeRecipientEncryptionKey: Bytes<32>): []` —
+    /// one-shot, deployer-gated post-deploy configuration.
     #[circuit]
     pub fn initialise(
         c: &mut Circuit3,
@@ -996,12 +1101,19 @@ impl Vault {
         response_key: Secp256k1Point,
         response_key_version: Uint<8>,
         evm_height: Uint<64>,
+        stata_underlying_fees: TokenFeesArg,
+        stata_token_fees: TokenFeesArg,
+        fee_recipient_coin_key: minocrab_std::v3::ZswapCoinPublicKey<Private>,
+        fee_recipient_encryption_key: B32<Private>,
     ) -> Discloses<(
         VaultEvmAddress,
         UniswapRouter,
         StataUnderlying,
         StataToken,
         AllowedErc20,
+        TokenFeesSet,
+        FeeRecipientKey,
+        FeeRecipientEncryptionKey,
         EvmChainId,
         MpcResponseKey,
         MpcKeyVersion,
@@ -1030,9 +1142,17 @@ impl Vault {
             VAULT.stata_underlying.write(c, &stata_underlying);
             let stata_token = stata_token_addr.disclose_as::<StataToken>(c);
             VAULT.stata_token.write(c, &stata_token);
-            // Otherwise no stataUnderlying vault coin could ever be minted to start a supply.
-            let allowed = stata_underlying_addr.disclose_as::<AllowedErc20>(c);
-            VAULT.allowed_tokens.insert(c, &allowed);
+            // Every vault coin a supply or redeem surrenders must be a key, for its fee.
+            let underlying_key = stata_underlying_addr.disclose_as::<AllowedErc20>(c);
+            let underlying_config = stata_underlying_fees.disclosed(c);
+            VAULT.allowed_tokens.insert(c, &underlying_key, &underlying_config);
+            let token_key = stata_token_addr.disclose_as::<AllowedErc20>(c);
+            let token_config = stata_token_fees.disclosed(c);
+            VAULT.allowed_tokens.insert(c, &token_key, &token_config);
+            let fee_key = fee_recipient_coin_key.disclose_as::<FeeRecipientKey>(c);
+            VAULT.fee_recipient_coin_public_key.write(c, &fee_key);
+            let fee_enc = fee_recipient_encryption_key.disclose_as::<FeeRecipientEncryptionKey>(c);
+            VAULT.fee_recipient_encryption_public_key.write(c, &fee_enc);
             let chain_id = chain_id.disclose_as::<EvmChainId>(c);
             VAULT.evm_chain_id.write(c, &chain_id);
             let response_key = response_key.disclose_as::<MpcResponseKey>(c);
@@ -1102,15 +1222,49 @@ impl Vault {
         Discloses::of(())
     }
 
-    /// `export circuit addAllowedToken(erc20Address: Bytes<20>): []` — the
-    /// deployer grows `allowedTokens`; the set only grows.
+    /// `export circuit addAllowedToken(erc20Address: Bytes<20>, fees:
+    /// TokenFees): []` — the deployer grows `allowedTokens`; the map only
+    /// grows.
     #[circuit]
-    pub fn add_allowed_token(c: &mut Circuit3, erc20_address: Bytes<20>) -> Discloses<(AllowedErc20,)> {
+    pub fn add_allowed_token(c: &mut Circuit3, erc20_address: Bytes<20>, fees: TokenFeesArg) -> Discloses<(AllowedErc20, TokenFeesSet)> {
         require_initialised(c);
         assert_deployer(c);
         c.assert(erc20_address.ne(0u64).message("ERC20 address cannot be zero"));
         let erc20 = erc20_address.disclose_as::<AllowedErc20>(c);
-        VAULT.allowed_tokens.insert(c, &erc20);
+        let config = fees.disclosed(c);
+        VAULT.allowed_tokens.insert(c, &erc20, &config);
+        Discloses::of(())
+    }
+
+    /// `export circuit setTokenFees(erc20Address: Bytes<20>, fees:
+    /// TokenFees): []` — the deployer reprices an allowed token; a request
+    /// keeps the fee it was started with.
+    #[circuit]
+    pub fn set_token_fees(c: &mut Circuit3, erc20_address: Bytes<20>, fees: TokenFeesArg) -> Discloses<(AllowedErc20, TokenFeesSet)> {
+        require_initialised(c);
+        assert_deployer(c);
+        let erc20 = erc20_address.disclose_as::<AllowedErc20>(c);
+        require_token_allowed(c, &erc20);
+        let config = fees.disclosed(c);
+        VAULT.allowed_tokens.insert(c, &erc20, &config);
+        Discloses::of(())
+    }
+
+    /// `export circuit setFeeRecipient(coinPublicKey: ZswapCoinPublicKey,
+    /// encryptionPublicKey: Bytes<32>): []` — the deployer moves the fee
+    /// recipient.
+    #[circuit]
+    pub fn set_fee_recipient(
+        c: &mut Circuit3,
+        coin_public_key: minocrab_std::v3::ZswapCoinPublicKey<Private>,
+        encryption_public_key: B32<Private>,
+    ) -> Discloses<(FeeRecipientKey, FeeRecipientEncryptionKey)> {
+        require_initialised(c);
+        assert_deployer(c);
+        let key = coin_public_key.disclose_as::<FeeRecipientKey>(c);
+        VAULT.fee_recipient_coin_public_key.write(c, &key);
+        let enc = encryption_public_key.disclose_as::<FeeRecipientEncryptionKey>(c);
+        VAULT.fee_recipient_encryption_public_key.write(c, &enc);
         Discloses::of(())
     }
 
@@ -1141,48 +1295,18 @@ impl Vault {
         Discloses::of(())
     }
 
-    /// `export circuit queueAttestation0(respondBidirectionalEvent:
-    /// RespondBidirectionalEventV1, serializedOutput: Bytes<0>): []` — a
-    /// verified attestation with an EMPTY output (a failed or unviable
-    /// execution, or an executed nonce replacement), queued for the flush.
-    ///
-    /// IT DISCLOSES NO OUTPUT, and says so: at `LEN = 0` the limb vector is
-    /// empty, so `queue_attestation`'s `disclose_as::<SerializedOutput>`
-    /// discloses nothing at all. Declaring the label anyway would claim an
-    /// audit surface this circuit does not have — the width-1 and width-32
-    /// twins below are where it is real.
+    /// `export circuit queueAttestation(respondBidirectionalEvent:
+    /// RespondBidirectionalEventV1): []` — a verified attestation queued for
+    /// the flush. The signed digest covers the request id, the height the
+    /// flush folds, the verdict and the output's width and hash, so one
+    /// circuit serves every output width and the output is not needed here.
+    /// Anyone may submit one.
     #[circuit]
-    pub fn queue_attestation0(
+    pub fn queue_attestation(
         c: &mut Circuit3,
         #[arg(name = "respondBidirectionalEvent")] event: RespondBidirectionalEventV1<Private>,
-        serialized_output: Bytes0,
     ) -> Discloses<(Attestation,)> {
-        let _ = serialized_output;
-        queue_attestation::<0>(c, &event, &[]);
-        Discloses::of(())
-    }
-
-    /// `export circuit queueAttestation1(respondBidirectionalEvent,
-    /// serializedOutput: Bytes<1>): []` — the ERC20 transfer/approve bool.
-    #[circuit]
-    pub fn queue_attestation1(
-        c: &mut Circuit3,
-        #[arg(name = "respondBidirectionalEvent")] event: RespondBidirectionalEventV1<Private>,
-        serialized_output: Bytes<1>,
-    ) -> Discloses<(Attestation, SerializedOutput)> {
-        queue_attestation::<1>(c, &event, &[serialized_output.field()]);
-        Discloses::of(())
-    }
-
-    /// `export circuit queueAttestation32(respondBidirectionalEvent,
-    /// serializedOutput: Bytes<32>): []` — a uint256 return, attested whole.
-    #[circuit]
-    pub fn queue_attestation32(
-        c: &mut Circuit3,
-        #[arg(name = "respondBidirectionalEvent")] event: RespondBidirectionalEventV1<Private>,
-        serialized_output: B32<Private>,
-    ) -> Discloses<(Attestation, SerializedOutput)> {
-        queue_attestation::<32>(c, &event, &[serialized_output.hi, serialized_output.lo]);
+        queue_attestation_body(c, &event);
         Discloses::of(())
     }
 
@@ -1273,7 +1397,7 @@ impl Vault {
             c.assert(is_true(present).message("Request event missing"));
             VAULT.bidirectional_replace_nonce_map.remove(c, &request_id);
         });
-        assert_output_matches::<0>(c, &request_id, &record, &[]);
+        assert_output_matches::<0>(c, &record, &[]);
         Discloses::of(())
     }
 
@@ -1360,7 +1484,7 @@ impl Vault {
         });
         let is_executed = executed(c, &record);
         let output = serialized_output.disclose_as::<SerializedOutput>(c);
-        c.when(is_executed, |c| assert_output_matches::<1>(c, &request_id, &record, &[output.field()]));
+        c.when(is_executed, |c| assert_output_matches::<1>(c, &record, &[output.field()]));
         Discloses::of(())
     }
 
@@ -1389,8 +1513,7 @@ impl Vault {
         require_initialised(c);
         let erc20 = deposit_request.erc20_address.disclose_as::<DepositedErc20>(c);
         c.region("guards", |c| {
-            let allowed = VAULT.allowed_tokens.member(c, &erc20);
-            c.assert(is_true(allowed).message("ERC20 not allowed"));
+            require_token_allowed(c, &erc20);
             c.assert(deposit_request.amount.gt(0u64).message("Amount must be positive"));
             // completeDeposit mints via a Uint<64> API, so reject unclaimable amounts.
             c.assert(deposit_request.amount.le(u64::MAX).message("Amount exceeds Uint<64> max"));
@@ -1487,11 +1610,17 @@ impl Vault {
             VAULT.bidirectional_deposit_map.remove(c, &request_id);
         });
 
+        // const transferred = deserialize<VaultResponse, 1>(executed ? output :
+        // default<Bytes<1>>).success — upstream runs the deserialize
+        // unguarded, over a zero byte unless the request executed (its
+        // compact#856 workaround).
         let is_executed = executed(c, &record);
         let output = serialized_output.disclose_as::<SerializedOutput>(c);
-        let success = attested_success(c, output.field());
+        let zero = c.constant(0u64);
+        let response = c.cond_select(is_executed, output.field(), zero);
+        let success = attested_success(c, response);
         c.when(is_executed, |c| {
-            assert_output_matches::<1>(c, &request_id, &record, &[output.field()]);
+            assert_output_matches::<1>(c, &record, &[output.field()]);
             c.when(success, |c| {
                 // const claimRecipient = disclose(recipient).is_some
                 //   ? disclose(recipient).value : left(ownPublicKey())
@@ -1551,19 +1680,14 @@ impl Vault {
             c.assert(withdraw_request.amount.le(u64::MAX).message("Amount exceeds Uint<64> max"));
         });
 
-        let erc20 = withdraw_request.erc20_address.disclose_as::<WithdrawnErc20>(c);
-        assert_vault_coin(
-            c,
-            erc20.field(),
-            withdraw_request.amount.field(),
-            &coin,
-            "Coin is not the vault token for this ERC20",
-            "Coin value must equal the withdraw amount",
-        );
-        burn_surrendered_coin(c, coin);
-
         let in_index = in_index.disclose_as::<InIndex>(c);
         assert_index_free(c, &in_index, &VAULT.withdraw_args_map);
+
+        let erc20 = withdraw_request.erc20_address.disclose_as::<WithdrawnErc20>(c);
+        assert_vault_color(c, erc20.field(), &coin, "Coin is not the vault token for this ERC20");
+        let fee = token_fees(c, &erc20).withdraw;
+        assert_coin_covers(c, &coin, withdraw_request.amount.field(), fee, "Coin value must equal the withdraw amount plus fee");
+        take_fee(c, erc20.field(), coin, fee);
 
         let gas = vault_gas(c, |l| l.withdraw);
         let args = WithdrawArgs {
@@ -1573,6 +1697,7 @@ impl Vault {
                 dest_evm_address: withdraw_request.dest_evm_address.disclose_as::<WithdrawDestination>(c),
             },
             gas,
+            fee,
         };
         VAULT.withdraw_args_map.insert(c, &in_index, &args);
         let zero = c.constant(0u64);
@@ -1635,12 +1760,15 @@ impl Vault {
 
         let is_executed = executed(c, &record);
         let output = serialized_output.disclose_as::<SerializedOutput>(c);
-        c.when(is_executed, |c| assert_output_matches::<1>(c, &request_id, &record, &[output.field()]));
+        c.when(is_executed, |c| assert_output_matches::<1>(c, &record, &[output.field()]));
 
-        // const success = deserialize<VaultResponse, 1>(output).success;
-        // if (outcomeRefunds(record.outputKind) || !success)
+        // const transferred = deserialize<VaultResponse, 1>(executed ? output :
+        // default<Bytes<1>>).success;
+        // if (outcomeRefunds(record.outputKind) || !transferred)
+        let zero = c.constant(0u64);
+        let response = c.cond_select(is_executed, output.field(), zero);
+        let success = attested_success(c, response);
         let refunds = outcome_refunds(c, &record);
-        let success = attested_success(c, output.field());
         let returned_false = c.not(success);
         let one = c.constant(1u64);
         let refunding = c.cond_select(refunds, one, returned_false);
@@ -1681,8 +1809,7 @@ impl Vault {
         let token_out = swap_request.erc20_address_out.disclose_as::<BoughtErc20>(c);
         c.region("guards", |c| {
             c.assert(swap_request.erc20_address_in.ne(0u64).message("erc20AddressIn cannot be zero"));
-            let allowed = VAULT.allowed_tokens.member(c, &token_out);
-            c.assert(is_true(allowed).message("erc20AddressOut not allowed"));
+            require_token_allowed(c, &token_out);
             c.assert(swap_request.amount_out.gt(0u64).message("amountOut must be positive"));
             c.assert(swap_request.amount_in_maximum.gt(0u64).message("amountInMaximum must be positive"));
             // completeSwap mints both amounts via a Uint<64> API, so reject unclaimable ones.
@@ -1690,19 +1817,14 @@ impl Vault {
             c.assert(swap_request.amount_in_maximum.le(u64::MAX).message("amountInMaximum exceeds Uint<64> max"));
         });
 
-        let token_in = swap_request.erc20_address_in.disclose_as::<SoldErc20>(c);
-        assert_vault_coin(
-            c,
-            token_in.field(),
-            swap_request.amount_in_maximum.field(),
-            &coin,
-            "Coin is not the vault token for erc20AddressIn",
-            "Coin value must equal amountInMaximum",
-        );
-        burn_surrendered_coin(c, coin);
-
         let in_index = in_index.disclose_as::<InIndex>(c);
         assert_index_free(c, &in_index, &VAULT.swap_args_map);
+
+        let token_in = swap_request.erc20_address_in.disclose_as::<SoldErc20>(c);
+        assert_vault_color(c, token_in.field(), &coin, "Coin is not the vault token for erc20AddressIn");
+        let fee = token_fees(c, &token_in).swap;
+        assert_coin_covers(c, &coin, swap_request.amount_in_maximum.field(), fee, "Coin value must equal amountInMaximum plus fee");
+        take_fee(c, token_in.field(), coin, fee);
 
         let gas = vault_gas(c, |l| l.swap);
         let args = SwapArgs {
@@ -1714,6 +1836,7 @@ impl Vault {
                 amount_in_maximum: swap_request.amount_in_maximum.disclose_as::<SwapAmountInMaximum>(c),
             },
             gas,
+            fee,
         };
         VAULT.swap_args_map.insert(c, &in_index, &args);
         let zero = c.constant(0u64);
@@ -1795,7 +1918,7 @@ impl Vault {
         let mint_nonce = mint_nonce.disclose_as::<MintNonce>(c);
         let change_nonce = change_nonce.disclose_as::<ChangeNonce>(c);
         c.when(is_executed, |c| {
-            assert_output_matches::<32>(c, &request_id, &record, &[output.hi, output.lo]);
+            assert_output_matches::<32>(c, &record, &[output.hi, output.lo]);
             // The two mints need distinct nonces or their coins link.
             c.assert(not(change_nonce.bytes().equals(mint_nonce.bytes())).message("changeNonce must differ from mintNonce"));
             let amount_out = as_u64(c, args.request.amount_out);
@@ -1838,19 +1961,16 @@ impl Vault {
             c.assert(supply_request.amount.gt(0u64).message("Amount must be positive"));
             c.assert(supply_request.amount.le(u64::MAX).message("Amount exceeds Uint<64> max"));
         });
-        let underlying = VAULT.stata_underlying.read(c).stale(c);
-        assert_vault_coin(
-            c,
-            underlying.field(),
-            supply_request.amount.field(),
-            &coin,
-            "Coin is not the vault token for the underlying",
-            "Coin value must equal the supply amount",
-        );
-        burn_surrendered_coin(c, coin);
-
         let in_index = in_index.disclose_as::<InIndex>(c);
         assert_index_free(c, &in_index, &VAULT.supply_args_map);
+
+        let underlying = VAULT.stata_underlying.read(c).stale(c);
+        assert_vault_color(c, underlying.field(), &coin, "Coin is not the vault token for the underlying");
+        let underlying = VAULT.stata_underlying.read(c).stale(c);
+        let fee = token_fees(c, &underlying).supply;
+        assert_coin_covers(c, &coin, supply_request.amount.field(), fee, "Coin value must equal the supply amount plus fee");
+        let underlying = VAULT.stata_underlying.read(c).stale(c);
+        take_fee(c, underlying.field(), coin, fee);
 
         let gas = vault_gas(c, |l| l.supply);
         let args = SupplyArgs {
@@ -1858,6 +1978,7 @@ impl Vault {
                 amount: supply_request.amount.disclose_as::<SuppliedAmount>(c),
             },
             gas,
+            fee,
         };
         VAULT.supply_args_map.insert(c, &in_index, &args);
         let zero = c.constant(0u64);
@@ -1929,7 +2050,7 @@ impl Vault {
         let output = serialized_output.disclose_as::<SerializedOutput>(c);
         let mint_nonce = mint_nonce.disclose_as::<MintNonce>(c);
         c.when(is_executed, |c| {
-            assert_output_matches::<32>(c, &request_id, &record, &[output.hi, output.lo]);
+            assert_output_matches::<32>(c, &record, &[output.hi, output.lo]);
             let stata_token = VAULT.stata_token.read(c).stale(c);
             let shares = signet_v1::checked_truncation_u128(c, &output);
             let shares = as_u64(c, shares);
@@ -1968,19 +2089,16 @@ impl Vault {
             c.assert(redeem_request.shares.gt(0u64).message("shares must be positive"));
             c.assert(redeem_request.shares.le(u64::MAX).message("shares exceeds Uint<64> max"));
         });
-        let wrapper = VAULT.stata_token.read(c).stale(c);
-        assert_vault_coin(
-            c,
-            wrapper.field(),
-            redeem_request.shares.field(),
-            &coin,
-            "Coin is not the vault token for the wrapper",
-            "Coin value must equal shares",
-        );
-        burn_surrendered_coin(c, coin);
-
         let in_index = in_index.disclose_as::<InIndex>(c);
         assert_index_free(c, &in_index, &VAULT.redeem_args_map);
+
+        let wrapper = VAULT.stata_token.read(c).stale(c);
+        assert_vault_color(c, wrapper.field(), &coin, "Coin is not the vault token for the wrapper");
+        let wrapper = VAULT.stata_token.read(c).stale(c);
+        let fee = token_fees(c, &wrapper).redeem;
+        assert_coin_covers(c, &coin, redeem_request.shares.field(), fee, "Coin value must equal shares plus fee");
+        let wrapper = VAULT.stata_token.read(c).stale(c);
+        take_fee(c, wrapper.field(), coin, fee);
 
         let gas = vault_gas(c, |l| l.redeem);
         let args = RedeemArgs {
@@ -1988,6 +2106,7 @@ impl Vault {
                 shares: redeem_request.shares.disclose_as::<RedeemedShares>(c),
             },
             gas,
+            fee,
         };
         VAULT.redeem_args_map.insert(c, &in_index, &args);
         let zero = c.constant(0u64);
@@ -2063,7 +2182,7 @@ impl Vault {
         let output = serialized_output.disclose_as::<SerializedOutput>(c);
         let mint_nonce = mint_nonce.disclose_as::<MintNonce>(c);
         c.when(is_executed, |c| {
-            assert_output_matches::<32>(c, &request_id, &record, &[output.hi, output.lo]);
+            assert_output_matches::<32>(c, &record, &[output.hi, output.lo]);
             let underlying = VAULT.stata_underlying.read(c).stale(c);
             let assets = signet_v1::checked_truncation_u128(c, &output);
             let assets = as_u64(c, assets);

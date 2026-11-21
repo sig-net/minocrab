@@ -47,7 +47,7 @@ pub use common::{atom, b32_slots, bytesn_value};
 pub type VmOp = Op<ResultModeVerify, InMemoryDB>;
 
 pub fn corpus_zkir_named(name: &str) -> IrSource {
-    common::corpus_zkir("signet-midnight-examples/examples/erc20-vault/contract/src/erc20-vault/zkir", name)
+    common::corpus_zkir("signet-midnight-examples-v070/examples/erc20-vault/contract/src/erc20-vault/zkir", name)
 }
 
 /// A multi-atom value from its limbs and atom widths.
@@ -185,46 +185,6 @@ pub fn tx_params_digest(
     let mut out = [0u8; 32];
     out[..31].copy_from_slice(&le[..31]);
     out
-}
-
-/// `calculateRequestIdV1(RequestIdPreimageV1 { keyVersion, sender, path,
-/// ecdsa, evmType2, txParamsDigest, ethereumCaip2Id() })`.
-pub fn request_id_v1(key_version: u8, sender: &[u8; 32], path: &[u8; 32], tx_digest: &[u8; 32]) -> [u8; 32] {
-    let (s_hi, s_lo) = b32_slots(sender);
-    let (p_hi, p_lo) = b32_slots(path);
-    let (d_hi, d_lo) = b32_slots(tx_digest);
-    let (c_hi, c_lo) = b32_slots(&pad32(ETHEREUM_CAIP2_ID));
-    transient_upgrade(&[
-        Fr::from(hash_domain::REQUEST_ID),
-        Fr::from(u64::from(key_version)),
-        s_hi,
-        s_lo,
-        p_hi,
-        p_lo,
-        Fr::from(0u64), // algo: ecdsa
-        Fr::from(0u64), // txParamType: evmType2
-        d_hi,
-        d_lo,
-        c_hi,
-        c_lo,
-    ])
-}
-
-/// `calculateSignetAttestationDigestV1<len>(requestId, blockHeight,
-/// outputKind, output)` — the tag, the id, the height, the verdict, the
-/// WIDTH, then the output's limbs.
-pub fn attestation_digest(request_id: &[u8; 32], block_height: u64, output_kind: u64, len: usize, output_limbs: &[Fr]) -> [u8; 32] {
-    let (r_hi, r_lo) = b32_slots(request_id);
-    let mut limbs = vec![
-        Fr::from(hash_domain::ATTESTATION_DIGEST),
-        r_hi,
-        r_lo,
-        Fr::from(block_height),
-        Fr::from(output_kind),
-        Fr::from(len as u64),
-    ];
-    limbs.extend_from_slice(output_limbs);
-    transient_upgrade(&limbs)
 }
 
 /// `pad(64, "eip155:1")`, the `executionDest` of `@sig-net/midnight` 0.25

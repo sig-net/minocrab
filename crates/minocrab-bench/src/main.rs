@@ -147,7 +147,7 @@ impl Side {
 }
 
 const VAULT: &str =
-    "corpus/zkir/signet-midnight-examples/examples/erc20-vault/contract/src/erc20-vault/zkir";
+    "corpus/zkir/signet-midnight-examples-v070/examples/erc20-vault/contract/src/erc20-vault/zkir";
 /// The signet signer's and the signet responder's artifacts (midnight-integration
 /// v0.26.0-rc.15: two contracts, the three v0.25.0 circuits unchanged).
 const SIGNER: &str =
@@ -172,10 +172,10 @@ fn targets() -> Vec<Target> {
         t!(VAULT, "initialise", || erc20_vault::Vault::initialise()),
         t!(VAULT, "setGasParams", || erc20_vault::Vault::set_gas_params()),
         t!(VAULT, "addAllowedToken", || erc20_vault::Vault::add_allowed_token()),
+        t!(VAULT, "setTokenFees", || erc20_vault::Vault::set_token_fees()),
+        t!(VAULT, "setFeeRecipient", || erc20_vault::Vault::set_fee_recipient()),
         t!(VAULT, "flushQueue", || erc20_vault::Vault::flush_queue()),
-        t!(VAULT, "queueAttestation0", || erc20_vault::Vault::queue_attestation0()),
-        t!(VAULT, "queueAttestation1", || erc20_vault::Vault::queue_attestation1()),
-        t!(VAULT, "queueAttestation32", || erc20_vault::Vault::queue_attestation32()),
+        t!(VAULT, "queueAttestation", || erc20_vault::Vault::queue_attestation()),
         t!(VAULT, "startReplaceNonce", || erc20_vault::Vault::start_replace_nonce()),
         t!(VAULT, "sendReplaceNonce", || erc20_vault::Vault::send_replace_nonce()),
         t!(VAULT, "completeReplaceNonce", || erc20_vault::Vault::complete_replace_nonce()),

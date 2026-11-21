@@ -202,7 +202,10 @@ impl ContractKeyLocation {
     }
 }
 
-/// The deployed signet signer a publisher builds calls against: its address, and
+/// The deployed contract a publisher builds calls against — since
+/// midnight-integration v0.26 the signet RESPONDER for `respond` /
+/// `respondBidirectional` and the signet signer for `signBidirectional` — its
+/// address, and
 /// the verifier-key hash per circuit.
 ///
 /// The hash table is the package's `expectedVk` — `{circuit ->

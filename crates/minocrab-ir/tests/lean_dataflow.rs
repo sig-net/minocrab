@@ -68,7 +68,7 @@ fn lean_dataflow_agrees_with_the_rust_functions_on_every_corpus_instruction() {
     let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let lean_dir = crate_dir.join("../minocrab-zkir/lean");
     let corpus = crate_dir.join("../../corpus/zkir");
-    if !corpus.join("signet-midnight-examples").exists() {
+    if !corpus.join("signet-midnight-examples-v070").exists() {
         eprintln!("skipping: no corpus at {} (run corpus/compile.sh)", corpus.display());
         return;
     }
@@ -135,7 +135,8 @@ fn lean_dataflow_agrees_with_the_rust_functions_on_every_corpus_instruction() {
         // responder and test callers and the 0.7.0-rc.2 vault, 41 artifacts.
         // 128982 → 124300 when the v0.25.0 pin and fff3421c's signer, test
         // callers and serde fixture retired (M48 L).
-        instructions, 124300,
+        // 124300 → 115935 when the 375071b vault and the v0.24.1 pin retired.
+        instructions, 115935,
         "corpus instruction count moved ({instructions}); recompiled or extended corpus?"
     );
     println!("lean and rust dataflow agree on {instructions} corpus instructions");

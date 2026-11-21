@@ -1,5 +1,6 @@
 //! The Signet protocol's hashes, off circuit (midnight-integration v0.25.0,
-//! `Signet.compact`).
+//! `Signet.compact`; unchanged at v0.26.0-rc.15, the version erc20-vault
+//! v0.7.0-rc.2 pins).
 //!
 //! Every one of them is `upgradeFromTransient(transientHash([HashDomain.x,
 //! …]))`: Poseidon over the preimage's FIELD-ALIGNED representation, then

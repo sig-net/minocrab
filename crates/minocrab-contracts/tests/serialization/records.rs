@@ -83,8 +83,16 @@ const TAG_FIRST_MEMBER: u8 = 0;
 
 /// `ethereumCaip2Id()` — the `executionDest` of every V1 request the vault
 /// makes.
-fn execution_dest() -> [u8; 32] {
-    pad32(ETHEREUM_CAIP2_ID)
+fn execution_dest() -> ByteArray<64> {
+    let mut b = [0u8; 64];
+    b[..ETHEREUM_CAIP2_ID.len()].copy_from_slice(ETHEREUM_CAIP2_ID.as_bytes());
+    ByteArray(b)
+}
+
+/// The V2 record's `caip2Id: Bytes<32>`, the same id at its old width (it
+/// fits the first 32 of `executionDest`'s 64 bytes).
+fn caip2_of(dest: &ByteArray<64>) -> [u8; 32] {
+    dest.0[..32].try_into().expect("32 bytes")
 }
 
 fn schema<const N: usize>(bytes: &[u8]) -> ByteArray<N> {
@@ -426,7 +434,7 @@ fn vault_v2(e: &VaultEventV1, request_nonce: u64, response_kind: u32) -> VaultEv
         params: e.params,
         tx_param_type: e.tx_param_type,
         tx_params: e.tx_params,
-        caip2_id: e.execution_dest,
+        caip2_id: caip2_of(&e.execution_dest),
         response_kind: kind(response_kind),
     }
 }
@@ -463,7 +471,7 @@ pub fn supply_event_v2(s: &Sent, request_nonce: u64) -> VaultEventV2 {
         params: e.params,
         tx_param_type: e.tx_param_type,
         tx_params: e.tx_params,
-        caip2_id: e.execution_dest,
+        caip2_id: caip2_of(&e.execution_dest),
         response_kind: kind(erc20_vault_pending::RESPONSE_KIND_SUPPLY),
     }
 }
@@ -482,7 +490,7 @@ pub fn swap_event_v2(s: &Sent, request_nonce: u64) -> SwapEventV2 {
         params: e.params,
         tx_param_type: e.tx_param_type,
         tx_params: e.tx_params,
-        caip2_id: e.execution_dest,
+        caip2_id: caip2_of(&e.execution_dest),
         response_kind: kind(erc20_vault_pending::RESPONSE_KIND_SWAP),
     }
 }
@@ -501,7 +509,7 @@ pub fn redeem_event_v2(s: &Sent, request_nonce: u64) -> RedeemEventV2 {
         params: e.params,
         tx_param_type: e.tx_param_type,
         tx_params: e.tx_params,
-        caip2_id: e.execution_dest,
+        caip2_id: caip2_of(&e.execution_dest),
         response_kind: kind(erc20_vault_pending::RESPONSE_KIND_REDEEM),
     }
 }

@@ -60,7 +60,7 @@ use serialization::spec_types;
 use serialization::spec_types::*;
 use vault::gen;
 use vault::model::{Args, Env, Gas, Req, Sent};
-use vault::prims::{attestation_digest, b32_slots, transient_upgrade, user_commitment};
+use vault::prims::{attestation_digest_v026, attested_output_hash, b32_slots, transient_upgrade, user_commitment};
 
 // ---- (a) + (b): the dual oracle and the fixed width --------------------------
 
@@ -210,7 +210,7 @@ fn tx_params3() -> impl Strategy<Value = EvmType2TxParams3> {
 /// after it but the output schema. Generated, not fixed, at every one — the
 /// conformance properties are about the ENCODING, so they must hold at every
 /// value the type admits and not only at the values the protocol writes.
-type RecordHeaderV1 = (u8, [u8; 32], [u8; 32], u8, u8, [u8; 32], u8, [u8; 64]);
+type RecordHeaderV1 = (u8, [u8; 32], [u8; 32], u8, u8, [u8; 64], u8, [u8; 64]);
 
 fn record_header_v1() -> impl Strategy<Value = RecordHeaderV1> {
     (
@@ -219,7 +219,7 @@ fn record_header_v1() -> impl Strategy<Value = RecordHeaderV1> {
         byte_array::<32>(),
         any::<u8>(),
         any::<u8>(),
-        byte_array::<32>(),
+        byte_array::<64>(),
         any::<u8>(),
         byte_array::<64>(),
     )
@@ -253,7 +253,7 @@ macro_rules! v1_record_strategy {
                     algo,
                     tx_param_type,
                     tx_params,
-                    execution_dest,
+                    execution_dest: ByteArray(execution_dest),
                     signature_dest,
                     params: ByteArray(params),
                     output_deserialization_schema: ByteArray(out_schema),
@@ -463,7 +463,7 @@ fn sent(base: fn() -> Sent) -> impl Strategy<Value = Sent> {
                     *path = user_commitment(&sk);
                     *g = gas;
                 }
-                Args::Withdraw { erc20, amount, dest, gas: g } => {
+                Args::Withdraw { erc20, amount, dest, gas: g, .. } => {
                     *erc20 = addr[3];
                     *amount = first;
                     *dest = addr[4];
@@ -476,6 +476,7 @@ fn sent(base: fn() -> Sent) -> impl Strategy<Value = Sent> {
                     amount_out,
                     amount_in_max,
                     gas: g,
+                    ..
                 } => {
                     *token_in = addr[3];
                     *token_out = addr[4];
@@ -484,11 +485,11 @@ fn sent(base: fn() -> Sent) -> impl Strategy<Value = Sent> {
                     *amount_in_max = third;
                     *g = gas;
                 }
-                Args::Supply { amount, gas: g } => {
+                Args::Supply { amount, gas: g, .. } => {
                     *amount = first;
                     *g = gas;
                 }
-                Args::Redeem { shares, gas: g } => {
+                Args::Redeem { shares, gas: g, .. } => {
                     *shares = first;
                     *g = gas;
                 }
@@ -633,29 +634,31 @@ fn lens_match_the_deployed_alignments() {
     // written as the vault record plus their own difference: one more ABI word
     // (32) and a schema two bytes longer, or the `[]` schema of a nonce
     // replacement.
-    assert_eq!(VaultEventV1::LEN, 362);
+    // +32 since `@sig-net/midnight` 0.25: `executionDest` is a `Bytes<64>`.
+    assert_eq!(VaultEventV1::LEN, 394);
     assert_eq!(erc20_vault::VAULT_SCHEMA_LEN, 34);
-    assert_eq!(SupplyEventV1::LEN, 362 + 2);
-    assert_eq!(RedeemEventV1::LEN, 362 + 32 + 2);
+    assert_eq!(SupplyEventV1::LEN, 394 + 2);
+    assert_eq!(RedeemEventV1::LEN, 394 + 32 + 2);
     assert_eq!(
         ReplaceNonceEventV1::LEN,
-        362 - erc20_vault::VAULT_SCHEMA_LEN + erc20_vault::REPLACE_NONCE_SCHEMA_LEN
+        394 - erc20_vault::VAULT_SCHEMA_LEN + erc20_vault::REPLACE_NONCE_SCHEMA_LEN
     );
-    assert_eq!(SwapEventV1::LEN, 526);
+    assert_eq!(SwapEventV1::LEN, 558);
 
     // The keccak blocks those widths buy, counted by the ROW MODEL's own
     // `keccak_blocks` (rate 136, at least one padding byte) rather than by a
-    // second copy of the padding rule. The V1 swap record is FOUR blocks where
-    // the `fff3421c` one was five: pinning `respondSerializationSchema` to
-    // `Bytes<0>` took 571 bytes to 526, under the 544-byte boundary — the
-    // block the V2 format was going to save, saved by the protocol instead.
+    // second copy of the padding rule. The V1 swap record was FOUR blocks at
+    // 0.24 (526 bytes, under the 544-byte boundary); the 64-byte
+    // `executionDest` of 0.25 takes it to 558 and back to FIVE, the count of
+    // the `fff3421c` record. Nothing hashes a V1 record with keccak, so the
+    // count is a size fact, not a cost.
     use minocrab_sim::v3::rowcost::keccak_blocks as blocks;
     assert_eq!(blocks(VaultEventV1::LEN), 3);
-    assert_eq!(blocks(SwapEventV1::LEN), 4);
+    assert_eq!(blocks(SwapEventV1::LEN), 5);
     assert_eq!((blocks(VaultEventV2::LEN), blocks(SwapEventV2::LEN)), (3, 4));
 
-    // The three V1 attested-output widths, which are the three
-    // `queueAttestation*` circuits.
+    // The three V1 attested-output widths a complete takes (one
+    // `queueAttestation` serves all three since 0.7.0-rc.2).
     assert_eq!(EmptyOutput::LEN, 0);
     assert_eq!(BoolOutput::LEN, 1);
     assert_eq!(WordOutput::LEN, 32);
@@ -809,8 +812,7 @@ fn schema_widths_match_the_lens() {
 /// is what keeps the byte claim below two independent statements rather than
 /// one restated.
 fn v2_limbs(req: &Req, env: &Env, request_nonce: u64, kind: u8) -> Vec<Fr> {
-    // The parity vault model still writes the 0.24.1 record until its re-port.
-    use minocrab_contracts::signet_v1_0241::layout as v1;
+    use minocrab_contracts::signet_v1::layout as v1;
     use minocrab_std::v3::bytes_limbs;
 
     let l = req.limbs(env);
@@ -827,7 +829,16 @@ fn v2_limbs(req: &Req, env: &Env, request_nonce: u64, kind: u8) -> Vec<Fr> {
     out.extend_from_slice(&l[params..params + bytes_limbs(64)]);
     out.push(l[v1::TX_PARAM_TYPE]);
     out.extend_from_slice(&l[v1::CHAIN_ID..=v1::access_list_entry_count(words)]);
-    out.extend([l[execution_dest], l[execution_dest + 1]]);
+    // V2's `caip2Id` is a `Bytes<32>`, V1's `executionDest` a `Bytes<64>`
+    // since `@sig-net/midnight` 0.25: the same zero-padded "eip155:1", which
+    // lives entirely in the low limb, so V2's pair is `[byte 31 = 0, bytes
+    // 0..31]`.
+    assert_eq!(
+        (l[execution_dest], l[execution_dest + 1]),
+        (Fr::from(0u64), Fr::from(0u64)),
+        "the destination fits its low 31 bytes"
+    );
+    out.extend([Fr::from(0u64), l[execution_dest + 2]]);
     out.push(Fr::from(u64::from(kind)));
     out
 }
@@ -1042,10 +1053,12 @@ proptest! {
 ///
 /// a. THE PREIMAGE IS FIELD ELEMENTS, not bytes: Poseidon over
 ///    `[HashDomain.attestationDigest, requestId.hi, requestId.lo, blockHeight,
-///    outputKind, LEN, ..output]`. That is why there is no
+///    outputKind, LEN, outputHash.hi, outputHash.lo]`, the output entering
+///    through `calculateAttestedOutputHashV1` (`[attestedOutput, ..output]`)
+///    since `@sig-net/midnight` 0.25. That is why there is no
 ///    `AttestationPreimageV1` spec type to put in the offset tables — there is
 ///    no byte string for one to describe. The order is restated here against
-///    `prims::attestation_digest`, which the vault's differential suite pins
+///    `prims::attestation_digest_v026`, which the vault's differential suite pins
 ///    to compactc's artifact.
 /// b. A FAILED OR UNVIABLE VERDICT CARRIES AN EMPTY OUTPUT. There is no
 ///    sentinel value to assert equal in-circuit any more; what a refund path
@@ -1061,7 +1074,9 @@ fn v1_attestation_digest_commits_to_the_kind_and_the_width() {
     let (w_hi, w_lo) = b32_slots(&word);
     let (r_hi, r_lo) = b32_slots(&request_id);
 
-    let digest = |kind: u64, len: usize, output: &[Fr]| attestation_digest(&request_id, height, kind, len, output);
+    let digest = |kind: u64, len: usize, output: &[Fr]| {
+        attestation_digest_v026(&request_id, height, kind, len, &attested_output_hash(output))
+    };
 
     // (a) the preimage, limb for limb.
     for (kind, len, output) in [
@@ -1071,19 +1086,23 @@ fn v1_attestation_digest_commits_to_the_kind_and_the_width() {
         (output_kind::FAILED, EmptyOutput::LEN, vec![]),
         (output_kind::UNVIABLE, EmptyOutput::LEN, vec![]),
     ] {
-        let mut preimage = vec![
+        let mut hash_preimage = vec![Fr::from(hash_domain::ATTESTED_OUTPUT)];
+        hash_preimage.extend_from_slice(&output);
+        let (h_hi, h_lo) = b32_slots(&transient_upgrade(&hash_preimage));
+        let preimage = vec![
             Fr::from(hash_domain::ATTESTATION_DIGEST),
             r_hi,
             r_lo,
             Fr::from(height),
             Fr::from(kind),
             Fr::from(len as u64),
+            h_hi,
+            h_lo,
         ];
-        preimage.extend_from_slice(&output);
         assert_eq!(
             digest(kind, len, &output),
             transient_upgrade(&preimage),
-            "the V1 attestation preimage is not [tag, requestId, height, kind, LEN, ..output]"
+            "the V1 attestation preimage is not [tag, requestId, height, kind, LEN, outputHash]"
         );
     }
 
@@ -1326,11 +1345,11 @@ const LAYOUT_SNAPSHOT: &[(&str, &str, &str, usize, usize)] = &[
     ("VaultEventV1", "tx_params.calldata.value.words[0]", "[u8; 32]", 166, 32),
     ("VaultEventV1", "tx_params.calldata.value.words[1]", "[u8; 32]", 198, 32),
     ("VaultEventV1", "tx_params.access_list_entry_count", "u8", 230, 1),
-    ("VaultEventV1", "execution_dest", "[u8; 32]", 231, 32),
-    ("VaultEventV1", "signature_dest", "u8", 263, 1),
-    ("VaultEventV1", "params", "[u8; 64]", 264, 64),
-    ("VaultEventV1", "output_deserialization_schema", "[u8; 34]", 328, 34),
-    ("VaultEventV1", "respond_serialization_schema", "[u8; 0]", 362, 0),
+    ("VaultEventV1", "execution_dest", "[u8; 64]", 231, 64),
+    ("VaultEventV1", "signature_dest", "u8", 295, 1),
+    ("VaultEventV1", "params", "[u8; 64]", 296, 64),
+    ("VaultEventV1", "output_deserialization_schema", "[u8; 34]", 360, 34),
+    ("VaultEventV1", "respond_serialization_schema", "[u8; 0]", 394, 0),
     ("ReplaceNonceEventV1", "key_version", "u8", 0, 1),
     ("ReplaceNonceEventV1", "sender", "[u8; 32]", 1, 32),
     ("ReplaceNonceEventV1", "path", "[u8; 32]", 33, 32),
@@ -1349,11 +1368,11 @@ const LAYOUT_SNAPSHOT: &[(&str, &str, &str, usize, usize)] = &[
     ("ReplaceNonceEventV1", "tx_params.calldata.value.words[0]", "[u8; 32]", 166, 32),
     ("ReplaceNonceEventV1", "tx_params.calldata.value.words[1]", "[u8; 32]", 198, 32),
     ("ReplaceNonceEventV1", "tx_params.access_list_entry_count", "u8", 230, 1),
-    ("ReplaceNonceEventV1", "execution_dest", "[u8; 32]", 231, 32),
-    ("ReplaceNonceEventV1", "signature_dest", "u8", 263, 1),
-    ("ReplaceNonceEventV1", "params", "[u8; 64]", 264, 64),
-    ("ReplaceNonceEventV1", "output_deserialization_schema", "[u8; 2]", 328, 2),
-    ("ReplaceNonceEventV1", "respond_serialization_schema", "[u8; 0]", 330, 0),
+    ("ReplaceNonceEventV1", "execution_dest", "[u8; 64]", 231, 64),
+    ("ReplaceNonceEventV1", "signature_dest", "u8", 295, 1),
+    ("ReplaceNonceEventV1", "params", "[u8; 64]", 296, 64),
+    ("ReplaceNonceEventV1", "output_deserialization_schema", "[u8; 2]", 360, 2),
+    ("ReplaceNonceEventV1", "respond_serialization_schema", "[u8; 0]", 362, 0),
     ("SwapEventV1", "key_version", "u8", 0, 1),
     ("SwapEventV1", "sender", "[u8; 32]", 1, 32),
     ("SwapEventV1", "path", "[u8; 32]", 33, 32),
@@ -1377,11 +1396,11 @@ const LAYOUT_SNAPSHOT: &[(&str, &str, &str, usize, usize)] = &[
     ("SwapEventV1", "tx_params.calldata.value.words[5]", "[u8; 32]", 326, 32),
     ("SwapEventV1", "tx_params.calldata.value.words[6]", "[u8; 32]", 358, 32),
     ("SwapEventV1", "tx_params.access_list_entry_count", "u8", 390, 1),
-    ("SwapEventV1", "execution_dest", "[u8; 32]", 391, 32),
-    ("SwapEventV1", "signature_dest", "u8", 423, 1),
-    ("SwapEventV1", "params", "[u8; 64]", 424, 64),
-    ("SwapEventV1", "output_deserialization_schema", "[u8; 38]", 488, 38),
-    ("SwapEventV1", "respond_serialization_schema", "[u8; 0]", 526, 0),
+    ("SwapEventV1", "execution_dest", "[u8; 64]", 391, 64),
+    ("SwapEventV1", "signature_dest", "u8", 455, 1),
+    ("SwapEventV1", "params", "[u8; 64]", 456, 64),
+    ("SwapEventV1", "output_deserialization_schema", "[u8; 38]", 520, 38),
+    ("SwapEventV1", "respond_serialization_schema", "[u8; 0]", 558, 0),
     ("SupplyEventV1", "key_version", "u8", 0, 1),
     ("SupplyEventV1", "sender", "[u8; 32]", 1, 32),
     ("SupplyEventV1", "path", "[u8; 32]", 33, 32),
@@ -1400,11 +1419,11 @@ const LAYOUT_SNAPSHOT: &[(&str, &str, &str, usize, usize)] = &[
     ("SupplyEventV1", "tx_params.calldata.value.words[0]", "[u8; 32]", 166, 32),
     ("SupplyEventV1", "tx_params.calldata.value.words[1]", "[u8; 32]", 198, 32),
     ("SupplyEventV1", "tx_params.access_list_entry_count", "u8", 230, 1),
-    ("SupplyEventV1", "execution_dest", "[u8; 32]", 231, 32),
-    ("SupplyEventV1", "signature_dest", "u8", 263, 1),
-    ("SupplyEventV1", "params", "[u8; 64]", 264, 64),
-    ("SupplyEventV1", "output_deserialization_schema", "[u8; 36]", 328, 36),
-    ("SupplyEventV1", "respond_serialization_schema", "[u8; 0]", 364, 0),
+    ("SupplyEventV1", "execution_dest", "[u8; 64]", 231, 64),
+    ("SupplyEventV1", "signature_dest", "u8", 295, 1),
+    ("SupplyEventV1", "params", "[u8; 64]", 296, 64),
+    ("SupplyEventV1", "output_deserialization_schema", "[u8; 36]", 360, 36),
+    ("SupplyEventV1", "respond_serialization_schema", "[u8; 0]", 396, 0),
     ("RedeemEventV1", "key_version", "u8", 0, 1),
     ("RedeemEventV1", "sender", "[u8; 32]", 1, 32),
     ("RedeemEventV1", "path", "[u8; 32]", 33, 32),
@@ -1424,11 +1443,11 @@ const LAYOUT_SNAPSHOT: &[(&str, &str, &str, usize, usize)] = &[
     ("RedeemEventV1", "tx_params.calldata.value.words[1]", "[u8; 32]", 198, 32),
     ("RedeemEventV1", "tx_params.calldata.value.words[2]", "[u8; 32]", 230, 32),
     ("RedeemEventV1", "tx_params.access_list_entry_count", "u8", 262, 1),
-    ("RedeemEventV1", "execution_dest", "[u8; 32]", 263, 32),
-    ("RedeemEventV1", "signature_dest", "u8", 295, 1),
-    ("RedeemEventV1", "params", "[u8; 64]", 296, 64),
-    ("RedeemEventV1", "output_deserialization_schema", "[u8; 36]", 360, 36),
-    ("RedeemEventV1", "respond_serialization_schema", "[u8; 0]", 396, 0),
+    ("RedeemEventV1", "execution_dest", "[u8; 64]", 263, 64),
+    ("RedeemEventV1", "signature_dest", "u8", 327, 1),
+    ("RedeemEventV1", "params", "[u8; 64]", 328, 64),
+    ("RedeemEventV1", "output_deserialization_schema", "[u8; 36]", 392, 36),
+    ("RedeemEventV1", "respond_serialization_schema", "[u8; 0]", 428, 0),
     ("EmptyOutput", "output", "[u8; 0]", 0, 0),
     ("BoolOutput", "success", "u8", 0, 1),
     ("WordOutput", "word", "[u8; 32]", 0, 32),

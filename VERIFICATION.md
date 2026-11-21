@@ -97,7 +97,7 @@ verdict and the three reasons, each sufficient alone):
 
 | lineage | criterion | gate |
 |---|---|---|
-| compactc ≡ `erc20_vault` (the compat port, 29 circuits on the flush pattern since M44) | PI-equality on a shared preimage, every circuit, every branch | [erc20_vault_differential.rs](crates/minocrab-contracts/tests/erc20_vault_differential.rs) (85 tests) |
+| compactc ≡ `erc20_vault` (the compat port, 29 circuits on the flush pattern since M44, at erc20-vault v0.7.0-rc.2 since M48 L) | PI-equality on a shared preimage, every circuit, every branch | [erc20_vault_differential.rs](crates/minocrab-contracts/tests/erc20_vault_differential.rs) (85 tests) |
 | `erc20_vault_pending` (the typed EVM-call API, 17 circuits) | proves its own preimage: the reference model's op stream through the pinned ledger; the V2 record and kind-tagged outputs of [spec/borsh-subset.md](spec/borsh-subset.md) | [erc20_vault_pending_spec.rs](crates/minocrab-contracts/tests/erc20_vault_pending_spec.rs) (18 properties, four links); [erc20_vault_pending.rs](crates/minocrab-contracts/tests/erc20_vault_pending.rs) — each request/settle pair pinned to the port's `(k, rows)`; the record bytes and ids in `serialization_conformance` and [signet_flow.rs](crates/minocrab-contracts/tests/signet_flow.rs) |
 
 - **What the Pending lineage is not**: PI-equal to compactc. It writes the V2

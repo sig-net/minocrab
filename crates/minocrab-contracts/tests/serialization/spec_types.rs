@@ -259,7 +259,7 @@ impl FixedLen for EvmType2TxParams3 {
 // against the `bin_len` of the atom list INCLUDING the `b0` atom.
 
 /// The vault's request record: `SignBidirectionalEventV1<EvmType2TxParams<2,
-/// 0, 0>, 34, 0>`, the value an action's request map stores — 362 bytes.
+/// 0, 0>, 34, 0>`, the value an action's request map stores — 394 bytes.
 ///
 /// `sendDeposit`, `sendWithdraw` and `sendApprove` write one; the matching
 /// `complete*` reads it back.
@@ -280,9 +280,10 @@ pub struct VaultEventV1 {
     /// `TxParamType`, same rule as `algo`.
     pub tx_param_type: u8,
     pub tx_params: EvmType2TxParams2,
-    /// `executionDest: Bytes<32>` — `pad(32, "eip155:1")`, the MPC's routing
-    /// key for every Ethereum network it watches.
-    pub execution_dest: [u8; 32],
+    /// `executionDest: Bytes<64>` — `pad(64, "eip155:1")`, the MPC's routing
+    /// key for every Ethereum network it watches (`Bytes<32>` before
+    /// `@sig-net/midnight` 0.25).
+    pub execution_dest: ByteArray<64>,
     /// `MPCDestination`, same rule as `algo`.
     pub signature_dest: u8,
     /// `Bytes<64>` — `pad(64, "")` at every deployed site.
@@ -299,12 +300,12 @@ impl FixedLen for VaultEventV1 {
     // the field whose presence in the ALIGNMENT and absence from the LIMBS
     // is the V1 record\'s one surprise, so it is not a term to tidy away.
     #[allow(clippy::identity_op)]
-    const LEN: usize = 1 + 32 + 32 + 1 + 1 + EvmType2TxParams2::LEN + 32 + 1 + 64 + 34 + 0;
+    const LEN: usize = 1 + 32 + 32 + 1 + 1 + EvmType2TxParams2::LEN + 64 + 1 + 64 + 34 + 0;
 }
 
 /// `sendReplaceNonce`'s record: [`VaultEventV1`]'s shape with the `[]` output
 /// schema — a value-only transaction to the vault's own EVM address with NO
-/// calldata, so `calldata.is_some` is 0 and the two words are zero. 330 bytes.
+/// calldata, so `calldata.is_some` is 0 and the two words are zero. 362 bytes.
 #[derive(BorshSerialize, BorshDeserialize, BorshSchema, Serialize, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ReplaceNonceEventV1 {
     pub key_version: u8,
@@ -313,7 +314,7 @@ pub struct ReplaceNonceEventV1 {
     pub algo: u8,
     pub tx_param_type: u8,
     pub tx_params: EvmType2TxParams2,
-    pub execution_dest: [u8; 32],
+    pub execution_dest: ByteArray<64>,
     pub signature_dest: u8,
     pub params: ByteArray<64>,
     pub output_deserialization_schema: ByteArray<2>,
@@ -326,12 +327,12 @@ impl FixedLen for ReplaceNonceEventV1 {
     // the field whose presence in the ALIGNMENT and absence from the LIMBS
     // is the V1 record\'s one surprise, so it is not a term to tidy away.
     #[allow(clippy::identity_op)]
-    const LEN: usize = 1 + 32 + 32 + 1 + 1 + EvmType2TxParams2::LEN + 32 + 1 + 64 + 2 + 0;
+    const LEN: usize = 1 + 32 + 32 + 1 + 1 + EvmType2TxParams2::LEN + 64 + 1 + 64 + 2 + 0;
 }
 
 /// The swap request record: `SignBidirectionalEventV1<EvmType2TxParams<7, 0,
 /// 0>, 38, 0>` — `exactOutputSingle`'s seven ABI words and the wider schema,
-/// 526 bytes.
+/// 558 bytes.
 #[derive(BorshSerialize, BorshDeserialize, BorshSchema, Serialize, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SwapEventV1 {
     pub key_version: u8,
@@ -340,7 +341,7 @@ pub struct SwapEventV1 {
     pub algo: u8,
     pub tx_param_type: u8,
     pub tx_params: EvmType2TxParams7,
-    pub execution_dest: [u8; 32],
+    pub execution_dest: ByteArray<64>,
     pub signature_dest: u8,
     pub params: ByteArray<64>,
     pub output_deserialization_schema: ByteArray<38>,
@@ -353,12 +354,12 @@ impl FixedLen for SwapEventV1 {
     // the field whose presence in the ALIGNMENT and absence from the LIMBS
     // is the V1 record\'s one surprise, so it is not a term to tidy away.
     #[allow(clippy::identity_op)]
-    const LEN: usize = 1 + 32 + 32 + 1 + 1 + EvmType2TxParams7::LEN + 32 + 1 + 64 + 38 + 0;
+    const LEN: usize = 1 + 32 + 32 + 1 + 1 + EvmType2TxParams7::LEN + 64 + 1 + 64 + 38 + 0;
 }
 
 /// The supply request record: the SAME 2-word shape as [`VaultEventV1`] with
 /// the lending schema two bytes longer (`shares: uint256` for `success: bool`),
-/// so 364 bytes. `sendSupply` writes an ERC-4626 `deposit(assets, receiver)` to
+/// so 396 bytes. `sendSupply` writes an ERC-4626 `deposit(assets, receiver)` to
 /// the stata token.
 #[derive(BorshSerialize, BorshDeserialize, BorshSchema, Serialize, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SupplyEventV1 {
@@ -368,7 +369,7 @@ pub struct SupplyEventV1 {
     pub algo: u8,
     pub tx_param_type: u8,
     pub tx_params: EvmType2TxParams2,
-    pub execution_dest: [u8; 32],
+    pub execution_dest: ByteArray<64>,
     pub signature_dest: u8,
     pub params: ByteArray<64>,
     pub output_deserialization_schema: ByteArray<36>,
@@ -381,11 +382,11 @@ impl FixedLen for SupplyEventV1 {
     // the field whose presence in the ALIGNMENT and absence from the LIMBS
     // is the V1 record\'s one surprise, so it is not a term to tidy away.
     #[allow(clippy::identity_op)]
-    const LEN: usize = 1 + 32 + 32 + 1 + 1 + EvmType2TxParams2::LEN + 32 + 1 + 64 + 36 + 0;
+    const LEN: usize = 1 + 32 + 32 + 1 + 1 + EvmType2TxParams2::LEN + 64 + 1 + 64 + 36 + 0;
 }
 
 /// The redeem request record: three ABI words (`redeem(shares, receiver,
-/// owner)`) and the lending schema, 396 bytes.
+/// owner)`) and the lending schema, 428 bytes.
 #[derive(BorshSerialize, BorshDeserialize, BorshSchema, Serialize, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct RedeemEventV1 {
     pub key_version: u8,
@@ -394,7 +395,7 @@ pub struct RedeemEventV1 {
     pub algo: u8,
     pub tx_param_type: u8,
     pub tx_params: EvmType2TxParams3,
-    pub execution_dest: [u8; 32],
+    pub execution_dest: ByteArray<64>,
     pub signature_dest: u8,
     pub params: ByteArray<64>,
     pub output_deserialization_schema: ByteArray<36>,
@@ -407,7 +408,7 @@ impl FixedLen for RedeemEventV1 {
     // the field whose presence in the ALIGNMENT and absence from the LIMBS
     // is the V1 record\'s one surprise, so it is not a term to tidy away.
     #[allow(clippy::identity_op)]
-    const LEN: usize = 1 + 32 + 32 + 1 + 1 + EvmType2TxParams3::LEN + 32 + 1 + 64 + 36 + 0;
+    const LEN: usize = 1 + 32 + 32 + 1 + 1 + EvmType2TxParams3::LEN + 64 + 1 + 64 + 36 + 0;
 }
 
 // ---- the request record, V2 (the `Pending` lineage, M11 stage 7) -------------
