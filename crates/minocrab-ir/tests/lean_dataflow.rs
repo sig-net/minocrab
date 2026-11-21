@@ -128,7 +128,10 @@ fn lean_dataflow_agrees_with_the_rust_functions_on_every_corpus_instruction() {
         // 23011 → 67036 at the compactc 0.36.0 bump: compactc writes only
         // ZKIR v3, so all 855 corpus files are dumped, not 110.
         // 67036 → 121834 with passport-account-custody's 52 circuits.
-        instructions, 121834,
+        // 121834 → 119109 at the compactc 0.36.1 bump (no artifact moved):
+        // the compact source repinned to the release tag (7fa3a117), its
+        // examples and test contracts added and removed.
+        instructions, 119109,
         "corpus instruction count moved ({instructions}); recompiled or extended corpus?"
     );
     println!("lean and rust dataflow agree on {instructions} corpus instructions");

@@ -94,8 +94,12 @@ fn ep_hash_matches_upstream_for_every_corpus_circuit() {
     // compact/test-center/compact/ecdsa compile under language 0.28.0.
     // +2 with passport-account-custody (passport PR #184): account and
     // webauthn; account-p256 is an include file and fails standalone.
+    // +85 at the compactc 0.36.1 bump, from the compact source moving to the
+    // release tag (56c3b77 → 7fa3a117): 89 new compiling contracts in its
+    // examples, test-center and test-contracts, 4 examples deleted upstream.
+    // The compiler itself moved no artifact.
     assert_eq!(
-        artifacts, 327,
+        artifacts, 412,
         "the corpus artifact count moved; re-read notes/corpus-sources.org before \
          refreshing this number"
     );

@@ -250,8 +250,8 @@ Raw material: the drift taxonomy in [notes/version-bump.org](notes/version-bump.
 
 ## 4. Reproducibility and supply chain
 
-- **Toolchain by hash.** `flake.nix` pins `compactcVersion = "0.36.0"` with
-  a per-architecture `compactcHashes` entry (`sha256-qBJrLMBiMO0sZVgFmolF…` for
+- **Toolchain by hash.** `flake.nix` pins `compactcVersion = "0.36.1"` with
+  a per-architecture `compactcHashes` entry (`sha256-lu5opZ2eiwk/Bcl0eaTP…` for
   `aarch64-darwin`), fetched from the upstream release URL. Nix supplies
   **binaries only** — compactc, `zkir-v3`, node, the Rust toolchain. The
   build itself is plain `cargo`; nothing in this repo is built by nix.

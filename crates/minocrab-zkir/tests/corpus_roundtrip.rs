@@ -101,7 +101,12 @@ fn round_trips_entire_corpus() {
         // (+6). The vault compiles with compact#856's workaround applied.
         // 855/855 → 907/907 with passport-account-custody (passport PR #184,
         // 531580c): account.compact's 52 circuits.
-        (907, 907),
+        // 907/907 → 897/897 at the compactc 0.36.1 bump, which moved no
+        // artifact; the compact source repinned to the release tag
+        // (56c3b77 → 7fa3a117): +31 new examples and test contracts, -41
+        // (advanced_casts and vector_to_bytes rewritten, four examples
+        // deleted upstream).
+        (897, 897),
         "corpus size moved: {} files ({} v3). If the corpus was deliberately \
          recompiled or extended, update this assertion in the same commit and say \
          which source moved it; otherwise the checkout is incomplete.",
