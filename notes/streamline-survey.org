@@ -115,3 +115,31 @@ dmd, 2026-11-21: the codebase was built incrementally and reads defensive; the a
 - =Outbox= lives in =evm_flow=, not std, so it moves to =minocrab-signet= with it. Hook, blind, stream and vector stay in std as ruled.
 - The =unstable= features become empty aliases, not removed, because the passport port's manifest names the one on =minocrab-sim=.
 - 25 =compile_fail= doctests in the moved modules get error codes first, so a stale path cannot make them pass vacuously.
+
+* 7. The compat crate, as decided from the inventory (2026-11-21)
+
+=minocrab-compat= depends on std, ledger, =minocrab= and ir; nothing depends on it except the parity ports and their tests. Its crate docs carry the label: it exists so that a circuit ported from Compact emits compactc's instruction stream byte for byte, which is how a port is checked against the compiler's own output, and nothing in it is the cheapest correct lowering.
+
+** What goes in it
+| module | what | why it is compactc-shaped |
+|--------+------+---------------------------|
+| =kernel= | the Compact standard-library transcription now at std =kernel.rs:324-809=: send / mint / receive unshielded, the negated balance and block-time forms, =merge_coin=, =send_shielded=, =checked_sub=, =as_uint128= | =not= as =cond_select(b,0,1)=; =&&= as =cond_select=; the guard conjoined once per op; =send_shielded= hashing one coin commitment twice (about 5,640 rows a use) |
+| =merkle= | =insert_index_default= with the unfolded default leaf hash | compactc does not fold =persistentHash= over constants (one SHA block, about 1,885 rows) |
+| =secp= | =secp256k1_ecdsa_verify= as compactc lowers it | the identity point built by =ec_mul_generator= + two conversions (about 12,300 rows for a constant) and an x-coordinate round trip |
+| =normalise= | =folded()= | the normaliser the eight instruction-level differentials apply to both sides |
+| =profile= | one call a parity circuit makes first | see the switch below |
+
+** The one switch
+Three things cannot be a gadget, because shared helpers (=common.rs='s mint, burn and receive, used by both vaults) call core: whether =kernel::self_address= reads fresh at every call or once per circuit; whether repeated range constraints are deduplicated; whether the simplification pass runs. Core holds these as per-circuit lowering state, defaulting to the lean choice. =minocrab_compat::profile(c)= sets all three to compactc's. Every circuit with a Compact twin, and the deployed signer, calls it first; the gate that it was applied everywhere it must be is the zkir dump staying byte-identical.
+
+** Order
+1. COPY, do not move: the compat crate gets the compactc-shaped gadgets, the parity ports import them, std is unchanged. Zero movement.
+2. The lowering state and =profile=, with the defaults still compactc's. Zero movement.
+3. Flip each default and make each std gadget lean, one at a time. A parity port must not move at all; a MinoCrab-only circuit may only go down in rows; each lean gadget gets a test that it is public-input-equal to its compat twin on the same inputs.
+
+** Stays in core although it looks like compat
+- The Impact op sequences, the protocol hash preimages, the input-constraint table and alignment widths, guarded-effect semantics: the ledger and the VM require them.
+- =fold_immediate_copies=: zero rows, and nothing gains from a second shape.
+- Uncached =idx= opcodes (56 sites in =minocrab-ledger=): the cached form is valid and cheaper in gas, but the op builders are pure functions and a switch would thread through all of them. DEFERRED, recorded here.
+- =Callee::Field='s fresh read per call site: the lean form, =.pin(c)=, already exists.
+- =Check::or= is NOT compactc's shape (compactc lowers =||= to one =cond_select=); it is simply expensive. Core makes it one =cond_select=. Its only caller is =evm_flow.rs:1452=.
