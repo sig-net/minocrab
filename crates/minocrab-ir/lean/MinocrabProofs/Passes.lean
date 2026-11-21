@@ -6,7 +6,7 @@ THE MODEL GAP, stated once and inherited by everything here: these
 theorems warrant the ALGORITHM as transcribed below; the claim that the
 Rust implements this algorithm rests on review (the transcription is
 line-for-line against `passes.rs`) plus the Rust-side instruments — the
-unit tests and the Kani-bounded twins. Extraction (Aeneas) would close
+unit tests. Extraction (Aeneas) would close
 that gap; nothing else does.
 
 THE MODEL: everything that is not a wire-keyed range constraint is one

@@ -1140,7 +1140,7 @@ and outputs did not change (the =_kept= passes equal the unsuffixed ones on
 the algorithm as transcribed and rests on review that the Rust implements
 it; the new bodies were re-read against =FoldIr.lean=, =AssertIr.lean= and
 =DedupIr.lean= and are the same algorithm. The Kani stream harnesses are
-the non-closing specimens they were. The metadata remap itself — =Kept=,
+the non-closing specimens they were (deleted in M48 F; the taint lint's harnesses in =minocrab-taint= are the only Kani harnesses left). The metadata remap itself — =Kept=,
 its composition, =Circuit3::finish='s moves — is NOT covered by any proof:
 it is tested (fixed and random streams per pass, random =Circuit3=
 programs, the debug checks on every built circuit), with the Lean

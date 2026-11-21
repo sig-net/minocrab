@@ -1,6 +1,6 @@
 #!/bin/zsh
 # The Kani instrument (M23 R4): `./kani.sh [cargo-kani args]`.
-# Defaults to every harness in minocrab-ir and minocrab-taint. NEVER part of the routine loop —
+# Defaults to every harness in minocrab-taint (the only crate with any). NEVER part of the routine loop —
 # plain `cargo test` compiles none of the #[cfg(kani)] modules.
 #
 # ONE-TIME SETUP, per machine (notes/formal-verification-options.org
@@ -76,5 +76,5 @@ export RUSTC_WRAPPER=${0:A}
 if (( $# )); then
   exec cargo kani "$@"
 else
-  exec cargo kani -p minocrab-ir -p minocrab-taint
+  exec cargo kani -p minocrab-taint
 fi

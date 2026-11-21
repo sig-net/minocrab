@@ -162,7 +162,7 @@ alloy-sol-types = "=1.6.1"
 alloy-primitives = "=1.6.1"
 
 [workspace.lints.rust]
-# minocrab-ir's Kani harnesses are compiled under `cargo kani` only.
+# minocrab-taint's Kani harnesses are compiled under `cargo kani` only.
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(kani)'] }
 
 [workspace.lints.clippy]

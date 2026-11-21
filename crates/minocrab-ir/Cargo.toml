@@ -39,6 +39,3 @@ serde_json.workspace = true
 [features]
 # No-op alias: gates nothing; kept so downstream manifests that name it still resolve.
 unstable = []
-
-# The Kani harnesses live under cfg(kani), which only the Kani driver sets
-# (see kani.sh at the repo root); tell rustc's cfg checker it is expected.
