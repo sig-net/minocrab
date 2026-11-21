@@ -535,7 +535,7 @@ pub fn returned(instruction: &Instruction) -> Vec<Operand> {
 
 /// The identifiers an instruction binds, in output order.
 ///
-/// Read through [`definition`], the one exhaustive match that also carries
+/// Read through `definition`, the one exhaustive match that also carries
 /// the simplification's purity table: an upstream variant that defines a
 /// value this list does not know about breaks the build.
 pub fn defined_identifiers(instruction: &Instruction) -> Vec<Identifier> {
@@ -801,15 +801,15 @@ pub fn native_inputs(ir: &minocrab_zkir::v3::IrSource) -> Vec<Identifier> {
 /// can be measured and tested alone (notes/ir-passes.org §14).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Rules {
-    /// Merge an exact repeat of an earlier [`Pure`](Effect::Pure)
+    /// Merge an exact repeat of an earlier `Pure`
     /// instruction into it.
     pub merge_pure: bool,
-    /// The same for a [`Determined`](Effect::Determined) instruction (one
+    /// The same for a `Determined` instruction (one
     /// that also constrains its operands).
     pub merge_determined: bool,
     /// Read a `cond_select` on the immediate 0 or 1 as the arm it selects.
     pub constant_selects: bool,
-    /// Delete a [`Pure`](Effect::Pure) instruction nothing reads.
+    /// Delete a `Pure` instruction nothing reads.
     pub dead_pure: bool,
 }
 
@@ -842,13 +842,13 @@ pub fn simplify(instructions: Vec<Instruction>, native_inputs: &[Identifier], ob
 /// THE MERGE. An instruction that repeats an earlier one exactly — same
 /// opcode, same attributes, same operands after the renames so far — is
 /// deleted, and its outputs are read as the earlier one's. A
-/// [`Pure`](Effect::Pure) instruction always qualifies. A
-/// [`Determined`](Effect::Determined) one does too: its earlier twin lays
+/// `Pure` instruction always qualifies. A
+/// `Determined` one does too: its earlier twin lays
 /// down the same constraint on the same operands, so no constraint is lost,
 /// and its outputs are a function of its operands, so the twin's are equal
 /// in every satisfying assignment. ZKIR has no control flow, so what lies
 /// between the two is irrelevant: both are laid down regardless. Never
-/// merged: anything [`Kept`](Effect::Kept) — a transcript read (each one
+/// merged: anything `Kept` — a transcript read (each one
 /// consumes a position, notes/ir-passes.org §3), a constraint (the dedup's
 /// business), Impact, an assert.
 ///
@@ -859,7 +859,7 @@ pub fn simplify(instructions: Vec<Instruction>, native_inputs: &[Identifier], ob
 /// only on 0 and 1: on any other immediate the circuit can never be
 /// satisfied, and that is left exactly as it is.
 ///
-/// THE DEAD CODE. A [`Pure`](Effect::Pure) instruction none of whose
+/// THE DEAD CODE. A `Pure` instruction none of whose
 /// outputs is read — by a later instruction, by the `Output` terminator, or
 /// through `observed` — is deleted. One backward sweep is the fixed point:
 /// ZKIR v3 uses a value only after the instruction defining it, so the

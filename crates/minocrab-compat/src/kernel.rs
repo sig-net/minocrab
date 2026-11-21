@@ -48,7 +48,7 @@ pub fn block_time_lt(c: &mut Circuit3, time: Uint<64, Public>) -> Assumed<Bool<P
 
 /// `circuit blockTimeGte(time): Boolean { return !blockTimeLt(time); }`
 ///
-/// compactc's `!` (see [`not`]); the lean form negates with `Circuit3::not`.
+/// compactc's `!` (see `not`); the lean form negates with `Circuit3::not`.
 pub fn block_time_gte(c: &mut Circuit3, time: Uint<64, Public>) -> Assumed<Bool<Public>> {
     let lt = block_time_lt(c, time);
     Assumed::of_read(not(c, *lt))
@@ -63,7 +63,7 @@ pub fn block_time_gt(c: &mut Circuit3, time: Uint<64, Public>) -> Assumed<Bool<P
 
 /// `circuit blockTimeLte(time): Boolean { return !blockTimeGt(time); }`
 ///
-/// compactc's `!` (see [`not`]); the lean form negates with `Circuit3::not`.
+/// compactc's `!` (see `not`); the lean form negates with `Circuit3::not`.
 pub fn block_time_lte(c: &mut Circuit3, time: Uint<64, Public>) -> Assumed<Bool<Public>> {
     let gt = block_time_gt(c, time);
     Assumed::of_read(not(c, *gt))
@@ -100,7 +100,7 @@ pub fn unshielded_balance_lt(
 
 /// `circuit unshieldedBalanceGte(color, amount): Boolean { return !…Lt(…); }`
 ///
-/// compactc's `!` (see [`not`]); the lean form negates with `Circuit3::not`.
+/// compactc's `!` (see `not`); the lean form negates with `Circuit3::not`.
 pub fn unshielded_balance_gte(
     c: &mut Circuit3,
     color: CoinColor<Public>,
@@ -125,7 +125,7 @@ pub fn unshielded_balance_gt(
 
 /// `circuit unshieldedBalanceLte(color, amount): Boolean { return !…Gt(…); }`
 ///
-/// compactc's `!` (see [`not`]); the lean form negates with `Circuit3::not`.
+/// compactc's `!` (see `not`); the lean form negates with `Circuit3::not`.
 pub fn unshielded_balance_lte(
     c: &mut Circuit3,
     color: CoinColor<Public>,
@@ -220,8 +220,8 @@ fn emit_guarded(c: &mut Circuit3, guard: Wire3<FieldT, Public>, ops: &[minocrab_
 /// }
 /// ```
 ///
-/// compactc's in the auto-receive guard ([`is_self`]) and its per-op
-/// resolution ([`emit_guarded`]).
+/// compactc's in the auto-receive guard (`is_self`) and its per-op
+/// resolution (`emit_guarded`).
 pub fn send_unshielded(
     c: &mut Circuit3,
     color: CoinColor<Public>,
@@ -357,8 +357,8 @@ fn as_uint128(c: &mut Circuit3, w: Wire3<FieldT, Public>) -> Wire3<FieldT, Publi
 /// }
 /// ```
 ///
-/// compactc's in the colour test ([`bytes_eq`]) and the cast's `Copy`
-/// ([`as_uint128`]). `createZswapInput` / `createZswapOutput` are Void
+/// compactc's in the colour test (`bytes_eq`) and the cast's `Copy`
+/// (`as_uint128`). `createZswapInput` / `createZswapOutput` are Void
 /// witness natives and emit nothing here.
 pub fn merge_coin(
     c: &mut Circuit3,
@@ -431,7 +431,7 @@ fn merge(c: &mut Circuit3, a: &ShieldedCoinInfo3<Public>, b: &ShieldedCoinInfo3<
 /// compactc's: `output`'s commitment is hashed TWICE, once per
 /// `coinCommitment` in the source (about 5,640 rows, notes/vault-optimization.org),
 /// where the lean form hashes it once and reuses it; and `!`, `&&` and the
-/// change test are `cond_select`s ([`not`], [`bytes_eq`], [`checked_sub`]).
+/// change test are `cond_select`s (`not`, `bytes_eq`, `checked_sub`).
 /// The `if (change == 0)` is written out rather than through
 /// [`Circuit3::when_value`] because compactc folds the `Maybe`'s tag into the
 /// guard it already has: the tag IS the guard here, named once, and only the

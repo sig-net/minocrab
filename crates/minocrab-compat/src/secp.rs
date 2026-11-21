@@ -32,7 +32,7 @@ fn assert_not_identity<V: Vis3>(c: &mut Circuit3, pk: Wire3<Secp256k1PointT, V>,
 /// and high-s signatures (as the library does); `msgHash` is taken as given
 /// and must be bound to the real message by the caller. The point at
 /// infinity is rejected (`pk != default<Secp256k1Point>`). compactc's in the
-/// identity it builds ([`assert_not_identity`]) and the x coordinate's round
+/// identity it builds (`assert_not_identity`) and the x coordinate's round
 /// trip; the lean form skips both.
 pub fn secp256k1_ecdsa_verify<V: Vis3>(
     c: &mut Circuit3,

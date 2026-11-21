@@ -881,7 +881,7 @@ ticket!(
      takes.\n\n\
      The claim is CHECKED, not believed: `complete` verifies the signature \
      over the attested width, asserts the verdict is \
-     [`output_kind::EXECUTED`](crate::signet_v1::output_kind::EXECUTED), \
+     [`output_kind::EXECUTED`], \
      consumes this slot's own entry, and then asserts the call's \
      [`EvmCall::succeeded`] predicate over the decoded output. What the \
      ticket's TYPE buys is that a ticket for filing `X` cannot be handed to a \

@@ -257,7 +257,7 @@ impl Signing {
 
 /// What a request circuit supplies: whose key signs and what it signs. The
 /// key VERSION is not here — it is the block's cell, read inside
-/// [`file_request`].
+/// `file_request`.
 pub struct SignRequest<const WORDS: usize> {
     pub signing: Signing,
     pub tx: EvmTx<WORDS>,
