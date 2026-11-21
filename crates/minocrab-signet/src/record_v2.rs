@@ -10,7 +10,7 @@ use minocrab::{AlignmentAtom, Public};
 use minocrab_std::v3::hash::upgrade_from_transient;
 use minocrab_std::v3::{BytesN, ContractAddress, LedgerRepr, ProofWires, Vis3, B32};
 
-use crate::signet_common::{Caip2Id, SigningPath};
+use crate::common::{Caip2Id, SigningPath};
 use crate::signet_v1::{EvmType2TxParams, RequestId, PARAMS_LEN};
 
 fn bytes(length: u32) -> AlignmentAtom {

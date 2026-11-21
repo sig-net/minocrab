@@ -140,10 +140,11 @@ impl<Env: LedgerRepr> LedgerRepr for Outstanding<Env> {
 ///
 /// ```compile_fail,E0308
 /// use minocrab::v3::Circuit3;
-/// use minocrab_contracts::evm::{erc20, Filed};
-/// use minocrab_contracts::evm_flow::{Outbox, Succeeded};
-/// use minocrab_contracts::signet_flow::Signet;
-/// use minocrab_contracts::signet_v1::schema;
+/// use minocrab_evm::erc20;
+/// use minocrab_signet::filing::Filed;
+/// use minocrab_signet::evm_flow::{Outbox, Succeeded};
+/// use minocrab_signet::signet_flow::Signet;
+/// use minocrab_signet::signet_v1::schema;
 /// use minocrab_std::v3::{Ledger, LedgerRepr, Uint};
 /// use minocrab::Public;
 ///

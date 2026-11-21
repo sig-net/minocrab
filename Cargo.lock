@@ -3244,6 +3244,7 @@ dependencies = [
  "minocrab-ir",
  "minocrab-ledger",
  "minocrab-publisher",
+ "minocrab-signet",
  "minocrab-sim",
  "minocrab-std",
  "minocrab-taint",
@@ -3337,6 +3338,18 @@ dependencies = [
  "signet-protocol",
  "thiserror",
  "tokio",
+]
+
+[[package]]
+name = "minocrab-signet"
+version = "0.1.0"
+dependencies = [
+ "minocrab",
+ "minocrab-evm",
+ "minocrab-ledger",
+ "minocrab-std",
+ "signet-protocol",
+ "signet-signer-interface",
 ]
 
 [[package]]

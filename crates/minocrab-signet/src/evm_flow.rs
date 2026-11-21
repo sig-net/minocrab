@@ -2,11 +2,11 @@
 //! (M37 rungs B and C, notes/evm-calls.org §§3-4; M38 rung A,
 //! notes/evm-interfaces.org §2).
 //!
-//! [`crate::evm`] made the CALL a type — its name, its argument list, its
+//! [`minocrab_evm`] made the CALL a type — its name, its argument list, its
 //! return, the interface that exposes it, its gas limit and the rule by
 //! which its return says "it worked". This module makes the SLOT a type
 //! over a FILING of that call: the call plus the OUTPUT SCHEMA this
-//! deployment files it under, which [`Filed`](crate::evm::Filed) supplies in
+//! deployment files it under, which [`Filed`](crate::filing::Filed) supplies in
 //! one line.
 //!
 //! ```ignore
@@ -88,8 +88,8 @@
 //!
 //! # ERC-721 is not ERC-20
 //!
-//! [`erc721::TransferFrom`](crate::evm::erc721::TransferFrom) and
-//! [`erc20::TransferFrom`](crate::evm::erc20::TransferFrom) hash to the same
+//! [`erc721::TransferFrom`](minocrab_evm::erc721::TransferFrom) and
+//! [`erc20::TransferFrom`](minocrab_evm::erc20::TransferFrom) hash to the same
 //! selector and differ only in their return (nothing, and a `bool`).
 //! THE CALLEE'S INTERFACE IS THE TYPE THAT DISTINGUISHES THEM. A
 //! `Contract<Erc721>` is an address a contract has CLAIMED is an NFT, and
@@ -100,10 +100,11 @@
 //! ```compile_fail,E0277
 //! use minocrab::v3::Circuit3;
 //! use minocrab::{Private, Public};
-//! use minocrab_contracts::evm::{erc20, erc721, Filed};
-//! use minocrab_contracts::signet_v1::schema;
-//! use minocrab_contracts::evm_flow::{Contract, Pending};
-//! use minocrab_contracts::signet_flow::Signet;
+//! use minocrab_evm::{erc20, erc721};
+//! use minocrab_signet::filing::Filed;
+//! use minocrab_signet::signet_v1::schema;
+//! use minocrab_signet::evm_flow::{Contract, Pending};
+//! use minocrab_signet::signet_flow::Signet;
 //! use minocrab_std::v3::{Bytes, Ledger, LedgerRepr, Uint};
 //!
 //! #[derive(LedgerRepr)] struct Amount { amount: Uint<64, Public> }
@@ -137,10 +138,11 @@
 //! ```compile_fail,E0277
 //! use minocrab::v3::Circuit3;
 //! use minocrab::{Private, Public};
-//! use minocrab_contracts::evm::{erc20, erc721, Filed};
-//! use minocrab_contracts::signet_v1::schema;
-//! use minocrab_contracts::evm_flow::{Contract, Pending};
-//! use minocrab_contracts::signet_flow::Signet;
+//! use minocrab_evm::{erc20, erc721};
+//! use minocrab_signet::filing::Filed;
+//! use minocrab_signet::signet_v1::schema;
+//! use minocrab_signet::evm_flow::{Contract, Pending};
+//! use minocrab_signet::signet_flow::Signet;
 //! use minocrab_std::v3::{Bytes, Ledger, LedgerRepr, Uint, B32};
 //!
 //! #[derive(LedgerRepr)] struct Amount { amount: Uint<64, Public> }
@@ -175,10 +177,11 @@
 //! ```
 //! use minocrab::v3::Circuit3;
 //! use minocrab::{Private, Public};
-//! use minocrab_contracts::evm::{erc20, erc721, Filed};
-//! use minocrab_contracts::signet_v1::schema;
-//! use minocrab_contracts::evm_flow::{Contract, Pending};
-//! use minocrab_contracts::signet_flow::Signet;
+//! use minocrab_evm::{erc20, erc721};
+//! use minocrab_signet::filing::Filed;
+//! use minocrab_signet::signet_v1::schema;
+//! use minocrab_signet::evm_flow::{Contract, Pending};
+//! use minocrab_signet::signet_flow::Signet;
 //! use minocrab_std::v3::{Bytes, Ledger, LedgerRepr, Uint, B32};
 //!
 //! #[derive(LedgerRepr)] struct Amount { amount: Uint<64, Public> }
@@ -222,10 +225,11 @@
 //! ```compile_fail,E0277
 //! use minocrab::v3::Circuit3;
 //! use minocrab::{Private, Public};
-//! use minocrab_contracts::evm::{erc20, uniswap_v3, Filed};
-//! use minocrab_contracts::signet_v1::schema;
-//! use minocrab_contracts::evm_flow::{Contract, Pending};
-//! use minocrab_contracts::signet_flow::Signet;
+//! use minocrab_evm::{erc20, uniswap_v3};
+//! use minocrab_signet::filing::Filed;
+//! use minocrab_signet::signet_v1::schema;
+//! use minocrab_signet::evm_flow::{Contract, Pending};
+//! use minocrab_signet::signet_flow::Signet;
 //! use minocrab_std::v3::{Bytes, Ledger, LedgerRepr, Uint};
 //!
 //! #[derive(LedgerRepr)] struct Amount { amount: Uint<64, Public> }
@@ -256,10 +260,11 @@
 //! ```
 //! use minocrab::v3::Circuit3;
 //! use minocrab::{Private, Public};
-//! use minocrab_contracts::evm::{erc20, Filed};
-//! use minocrab_contracts::signet_v1::schema;
-//! use minocrab_contracts::evm_flow::{Contract, Pending};
-//! use minocrab_contracts::signet_flow::Signet;
+//! use minocrab_evm::erc20;
+//! use minocrab_signet::filing::Filed;
+//! use minocrab_signet::signet_v1::schema;
+//! use minocrab_signet::evm_flow::{Contract, Pending};
+//! use minocrab_signet::signet_flow::Signet;
 //! use minocrab_std::v3::{Bytes, Ledger, LedgerRepr, Uint};
 //!
 //! #[derive(LedgerRepr)] struct Amount { amount: Uint<64, Public> }
@@ -289,10 +294,11 @@
 //!
 //! ```compile_fail,E0308
 //! use minocrab::v3::Circuit3;
-//! use minocrab_contracts::evm::{erc20, Filed};
-//! use minocrab_contracts::signet_v1::schema;
-//! use minocrab_contracts::evm_flow::{Owned, Pending, Succeeded};
-//! use minocrab_contracts::signet_flow::Signet;
+//! use minocrab_evm::erc20;
+//! use minocrab_signet::filing::Filed;
+//! use minocrab_signet::signet_v1::schema;
+//! use minocrab_signet::evm_flow::{Owned, Pending, Succeeded};
+//! use minocrab_signet::signet_flow::Signet;
 //! use minocrab_std::v3::{Ledger, LedgerRepr, Uint};
 //! use minocrab::Public;
 //!
@@ -316,10 +322,11 @@
 //!
 //! ```
 //! use minocrab::v3::Circuit3;
-//! use minocrab_contracts::evm::{erc20, Filed};
-//! use minocrab_contracts::signet_v1::schema;
-//! use minocrab_contracts::evm_flow::{Owned, Pending, Succeeded};
-//! use minocrab_contracts::signet_flow::Signet;
+//! use minocrab_evm::erc20;
+//! use minocrab_signet::filing::Filed;
+//! use minocrab_signet::signet_v1::schema;
+//! use minocrab_signet::evm_flow::{Owned, Pending, Succeeded};
+//! use minocrab_signet::signet_flow::Signet;
 //! use minocrab_std::v3::{Ledger, LedgerRepr, Uint};
 //! use minocrab::Public;
 //!
@@ -341,10 +348,11 @@
 //! from the slot's constructor, which `#[derive(Ledger)]` calls:
 //!
 //! ```compile_fail,E0080
-//! use minocrab_contracts::evm::{erc20, Filed};
-//! use minocrab_contracts::signet_v1::schema;
-//! use minocrab_contracts::evm_flow::{Owned, Pending};
-//! use minocrab_contracts::signet_flow::Signet;
+//! use minocrab_evm::erc20;
+//! use minocrab_signet::filing::Filed;
+//! use minocrab_signet::signet_v1::schema;
+//! use minocrab_signet::evm_flow::{Owned, Pending};
+//! use minocrab_signet::signet_flow::Signet;
 //! use minocrab_std::v3::{Ledger, LedgerRepr, Uint};
 //! use minocrab::Public;
 //!
@@ -373,10 +381,11 @@
 //!
 //! ```compile_fail,E0277
 //! use minocrab::v3::Circuit3;
-//! use minocrab_contracts::evm::{erc20, always, Address, EvmCall, Filed};
-//! use minocrab_contracts::evm_flow::{Owned, Pending, Succeeded};
-//! use minocrab_contracts::signet_flow::Signet;
-//! use minocrab_contracts::signet_v1::schema;
+//! use minocrab_evm::{erc20, always, Address, EvmCall};
+//! use minocrab_signet::filing::Filed;
+//! use minocrab_signet::evm_flow::{Owned, Pending, Succeeded};
+//! use minocrab_signet::signet_flow::Signet;
+//! use minocrab_signet::signet_v1::schema;
 //! use minocrab_std::v3::{Bytes, Check, Ledger, LedgerRepr, Uint};
 //! use minocrab::{Private, Public};
 //!
@@ -414,10 +423,11 @@
 //!
 //! ```
 //! use minocrab::v3::Circuit3;
-//! use minocrab_contracts::evm::{erc20, always, EvmCall, Filed, U256};
-//! use minocrab_contracts::evm_flow::{Owned, Pending, Succeeded};
-//! use minocrab_contracts::signet_flow::Signet;
-//! use minocrab_contracts::signet_v1::schema;
+//! use minocrab_evm::{erc20, always, EvmCall, U256};
+//! use minocrab_signet::filing::Filed;
+//! use minocrab_signet::evm_flow::{Owned, Pending, Succeeded};
+//! use minocrab_signet::signet_flow::Signet;
+//! use minocrab_signet::signet_v1::schema;
 //! use minocrab_std::v3::{Check, Ledger, LedgerRepr, Uint, B32};
 //! use minocrab::{Private, Public};
 //!
@@ -453,9 +463,10 @@
 //! the nonce and the chain from:
 //!
 //! ```compile_fail,E0080
-//! use minocrab_contracts::evm::{erc20, Filed};
-//! use minocrab_contracts::signet_v1::schema;
-//! use minocrab_contracts::evm_flow::{Owned, Pending};
+//! use minocrab_evm::erc20;
+//! use minocrab_signet::filing::Filed;
+//! use minocrab_signet::signet_v1::schema;
+//! use minocrab_signet::evm_flow::{Owned, Pending};
 //! use minocrab_std::v3::{Ledger, LedgerCounter, LedgerRepr, Uint};
 //! use minocrab::Public;
 //!
@@ -472,10 +483,11 @@
 //! TWO `Signet` fields — one contract, one MPC key, one nonce sequence:
 //!
 //! ```compile_fail,E0080
-//! use minocrab_contracts::evm::{erc20, Filed};
-//! use minocrab_contracts::signet_v1::schema;
-//! use minocrab_contracts::evm_flow::{Owned, Pending};
-//! use minocrab_contracts::signet_flow::Signet;
+//! use minocrab_evm::erc20;
+//! use minocrab_signet::filing::Filed;
+//! use minocrab_signet::signet_v1::schema;
+//! use minocrab_signet::evm_flow::{Owned, Pending};
+//! use minocrab_signet::signet_flow::Signet;
 //! use minocrab_std::v3::{Ledger, LedgerRepr, Uint};
 //! use minocrab::Public;
 //!
@@ -498,10 +510,11 @@
 //! ```compile_fail,E0277
 //! use minocrab::v3::Circuit3;
 //! use minocrab::{Private, Public};
-//! use minocrab_contracts::evm::{erc20, Filed};
-//! use minocrab_contracts::signet_v1::schema;
-//! use minocrab_contracts::evm_flow::{Contract, Pending};
-//! use minocrab_contracts::signet_flow::Signet;
+//! use minocrab_evm::erc20;
+//! use minocrab_signet::filing::Filed;
+//! use minocrab_signet::signet_v1::schema;
+//! use minocrab_signet::evm_flow::{Contract, Pending};
+//! use minocrab_signet::signet_flow::Signet;
 //! use minocrab_std::v3::{Bytes, Ledger, LedgerRepr, Uint};
 //!
 //! #[derive(LedgerRepr)] struct Amount { amount: Uint<64, Public> }
@@ -535,10 +548,11 @@
 //! ```
 //! use minocrab::v3::Circuit3;
 //! use minocrab::{Private, Public};
-//! use minocrab_contracts::evm::{weth, Filed};
-//! use minocrab_contracts::signet_v1::schema;
-//! use minocrab_contracts::evm_flow::{Contract, Pending};
-//! use minocrab_contracts::signet_flow::Signet;
+//! use minocrab_evm::weth;
+//! use minocrab_signet::filing::Filed;
+//! use minocrab_signet::signet_v1::schema;
+//! use minocrab_signet::evm_flow::{Contract, Pending};
+//! use minocrab_signet::signet_flow::Signet;
 //! use minocrab_std::v3::{Ledger, LedgerRepr, Uint};
 //!
 //! #[derive(LedgerRepr)] struct Amount { amount: Uint<64, Public> }
@@ -574,10 +588,11 @@
 //! ```compile_fail,E0277
 //! use minocrab::v3::Circuit3;
 //! use minocrab::{Private, Public};
-//! use minocrab_contracts::evm::{erc20, usdt, Filed};
-//! use minocrab_contracts::signet_v1::schema;
-//! use minocrab_contracts::evm_flow::{Contract, Pending};
-//! use minocrab_contracts::signet_flow::Signet;
+//! use minocrab_evm::{erc20, usdt};
+//! use minocrab_signet::filing::Filed;
+//! use minocrab_signet::signet_v1::schema;
+//! use minocrab_signet::evm_flow::{Contract, Pending};
+//! use minocrab_signet::signet_flow::Signet;
 //! use minocrab_std::v3::{Bytes, Ledger, LedgerRepr, Uint};
 //!
 //! #[derive(LedgerRepr)] struct Amount { amount: Uint<64, Public> }
@@ -605,10 +620,11 @@
 //! ```compile_fail,E0277
 //! use minocrab::v3::Circuit3;
 //! use minocrab::{Private, Public};
-//! use minocrab_contracts::evm::{erc20, usdt, Filed};
-//! use minocrab_contracts::signet_v1::schema;
-//! use minocrab_contracts::evm_flow::{Contract, Pending};
-//! use minocrab_contracts::signet_flow::Signet;
+//! use minocrab_evm::{erc20, usdt};
+//! use minocrab_signet::filing::Filed;
+//! use minocrab_signet::signet_v1::schema;
+//! use minocrab_signet::evm_flow::{Contract, Pending};
+//! use minocrab_signet::signet_flow::Signet;
 //! use minocrab_std::v3::{Bytes, Ledger, LedgerRepr, Uint};
 //!
 //! #[derive(LedgerRepr)] struct Amount { amount: Uint<64, Public> }
@@ -640,10 +656,11 @@
 //! ```
 //! use minocrab::v3::Circuit3;
 //! use minocrab::{Private, Public};
-//! use minocrab_contracts::evm::{erc20, usdt, Filed};
-//! use minocrab_contracts::signet_v1::schema;
-//! use minocrab_contracts::evm_flow::{Contract, Pending};
-//! use minocrab_contracts::signet_flow::Signet;
+//! use minocrab_evm::{erc20, usdt};
+//! use minocrab_signet::filing::Filed;
+//! use minocrab_signet::signet_v1::schema;
+//! use minocrab_signet::evm_flow::{Contract, Pending};
+//! use minocrab_signet::signet_flow::Signet;
 //! use minocrab_std::v3::{Bytes, Ledger, LedgerRepr, Uint};
 //!
 //! #[derive(LedgerRepr)] struct Amount { amount: Uint<64, Public> }
@@ -677,8 +694,8 @@
 //! ```compile_fail,E0308
 //! use minocrab::v3::{Circuit3, FieldT};
 //! use minocrab::Private;
-//! use minocrab_contracts::evm::erc20;
-//! use minocrab_contracts::evm_flow::Contract;
+//! use minocrab_evm::erc20;
+//! use minocrab_signet::evm_flow::Contract;
 //! use minocrab_std::v3::Bytes;
 //!
 //! fn f(c: &mut Circuit3, callee: Contract<erc20::Erc20>) -> Bytes<20, Private> {
@@ -704,7 +721,7 @@ use minocrab_evm::{AbiArgs, AbiReturn, AbiTuple, AbiType, EvmCall, Extends, Inte
 use crate::filing::{
     build_tx_filed, build_tx_from_words, build_tx_payable_filed, build_tx_with, Envelope, Filing,
 };
-use crate::signet_common::{self as common, SecretKey};
+use crate::common::{self, SecretKey};
 use crate::signet_v1::{
     self, output_kind, EventRecordV1, OutputSchema, RespondBidirectionalEventV1, Secp256k1SigLimbs,
 };
@@ -756,9 +773,9 @@ pub type Callee<F> = <Called<F> as EvmCall>::Callee;
 ///   cannot be swapped in a `request` call.
 /// - A call goes only where its interface does. `request` takes a
 ///   `Contract<I>` with `I: Extends<Callee<F>>`, so an
-///   [`erc20::Transfer`](crate::evm::erc20::Transfer) filed against a
+///   [`erc20::Transfer`](minocrab_evm::erc20::Transfer) filed against a
 ///   `Contract<UniswapV3Router>` is a MISSING IMPL, and an
-///   [`erc20::Approve`](crate::evm::erc20::Approve) against a
+///   [`erc20::Approve`](minocrab_evm::erc20::Approve) against a
 ///   `Contract<Erc4626>` compiles because an ERC-4626 vault IS an ERC-20.
 ///
 /// WHAT IT DOES NOT BUY: any check that the deployed address at the other
@@ -958,8 +975,8 @@ impl CommitTag for OwnerTag {
 ///
 /// ```compile_fail,E0308
 /// use minocrab::v3::Circuit3;
-/// use minocrab_contracts::common::{witness_sk, SecretKey};
-/// use minocrab_contracts::evm_flow::{Commit, CommitTag};
+/// use minocrab_signet::common::{witness_sk, SecretKey};
+/// use minocrab_signet::evm_flow::{Commit, CommitTag};
 /// use minocrab::Private;
 /// use minocrab_std::v3::label;
 ///
@@ -1149,7 +1166,7 @@ impl<E: LedgerRepr> LedgerRepr for Owned<E> {
 /// typed by the call it makes.
 ///
 /// `F` IS THE FILING, not the call: the call plus the output schema this
-/// deployment files it under ([`Filed<Call, Schema>`](crate::evm::Filed) for
+/// deployment files it under ([`Filed<Call, Schema>`](crate::filing::Filed) for
 /// the one-line case). Two slots of one block may file the same Solidity
 /// function under two schemas — or under the SAME schema — and their tickets
 /// still do not unify, because the ticket is typed by the filing.
@@ -1327,7 +1344,7 @@ where
     /// every other call in the library: an amount cannot be handed to an
     /// `erc20::Transfer`, which would ignore it and send the ether nowhere
     /// (notes/evm-interfaces.org §5). WETH's
-    /// [`weth::Deposit`](crate::evm::weth::Deposit) is the one call that
+    /// [`weth::Deposit`](minocrab_evm::weth::Deposit) is the one call that
     /// has the impl, and the ether IS its argument — `deposit()` has no
     /// calldata beyond the selector.
     ///

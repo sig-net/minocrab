@@ -26,7 +26,8 @@
 //! ```
 //! use minocrab::v3::{Circuit3, FieldT};
 //! use minocrab::Private;
-//! use minocrab_contracts::evm::{build_tx, erc20};
+//! use minocrab_evm::erc20;
+//! use minocrab_signet::filing::build_tx;
 //! use minocrab_std::v3::{Bytes, Uint};
 //!
 //! let mut c = Circuit3::new();
@@ -50,7 +51,8 @@
 //! ```compile_fail,E0308
 //! use minocrab::v3::{Circuit3, FieldT};
 //! use minocrab::Private;
-//! use minocrab_contracts::evm::{build_tx, erc20};
+//! use minocrab_evm::erc20;
+//! use minocrab_signet::filing::build_tx;
 //! use minocrab_std::v3::{Bytes, Uint};
 //!
 //! let mut c = Circuit3::new();
@@ -70,7 +72,8 @@
 //! ```compile_fail,E0080
 //! use minocrab::v3::{Circuit3, FieldT};
 //! use minocrab::Private;
-//! use minocrab_contracts::evm::{build_tx, erc20};
+//! use minocrab_evm::erc20;
+//! use minocrab_signet::filing::build_tx;
 //! use minocrab_std::v3::{Bytes, Uint};
 //!
 //! let mut c = Circuit3::new();
@@ -90,7 +93,8 @@
 //! ```compile_fail,E0277
 //! use minocrab::v3::{Circuit3, FieldT};
 //! use minocrab::Private;
-//! use minocrab_contracts::evm::{build_tx_payable, erc20};
+//! use minocrab_evm::erc20;
+//! use minocrab_signet::filing::build_tx_payable;
 //! use minocrab_std::v3::{Bytes, Uint};
 //!
 //! let mut c = Circuit3::new();
@@ -109,7 +113,8 @@
 //! ```
 //! use minocrab::v3::{Circuit3, FieldT};
 //! use minocrab::Private;
-//! use minocrab_contracts::evm::{build_tx_payable, weth};
+//! use minocrab_evm::weth;
+//! use minocrab_signet::filing::build_tx_payable;
 //! use minocrab_std::v3::{Bytes, Uint};
 //!
 //! let mut c = Circuit3::new();
@@ -162,8 +167,9 @@ pub const FIXED_MAX_FEE: u64 = 30_000_000_000;
 /// `Succeeded` from settling a withdrawal:
 ///
 /// ```
-/// use minocrab_contracts::evm::{erc20, Filing};
-/// use minocrab_contracts::signet_v1::schema;
+/// use minocrab_evm::erc20;
+/// use minocrab_signet::filing::Filing;
+/// use minocrab_signet::signet_v1::schema;
 ///
 /// /// `transfer` as this protocol's withdrawal.
 /// pub struct Withdrawal;

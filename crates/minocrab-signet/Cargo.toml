@@ -1,0 +1,28 @@
+[package]
+name = "minocrab-signet"
+description = "Sig Network's Signet protocol for MinoCrab circuits: the V1 request record and attestation, the Signet block, and the typed EVM-call ledger slot (Pending) with its outbox"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+readme = "README.md"
+keywords = ["midnight", "signet", "mpc", "evm", "zero-knowledge"]
+categories = ["cryptography::cryptocurrencies"]
+include = ["src/**/*.rs", "README.md", "LICENSE-MIT", "LICENSE-APACHE"]
+
+[lints]
+workspace = true
+
+[dependencies]
+minocrab.workspace = true
+minocrab-std.workspace = true
+minocrab-ledger.workspace = true
+minocrab-evm.workspace = true
+# The signer's own declaration: `RequestId`, `Signature`, the `SignetSigner`
+# callee and the V1 notification payload a request circuit cross-calls with.
+# Not in [workspace.dependencies]: an interface crate is versioned per callee,
+# not with the workspace (its own manifest says why).
+signet-signer-interface = { path = "../signet-signer-interface", version = "0.3.0" }
+# The protocol facts (hash domains, output kinds) the circuit constants cast.
+signet-protocol.workspace = true

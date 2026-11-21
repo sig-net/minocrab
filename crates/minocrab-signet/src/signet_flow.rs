@@ -40,7 +40,7 @@
 //! M35 put a `Pending<Env, Resp>` slot here, keyed by a hand-written
 //! `Response` type per kind. M37 rung D replaced it with
 //! [`crate::evm_flow::Pending<Call, Env, WORDS>`], which is keyed by the CALL
-//! ([`crate::evm::EvmCall`]) and derives the response type, the ABI words,
+//! ([`minocrab_evm::EvmCall`]) and derives the response type, the ABI words,
 //! the selector, the gas envelope, the output schema and the signing path
 //! from it. What is left in this module is what the typed slot is BUILT ON,
 //! and it is here rather than there because it is the WIRE — the MPC's side
@@ -115,7 +115,7 @@ use minocrab_std::v3::{
 use signet_signer_interface::notification::construct_notification_v1;
 use signet_signer_interface::{RequestId, SignetSigner};
 
-use crate::signet_common::SigningPath;
+use crate::common::SigningPath;
 use crate::signet_v1::{self, EventRecordV1, EvmType2TxParams, OutputSchema};
 
 // ---- the shared configuration slot ------------------------------------------------

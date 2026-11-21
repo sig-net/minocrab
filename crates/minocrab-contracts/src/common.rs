@@ -15,7 +15,7 @@ use minocrab_std::v3::{
     ContractAddress, Secp256k1Point, ShieldedCoinInfo3, Uint, B32,
 };
 
-pub use crate::signet_common::{
+pub use minocrab_signet::common::{
     witness_sk, Caip2Id, RefundCommitment, SecretKey, SigningPath, UserCommitment, VAULT_PATH,
 };
 

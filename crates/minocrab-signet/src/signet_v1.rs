@@ -4,7 +4,7 @@
 //! Poseidon hashes, the kind-bearing attestation and the empty respond
 //! schema.
 //!
-//! What changed from the `fff3421c` module [`crate::signet`] ports, and why
+//! What changed from the `fff3421c` module the MinoCrab corpus's `signet` ports, and why
 //! this is a sibling rather than an edit of it: the request record REORDERED
 //! (`keyVersion` first, `sender` second, the request nonce GONE, the
 //! schemas last with `respondSerializationSchema` pinned to `Bytes<0>`), the
@@ -13,11 +13,12 @@
 //! (`calculateEvmType2TxParamsDigestV1`), every hash is prefixed with a
 //! [`hash_domain`] tag, and the attestation digest commits to the block
 //! height, the MPC's verdict ([`output_kind`]) and the output's WIDTH beside
-//! the output itself. The `fff3421c` shapes stay in [`crate::signet`] for the
+//! the output itself. The `fff3421c` shapes stay in that corpus module for the
 //! test-caller and the Signet-module ports still pinned there; nothing here
 //! is shared with them but the transaction-parameter structs
 //! ([`EvmType2TxParams`], [`EvmCalldata`]), the ABI word helpers and the
-//! ECDSA plumbing, which did not move.
+//! ECDSA plumbing, which are defined here and which the corpus module
+//! re-exports.
 //!
 //! Everything in-circuit is a mechanical port of `Signet.compact` at the pin,
 //! function for function; the cross-checks are the vault's differential suite
@@ -50,7 +51,7 @@ use minocrab_std::v3::{
 use signet_signer_interface::Signature;
 
 use minocrab_evm::reverse_bytes32;
-use crate::signet_common::{Caip2Id, SigningPath};
+use crate::common::{Caip2Id, SigningPath};
 /// `checkedTruncationU128`, the module's own narrowing of an attested
 /// uint256; the body is the EVM ABI layer's, which decodes returns with it.
 pub use minocrab_evm::checked_truncation_u128;
