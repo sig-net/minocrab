@@ -147,9 +147,18 @@ impl Select<Public> for SelfAddress {
 }
 
 /// `kernel.self()` — the contract's own address. Reads fresh, unless this
-/// circuit earlier called [`cache_self_address`] (or read under
-/// [`SelfAddressReads::OncePerCircuit`]), in which case the kept wires come
-/// back and no read is emitted.
+/// circuit earlier kept an unguarded read ([`cache_self_address`], or a read
+/// under [`SelfAddressReads::OncePerCircuit`]), in which case the kept wires
+/// come back and no read is emitted.
+///
+/// The kept address is returned INSIDE a `when` scope too, with no read.
+/// That is sound because the address is constant for the transaction and
+/// every effect in the scope is guarded anyway; but note what it means for a
+/// value taken out of the scope: `c.when(g, self_address).or_default()` is
+/// then the address even where `g` is false, not the zero a guarded read
+/// yields. A caller that needs the zero selects it (`.or(..)`, or a
+/// `cond_select` on `g`), as `common::mint_shielded_token`'s receive guard
+/// already does by multiplying with its guard.
 ///
 /// How it reads is the circuit's lowering setting
 /// ([`Lowering::self_address`](minocrab::v3::Lowering::self_address)):
@@ -201,10 +210,12 @@ fn read_and_keep(c: &mut Circuit3) -> SelfAddress {
 /// swallow those reads and move the stream (the dump gate enforces this
 /// per circuit).
 ///
-/// A `kernel.self()` read inside [`Circuit3::when`] / [`Circuit3::when_private`]
-/// picks up the ambient scope automatically and never consults the cache —
-/// `c.when(g, |c| self_address(c)).or_default()` is the guarded read
-/// (notes/edsl-trim.org §B).
+/// INSIDE A SCOPE ([`Circuit3::when`] / [`Circuit3::when_private`]) this
+/// keeps nothing: a read made there is guarded (it yields zero where the
+/// guard is false), so keeping it would hand that zero to every later read
+/// outside the scope. It returns what [`self_address`] returns there: the
+/// kept address if an earlier unguarded read made one, else a guarded read
+/// that is not kept.
 ///
 /// REFUSED in a circuit that CHOSE [`SelfAddressReads::EveryCall`]
 /// (`minocrab_compat::profile`, compactc's profile): compactc never caches,
@@ -223,6 +234,9 @@ pub fn cache_self_address(c: &mut Circuit3) -> SelfAddress {
          circuit has no Compact twin, drop the profile and choose \
          SelfAddressReads::OncePerCircuit instead."
     );
+    if c.in_guarded_scope() {
+        return self_address(c);
+    }
     read_and_keep(c)
 }
 

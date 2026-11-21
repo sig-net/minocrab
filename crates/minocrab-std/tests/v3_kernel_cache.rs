@@ -104,3 +104,172 @@ fn cache_under_once_per_circuit_is_allowed() {
     once_per_circuit(&mut c);
     kernel::cache_self_address(&mut c);
 }
+
+// ---- on the VM: which reads are emitted, which run, and what each yields ----
+//
+// Each circuit below takes one public argument `g`, uses it as a `when`
+// guard, and returns the self addresses it read. It is run through the
+// executor (`minocrab_sim::v3::exec`: the transcript settled against
+// Midnight's on-chain VM), so the facts asserted are the ledger's view: how
+// many `kernel.self()` reads the circuit EMITS, which of them RUN (a guarded
+// one whose guard is off is skipped, its public inputs zero), and the value
+// every use of the address sees.
+
+use midnight_onchain_state::state::StateValue;
+use minocrab::v3::{Compiled3, FieldT, Lowering, Wire3};
+use minocrab::Fr;
+use minocrab_sim::v3::exec::{self, Call, Executed};
+use minocrab_std::v3::kernel::SelfAddress;
+use minocrab_zkir::v3::IrValue;
+
+/// The address every run executes as.
+const SELF: [u8; 32] = [0x5e; 32];
+
+fn guard(c: &mut Circuit3) -> Wire3<FieldT, minocrab::Public> {
+    let g = c.arg::<FieldT>("g");
+    c.disclose(g, "g")
+}
+
+fn ret(c: &mut Circuit3, me: SelfAddress) {
+    let b = me.bytes();
+    c.output(b.hi, "hi");
+    c.output(b.lo, "lo");
+}
+
+fn with(lowering: Option<SelfAddressReads>, body: impl FnOnce(&mut Circuit3)) -> Compiled3 {
+    let mut c = Circuit3::new();
+    if let Some(reads) = lowering {
+        c.set_lowering(Lowering { self_address: reads, ..c.lowering() });
+    }
+    body(&mut c);
+    c.finish(false)
+}
+
+fn run(compiled: &Compiled3, g: u64) -> Executed {
+    exec::execute(&compiled.ir, &Call::new(&[Fr::from(g)], &[]), &exec::context(StateValue::Null, SELF))
+        .unwrap_or_else(|e| panic!("g = {g}: {e}"))
+}
+
+/// One entry per EMITTED self read, in stream order: whether it ran. A self
+/// read is three Impact blocks (`dup`, `idx`, `popeq`) under one guard.
+fn self_reads(e: &Executed) -> Vec<bool> {
+    assert_eq!(e.run.pi_skips.len() % 3, 0, "only self reads in these circuits");
+    e.run
+        .pi_skips
+        .chunks(3)
+        .map(|block| {
+            assert!(block.iter().all(|s| s.is_none() == block[0].is_none()), "one guard per read");
+            block[0].is_none()
+        })
+        .collect()
+}
+
+/// The address as the circuit's outputs encode it (one unguarded read).
+fn address() -> Vec<IrValue> {
+    let plain = with(None, |c| {
+        let _ = guard(c);
+        let me = kernel::self_address(c);
+        ret(c, me);
+    });
+    run(&plain, 0).run.outputs
+}
+
+/// What a guarded read yields where its guard was off: the zero address.
+fn zero() -> Vec<IrValue> {
+    let zeros = with(None, |c| {
+        let _ = guard(c);
+        let z = c.constant(0u64);
+        c.output(z, "hi");
+        c.output(z, "lo");
+    });
+    run(&zeros, 0).run.outputs
+}
+
+fn cat(a: &[IrValue], b: &[IrValue]) -> Vec<IrValue> {
+    a.iter().chain(b).cloned().collect()
+}
+
+/// THE LATENT BUG, fixed: `cache_self_address` inside a `when` used to keep
+/// the GUARDED read, so every later read outside the scope got its value,
+/// which is zero where the guard was off. Now it keeps nothing there: the
+/// read after the scope is a real one and sees the address.
+#[test]
+fn caching_inside_a_when_keeps_nothing() {
+    let me = address();
+    for lowering in [None, Some(SelfAddressReads::OncePerCircuit)] {
+        let circuit = with(lowering, |c| {
+            let g = guard(c);
+            let _ = c.when(g, |c| {
+                kernel::cache_self_address(c);
+            });
+            let outside = kernel::self_address(c);
+            ret(c, outside);
+        });
+        for (g, ran) in [(0, false), (1, true)] {
+            let e = run(&circuit, g);
+            assert_eq!(e.run.outputs, me, "{lowering:?}, g = {g}: the read after the scope sees the address");
+            assert_eq!(self_reads(&e), vec![ran, true], "{lowering:?}, g = {g}: the guarded read, then a real one");
+        }
+    }
+}
+
+/// A guarded read first, then straight-line ones. Under either setting the
+/// guarded read is emitted and runs only where `g` holds, its value is zero
+/// where it does not, and the first straight-line read is real. Under
+/// `OncePerCircuit` that read is kept and the third call emits nothing; under
+/// `EveryCall` it is a third read.
+#[test]
+fn a_guarded_read_then_unguarded_ones() {
+    let (me, zero) = (address(), zero());
+    for reads in [SelfAddressReads::EveryCall, SelfAddressReads::OncePerCircuit] {
+        let circuit = with(Some(reads), |c| {
+            let g = guard(c);
+            let inside = c.when(g, kernel::self_address).or_default();
+            let outside = kernel::self_address(c);
+            let again = kernel::self_address(c);
+            ret(c, inside);
+            ret(c, outside);
+            ret(c, again);
+        });
+        for g in [0, 1] {
+            let e = run(&circuit, g);
+            let inside = if g == 1 { &me } else { &zero };
+            assert_eq!(e.run.outputs, cat(&cat(inside, &me), &me), "{reads:?}, g = {g}");
+            let emitted = match reads {
+                SelfAddressReads::EveryCall => vec![g == 1, true, true],
+                SelfAddressReads::OncePerCircuit => vec![g == 1, true],
+            };
+            assert_eq!(self_reads(&e), emitted, "{reads:?}, g = {g}");
+        }
+    }
+}
+
+/// A straight-line read first, then a guarded one. Under `EveryCall` the
+/// guarded call is a second, guarded read (zero where `g` is off). Under
+/// `OncePerCircuit` it is the kept address and emits NOTHING, so the value
+/// taken out of the scope is the address even where `g` is off: sound (the
+/// address is constant and every effect in the scope is guarded), and the
+/// one behaviour that differs from the guarded read's zero, documented on
+/// `kernel::self_address`.
+#[test]
+fn an_unguarded_read_then_a_guarded_one() {
+    let (me, zero) = (address(), zero());
+    for reads in [SelfAddressReads::EveryCall, SelfAddressReads::OncePerCircuit] {
+        let circuit = with(Some(reads), |c| {
+            let g = guard(c);
+            let outside = kernel::self_address(c);
+            let inside = c.when(g, kernel::self_address).or_default();
+            ret(c, outside);
+            ret(c, inside);
+        });
+        for g in [0, 1] {
+            let e = run(&circuit, g);
+            let (inside, emitted) = match reads {
+                SelfAddressReads::EveryCall => (if g == 1 { &me } else { &zero }, vec![true, g == 1]),
+                SelfAddressReads::OncePerCircuit => (&me, vec![true]),
+            };
+            assert_eq!(e.run.outputs, cat(&me, inside), "{reads:?}, g = {g}");
+            assert_eq!(self_reads(&e), emitted, "{reads:?}, g = {g}");
+        }
+    }
+}
