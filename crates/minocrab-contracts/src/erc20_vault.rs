@@ -708,9 +708,7 @@ fn send_request<const WORDS: usize, SP, SR, A>(
     require_initialised(c);
     let out_index = out_index.disclose_as::<OutIndex>(c);
     let entry = c.region("flushed entry", |c| {
-        let flushed = VAULT.output_request_buffer.member(c, &out_index);
-        c.assert(is_true(flushed).message("Request not flushed"));
-        let out = VAULT.output_request_buffer.lookup(c, &out_index).stale(c);
+        let out = VAULT.output_request_buffer.lookup_required(c, &out_index, "Request not flushed").stale(c);
         c.assert(out.entry.action.eq(action).message("Wrong action"));
         out.entry
     });
@@ -746,17 +744,11 @@ fn send_request<const WORDS: usize, SP, SR, A>(
 /// bound, the ownership proof over a FRESH witness, and the three removals.
 fn settle_request(c: &mut Circuit3, request_id: &RequestId<Public>, action: u64) -> (RequestBufferEntry, AttestationRecord) {
     c.region("settle request", |c| {
-        let sent = VAULT.eviction_map.member(c, request_id);
-        c.assert(is_true(sent).message("Request not sent"));
-        let out_index = VAULT.eviction_map.lookup(c, request_id).stale(c);
-        let open = VAULT.output_request_buffer.member(c, &out_index);
-        c.assert(is_true(open).message("Request not open"));
-        let out = VAULT.output_request_buffer.lookup(c, &out_index).stale(c);
+        let out_index = VAULT.eviction_map.lookup_required(c, request_id, "Request not sent").stale(c);
+        let out = VAULT.output_request_buffer.lookup_required(c, &out_index, "Request not open").stale(c);
         c.assert(out.entry.action.eq(action).message("Wrong action"));
 
-        let flushed = VAULT.output_attestation_buffer.member(c, request_id);
-        c.assert(is_true(flushed).message("Attestation not flushed"));
-        let record = VAULT.output_attestation_buffer.lookup(c, request_id).stale(c);
+        let record = VAULT.output_attestation_buffer.lookup_required(c, request_id, "Attestation not flushed").stale(c);
         let above = c.less_than(out.last_seen.field(), record.block_height.field(), 64);
         c.assert_with(above, Some("Stale attestation"));
 
@@ -881,12 +873,8 @@ fn queue_attestation<const LEN: usize>(c: &mut Circuit3, event: &RespondBidirect
 
     // recordAttestation(attestation, digest)
     c.region("record attestation", |c| {
-        let sent = VAULT.eviction_map.member(c, &request_id);
-        c.assert(is_true(sent).message("Request not sent"));
-        let out_index = VAULT.eviction_map.lookup(c, &request_id).stale(c);
-        let open = VAULT.output_request_buffer.member(c, &out_index);
-        c.assert(is_true(open).message("Request not open"));
-        let out = VAULT.output_request_buffer.lookup(c, &out_index).stale(c);
+        let out_index = VAULT.eviction_map.lookup_required(c, &request_id, "Request not sent").stale(c);
+        let out = VAULT.output_request_buffer.lookup_required(c, &out_index, "Request not open").stale(c);
         let above = c.less_than(out.last_seen.field(), block_height.field(), 64);
         c.assert_with(above, Some("Stale attestation"));
         let queued = VAULT.input_attestation_buffer.member(c, &request_id);
@@ -2100,9 +2088,7 @@ impl Vault {
 /// entry, the vault nonce it takes (if it signs), its output index, the
 /// twin check, the move into `outputRequestBuffer` under `globalLastSeen`.
 fn flush_request(c: &mut Circuit3, in_index: &Uint<64, Public>) {
-    let queued_present = VAULT.input_request_buffer.member(c, in_index);
-    c.assert(is_true(queued_present).message("Request not queued"));
-    let queued = VAULT.input_request_buffer.lookup(c, in_index).stale(c);
+    let queued = VAULT.input_request_buffer.lookup_required(c, in_index, "Request not queued").stale(c);
     let use_next = queued.use_next_vault_account_nonce.field();
 
     // const entry = queued.useNextVaultAccountNonce
@@ -2139,9 +2125,7 @@ fn flush_request(c: &mut Circuit3, in_index: &Uint<64, Public>) {
 /// raised to its height if higher (the ternary's `else` arm re-reads the
 /// cell, as compactc emits it).
 fn flush_attestation(c: &mut Circuit3, request_id: &RequestId<Public>) {
-    let queued = VAULT.input_attestation_buffer.member(c, request_id);
-    c.assert(is_true(queued).message("Attestation not queued"));
-    let record = VAULT.input_attestation_buffer.lookup(c, request_id).stale(c);
+    let record = VAULT.input_attestation_buffer.lookup_required(c, request_id, "Attestation not queued").stale(c);
     VAULT.input_attestation_buffer.remove(c, request_id);
     let last_seen = VAULT.global_last_seen.read(c).stale(c);
     let higher = c.less_than(last_seen.field(), record.block_height.field(), 64);
@@ -2168,9 +2152,7 @@ fn sent_vault_nonce(c: &mut Circuit3, request_id: &RequestId<Public>, act: &Acti
         map: &LedgerMap<RequestId<Public>, EventRecordV1<WORDS, S>>,
         request_id: &RequestId<Public>,
     ) -> Uint<64, Public> {
-        let sent = map.member(c, request_id);
-        c.assert(is_true(sent).message("Request not sent"));
-        map.lookup(c, request_id).stale(c).nonce()
+        map.lookup_required(c, request_id, "Request not sent").stale(c).nonce()
     }
     let withdraw = is(c, action::WITHDRAW);
     let approve = is(c, action::APPROVE);

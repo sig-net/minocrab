@@ -4,7 +4,7 @@
 
 use minocrab::v3::{Circuit3, Compiled3, FieldT};
 use minocrab::{Private, Public};
-use minocrab_std::v3::{eq, is_true, not, B32};
+use minocrab_std::v3::{eq, is_true, not, LedgerCell, LedgerMap, Uint, B32};
 use minocrab_zkir::v3::to_zkir_string;
 
 fn zkir(compiled: Compiled3) -> String {
@@ -87,4 +87,51 @@ fn b32_equals_across_visibilities_goes_through_private() {
         c.assert(same);
     });
     assert_eq!(std_form, by_hand);
+}
+
+const REQUESTS: LedgerMap<B32<Public>, Uint<64, Public>> = LedgerMap::at(3);
+const NONCE: LedgerCell<Uint<64, Public>> = LedgerCell::at(4);
+
+fn public_b32(c: &mut Circuit3) -> B32<Public> {
+    B32::pad(c, "request")
+}
+
+/// `lookup_required` is `member`, the messaged assert, `lookup`, in that
+/// order, and its value still needs `.stale(c)` to go back to the ledger.
+#[test]
+fn lookup_required_is_member_assert_lookup() {
+    let std_form = build(|c| {
+        let k = public_b32(c);
+        let v = REQUESTS.lookup_required(c, &k, "Request not sent").stale(c);
+        NONCE.write(c, &v);
+    });
+    let by_hand = build(|c| {
+        let k = public_b32(c);
+        let present = REQUESTS.member(c, &k);
+        c.assert(is_true(present).message("Request not sent"));
+        let v = REQUESTS.lookup(c, &k).stale(c);
+        NONCE.write(c, &v);
+    });
+    let wire_dialect = build(|c| {
+        let k = public_b32(c);
+        let present = REQUESTS.member(c, &k).field();
+        c.assert_with(present, Some("Request not sent"));
+        let v = REQUESTS.lookup(c, &k).stale(c);
+        NONCE.write(c, &v);
+    });
+    assert_eq!(std_form, by_hand);
+    assert_eq!(std_form, wire_dialect);
+}
+
+/// The message survives to the finished circuit, as the hand-written one does.
+#[test]
+fn lookup_required_keeps_its_message() {
+    let mut c = Circuit3::new();
+    let k = public_b32(&mut c);
+    let _ = REQUESTS.lookup_required(&mut c, &k, "Request not sent");
+    let compiled = c.finish(false);
+    assert!(
+        compiled.assert_messages.iter().any(|m| m.message == "Request not sent"),
+        "the assert message is carried"
+    );
 }

@@ -243,9 +243,7 @@ macro_rules! primitive_steps {
             /// written once.
             fn take(s: &Stream<P>, c: &mut Circuit3, key: &P::Key) -> (Assumed<P::Body>, Assumed<P::State>) {
                 let bodies = s.bodies();
-                let present = bodies.member(c, key);
-                c.assert(is_true(present).message("Stream key not present"));
-                let body = bodies.lookup(c, key);
+                let body = bodies.lookup_required(c, key, "Stream key not present");
                 bodies.remove(c, key);
                 let snapshot = <$ty as Primitive<P::State>>::snapshot_at_block::<P::Key>(
                     s.total,
@@ -297,9 +295,7 @@ where
     /// Assert staged; lookup and remove the staged state and the body.
     fn take(s: &Stream<P>, c: &mut Circuit3, key: &P::Key) -> (Assumed<P::Body>, Assumed<P::State>) {
         let staged = s.staged();
-        let present = staged.member(c, key);
-        c.assert(is_true(present).message("Stream key not sequenced"));
-        let state = staged.lookup(c, key);
+        let state = staged.lookup_required(c, key, "Stream key not sequenced");
         staged.remove(c, key);
         let bodies = s.bodies();
         let body = bodies.lookup(c, key);
@@ -354,9 +350,7 @@ where
         // is computed from it.
         let state = acc.read(c).stale(c);
         let state = keys.fold(c, state, |c, s, key| {
-            let queued = heads.member(c, key);
-            c.assert(is_true(queued).message("Stream key not queued"));
-            let head = heads.lookup(c, key).stale(c);
+            let head = heads.lookup_required(c, key, "Stream key not queued").stale(c);
             heads.remove(c, key);
             let delta = P::delta(c, &head);
             let next = F::step(c, s, delta);

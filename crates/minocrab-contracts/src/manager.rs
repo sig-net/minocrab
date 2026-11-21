@@ -799,9 +799,7 @@ impl Manager {
             // authenticatedNativeAccount(nativeAccount)
             let known = MANAGER.accounts.member(c, &native_account).field();
             c.assert_with(known, Some("caller's owner witness matches no registered account"));
-            let has_mode = MANAGER.account_modes.member(c, &native_account).field();
-            c.assert_with(has_mode, Some("registered account has no authorization mode"));
-            let mode = MANAGER.account_modes.lookup(c, &native_account).field();
+            let mode = MANAGER.account_modes.lookup_required(c, &native_account, "registered account has no authorization mode").field();
             let native_mode = c.test_eq(mode, 0u64);
             c.assert_with(native_mode, Some("EVM account cannot enter native authorization"));
             // …then the action-level checks.
@@ -827,9 +825,7 @@ impl Manager {
         c.when(g_evm_action, |c| {
             let known = MANAGER.accounts.member(c, &p.account).field();
             c.assert_with(known, Some("gateway account is not registered"));
-            let has_mode = MANAGER.account_modes.member(c, &p.account).field();
-            c.assert_with(has_mode, Some("registered account has no authorization mode"));
-            let mode = MANAGER.account_modes.lookup(c, &p.account).field();
+            let mode = MANAGER.account_modes.lookup_required(c, &p.account, "registered account has no authorization mode").field();
             let evm_mode = c.test_eq(mode, 1u64);
             c.assert_with(evm_mode, Some("authorization mode does not match account record"));
             // assert(evmOwners.member && evmNonces.member) — short-circuit.
@@ -1360,9 +1356,7 @@ fn custody_dispatch(c: &mut Circuit3, p: &PublicPayload, f: &Flags, account: &B3
 
     // --- 3. the pool guard and the shielded give leg (selectors 2 and 6) ---
     c.when(needs_pool, |c| {
-        let pooled_present = MANAGER.pools.member(c, &p.primary_color).field();
-        c.assert_with(pooled_present, Some("no pooled coin for this colour"));
-        let pooled = MANAGER.pools.lookup(c, &p.primary_color);
+        let pooled = MANAGER.pools.lookup_required(c, &p.primary_color, "no pooled coin for this colour");
         let pool_covers = ge(
             Uint::<128, Public>::from_field_unchecked(pooled.value),
             val_u128,

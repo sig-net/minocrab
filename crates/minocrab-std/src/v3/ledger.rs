@@ -1115,6 +1115,28 @@ impl<K: LedgerRepr, V: LedgerRepr, P: LedgerPath> LedgerMap<K, V, P> {
         Assumed::of_read(V::from_limbs(map_lookup_at(c, &self.ledger_path(), &key, V::atoms())))
     }
 
+    /// `assert(map.member(key), message); map.lookup(key)`: emits [`member`](LedgerMap::member), the assert, then [`lookup`](LedgerMap::lookup), in that order.
+    ///
+    /// The value is still an [`Assumed`]: write [`stale`](Assumed::stale) where it goes back to the ledger, as after a bare `lookup`.
+    ///
+    /// ```compile_fail,E0277
+    /// # use minocrab::v3::Circuit3;
+    /// # use minocrab::Public;
+    /// # use minocrab_std::v3::{LedgerCell, LedgerMap, Uint};
+    /// # let mut c = Circuit3::new();
+    /// const M: LedgerMap<Uint<64, Public>, Uint<64, Public>> = LedgerMap::at(0);
+    /// const N: LedgerCell<Uint<64, Public>> = LedgerCell::at(1);
+    /// let k = Uint::<64, Public>::constant(&mut c, 7);
+    /// let v = M.lookup_required(&mut c, &k, "missing");
+    /// // error[E0277]: the ledger does not store `Assumed<Uint<64, Public>>`
+    /// N.write(&mut c, &v);
+    /// ```
+    pub fn lookup_required(&self, c: &mut Circuit3, key: &K, message: &'static str) -> Assumed<V> {
+        let present = self.member(c, key);
+        c.assert(super::predicate::is_true(present).message(message));
+        self.lookup(c, key)
+    }
+
     /// `map.insert(key, value)` — `idxp [field]; push key; pushs value;
     /// ins 1; insc 1`.
     pub fn insert(&self, c: &mut Circuit3, key: &K, value: &impl Fresh<V>) {
