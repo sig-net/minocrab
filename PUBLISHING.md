@@ -47,7 +47,11 @@ the next resolves.
 8. minocrab-sim             → minocrab, zkir
 9. minocrab-abi             → minocrab, ledger, zkir
 10. minocrab-interface-gen  → abi
+11. minocrab-evm            → minocrab, std
+12. minocrab-signet         → minocrab, std, ledger, evm, signet-protocol, signet-signer-interface
 ```
+
+`minocrab-signet` also needs `signet-protocol` and `signet-signer-interface` on crates.io first. `signet-signer-interface` is listed below as never published, so as things stand `minocrab-signet` cannot be published: either that crate is published after all, or the four items taken from it (`RequestId`, `Signature`, `SignetSigner`, `notification::construct_notification_v1`) move somewhere that is.
 
 **Dev-dependencies are deliberately versionless** (`{ path = … }`, no version).
 Cargo strips a versionless dev-dependency on publish, which is what breaks the
@@ -66,12 +70,12 @@ it is lifted.)
 # What each crate would ship. Works today.
 # (Add --allow-dirty to run it against uncommitted work.)
 for c in minocrab-zkir minocrab-ir minocrab-taint minocrab minocrab-macros minocrab-ledger \
-         minocrab-std minocrab-sim minocrab-abi minocrab-interface-gen; do
+         minocrab-std minocrab-sim minocrab-abi minocrab-interface-gen minocrab-evm minocrab-signet; do
   cargo package --list -p "$c"
 done
 
 # Docs, as docs.rs would build them.
-cargo doc --no-deps -p minocrab-std   # …and each of the ten
+cargo doc --no-deps -p minocrab-std   # …and each of the twelve
 
 # The real thing, once unblocked. --dry-run still runs the full verify build.
 cargo publish --dry-run -p minocrab-zkir

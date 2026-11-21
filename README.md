@@ -345,7 +345,7 @@ The entry point is bound: its hash is a constant of the call's claim, as compact
 
 ## Cross-chain calls
 
-A Sig Network cross-chain call is one operation across two Midnight transactions with an MPC round trip between: a **request** circuit files the EVM transaction and notifies the signet signer; the MPC signs it with the contract's derived key, executes it and attests the output back; a **complete** circuit verifies the attestation and finishes, or a **refund** circuit does when the call did not succeed. The CALL is a Rust type ([evm.rs](crates/minocrab-contracts/src/evm.rs)) and the ledger slot is typed by it ([evm_flow.rs](crates/minocrab-contracts/src/evm_flow.rs)): selector, ABI words, response type, gas envelope, signing path and notification path all derive from the one thing the author writes down.
+A Sig Network cross-chain call is one operation across two Midnight transactions with an MPC round trip between: a **request** circuit files the EVM transaction and notifies the signet signer; the MPC signs it with the contract's derived key, executes it and attests the output back; a **complete** circuit verifies the attestation and finishes, or a **refund** circuit does when the call did not succeed. The CALL is a Rust type ([minocrab-evm](crates/minocrab-evm/src/lib.rs)) and the ledger slot is typed by it ([evm_flow.rs](crates/minocrab-signet/src/evm_flow.rs) in [minocrab-signet](crates/minocrab-signet)): selector, ABI words, response type, gas envelope, signing path and notification path all derive from the one thing the author writes down.
 
 A whole treasury that sends an ERC-20 `transfer(to, amount)` from its derived EVM account, compiled and tested ([treasury.rs](crates/minocrab-contracts/src/treasury.rs)):
 
@@ -404,7 +404,7 @@ impl Treasury {
 }
 ```
 
-`erc20::Transfer` is the CALL: the Solidity facts (`transfer`, `(address, uint256)`, a `bool` return, the `Erc20` interface, a gas limit, the success rule). One module per interface under [evm/](crates/minocrab-contracts/src/evm). `Transfer` above is the FILING: the same call plus a deployment's response kind byte and the record's return name. The vault files `erc20::Transfer` under two kinds, deposit and withdrawal, and its seventeen circuits are all on this API ([erc20_vault_pending.rs](crates/minocrab-contracts/src/erc20_vault_pending.rs)).
+`erc20::Transfer` is the CALL: the Solidity facts (`transfer`, `(address, uint256)`, a `bool` return, the `Erc20` interface, a gas limit, the success rule). One module per interface in [minocrab-evm](crates/minocrab-evm/src). `Transfer` above is the FILING: the same call plus a deployment's response kind byte and the record's return name. The vault files `erc20::Transfer` under two kinds, deposit and withdrawal, and its seventeen circuits are all on this API ([erc20_vault_pending.rs](crates/minocrab-contracts/src/erc20_vault_pending.rs)).
 
 | Interface | Calls | Words | Return |
 |---|---|---|---|
@@ -568,6 +568,8 @@ crates/minocrab-ledger     L2.5 Impact ledger ops, bit-identical public-input en
 crates/minocrab-std        L3  stdlib ports (hashing, ECDSA, Borsh serialization, Signet events)
 crates/minocrab-macros          the thin decorators: #[circuit], the derives, #[interface]
 crates/minocrab-sim        L5  native simulator: disclosure reports + per-region cost profiler
+crates/minocrab-evm             typed EVM calls: ABI words, call types, ERC-20/721/4626, WETH, USDT, Uniswap, Aave
+crates/minocrab-signet          the Signet protocol (V1 records, attestations) and the typed-call ledger slot
 crates/minocrab-contracts       the sig-net corpus rewritten, plus the differential suites
 crates/minocrab-bench           the head-to-head proving harness
 crates/minocrab-abi             the interface/artifact agreement checker
