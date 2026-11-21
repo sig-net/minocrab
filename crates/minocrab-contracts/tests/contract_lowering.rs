@@ -12,7 +12,7 @@ use minocrab::v3::{Circuit3, Lowering, SelfAddressReads};
 use minocrab_std::v3::{contract, kernel, Uint};
 
 fn read_once(c: &mut Circuit3) {
-    c.set_lowering(Lowering { self_address: SelfAddressReads::OncePerCircuit, dedup_range_constraints: false });
+    c.set_lowering(Lowering { self_address: SelfAddressReads::OncePerCircuit, ..Lowering::default() });
 }
 
 pub struct Lean;
