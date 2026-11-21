@@ -1,0 +1,105 @@
+#+TITLE: Streamlining survey: the core, what sits on it, and where to start
+#+DATE: 2026-11-21
+#+STARTUP: overview
+
+dmd, 2026-11-21: the codebase was built incrementally and reads defensive; the aim is a planned core with minimal, thought-through abstractions on top, accepting that some features leave minocrab and a few rows fall out. This is the survey (five read-only passes: compiler core, std and macros, the periphery crates, usage, tests) and the ranked starting points. Nothing was changed. Claims marked UNMEASURED were not run.
+
+* 1. Size and shape today
+
+| part | src lines | note |
+|------+-----------+------|
+| zkir + ir + minocrab (compiler) | 9.3k | 2.3k of it the taint lint; 33-57% of non-test lines are comments |
+| ledger + std + macros | 18.9k | std is 37% comments |
+| sim + abi + interface-gen + bench | 7.3k | tooling |
+| publisher + signet-* + the two interface crates | 4.5k | Signet/MPC specific |
+| minocrab-contracts src | 18.1k | about 8.2k is EVM and Signet library code, not examples |
+| tests | about 58k | about 6.75k generated snapshot lines |
+
+* 2. What the survey found
+
+** The core is smaller than the code around it
+- There is no IR. =Builder3= (=minocrab-ir/src/v3.rs:144=) appends upstream ZKIR instructions directly and the passes rewrite raw ZKIR; notes/architecture.org still describes an L1 IR.
+- The builder has no per-value definition table. =immediate_of=, =instruction_index_of= and =is_read_guarded_by= scan the whole stream backwards (=v3.rs:259,284,350=) and are called per disclosed wire, per Impact wire and per guard, so build time is quadratic (UNMEASURED).
+- =Builder3= re-checks operand types at runtime and panics (=v3.rs:201-226,591-704=) although every =Circuit3= path already carries them in trait bounds; only tests reach the builder directly.
+- Each pass has five or six spellings: plain fn, =_kept= fn, =Pass= struct, =ProofRef= static, =VerifiedPass= impl, =folded()=. =Kept= is checked three times. =passes.rs:1034-1328= is 295 lines of Kani specimens that say they are not proofs.
+- =dedup_range_constraints= is on only in tests. No shipped circuit uses it; the gadgets avoid duplicate range checks by hand with PRECONDITION comments.
+- The =unstable= feature tier is fiction: =minocrab= itself turns it on for =minocrab-ir= (=crates/minocrab/Cargo.toml:18=) and every user of sim enables it. 74 cfg sites (17 + 3 in ir, 54 in sim).
+- Dead in core: =crate::Disclosure= (v2 record), =Visibility::IS_PUBLIC=, =Builder3::is_public_input=, =Selected=, the =Guarded= / =Branches= duplicate read API, =witness_guarded=, the untyped =disclose*= forms.
+- =v3= naming: 487 module mentions in 171 files and 2,644 =*3= type mentions, with no v2 left.
+
+** Std has one idea spelled eleven ways, and a layer nobody calls
+- About eleven parallel per-leaf traits (=CircuitAbi=, =CircuitArg=, =CallArg=, =CallResult=, =CircuitOut=, =LedgerRepr=, =ProofWires=, =Select=, =Disclose=, =CheckOperand=, =CircuitBorsh=) all say "this value is N flat field slots". =LedgerRepr= and =ProofWires= are defined from three of the others (=ledger.rs:154-238=). Three derives exist because there is no single value trait, and the =LedgerRepr= derive rejects generics, so contracts hand-write impls.
+- Five byte-string types and two integer types. =Uint= has no =add=, so contracts do =c.add= then =Uint::from_field_unchecked=: 115 unchecked constructions in contracts src. Subtraction exists three times (=Uint::sub=, =BoundedUint::sub=, =kernel::checked_sub=). Comparisons exist as free fns and methods.
+- =hook.rs=, =blind.rs=, =stream.rs=, =vector.rs= (about 1,570 lines, M40-M42) have no production consumer. The one src user is =evm_flow/outbox.rs=, and =Outbox= is used only by tests. =Assumed= / =.stale(c)= exists to steer authors to hooks; contracts write =.stale(c)= about 100 times and use no hook. M44 D (rest) plans to re-base =erc20_vault_pending= on =Outbox=, so this is unfinished, not abandoned.
+- App code in the general library: =#[derive(Ledger)]= finds Signet slots by matching the type names "Signet", "Pending", "Fired", "Outbox" as strings (=minocrab-macros/src/ledger.rs:104,186=); =LedgerWidth::KINDS= is Signet's response-kind check (=ledger.rs:705-750=); borsh (1,363 lines), =Serializer=, secp/EVM/base64url helpers.
+- Panics the project rule wants as type errors: =from_limbs= on the point types is =unreachable!()= but =LedgerMap<_, Secp256k1Point>::lookup= compiles and reaches it (=ledger.rs:264,311,1115=); const-known runtime asserts at =vector.rs:162=, =entry.rs:862=, =v3.rs:1555,1622=.
+- Nesting (=at_key=, =KeyPath=, =LedgerAdt=, =Rooted=) is used only by =nested.rs= and its test.
+
+** How it is used
+- The passport port (2,876 lines, 52 circuits, the only outside author) writes raw =Circuit3= code over =Wire3<FieldT, Private>=. It uses the leaf types, Cell/Map/Set, the derives, =#[circuit]= / =#[contract]=, =label!= / =disclose_as=, =c.when=, the kernel. It uses none of: =Check= and the predicate layer, regions, assert messages, counters, hooks.
+- It hand-rolled a preimage builder (kept after std gained one), =bytes_eq= (19 calls), cell =increment=, =either= / =implies= / =le=, a macro for P256 argument types, and its own copy of the simulator and executor.
+- mpc links only =minocrab-publisher=. midnight-integration consumes checked-in ZKIR and keys. The one production contract, =signet_contract.rs=, imports six names and raw =minocrab_ledger::emit=.
+- Vela (=~/dollar-app=, M47) builds on =signet_flow= / =signet_v1= / =evm_flow::Pending=. That stack is live and lives in the examples crate.
+- Repeated by hand: member, assert, lookup (15 times); a private B32-equality helper in five places including std's own kernel; two assert dialects (=assert_with= 84 times in the manager, =Check.message= in the vault); =Discloses::of(())= closing 150 of 211 circuits.
+- =signet.rs= (the older protocol generation) survives only because =evm.rs=, =evm_flow.rs=, =manager.rs= and the pending vault import utilities from it.
+
+** Rows
+- After the fold, the cached dump (=target/tmp/zkir-baseline=, 267 circuits, dated 2026-10-15, may be stale) holds 170 =cond_select= on a constant bit, 40 =cond_select= with identical arms, 16 =test_eq 0 0=, 20 =add 0=, and 181 duplicated pure instructions (79 in =manager::execute=). Whether the backend already folds these is UNMEASURED; a duplicated pure instruction was measured at one row.
+- =kernel::self_address= re-reads on every call unless the circuit opts into the cache (four users); =is_self= ignores the cache (=kernel.rs:426=). The passport =authorise= reads it three times.
+- =Or= lowers to three =not= and a =mul= where one =cond_select= would do.
+- =signet_v1= keeps a =_const_path= twin (=signet_v1.rs:485-489=) because the builder does not fold an assert over constants.
+- Hand work-arounds worth lifting into the library: native =Reverse= (=signet.rs:743=, about 150 rows against 4,600), the hard-coded identity point (=disclosure.rs:442=), burn without nullifier (=common.rs:340=).
+
+** Periphery
+- =minocrab-publisher= depends on no minocrab crate. mpc uses none of =publish()=, =ChainContext=, =DustBalancer= or =PublishError=; =publish.rs= + =dust.rs= (about 258 lines) exist for tests. M47 B wants a general call builder here, which argues against simply moving it to mpc.
+- =signet-sim= hand-copies MPC code that mpc's =signet-crypto= provides.
+- =minocrab-interface-gen= (1.5k) generates two crates holding about 150 lines of declarations.
+- 13 of 17 crates are =publish = false=; the path-plus-version essay in the root Cargo.toml, PUBLISHING.md, and the std/sim dev-cycle comments serve a publish that is not happening. Root Cargo.toml is 104 comment lines of 181.
+- The simulator ports upstream's =IrSource::preprocess= (about 775 lines) because it is =pub(crate)= upstream.
+- Eight top-level .md files (1,987 lines) overlap each other and notes/.
+
+** Tests
+- BROKEN: =.github/workflows/nightly.yml:19-22= and =bump.sh:227= name =erc20_vault_spec= and =erc20_vault_adversarial=, removed in M44. The elevated proptest run fails instead of running. VERIFICATION.md cites the same files.
+- The set a refactor can lean on: =corpus_roundtrip=; the eight byte-identical differentials; the PI-equality differentials (vault, manager, signet); =no_unlabelled_witness_dependent_public_component= and =taint_lint=; =evm_alloy_oracle=; the deployed half of =serialization_conformance=; the interface argument order. All assert on emitted ZKIR or behaviour.
+- What will fight a refactor: =trust_base.rs= regenerates TRUST.md with per-file line counts and requires every file to be classified; the vault models (2,132 + 2,484 lines) hard-code ledger field indices and read order.
+- Movement is checked three ways (row snapshot, CI zkir-dump, differentials). About 6.75k generated snapshot lines are re-blessed by =bump.sh accept=.
+- Duplicated helpers: =vault_pending/ops.rs= is a declared copy of =vault/ops.rs= with one constant changed, =treasury/ops.rs= a third; =canonical= is copied into all eight differentials; =corpus_zkir= twelve times.
+- About 2k lines of "API A emits the same ZKIR as API B" tests (=v3_guard_scope.rs=, =evm_abi.rs= claims 3-4, =v3_dedup.rs=) that go when the older API goes.
+- The pending vault's 6.3k test lines have no compactc anchor. The flush vault has no property harness (M44 F).
+
+* 3. Starting points, in order
+
+1. FIX THE GATES FIRST. Repair the nightly job and =bump.sh= gate names, make =trust_base= stop counting lines, and write down the refactor safety set above as one command. Small, and everything after leans on it.
+2. DRAW THE BOUNDARY. Core = zkir, the builder, =minocrab=, ledger, std leaves/slots/kernel/entry, macros. Split =minocrab-contracts= into app library crates (=evm=, =signet=) and a corpus of parity ports and fixtures; fold the utilities out of =signet.rs= and retire it; drop the =unstable= features and the publishing scaffolding; fold interface-gen into abi. No circuit moves. Gate: every golden byte-identical.
+3. TAKE THE APP OUT OF STD AND THE MACROS. Replace the name-matching in =#[derive(Ledger)]= with a trait the app crate implements; move =KINDS=, borsh, =Serializer= and the secp/EVM helpers to the app crates; move hook/blind/stream/vector and =Outbox= to their own crate until M44 D gives them a consumer. Then decide whether =Assumed= / =.stale= stays.
+4. REBUILD THE BUILDER ON A DEFINITION TABLE: per value, its type, defining instruction and known constant. Removes the linear scans and the runtime type asserts, and gives constant knowledge to everything above. Gate: byte-identical.
+5. REDUCE PASSES TO FILTER FUNCTIONS, THEN ADD ONE SIMPLIFICATION PASS. Delete the =Pass= / =VerifiedPass= / =ProofRef= scaffolding and the Kani specimens; turn range dedup on or delete it; add constant-operand simplification and pure-op CSE. This is where rows come from. Measure first. Gate: =row_snapshot= flat or down, differentials under the same normalisation on both sides.
+6. ONE VALUE TRAIT IN STD. Collapse the per-leaf trait tower into a single flat-value trait with blanket impls and one derive that accepts generics. The largest abstraction win and the riskiest step, since slot order is the wire contract. Gate: goldens, interface snapshot, rows.
+7. ONE INTEGER, FEWER BYTE TYPES, AND THE PRIMITIVES AUTHORS KEEP WRITING. =Uint= with checked arithmetic so the 115 unchecked constructions go; B32 equality as a check; =lookup_required=; cell increment; default self-address caching; one assert style. Turn the point-cell panic and the const-known asserts into compile errors.
+8. MOVE THE TAINT LINT TO ITS OWN CRATE and the disclosure policy next to the macros. Pure moves.
+9. TESTS, FOLLOWING THE CODE. Share the ops/canonical/corpus helpers; shrink the generated snapshots to their real checks; delete the A-equals-B tests with the APIs they compare.
+10. LAST: rename =v3= to the crate root and drop the =3= suffixes in one mechanical commit; strip milestone narration from comments; collapse the top-level docs.
+
+* 4. Rulings (dmd, 2026-11-21)
+
+- COMPAT CRATE: anything that exists to keep the emitted stream byte-for-byte equal to compactc's goes in a compat crate, labelled with why it exists. It is kept, not deleted.
+- KEEP: everything that limits what type-checks (nothing that enforces safety is removed); unlabelled disclosures; unchecked integer construction.
+- CROSS-CONTRACT CALLS are not experimental now ledger 9 is out (update =~/compact= to see it). =contract_call=, =#[interface]=, abi and the interface crates are core-adjacent, not parked.
+- EXPERIMENTAL CRATE: raw Impact written by a contract author, and things like it, as far as possible. The =impact_mixed= primitive stays in core because the slots lower to it.
+- Do not remove anything that makes the Sig demos read better.
+- This supersedes the parts of section 3 that delete the untyped =disclose*= forms (step 4's dead-item list), that make checked arithmetic the only path (step 7), and that make the simplifications unconditional (steps 5 and 7).
+
+* 5. Rulings, second round (dmd, 2026-11-21)
+
+- DEPLOYED ARTIFACTS DO NOT MOVE. The signer and every circuit with a Compact twin stay byte-identical; only MinoCrab-only contracts (Vela, the pending vault, passport) get the optimised stream.
+- COMPAT IS GADGETS WHERE POSSIBLE: the compactc-shaped variant of a gadget lives in the compat crate and the parity ports import it. A build-wide switch only where a gadget cannot carry it.
+- RUNTIME CHECKS: keep one runtime backstop per invariant, drop the duplicates of it.
+- HOOKS, BLIND OPS, STREAM, VECTOR, OUTBOX STAY IN STD.
+- THE SIG DEMOS are the erc20 vaults (=erc20_vault=, =erc20_vault_pending=) and what they read from; =Pending=, =signet_flow=, =signet_v1=, =evm_flow= stay.
+- THE PUBLISHER stays in this repo, untouched by the cleanup.
+- THE =v3= RENAME goes last, one commit. Nothing is published, so breaking imports is acceptable; a re-export shim is kept for the downstream pins.
+- Not answered, running on the defaults offered: keep =lean_proof!= and the proof references, delete the Kani specimens that say they are not proofs; work in a worktree off =main= (=~/minocrab-streamline=, branch =streamline=).
+- AFTER THE CLEANUP: the examples move to the erc20 vaults and Sig SDK versions pinned for mainnet.
+- THEN PUBLISH READINESS (same day). This reverses the survey's suggestion to drop the publishing scaffolding: it stays, and new crates (compat, experimental, the app crates) are created publishable from the start.
+- THE EVM AND SIGNET APP CRATES ARE PUBLISHED. So they may not depend on =minocrab-contracts= (the unpublished corpus), their tests may not need the corpus to build, and anything they share with the old =signet.rs= generation has to live in a published crate.
+- THE EXPERIMENTAL CRATE IS PUBLISHED, with no guarantee of backwards compatibility. It says so in its README and crate docs. No core crate may depend on it, so its churn cannot reach a stable crate.

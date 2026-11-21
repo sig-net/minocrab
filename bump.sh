@@ -224,7 +224,7 @@ cmd_gates() {
     stage "elevated property run" \
       "a spec/adversarial disagreement that the default case count missed." \
       env PROPTEST_CASES=20000 cargo test --release -p minocrab-contracts \
-      --test erc20_vault_spec --test erc20_vault_adversarial
+      --test erc20_vault_pending_spec --test executor_vault
   fi
 
   rule
