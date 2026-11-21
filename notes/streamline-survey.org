@@ -137,6 +137,12 @@ Three things cannot be a gadget, because shared helpers (=common.rs='s mint, bur
 2. The lowering state and =profile=, with the defaults still compactc's. Zero movement.
 3. Flip each default and make each std gadget lean, one at a time. A parity port must not move at all; a MinoCrab-only circuit may only go down in rows; each lean gadget gets a test that it is public-input-equal to its compat twin on the same inputs.
 
+** Step 3, as done (2026-11-21, branch =sl-lean2=)
+- The three defaults are flipped: =Lowering::default()= is =OncePerCircuit=, dedup on, simplify on. The profile states all three as compactc's. Flipping found two ports that had not stated it (=events_borsh=, =xcontract_events_borsh=); =circuit_closure.rs= now counts a =<port>_borsh= module as a port and checks every listed module is a port or MinoCrab-only.
+- =cache_self_address= inside a =when= used to keep the GUARDED read, so a later read outside the scope got zero where the guard was off (a latent bug, no call site hit it). It now keeps nothing there, and under the default it is =self_address= plus the refusal under =EveryCall=. The doc that said a read inside a =when= never consults the cache was false: the kept address is returned there with no read, sound because it is constant, but it means =c.when(g, self_address).or_default()= after an unguarded read is the address, not zero, where =g= is off. Documented on =self_address=; =common::mint_shielded_token='s auto-receive multiplies by its guard so it is unaffected. VM tests for the bug and both orders in =minocrab-std/tests/v3_kernel_cache.rs=.
+- The parity =erc20_vault= never reaches =cache_self_address=: =common.rs= calls only =self_address=, and the two callers (=erc20_vault_pending.rs=, =signet_flow::file_request=) are reached only from the MinoCrab-only =erc20_vault_pending= and =treasury=. Building all 227 circuits is the check (the profile would panic).
+- std's token circuits lean: rows and the equivalence argument in notes/op-costs.org §4. =secp256k1_ecdsa_verify= unchanged; the open question is §5 there.
+
 ** Stays in core although it looks like compat
 - The Impact op sequences, the protocol hash preimages, the input-constraint table and alignment widths, guarded-effect semantics: the ledger and the VM require them.
 - =fold_immediate_copies=: zero rows, and nothing gains from a second shape.
