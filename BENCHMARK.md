@@ -218,12 +218,4 @@ From a clean checkout (nix + direnv provide the pinned toolchain):
 nix run .#bench        # or: nix develop -c ./bench.sh
 ```
 
-This re-runs the differential tests with preimage dumping on (every
-preimage is corpus-verified — PI-equal under both toolchains' artifacts —
-before it is benchmarked), proves all 40 cells, and writes
-`target/bench/results.json`, `report.md`, and the per-region cost
-profiles under `target/bench/profiles/`. Deleting
-`target/bench/results.jsonl` forces a fresh run; leaving it resumes an
-interrupted one. The property harness (`erc20_vault_spec.rs`,
-`PROPTEST_CASES=1000000 cargo test --release` for the gating run) and the
-adversarial sweeps cover the same seventeen circuits.
+This re-runs the differential tests with preimage dumping on (every preimage is corpus-verified — PI-equal under both toolchains' artifacts — before it is benchmarked), proves all 40 cells, and writes `target/bench/results.json`, `report.md`, and the per-region cost profiles under `target/bench/profiles/`. Deleting `target/bench/results.jsonl` forces a fresh run; leaving it resumes an interrupted one. The property harness (`erc20_vault_pending_spec.rs`, `PROPTEST_CASES=1000000 cargo test --release` for the gating run) covers seventeen circuits, and the tamper sweeps of `erc20_vault_differential.rs` cover twenty-nine.

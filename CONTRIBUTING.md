@@ -96,20 +96,6 @@ taxonomy applies to any firing. Two that deserve their own sentence:
   with a wildcard. [notes/supply-chain.org](notes/supply-chain.org) has
   the full rationale and every current ignore's reason.
 
-## Divergence ledgers
-
-The four vault artifacts form a chain — `compactc ≡ port ≡ opt ≡ borsh ≡
-modern` — and each link has a **ledger** (`fork_status` /
-`borsh_fork_status` / `modern_fork_status` in
-`crates/minocrab-contracts/tests/vault/`) saying, per circuit, whether
-the link is byte-identity or a declared divergence. Both directions are
-asserted: an `Identical` entry must really be byte-identical, a
-`Diverged` entry must really differ. **If your change moves a circuit
-across that line, the ledger entry must move in the same commit** — that
-edit *is* the record that the circuit left its predecessor's coverage
-and now rests on the spec harness. A collapse or "cleanup" that removes
-a ledger trades a correctness instrument for line count: wrong direction.
-
 ## The class tests cannot see
 
 Some hazards are invisible to every test that runs on honest inputs

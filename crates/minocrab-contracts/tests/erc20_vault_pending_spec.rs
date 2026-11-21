@@ -2,9 +2,9 @@
 //! extension) — spec ≡ circuit ≡ ledger, at scale, for all seventeen
 //! circuits on the `Pending` lineage.
 //!
-//! Four links per generated case, mirroring `erc20_vault_spec.rs`'s
-//! `check_case` WITHOUT the compactc comparator (this lineage has no
-//! compactc twin — notes/signet-async.org "Rung C as built"):
+//! Four links per generated case, WITHOUT a compactc comparator (this
+//! lineage has no compactc twin — notes/signet-async.org "Rung C as
+//! built"):
 //!
 //! 1. **Acceptance agreement.** The spec is a total function; `simulate`
 //!    either accepts the witness or does not. They must agree.
