@@ -73,10 +73,18 @@ pub(crate) struct Target<'a> {
     pub(crate) generics: &'a Generics,
     pub(crate) self_ty: TokenStream,
     pub(crate) fields: &'a [ArgField],
+    /// The `#[arg(skip)]` fields, rebuilt with `Default::default()`.
+    pub(crate) skipped: &'a [Ident],
     pub(crate) bounds: ArgBounds,
 }
 
 impl Target<'_> {
+    /// The skipped fields' initializers, for a struct literal.
+    pub(crate) fn skipped_init(&self) -> TokenStream {
+        let skipped = self.skipped;
+        quote!(#( #skipped: ::core::default::Default::default(), )*)
+    }
+
     /// The impl parameters: the struct's own.
     pub(crate) fn impl_generics(&self) -> TokenStream {
         let (impl_generics, _, _) = self.generics.split_for_impl();
@@ -138,6 +146,7 @@ pub(crate) fn impl_arg_traits(
         generics,
         self_ty: quote!(#name #ty_generics),
         fields,
+        skipped: &[],
         bounds: ArgBounds::Plain,
     })
 }
@@ -160,6 +169,7 @@ pub(crate) fn impl_arg_traits_for(target: &Target) -> TokenStream {
     // Every path the expansion names is fully qualified, and none of them is
     // a `Circuit3` method: `c` is only ever passed along (THINNESS RULE,
     // notes/contract-api.org §macros).
+    let skipped = target.skipped_init();
     let root = quote!(::minocrab_std::v3);
     let abi_where = target.clause(&quote!(#root::CircuitAbi), false);
     let encode_where = target.clause(&quote!(#root::Encode<__V>), true);
@@ -188,6 +198,7 @@ pub(crate) fn impl_arg_traits_for(target: &Target) -> TokenStream {
                                 __value
                             },
                         )*
+                        #skipped
                     }
                 }
             }
@@ -233,6 +244,7 @@ pub(crate) fn impl_arg_traits_for(target: &Target) -> TokenStream {
                             &#root::ArgPath::field(path, #labels),
                         ),
                     )*
+                    #skipped
                 }
             }
         }
@@ -249,6 +261,7 @@ pub(crate) fn impl_arg_traits_for(target: &Target) -> TokenStream {
                             &#root::ArgPath::root(#labels),
                         ),
                     )*
+                    #skipped
                 }
             }
 
@@ -285,14 +298,49 @@ pub(crate) fn arg_fields(input: &DeriveInput) -> syn::Result<Vec<ArgField>> {
         }
     };
 
-    fields
-        .iter()
-        .map(|field| {
-            let ident = field.ident.clone().expect("named fields");
-            let label = arg_label(&ident, &field.attrs)?;
-            Ok(ArgField { ident, ty: field.ty.clone(), label })
-        })
-        .collect()
+    let mut out = Vec::new();
+    for field in fields {
+        if is_skipped(&field.attrs)? {
+            continue;
+        }
+        let ident = field.ident.clone().expect("named fields");
+        let label = arg_label(&ident, &field.attrs)?;
+        out.push(ArgField { ident, ty: field.ty.clone(), label });
+    }
+    Ok(out)
+}
+
+/// The fields marked `#[arg(skip)]`: a type-state marker (a `PhantomData`)
+/// that is no part of the value. It contributes no slot, atom or bound, and
+/// is rebuilt with `Default::default()`.
+pub(crate) fn skipped_fields(input: &DeriveInput) -> syn::Result<Vec<Ident>> {
+    let Data::Struct(s) = &input.data else { return Ok(Vec::new()) };
+    let mut out = Vec::new();
+    for field in &s.fields {
+        if is_skipped(&field.attrs)? {
+            out.push(field.ident.clone().expect("named fields"));
+        }
+    }
+    Ok(out)
+}
+
+fn is_skipped(attrs: &[Attribute]) -> syn::Result<bool> {
+    let mut skip = false;
+    for attr in attrs.iter().filter(|a| a.path().is_ident("arg")) {
+        attr.parse_nested_meta(|meta| {
+            if meta.path.is_ident("skip") {
+                skip = true;
+            } else if meta.path.is_ident("name") {
+                let _: LitStr = meta.value()?.parse()?;
+            } else {
+                return Err(meta.error(
+                    "unsupported argument attribute; expected name = \"…\" or skip",
+                ));
+            }
+            Ok(())
+        })?;
+    }
+    Ok(skip)
 }
 
 /// The label one field or parameter contributes: its `#[arg(name = "…")]`
@@ -321,7 +369,7 @@ fn arg_name(attrs: &[Attribute]) -> syn::Result<Option<String>> {
                 name = Some(lit.value());
                 Ok(())
             } else {
-                Err(meta.error("unsupported argument attribute; expected name = \"…\""))
+                Err(meta.error("unsupported argument attribute; expected name = \"…\" (`skip` is for a struct field)"))
             }
         })?;
     }

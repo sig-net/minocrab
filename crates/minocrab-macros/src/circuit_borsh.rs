@@ -35,7 +35,9 @@ use quote::{format_ident, quote};
 use syn::spanned::Spanned;
 use syn::{Attribute, Data, DeriveInput, Fields, GenericParam, Ident, LitStr, Path, Type};
 
-use crate::circuit_arg::{arg_fields, bounded_by_vis3, impl_arg_traits_for, ArgBounds, ArgField, Target};
+use crate::circuit_arg::{
+    arg_fields, bounded_by_vis3, impl_arg_traits_for, skipped_fields, ArgBounds, ArgField, Target,
+};
 
 pub fn expand(input: DeriveInput) -> syn::Result<TokenStream> {
     if let Data::Enum(_) = &input.data {
@@ -48,6 +50,13 @@ pub fn expand(input: DeriveInput) -> syn::Result<TokenStream> {
     }
 
     let spec = spec_attr(&input.attrs)?;
+    if let Some(skipped) = skipped_fields(&input)?.first() {
+        return Err(syn::Error::new(
+            skipped.span(),
+            "#[arg(skip)] has no Borsh meaning: every field of a serialized \
+             record is on the wire",
+        ));
+    }
     let fields = arg_fields(&input)?;
     let spec_labels = spec_labels(&input)?;
     for field in &fields {
@@ -88,6 +97,7 @@ pub fn expand(input: DeriveInput) -> syn::Result<TokenStream> {
         generics: &input.generics,
         self_ty: self_ty.clone(),
         fields: &fields,
+        skipped: &[],
         bounds,
     });
     let borsh_impl = impl_borsh(

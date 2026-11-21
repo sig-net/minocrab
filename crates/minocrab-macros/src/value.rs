@@ -18,6 +18,9 @@
 //! leaf implements each trait at the visibilities it may cross, and a
 //! record inherits that.
 //!
+//! A field marked `#[arg(skip)]` (a `PhantomData` type-state marker) is no
+//! part of the value: no slot, no atom, no bound, rebuilt with `Default`.
+//!
 //! `#[derive(CircuitArg)]` and `#[derive(LedgerRepr)]` are this derive plus
 //! a check, for a struct without generic parameters, that the record IS a
 //! circuit argument (resp. a ledger value): the rejection of a `Public`
@@ -31,7 +34,7 @@ use proc_macro2::TokenStream;
 use quote::{quote, quote_spanned};
 use syn::{DeriveInput, Type};
 
-use crate::circuit_arg::{arg_fields, impl_arg_traits_for, ArgBounds, Target};
+use crate::circuit_arg::{arg_fields, impl_arg_traits_for, skipped_fields, ArgBounds, Target};
 
 /// What a named derive additionally checks at the definition.
 #[derive(Clone, Copy)]
@@ -58,12 +61,14 @@ pub(crate) fn expand_checked(input: DeriveInput, check: Check) -> syn::Result<To
     }
 
     let fields = arg_fields(&input)?;
+    let skipped = skipped_fields(&input)?;
     let name = &input.ident;
     let (_, ty_generics, _) = input.generics.split_for_impl();
     let target = Target {
         generics: &input.generics,
         self_ty: quote!(#name #ty_generics),
         fields: &fields,
+        skipped: &skipped,
         bounds: ArgBounds::PerField,
     };
 
@@ -86,6 +91,7 @@ fn impl_ledger_traits(target: &Target) -> TokenStream {
     let repr_where = target.clause(&quote!(#root::LedgerRepr), true);
     let idents: Vec<_> = target.fields.iter().map(|f| &f.ident).collect();
     let types: Vec<&Type> = target.fields.iter().map(|f| &f.ty).collect();
+    let skipped = target.skipped_init();
 
     quote! {
         #[automatically_derived]
@@ -119,6 +125,7 @@ fn impl_ledger_traits(target: &Target) -> TokenStream {
                     #( #idents: <#types as #root::LedgerRepr>::from_limbs(
                         limbs.by_ref().take(#root::repr_limbs::<#types>()).collect()
                     ), )*
+                    #skipped
                 };
                 ::core::assert!(
                     limbs.next().is_none(),
@@ -241,6 +248,18 @@ mod tests {
             "{expanded}"
         );
         assert!(expanded.contains("for < '__w > Uint < 8 , V > : :: minocrab_std :: v3 :: Encode < __V >"), "{expanded}");
+    }
+
+    /// A skipped type-state field is in no bound and no slot list, and is
+    /// rebuilt with `Default`.
+    #[test]
+    fn a_skipped_field_is_no_part_of_the_value() {
+        let expanded = expansion(syn::parse_quote! {
+            struct Commit<T> { digest: B32<Public>, #[arg(skip)] _t: PhantomData<T> }
+        });
+        assert!(!expanded.contains("PhantomData < T > :"), "{expanded}");
+        assert!(!expanded.contains("self . _t"), "{expanded}");
+        assert!(expanded.contains("_t : :: core :: default :: Default :: default ()"), "{expanded}");
     }
 
     #[test]

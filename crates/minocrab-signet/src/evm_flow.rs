@@ -710,9 +710,9 @@ use minocrab::v3::{Circuit3, FieldT, Wire3};
 use minocrab::{Private, Public};
 use minocrab_std::v3::hash::{transient_hash_compact, upgrade_from_transient};
 use minocrab_std::v3::{
-    eq, is_true, label, not, own_public_key, repr_limbs, ArgPath, Bool, Bytes, CircuitAbi,
+    eq, is_true, label, not, own_public_key, ArgPath, Bool, Bytes, CircuitAbi,
     CircuitArg, Assumed, Disclose, DisclosureLabel, Encode, FieldPath, LedgerMap, LedgerRepr, LedgerWidth,
-    Prim, ProofWires, Uint, Vis3, ZswapCoinPublicKey, B32,
+    Prim, ProofWires, Uint, Value, Vis3, ZswapCoinPublicKey, B32,
 };
 use minocrab::v3::Val;
 use signet_signer_interface::RequestId;
@@ -854,6 +854,7 @@ impl<I: Interface> CircuitArg for Contract<I> {
 macro_rules! ticket {
     ($name:ident, $doc:expr) => {
         #[doc = $doc]
+        #[derive(Value)]
         pub struct $name<F: Filing>
         where
             Returned<F>: AbiReturn,
@@ -866,52 +867,10 @@ macro_rules! ticket {
             /// `serializedOutput`: the MPC's Borsh of the decoded return at
             /// the call's own width ([`AbiReturn::LEN`]) — flat bytes, not a
             /// decoded value, because that is what the digest commits to.
+            #[arg(name = "serializedOutput")]
             pub output: Serialized<F>,
+            #[arg(skip)]
             _filing: PhantomData<fn() -> F>,
-        }
-
-        impl<F: Filing> CircuitAbi for $name<F>
-        where
-            Returned<F>: AbiReturn,
-        {
-            const SLOTS: usize =
-                <RespondBidirectionalEventV1<Private>>::SLOTS + <Serialized<F>>::SLOTS;
-
-            fn push_atoms(atoms: &mut Vec<minocrab::AlignmentAtom>) {
-                <RespondBidirectionalEventV1<Private>>::push_atoms(atoms);
-                <Serialized<F>>::push_atoms(atoms);
-            }
-
-            fn push_prims(prims: &mut Vec<Prim>) {
-                <RespondBidirectionalEventV1<Private>>::push_prims(prims);
-                <Serialized<F>>::push_prims(prims);
-            }
-        }
-
-        impl<F: Filing> Encode<Private> for $name<F>
-        where
-            Returned<F>: AbiReturn,
-        {
-            fn encode(&self, slots: &mut Vec<Wire3<FieldT, Private>>) {
-                self.respond.encode(slots);
-                self.output.encode(slots);
-            }
-        }
-
-        impl<F: Filing> CircuitArg for $name<F>
-        where
-            Returned<F>: AbiReturn,
-        {
-            fn declare(c: &mut Circuit3, path: &ArgPath) -> Self {
-                $name {
-                    respond: <RespondBidirectionalEventV1<Private>>::declare(
-                        c,
-                        &path.field("respond"),
-                    ),
-                    output: <Serialized<F>>::declare(c, &path.field("serializedOutput")),
-                    _filing: PhantomData,
-                }
-            }
         }
     };
 }
@@ -1001,8 +960,10 @@ impl CommitTag for OwnerTag {
 ///     opened.open(c, &sk, id, "nope");
 /// }
 /// ```
+#[derive(Value)]
 pub struct Commit<T, Tag> {
     digest: B32<Public>,
+    #[arg(skip)]
     _t: PhantomData<fn() -> (T, Tag)>,
 }
 
@@ -1092,29 +1053,6 @@ impl<T: CircuitArg, Tag: CommitTag> Commit<T, Tag> {
     }
 }
 
-impl<T, Tag> ProofWires for Commit<T, Tag> {
-    fn push_wires(&self, out: &mut Vec<Val>) {
-        self.digest.push_wires(out)
-    }
-}
-
-impl<T, Tag> LedgerRepr for Commit<T, Tag> {
-    fn atoms() -> Vec<minocrab::AlignmentAtom> {
-        <B32<Public> as LedgerRepr>::atoms()
-    }
-
-    fn push_limbs(&self, c: &mut Circuit3, limbs: &mut Vec<Wire3<FieldT, Public>>) {
-        LedgerRepr::push_limbs(&self.digest, c, limbs)
-    }
-
-    fn from_limbs(limbs: Vec<Wire3<FieldT, Public>>) -> Self {
-        Commit {
-            digest: B32::from_limbs(limbs),
-            _t: PhantomData,
-        }
-    }
-}
-
 // ---- the owned environment ----------------------------------------------------
 
 /// "ONLY THE ORIGINAL CALLER MAY REFUND", as an environment wrapper.
@@ -1125,45 +1063,12 @@ impl<T, Tag> LedgerRepr for Commit<T, Tag> {
 /// method that consumes a secret at all — which is the point: the deployed
 /// vault's Gap 2 (a `completeWithdraw` that hoists a secret witness for a
 /// refund branch it may not take) is not writable on this API.
+#[derive(Value)]
 pub struct Owned<E> {
     /// The caller, as a commitment bound to this request.
     pub owner: Commit<SecretKey<Private>, OwnerTag>,
     /// Whatever else the settle side needs.
     pub inner: E,
-}
-
-impl<E: ProofWires> ProofWires for Owned<E> {
-    fn push_wires(&self, out: &mut Vec<Val>) {
-        self.owner.push_wires(out);
-        self.inner.push_wires(out);
-    }
-}
-
-impl<E: LedgerRepr> LedgerRepr for Owned<E> {
-    fn atoms() -> Vec<minocrab::AlignmentAtom> {
-        let mut atoms = <Commit<SecretKey<Private>, OwnerTag> as LedgerRepr>::atoms();
-        atoms.extend(E::atoms());
-        atoms
-    }
-
-    fn push_limbs(&self, c: &mut Circuit3, limbs: &mut Vec<Wire3<FieldT, Public>>) {
-        LedgerRepr::push_limbs(&self.owner, c, limbs);
-        LedgerRepr::push_limbs(&self.inner, c, limbs);
-    }
-
-    fn from_limbs(limbs: Vec<Wire3<FieldT, Public>>) -> Self {
-        let mut limbs = limbs.into_iter();
-        let owner = <Commit<SecretKey<Private>, OwnerTag> as LedgerRepr>::from_limbs(
-            limbs
-                .by_ref()
-                .take(repr_limbs::<Commit<SecretKey<Private>, OwnerTag>>())
-                .collect(),
-        );
-        Owned {
-            owner,
-            inner: E::from_limbs(limbs.collect()),
-        }
-    }
 }
 
 // ---- the slot -----------------------------------------------------------------
@@ -1874,43 +1779,13 @@ impl<const WORDS: usize> LedgerRepr for PreRecord<WORDS> {
 /// together and removed together — one `insert`, one `lookup`, one `remove`
 /// rather than three of each, and no state in which a pre-record has lost
 /// its environment.
+#[derive(Value)]
 pub struct QueueEntry<Env, const WORDS: usize> {
     /// The transaction minus its nonce.
     pub pre: PreRecord<WORDS>,
     /// What the settle side will need, moved verbatim into the `Pending`
     /// environment map under the request id at flush.
     pub env: Env,
-}
-
-impl<Env: ProofWires, const WORDS: usize> ProofWires for QueueEntry<Env, WORDS> {
-    fn push_wires(&self, out: &mut Vec<Val>) {
-        self.pre.push_wires(out);
-        self.env.push_wires(out);
-    }
-}
-
-impl<Env: LedgerRepr, const WORDS: usize> LedgerRepr for QueueEntry<Env, WORDS> {
-    fn atoms() -> Vec<minocrab::AlignmentAtom> {
-        let mut atoms = <PreRecord<WORDS> as LedgerRepr>::atoms();
-        atoms.extend(Env::atoms());
-        atoms
-    }
-
-    fn push_limbs(&self, c: &mut Circuit3, limbs: &mut Vec<Wire3<FieldT, Public>>) {
-        LedgerRepr::push_limbs(&self.pre, c, limbs);
-        LedgerRepr::push_limbs(&self.env, c, limbs);
-    }
-
-    fn from_limbs(limbs: Vec<Wire3<FieldT, Public>>) -> Self {
-        let mut limbs = limbs.into_iter();
-        let pre = <PreRecord<WORDS> as LedgerRepr>::from_limbs(
-            limbs.by_ref().take(PreRecord::<WORDS>::LIMBS).collect(),
-        );
-        QueueEntry {
-            pre,
-            env: Env::from_limbs(limbs.collect()),
-        }
-    }
 }
 
 /// [`Owned`] FOR AN OUTBOX REQUEST: the commitment binds to the HANDLE,
@@ -1920,6 +1795,7 @@ impl<Env: LedgerRepr, const WORDS: usize> LedgerRepr for QueueEntry<Env, WORDS> 
 /// side has only the request id, and the commitment does not open under it.
 /// Carrying the handle in the environment is what lets a refund happen with
 /// the requester never present at the emit (notes/nonce-admin.org §4(ii)).
+#[derive(Value)]
 pub struct HandleOwned<E> {
     /// The outbox key this request was filed under.
     pub handle: Handle<Public>,
@@ -1927,47 +1803,6 @@ pub struct HandleOwned<E> {
     pub owner: Commit<SecretKey<Private>, OwnerTag>,
     /// Whatever else the settle side needs.
     pub inner: E,
-}
-
-impl<E: ProofWires> ProofWires for HandleOwned<E> {
-    fn push_wires(&self, out: &mut Vec<Val>) {
-        self.handle.push_wires(out);
-        self.owner.push_wires(out);
-        self.inner.push_wires(out);
-    }
-}
-
-impl<E: LedgerRepr> LedgerRepr for HandleOwned<E> {
-    fn atoms() -> Vec<minocrab::AlignmentAtom> {
-        let mut atoms = <Handle<Public> as LedgerRepr>::atoms();
-        atoms.extend(<Commit<SecretKey<Private>, OwnerTag> as LedgerRepr>::atoms());
-        atoms.extend(E::atoms());
-        atoms
-    }
-
-    fn push_limbs(&self, c: &mut Circuit3, limbs: &mut Vec<Wire3<FieldT, Public>>) {
-        LedgerRepr::push_limbs(&self.handle, c, limbs);
-        LedgerRepr::push_limbs(&self.owner, c, limbs);
-        LedgerRepr::push_limbs(&self.inner, c, limbs);
-    }
-
-    fn from_limbs(limbs: Vec<Wire3<FieldT, Public>>) -> Self {
-        let mut limbs = limbs.into_iter();
-        let handle = <Handle<Public> as LedgerRepr>::from_limbs(
-            limbs.by_ref().take(repr_limbs::<Handle<Public>>()).collect(),
-        );
-        let owner = <Commit<SecretKey<Private>, OwnerTag> as LedgerRepr>::from_limbs(
-            limbs
-                .by_ref()
-                .take(repr_limbs::<Commit<SecretKey<Private>, OwnerTag>>())
-                .collect(),
-        );
-        HandleOwned {
-            handle,
-            owner,
-            inner: E::from_limbs(limbs.collect()),
-        }
-    }
 }
 
 mod outbox;

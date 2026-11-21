@@ -36,13 +36,13 @@
 
 use core::marker::PhantomData;
 
-use minocrab::v3::{Circuit3, FieldT, Wire3};
+use minocrab::v3::Circuit3;
 use minocrab::{Private, Public};
 use minocrab_ledger::XcallCommitment;
 use minocrab_std::v3::blind::{Add, Max};
 use minocrab_std::v3::{
-    label, own_public_key, repr_limbs, Disclose, DisclosureLabel, FieldPath, LedgerRepr,
-    LedgerWidth, ProofWires, Stream, StreamSpec, Uint, ZswapCoinPublicKey,
+    label, own_public_key, Disclose, DisclosureLabel, FieldPath, LedgerRepr,
+    LedgerWidth, ProofWires, Stream, StreamSpec, Uint, Value, ZswapCoinPublicKey,
 };
 use signet_signer_interface::RequestId;
 
@@ -94,40 +94,12 @@ impl<Env: LedgerRepr, const WORDS: usize> StreamSpec for OutboxSpec<Env, WORDS> 
 /// WHAT AN EMITTED REQUEST HOLDS while it is outstanding: the caller's
 /// environment and the last seen its call snapshotted (C2), the value the
 /// response's height must exceed (C3).
+#[derive(Value)]
 pub struct Outstanding<Env> {
     /// The settle side's environment, moved verbatim from the call.
     pub env: Env,
     /// Last seen at the call, post-step.
     pub seen: Uint<64, Public>,
-}
-
-impl<Env: ProofWires> ProofWires for Outstanding<Env> {
-    fn push_wires(&self, out: &mut Vec<minocrab::v3::Val>) {
-        self.env.push_wires(out);
-        self.seen.push_wires(out);
-    }
-}
-
-impl<Env: LedgerRepr> LedgerRepr for Outstanding<Env> {
-    fn atoms() -> Vec<minocrab::AlignmentAtom> {
-        let mut atoms = Env::atoms();
-        atoms.extend(<Uint<64, Public> as LedgerRepr>::atoms());
-        atoms
-    }
-
-    fn push_limbs(&self, c: &mut Circuit3, limbs: &mut Vec<Wire3<FieldT, Public>>) {
-        LedgerRepr::push_limbs(&self.env, c, limbs);
-        LedgerRepr::push_limbs(&self.seen, c, limbs);
-    }
-
-    fn from_limbs(limbs: Vec<Wire3<FieldT, Public>>) -> Self {
-        let mut limbs = limbs.into_iter();
-        let env = Env::from_limbs(limbs.by_ref().take(repr_limbs::<Env>()).collect());
-        Outstanding {
-            env,
-            seen: <Uint<64, Public> as LedgerRepr>::from_limbs(limbs.collect()),
-        }
-    }
 }
 
 /// A CONTENTION-FREE EVM CALL SLOT: [`Pending`]'s two maps and the
