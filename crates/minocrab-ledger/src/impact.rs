@@ -10,22 +10,62 @@ use midnight_onchain_vm::ops::{Key, Op};
 use midnight_onchain_vm::result_mode::ResultModeVerify;
 use midnight_storage::db::InMemoryDB;
 use midnight_transient_crypto::repr::FieldRepr;
-use minocrab::v3::ImpactElem;
+use minocrab::v3::{ImpactElem, Val};
 use minocrab::Fr;
 
 /// The concrete op type whose `field_repr` defines the PI encoding.
 pub type VmOp = Op<ResultModeVerify, InMemoryDB>;
 
-/// One Impact instruction: the element stream of a single Impact-VM op.
+/// One Impact instruction: the element stream of a single Impact-VM op,
+/// and the value it STORES, if it is the push of an author's value into
+/// ledger state.
+///
+/// The second field is what [`emit`](crate::emit) runs through the
+/// stale-read backstop (`Circuit3::refuse_stale`). It is filled by the
+/// builders of the writes whose value a typed slot checks, from the same
+/// [`LedgerValue`] they splice into the op, so the wires checked are the
+/// wires written: [`cell_write_at`](crate::cell_write_at),
+/// [`map_insert_at`](crate::map_insert_at) and
+/// [`list_push_front_at`](crate::list_push_front_at) (and their field-index
+/// forms). No other op stores a checked value: not keys, paths or opcodes,
+/// not a counter increment (an immediate), not the coin arms, not a
+/// Merkle-tree leaf (a hash, which the typed `insert_hash` takes unchecked;
+/// the typed `insert` checks the item it hashes), not the kernel claims and
+/// not an event's payload (a log, not state). The field is private to this
+/// crate, so an op cannot be built outside it except through its builders
+/// and [`ImpactOp::constant`].
 #[derive(Clone)]
-pub struct ImpactOp(pub Vec<ImpactElem>);
+pub struct ImpactOp(pub Vec<ImpactElem>, pub(crate) Option<Stored>);
+
+/// The value an [`ImpactOp`] stores: its wires, and what it is, in the
+/// words the refusal uses (`a cell write's value`).
+#[derive(Clone)]
+pub(crate) struct Stored {
+    pub(crate) what: &'static str,
+    pub(crate) wires: Vec<Val>,
+}
 
 impl ImpactOp {
     /// A fully-constant op, encoded by the real `Op::field_repr`.
     pub fn constant(op: &VmOp) -> ImpactOp {
         let mut elems = Vec::new();
         op.field_repr(&mut elems);
-        ImpactOp(elems.into_iter().map(ImpactElem::Imm).collect())
+        ImpactOp(elems.into_iter().map(ImpactElem::Imm).collect(), None)
+    }
+
+    /// This op, marked as storing `value` (see the type's docs). `value` is
+    /// the [`LedgerValue`] the op was built from; its wires are what
+    /// [`emit`](crate::emit) checks.
+    pub(crate) fn storing(self, value: &LedgerValue, what: &'static str) -> ImpactOp {
+        let wires = value
+            .elems
+            .iter()
+            .filter_map(|e| match e {
+                ImpactElem::Wire(w) => Some(w.val()),
+                ImpactElem::Imm(_) => None,
+            })
+            .collect();
+        ImpactOp(self.0, Some(Stored { what, wires }))
     }
 }
 
@@ -113,7 +153,7 @@ pub fn push_cell(storage: bool, value: &LedgerValue) -> ImpactOp {
     ];
     elems.extend(alignment_header(&value.atoms));
     elems.extend(value.elems.iter().copied());
-    ImpactOp(elems)
+    ImpactOp(elems, None)
 }
 
 /// One element of a pushed `StateValue::Array` whose cells may be
@@ -152,7 +192,7 @@ pub fn push_array(storage: bool, elems: &[LedgerElem]) -> ImpactOp {
             }
         }
     }
-    ImpactOp(out)
+    ImpactOp(out, None)
 }
 
 /// The DEFAULT value of a type with these atoms: one zero limb per FAB limb.
@@ -225,7 +265,7 @@ pub fn idx_key(key: &LedgerValue) -> ImpactOp {
     let mut elems = vec![ImpactElem::Imm(Fr::from(0x50u64))];
     elems.extend(alignment_header(&key.atoms));
     elems.extend(key.elems.iter().copied());
-    ImpactOp(elems)
+    ImpactOp(elems, None)
 }
 
 // --- the ledger PATH (`f`) --------------------------------------------------
@@ -322,7 +362,7 @@ pub fn idx_path(cached: bool, push_path: bool, path: &[LedgerKey]) -> ImpactOp {
     for key in path {
         key.push_elems(&mut elems);
     }
-    ImpactOp(elems)
+    ImpactOp(elems, None)
 }
 
 /// The one-element path of a top-level ledger field — what every `u8`
@@ -348,7 +388,7 @@ pub fn idx_key_cached(key: &LedgerValue) -> ImpactOp {
     let mut elems = vec![ImpactElem::Imm(Fr::from(0x60u64))];
     elems.extend(alignment_header(&key.atoms));
     elems.extend(key.elems.iter().copied());
-    ImpactOp(elems)
+    ImpactOp(elems, None)
 }
 
 /// A path in words, for the stale-read backstop's refusal to name a read:

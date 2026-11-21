@@ -1681,6 +1681,11 @@ impl Circuit3 {
     /// The lowering primitive the typed ledger slots are built on; an author
     /// writing Impact by hand uses `minocrab-experimental`.
     ///
+    /// NOT STALE-CHECKED: this crate does not know which elements of an op
+    /// are a stored value. The check ([`Circuit3::refuse_stale`] on the value
+    /// a write stores) is made by `minocrab_ledger::emit`, whose op builders
+    /// know; a write handed here directly skips it.
+    ///
     /// [`Circuit3::impact`] with mixed operands: constants go inline as
     /// immediates (as compactc emits opcode/alignment elements), computed
     /// values as wires.

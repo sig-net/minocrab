@@ -135,7 +135,7 @@ pub fn cell_write(index: u8, value: &LedgerValue) -> Vec<ImpactOp> {
 pub fn cell_write_at(path: &[LedgerKey], value: &LedgerValue) -> Vec<ImpactOp> {
     let mut ops = idxp_container(path);
     ops.push(path[path.len() - 1].push_as_cell());
-    ops.push(push_cell(true, value));
+    ops.push(push_cell(true, value).storing(value, "a cell write's value"));
     ops.push(ins1());
     ops.extend(insc_container(path));
     ops
@@ -254,7 +254,7 @@ pub fn map_insert_at(path: &[LedgerKey], key: &LedgerValue, value: &LedgerValue)
     vec![
         idx_path(false, true, path),
         push_cell(false, key),
-        push_cell(true, value),
+        push_cell(true, value).storing(value, "a map insert's value"),
         ins1(),
         insc(path.len()),
     ]
@@ -547,7 +547,8 @@ pub fn list_push_front_at(path: &[LedgerKey], value: &LedgerValue) -> Vec<Impact
                 LedgerElem::Null,
                 LedgerElem::Null,
             ],
-        ),
+        )
+        .storing(value, "a list push's value"),
         swap(0),
         push_cell(false, &field_index_value(LIST_LENGTH)),
         swap(0),
@@ -912,7 +913,7 @@ pub fn emit_event(version: u32, tag: u8, payload: &LedgerValue) -> Vec<ImpactOp>
     ];
     elems.extend(alignment_header(&payload.atoms));
     elems.extend(payload.elems.iter().copied());
-    vec![ImpactOp(elems), ImpactOp::constant(&Op::Log)]
+    vec![ImpactOp(elems, None), ImpactOp::constant(&Op::Log)]
 }
 
 // --- BLIND OPS (M40, notes/stream-design.org) --------------------------------

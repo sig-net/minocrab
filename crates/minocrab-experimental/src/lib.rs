@@ -13,12 +13,12 @@
 //!
 //! | module | what | why it is here |
 //! |---|---|---|
-//! | [`impact`] | Impact ledger operations written by hand: the op builders and `emit` ([`impact::raw`]) | it bypasses checks the typed slots make (see below) |
+//! | [`impact`] | Impact ledger operations written by hand: the op builders and `emit` ([`impact::raw`]) | it bypasses the layout typing the typed slots make (see below) |
 //!
 //! [`impact`] is the escape hatch beneath `minocrab-std`'s typed ledger
-//! slots. A typed slot knows its field index and its value's layout, and its
-//! writes go through the stale-read backstop; an op written by hand knows
-//! neither. The primitives themselves (`Circuit3::impact_mixed`,
+//! slots. A typed slot knows its field index and its value's layout; an op
+//! written by hand knows neither. Both kinds of write go through the
+//! stale-read backstop, which [`minocrab_ledger::emit`] runs. The primitives themselves (`Circuit3::impact_mixed`,
 //! [`minocrab_ledger::emit`] and the builders) stay public in the crates
 //! they live in, because `minocrab-std` and `minocrab-compat` are other
 //! crates and lower to them. What this crate gives a contract author is the

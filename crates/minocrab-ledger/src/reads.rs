@@ -16,7 +16,7 @@ pub fn popeq(cached: bool, result: &LedgerValue) -> ImpactOp {
     let mut elems = vec![ImpactElem::Imm(Fr::from(0x0cu64 + u64::from(cached)))];
     elems.extend(alignment_header(&result.atoms));
     elems.extend(result.elems.iter().copied());
-    ImpactOp(elems)
+    ImpactOp(elems, None)
 }
 
 /// Emit `ops` as Impact instructions (one per op).
@@ -26,7 +26,23 @@ pub fn popeq(cached: bool, result: &LedgerValue) -> ImpactOp {
 /// straight-line code, which inlines as an immediate rather than naming a
 /// `Copy`, or a branch condition's wire inside [`Circuit3::when`]. There is
 /// no explicit guard parameter here to thread.
+///
+/// THE STALE-READ CHECK runs here, before anything is emitted: an op that
+/// stores an author's value (a cell write, a map insert, a list push; see
+/// [`ImpactOp`]) has that value run through [`Circuit3::refuse_stale`],
+/// which refuses at build time a value computed from an inline ledger read
+/// not acknowledged with `.stale(c)` (or [`Circuit3::acknowledge_stale`]),
+/// naming the read. This is the one place the check lives: `minocrab-std`'s
+/// typed slots, `minocrab-compat` and hand-written ops all reach it. Keys
+/// are not checked: a key derived from a read adds no assumption the read's
+/// own `popeq` does not make. The check adds no instruction.
+#[track_caller]
 pub fn emit(c: &mut Circuit3, ops: &[ImpactOp]) {
+    for op in ops {
+        if let Some(stored) = &op.1 {
+            c.refuse_stale(&stored.wires, stored.what);
+        }
+    }
     for op in ops {
         c.impact_mixed(1u64, &op.0);
     }

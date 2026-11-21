@@ -744,14 +744,26 @@ impl<T: LedgerStore> Fresh<T> for T {
     }
 }
 
-/// The value an inline WRITE stores, through the stale-read backstop
-/// (`Circuit3::refuse_stale`, notes/hooks-design.org): a value computed
-/// from an inline read that was not acknowledged with `.stale(c)` is
-/// refused here at build time, naming the read. Keys do not come through
-/// this; a key derived from a read adds no assumption the read's own
-/// `popeq` does not make.
-pub(crate) fn stored<T: LedgerStore>(c: &mut Circuit3, value: &impl Fresh<T>, what: &str) -> LedgerValue {
-    let value = value.fresh().store_value(c);
+/// The value an inline WRITE stores. The stale-read backstop
+/// (`Circuit3::refuse_stale`, notes/hooks-design.org) is not run here: the
+/// op builders of the writes that store a value (`cell_write_at`,
+/// `map_insert_at`, `list_push_front_at`) mark it, and
+/// `minocrab_ledger::emit` refuses a value computed from an inline read
+/// that was not acknowledged with `.stale(c)`, naming the read: the same
+/// check a hand-written write gets. Keys are not checked there either; a
+/// key derived from a read adds no assumption the read's own `popeq` does
+/// not make.
+fn stored<T: LedgerStore>(c: &mut Circuit3, value: &impl Fresh<T>) -> LedgerValue {
+    value.fresh().store_value(c)
+}
+
+/// A Merkle-tree insert's ITEM through the stale-read backstop. The tree
+/// stores the item's HASH, so no op carries the item for
+/// `minocrab_ledger::emit` to check, and the leaf op is not marked (the
+/// typed `insert_hash` takes a hash unchecked): the item is checked here,
+/// before it is hashed.
+fn refuse_stale_item<T: LedgerStore>(c: &mut Circuit3, item: &impl Fresh<T>) {
+    let value = item.fresh().store_value(c);
     let wires: Vec<minocrab::v3::Val> = value
         .elems()
         .iter()
@@ -760,8 +772,7 @@ pub(crate) fn stored<T: LedgerStore>(c: &mut Circuit3, value: &impl Fresh<T>, wh
             ImpactElem::Imm(_) => None,
         })
         .collect();
-    c.refuse_stale(&wires, what);
-    value
+    c.refuse_stale(&wires, "a merkle-tree insert's item");
 }
 
 pub fn repr_limbs<T: LedgerStore>() -> usize {
@@ -1249,7 +1260,7 @@ impl<K: LedgerStore, V: LedgerStore, P: LedgerPath> LedgerMap<K, V, P> {
     /// ins 1; insc 1`.
     pub fn insert(&self, c: &mut Circuit3, key: &K, value: &impl Fresh<V>) {
         let key = key.store_value(c);
-        let value = stored(c, value, "a map insert's value");
+        let value = stored(c, value);
         emit(c, &map_insert_at(&self.ledger_path(), &key, &value));
     }
 }
@@ -1559,7 +1570,7 @@ impl<T: LedgerStore, P: LedgerPath> LedgerList<T, P> {
     /// The one M16 operation with corpus provenance: it is
     /// `test-caller-contract`'s `requestLog.pushFront(requestId)`.
     pub fn push_front(&self, c: &mut Circuit3, value: &impl Fresh<T>) {
-        let value = stored(c, value, "a list push's value");
+        let value = stored(c, value);
         emit(c, &list_push_front_at(&self.ledger_path(), &value));
     }
 }
@@ -1752,14 +1763,14 @@ impl<const DEPTH: u8, T: LedgerStore, P: LedgerPath> LedgerMerkleTree<DEPTH, T, 
     /// `t.insert(item)` — hash the item into a leaf and insert it at the
     /// first free index.
     pub fn insert(&self, c: &mut Circuit3, item: &impl Fresh<T>) {
-        let _ = stored(c, item, "a merkle-tree insert's item");
+        refuse_stale_item(c, item);
         let hash = leaf_hash(c, item.fresh());
         self.insert_hash(c, &hash);
     }
 
     /// `t.insertIndex(item, at)` — hash the item and insert it at `at`.
     pub fn insert_index(&self, c: &mut Circuit3, item: &impl Fresh<T>, at: Uint<64, Public>) {
-        let _ = stored(c, item, "a merkle-tree insert's item");
+        refuse_stale_item(c, item);
         let hash = leaf_hash(c, item.fresh());
         self.insert_hash_index(c, &hash, at);
     }
@@ -1892,14 +1903,14 @@ impl<const DEPTH: u8, T, P: LedgerPath> LedgerHistoricMerkleTree<DEPTH, T, P> {
 impl<const DEPTH: u8, T: LedgerStore, P: LedgerPath> LedgerHistoricMerkleTree<DEPTH, T, P> {
     /// `t.insert(item)`.
     pub fn insert(&self, c: &mut Circuit3, item: &impl Fresh<T>) {
-        let _ = stored(c, item, "a merkle-tree insert's item");
+        refuse_stale_item(c, item);
         let hash = leaf_hash(c, item.fresh());
         self.insert_hash(c, &hash);
     }
 
     /// `t.insertIndex(item, at)`.
     pub fn insert_index(&self, c: &mut Circuit3, item: &impl Fresh<T>, at: Uint<64, Public>) {
-        let _ = stored(c, item, "a merkle-tree insert's item");
+        refuse_stale_item(c, item);
         let hash = leaf_hash(c, item.fresh());
         self.insert_hash_index(c, &hash, at);
     }
@@ -2013,7 +2024,7 @@ impl<T: LedgerStore> LedgerCell<T> {
 
     /// `x = value` — `push key; pushs value; ins 1`.
     pub fn write(&self, c: &mut Circuit3, value: &impl Fresh<T>) {
-        let value = stored(c, value, "a cell write's value");
+        let value = stored(c, value);
         emit(c, &cell_write_at(&self.ledger_path(), &value));
     }
 }

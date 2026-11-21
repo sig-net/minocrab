@@ -10,12 +10,6 @@
 //!
 //! Relative to a typed slot:
 //!
-//! - THE STALE-READ CHECK IS NOT APPLIED to a raw write. A typed write runs
-//!   the value it stores through `Circuit3::refuse_stale`, which refuses at
-//!   build time a value computed from an inline ledger read that was not
-//!   acknowledged with `.stale(c)`. [`raw::emit`] and the builders do not, so
-//!   a raw write can store a value derived from a read the transaction
-//!   assumes is still current at landing, without naming that assumption.
 //! - NOTHING CHECKS THE LAYOUT. A typed slot writes its field index with its
 //!   declared type's alignment. A raw op takes a field index and a
 //!   [`raw::LedgerValue`] separately, and nothing checks that the value has
@@ -23,6 +17,18 @@
 //!
 //! What still applies, raw or typed:
 //!
+//! - THE STALE-READ CHECK: [`raw::emit`] runs the value a cell write, a map
+//!   insert or a list push stores through `Circuit3::refuse_stale`, which
+//!   refuses at build time a value computed from an inline ledger read that
+//!   was not acknowledged with `.stale(c)` (or with
+//!   `Circuit3::acknowledge_stale` on the wires a raw read returned), naming
+//!   the read. It is the check a typed slot's write gets, made in the same
+//!   place, so it covers the same values: keys are not checked, nor ops that
+//!   store no author value (counters, the coin arms, a Merkle-tree leaf,
+//!   kernel claims, events). The value a typed Merkle-tree `insert` checks,
+//!   its item, is hashed before it reaches an op, so a raw leaf is not
+//!   checked; nor is an op composed by hand from `minocrab_ledger::push_cell`
+//!   instead of taken from a write builder.
 //! - DISCLOSURE: every element of an Impact op is a public wire (an
 //!   [`raw::ImpactElem::Wire`] is a `Wire3<FieldT, Public>`), and each one
 //!   is recorded in the circuit's disclosure record.

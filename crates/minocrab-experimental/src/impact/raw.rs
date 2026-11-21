@@ -1,27 +1,30 @@
-//! The Impact primitives a contract author writes ledger operations with,
-//! UNCHECKED.
+//! The Impact primitives a contract author writes ledger operations with.
 //!
 //! Re-exported from `minocrab-ledger` (and [`ImpactElem`] from `minocrab`)
 //! unchanged: importing from here emits exactly what importing from there
 //! does. The set is what the in-tree contracts write by hand, not the whole
 //! op layer; an op builder joins when a contract needs it.
 //!
-//! WHAT IS NOT CHECKED. A write built here and emitted with [`emit`] is not
-//! run through the stale-read check (`Circuit3::refuse_stale`): it can store
-//! a value computed from an inline ledger read that was never acknowledged
-//! with `.stale(c)`. Nor is anything checking that a field index is written
-//! with its declared type's layout: the index and the [`LedgerValue`] are
+//! WHAT IS NOT CHECKED. Nothing checks that a field index is written with
+//! its declared type's layout: the index and the [`LedgerValue`] are
 //! separate arguments. The ports of Compact contracts use this form because
 //! they reproduce compactc's op stream and its reads.
 //!
-//! WHAT STILL APPLIES. Every op element that is a wire is a public wire and
-//! is recorded as a disclosure, and [`emit`] resolves the ambient guard of
-//! `c.when(…)` (and refuses inside `c.when_private(…)`).
+//! WHAT STILL APPLIES. [`emit`] runs the stale-read check
+//! (`Circuit3::refuse_stale`) on the value a [`cell_write`], [`map_insert`]
+//! or [`list_push_front_at`] stores, as a typed slot's write does: a value
+//! computed from an inline ledger read is refused at build time unless the
+//! read was acknowledged, with `.stale(c)` on a typed read or
+//! `Circuit3::acknowledge_stale` on the wires a raw read returned. Keys are
+//! not checked, as the typed slots do not check them. Every op element that
+//! is a wire is a public wire and is recorded as a disclosure, and [`emit`]
+//! resolves the ambient guard of `c.when(…)` (and refuses inside
+//! `c.when_private(…)`).
 
 // --- the op, its elements, and emission --------------------------------------
 
 /// One Impact instruction's element stream, and its emission under the
-/// ambient guard.
+/// ambient guard, through the stale-read check.
 pub use minocrab_ledger::{emit, ImpactOp};
 /// The values and keys ops are built over.
 pub use minocrab_ledger::{atom_limbs, LedgerKey, LedgerValue};

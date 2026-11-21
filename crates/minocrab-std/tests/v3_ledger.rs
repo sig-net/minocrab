@@ -199,6 +199,8 @@ fn the_guard_free_methods_are_the_ops_with_an_immediate_guard() {
         let size = map_size(&mut c, 0);
         let empty = map_is_empty(&mut c, 0);
         let addr = cell_read(&mut c, 4, vec![AlignmentAtom::Bytes { length: 20 }]);
+        // The typed twin's `.stale(c)`: the read is written back.
+        c.acknowledge_stale(&[addr[0].val()]);
         emit(
             &mut c,
             &cell_write(
@@ -240,6 +242,8 @@ fn the_point_cell_is_the_hand_written_typed_gate() {
     let explicit = {
         let mut c = Circuit3::new();
         let point = c.public_transcript_input::<Secp256k1PointT>();
+        // The typed twin's `.stale(c)`: the read is written back.
+        c.acknowledge_stale(&[point.val()]);
         let limbs = c.encode(point);
         let value = LedgerValue::new(
             atoms.clone(),
@@ -284,6 +288,7 @@ fn the_jubjub_cell_is_the_hand_written_typed_gate() {
     let explicit = {
         let mut c = Circuit3::new();
         let point = c.public_transcript_input::<JubjubPointT>();
+        c.acknowledge_stale(&[point.val()]);
         let limbs = c.encode(point);
         let value = LedgerValue::new(
             atoms.clone(),
@@ -414,6 +419,8 @@ fn the_cell_and_counter_methods_are_the_explicit_ops() {
     let explicit = {
         let mut c = Circuit3::new();
         let addr = cell_read(&mut c, 4, vec![AlignmentAtom::Bytes { length: 20 }]);
+        // The typed twin's `.stale(c)`: the read is written back.
+        c.acknowledge_stale(&[addr[0].val()]);
         emit(
             &mut c,
             &cell_write(
@@ -422,6 +429,7 @@ fn the_cell_and_counter_methods_are_the_explicit_ops() {
             ),
         );
         let chain = cell_read(&mut c, 5, vec![AlignmentAtom::Bytes { length: 8 }]);
+        c.acknowledge_stale(&[chain[0].val()]);
         emit(
             &mut c,
             &cell_write(5, &LedgerValue::bytes(8, vec![ImpactElem::Wire(chain[0])])),
