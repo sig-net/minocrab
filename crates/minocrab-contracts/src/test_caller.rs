@@ -29,7 +29,9 @@
 use minocrab::label;
 use minocrab::v3::Circuit3;
 use minocrab::AlignmentAtom;
-use minocrab_ledger::{cell_read, cell_write, counter_increment, emit, ImpactElem, LedgerValue};
+use minocrab_experimental::impact::raw::{
+    cell_read, cell_write, counter_increment, emit, ImpactElem, LedgerValue,
+};
 use minocrab_std::v3::hash::upgrade_from_transient;
 use minocrab_std::v3::{contract, Disclose, Discloses, Secp256k1Point, B32};
 

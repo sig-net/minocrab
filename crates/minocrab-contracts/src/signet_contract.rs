@@ -32,7 +32,7 @@
 
 use minocrab::v3::{Circuit3, FieldT, Wire3};
 use minocrab::{Private, Public};
-use minocrab_ledger::{emit, emit_event, ImpactElem, LedgerValue};
+use minocrab_experimental::impact::raw::{emit, emit_event, ImpactElem, LedgerValue};
 use minocrab_std::v3::{contract, label, Disclose, Discloses, Serializer, B32};
 use signet_signer_interface::{
     RequestId, RespondBidirectionalEventV1, SignBidirectionalEventNotification, Signature,

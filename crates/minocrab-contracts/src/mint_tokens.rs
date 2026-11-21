@@ -20,9 +20,8 @@
 
 use minocrab::v3::{Circuit3, FieldT, Wire3};
 use minocrab::{label, Fr, Private, Public};
-use minocrab_ledger::{
-    cell_write, emit, kernel_claim_zswap_coin_spend, kernel_mint_shielded,
-    ImpactElem, LedgerValue,
+use minocrab_experimental::impact::raw::{
+    cell_write, emit, kernel_claim_zswap_coin_spend, kernel_mint_shielded, ImpactElem, LedgerValue,
 };
 use minocrab_std::v3::kernel;
 use minocrab_std::v3::{

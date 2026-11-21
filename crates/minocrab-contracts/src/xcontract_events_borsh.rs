@@ -21,7 +21,7 @@
 
 use minocrab::v3::Circuit3;
 use minocrab::{Private, Public};
-use minocrab_ledger::{
+use minocrab_experimental::impact::raw::{
     cell_write, counter_increment, counter_read, emit, emit_event, set_insert, ImpactElem,
     LedgerValue,
 };

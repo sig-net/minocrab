@@ -15,6 +15,11 @@ workspace = true
 minocrab = { path = "../minocrab" }
 minocrab-std = { path = "../minocrab-std" }
 minocrab-ledger = { path = "../minocrab-ledger" }
+# M48 D: the hand-written Impact ops the ports write (`impact::raw`, the
+# UNCHECKED form, since they reproduce compactc's stream). minocrab-ledger
+# stays for the cross-contract items (`XcallCommitment`, `XcallResult`),
+# which are not experimental.
+minocrab-experimental.workspace = true
 # M48 C: the compactc-shaped gadgets and `profile`, for the PARITY PORTS only
 # (the contracts with a Compact twin, and the deployed signer). The
 # MinoCrab-only contracts keep importing minocrab-std.

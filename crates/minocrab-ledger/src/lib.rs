@@ -43,7 +43,9 @@
 //!
 //! INTERNAL TIER, whole crate: the Impact op layer is the eDSL's
 //! implementation detail (reached through `minocrab-std`'s typed ledger
-//! surface) and carries no stability promise.
+//! surface) and carries no stability promise. A contract author writing
+//! Impact ops by hand imports them from `minocrab-experimental`'s
+//! `impact::raw`, whose docs say what that bypasses.
 //!
 //! [`Op`]: midnight_onchain_vm::ops::Op
 

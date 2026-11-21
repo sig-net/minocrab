@@ -12,9 +12,8 @@ use crate::common::{receive_shielded, write_coin_to_self};
 use crate::interfaces::PaymentTarget;
 use minocrab::v3::Circuit3;
 use minocrab::{label, Private, Public};
-use minocrab_ledger::{
-    emit, set_insert, ImpactElem, LedgerValue, XcallCommitment,
-};
+use minocrab_experimental::impact::raw::{emit, set_insert, ImpactElem, LedgerValue};
+use minocrab_ledger::XcallCommitment;
 use minocrab_std::v3::{
     contract, CircuitArg, Disclose, Discloses, ShieldedCoinInfo3, Uint, B32,
 };

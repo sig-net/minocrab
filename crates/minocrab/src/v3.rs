@@ -1657,6 +1657,9 @@ impl Circuit3 {
 
     // --- public-input blocks and outputs (public only) --------------------------------------
 
+    /// The lowering primitive the typed ledger slots are built on; an author
+    /// writing Impact by hand uses `minocrab-experimental`.
+    ///
     /// Declare a guarded block of native public inputs (one Impact
     /// instruction). The full ledger-op encoding layer sits above this.
     ///
@@ -1664,6 +1667,7 @@ impl Circuit3 {
     /// resolves the guard automatically, so an Impact op emitted through the
     /// ledger layer inside one already carries it. This is a primitive the
     /// scope lowers to.
+    #[doc(hidden)]
     #[track_caller]
     pub fn impact<V: OnChainGuard>(
         &mut self,
@@ -1674,6 +1678,9 @@ impl Circuit3 {
         self.impact_mixed(guard, &elems);
     }
 
+    /// The lowering primitive the typed ledger slots are built on; an author
+    /// writing Impact by hand uses `minocrab-experimental`.
+    ///
     /// [`Circuit3::impact`] with mixed operands: constants go inline as
     /// immediates (as compactc emits opcode/alignment elements), computed
     /// values as wires.
@@ -1689,6 +1696,7 @@ impl Circuit3 {
     /// Contract code should reach for [`Circuit3::when`] instead — the scope
     /// resolves the guard automatically. This is the primitive the scope
     /// lowers to.
+    #[doc(hidden)]
     #[track_caller]
     pub fn impact_mixed<V: OnChainGuard>(
         &mut self,

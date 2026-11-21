@@ -16,7 +16,7 @@
 
 use minocrab::v3::Circuit3;
 use minocrab::Private;
-use minocrab_ledger::{counter_increment, emit};
+use minocrab_experimental::impact::raw::{counter_increment, emit};
 use minocrab_std::v3::{bytes_to_b32, contract, rebuild_limb, BytesN, Discloses, Serializer};
 
 /// Ledger field indices.

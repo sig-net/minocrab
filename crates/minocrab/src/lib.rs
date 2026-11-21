@@ -59,7 +59,10 @@
 //! # Stability (M24 tier boundary)
 //!
 //! STABLE TIER (semver commitment): the v3 eDSL authoring core —
-//! [`v3::Circuit3`] and its instruction-emitting methods, [`v3::Wire3`] /
+//! [`v3::Circuit3`] and its instruction-emitting methods (except the Impact
+//! lowering primitives `impact` / `impact_mixed`, which are `#[doc(hidden)]`
+//! and carry no promise; hand-written Impact lives in `minocrab-experimental`),
+//! [`v3::Wire3`] /
 //! [`v3::AnyWire3`], the visibility types, the FAB alignment re-exports,
 //! and [`v3::Compiled3`]. The proposed stable set is deliberately small
 //! (notes/library-api.org §1) and grows only by decision, never by

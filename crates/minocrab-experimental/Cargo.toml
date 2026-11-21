@@ -1,0 +1,27 @@
+[package]
+name = "minocrab-experimental"
+description = "MinoCrab's experimental tier and escape hatches beneath the typed API, with NO backwards-compatibility guarantee: any release, a patch release included, may rename, change or remove any item"
+# NOT the workspace version, and 0.0.x ON PURPOSE: under Cargo's semver rules
+# every 0.0.x release is incompatible with every other, so a caret requirement
+# on this crate never silently picks up the next one. That is the stability
+# statement in the crate docs, carried by the version number. No MinoCrab
+# core crate depends on this one (crates/minocrab-contracts/tests/
+# workspace_versions.rs holds that), so its churn cannot reach a stable crate.
+version = "0.0.1"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+readme = "README.md"
+keywords = ["midnight", "zkir", "impact", "zero-knowledge", "circuit"]
+categories = ["cryptography::cryptocurrencies", "cryptography"]
+include = ["src/**/*.rs", "README.md", "LICENSE-MIT", "LICENSE-APACHE"]
+
+[lints]
+workspace = true
+
+[dependencies]
+# `Circuit3` and `ImpactElem`.
+minocrab.workspace = true
+# The Impact op builders and `emit`, re-exported in `impact::raw`.
+minocrab-ledger.workspace = true

@@ -37,10 +37,11 @@
 
 use minocrab::v3::Circuit3;
 use minocrab::{label, Private, Public};
-use minocrab_ledger::{
-    cell_write, counter_increment, counter_read, emit, emit_event, set_insert,
-    ImpactElem, LedgerValue, XcallCommitment, XcallResult,
+use minocrab_experimental::impact::raw::{
+    cell_write, counter_increment, counter_read, emit, emit_event, set_insert, ImpactElem,
+    LedgerValue,
 };
+use minocrab_ledger::{XcallCommitment, XcallResult};
 use minocrab_std::v3::kernel;
 use minocrab_std::v3::{
     contract, BytesN, ContractAddress, Disclose, Discloses, Serializer, Uint, B32,

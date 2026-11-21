@@ -21,6 +21,9 @@
 //! crates is a plain versionless `{ path = … }`, which cargo strips on
 //! publish (that is what opens the minocrab-std ↔ minocrab-sim dev cycle).
 //!
+//! The third holds the experimental crate's isolation: nothing but the
+//! unpublished corpus depends on `minocrab-experimental`.
+//!
 //! Line parsing rather than a toml crate: `toml` is not a dependency of this
 //! workspace and one line of these manifests is one dependency entry. If that
 //! stops being true, the not-vacuous assertions below fail rather than the
@@ -274,4 +277,53 @@ fn published_crates_depend_only_on_published_crates() {
         "only {checked} dependency edges between our crates were parsed out of the published \
          manifests; the parse has stopped reading them — fix it, do not delete the check"
     );
+}
+
+/// The crate with NO compatibility promise, and the one crate allowed to
+/// depend on it.
+const EXPERIMENTAL: &str = "minocrab-experimental";
+const ONLY_DEPENDENT_OF_EXPERIMENTAL: &str = "minocrab-contracts";
+
+/// No crate of ours but the unpublished corpus depends on
+/// `minocrab-experimental`, in any dependency section (regular, build, dev,
+/// or target-specific). PUBLISHING.md's stability statement for it rests on
+/// this: it is released at 0.0.x and may break anything in any release, and
+/// that churn can only stay out of the core and the published library crates
+/// if none of them names it.
+#[test]
+fn only_the_corpus_depends_on_the_experimental_crate() {
+    let (path, text) = workspace_manifest();
+    let members = members(&workspace_version(&path, &text));
+    assert!(
+        members.contains_key(EXPERIMENTAL) && members.contains_key(ONLY_DEPENDENT_OF_EXPERIMENTAL),
+        "{EXPERIMENTAL} or {ONLY_DEPENDENT_OF_EXPERIMENTAL} is no longer a crate under crates/; \
+         update this test with the move, do not delete it"
+    );
+    let mut dependents = Vec::new();
+    for (crate_name, member) in &members {
+        for (section, line) in lines_by_section(&member.text) {
+            let name = entry_name(&line);
+            let name = name.strip_suffix(".workspace").unwrap_or(name);
+            if section.ends_with("dependencies]") && name == EXPERIMENTAL {
+                dependents.push(crate_name.clone());
+            }
+        }
+    }
+    // Not vacuous: the corpus imports the raw Impact ops from it.
+    assert!(
+        dependents.iter().any(|d| d == ONLY_DEPENDENT_OF_EXPERIMENTAL),
+        "{ONLY_DEPENDENT_OF_EXPERIMENTAL}'s dependency on {EXPERIMENTAL} was not parsed out of \
+         its manifest; the parse has stopped reading it — fix it, do not delete the check"
+    );
+    for dependent in &dependents {
+        assert_eq!(
+            dependent,
+            ONLY_DEPENDENT_OF_EXPERIMENTAL,
+            "{} depends on {EXPERIMENTAL}. Only {ONLY_DEPENDENT_OF_EXPERIMENTAL} (the unpublished \
+             corpus) may: {EXPERIMENTAL} is published at 0.0.x with no compatibility promise, \
+             and no core or published crate may depend on it, so its churn cannot reach a stable \
+             crate. Move what is needed into a stable crate (minocrab-std, most likely) instead",
+            members[dependent].manifest.display()
+        );
+    }
 }

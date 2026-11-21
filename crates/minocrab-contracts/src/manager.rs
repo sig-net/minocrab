@@ -257,23 +257,23 @@ fn guarded_map_lookup_field(
     c: &mut Circuit3,
     guard: Wire3<FieldT, Public>,
     index: u8,
-    key: &minocrab_ledger::LedgerValue,
+    key: &minocrab_experimental::impact::raw::LedgerValue,
     atoms: Vec<AlignmentAtom>,
 ) -> Wire3<FieldT, Public> {
-    let limbs: usize = atoms.iter().map(minocrab_ledger::atom_limbs).sum();
+    let limbs: usize = atoms.iter().map(minocrab_experimental::impact::raw::atom_limbs).sum();
     let wires: Vec<Wire3<FieldT, Public>> = (0..limbs)
         .map(|_| c.public_transcript_input_guarded::<FieldT, Public>(guard))
         .collect();
-    let value = minocrab_ledger::LedgerValue::new(
+    let value = minocrab_experimental::impact::raw::LedgerValue::new(
         atoms,
-        wires.iter().map(|&w| minocrab::v3::ImpactElem::Wire(w)).collect(),
+        wires.iter().map(|&w| minocrab_experimental::impact::raw::ImpactElem::Wire(w)).collect(),
     );
-    let path = [minocrab_ledger::LedgerKey::Field(index)];
+    let path = [minocrab_experimental::impact::raw::LedgerKey::Field(index)];
     for op in [
-        minocrab_ledger::dup(0),
-        minocrab_ledger::idx_path(false, false, &path),
-        minocrab_ledger::idx_key(key),
-        minocrab_ledger::popeq(false, &value),
+        minocrab_experimental::impact::raw::dup(0),
+        minocrab_experimental::impact::raw::idx_path(false, false, &path),
+        minocrab_experimental::impact::raw::idx_key(key),
+        minocrab_experimental::impact::raw::popeq(false, &value),
     ] {
         c.impact_mixed(guard, &op.0);
     }

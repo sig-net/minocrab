@@ -565,6 +565,7 @@ crates/minocrab-ir         L1  typed circuit builder over ZKIR instructions
 crates/minocrab-taint           the taint lint: hash-preimage limbs provably bounded
 crates/minocrab            L2  eDSL core: wires, visibility, disclosure tracking
 crates/minocrab-ledger     L2.5 Impact ledger ops, bit-identical public-input encoding
+crates/minocrab-experimental    hand-written Impact and other escape hatches; 0.0.x, NO compatibility promise
 crates/minocrab-std        L3  stdlib ports (hashing, ECDSA, Borsh serialization, Signet events)
 crates/minocrab-macros          the thin decorators: #[circuit], the derives, #[interface]
 crates/minocrab-sim        L5  native simulator: disclosure reports + per-region cost profiler
@@ -586,7 +587,7 @@ Benchmark from a clean checkout (nix + direnv supply the pinned toolchain):
 nix run .#bench
 ```
 
-A contract depends on **`minocrab-std`** (which re-exports the eDSL and the decorators) plus `minocrab-sim` as a dev-dependency. Thirteen crates are meant for crates.io and are ready for it; nothing is published yet ([PUBLISHING.md](PUBLISHING.md) has the set, the order and what stays unpublished). Consume it as a git dependency for now. Every `midnight-*` dependency resolves from crates.io at the versions midnight-node 2.1.101 locks (ledger 9.1.0.1), so no `[patch.crates-io]` block is needed; a workspace on the same versions (sig-net/mpc) unifies with it.
+A contract depends on **`minocrab-std`** (which re-exports the eDSL and the decorators) plus `minocrab-sim` as a dev-dependency. Fourteen crates are meant for crates.io and are ready for it; nothing is published yet ([PUBLISHING.md](PUBLISHING.md) has the set, the order and what stays unpublished). Consume it as a git dependency for now. Every `midnight-*` dependency resolves from crates.io at the versions midnight-node 2.1.101 locks (ledger 9.1.0.1), so no `[patch.crates-io]` block is needed; a workspace on the same versions (sig-net/mpc) unifies with it.
 
 Deeper: `plan.org` (aim and design requirements), `milestones.org` (state of play), `notes/*.org` (findings and decisions of record).
 

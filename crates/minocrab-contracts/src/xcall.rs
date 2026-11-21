@@ -30,9 +30,10 @@
 
 use minocrab::v3::{Circuit3, Compiled3, FieldT, Wire3};
 use minocrab::{label, Private, Public};
-use minocrab_ledger::{
-    cell_write, counter_increment, emit, map_insert, ImpactElem, LedgerValue, XcallCommitment,
+use minocrab_experimental::impact::raw::{
+    cell_write, counter_increment, emit, map_insert, ImpactElem, LedgerValue,
 };
+use minocrab_ledger::XcallCommitment;
 use minocrab_std::v3::{contract, entry, BytesN, CircuitArg, Disclose, Discloses, Uint, B32};
 
 use xcall_target_interface::XcallTarget;

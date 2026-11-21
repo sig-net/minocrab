@@ -40,7 +40,9 @@
 
 use minocrab::v3::{Circuit3, Compiled3, Wire3};
 use minocrab::{label, Alignment, AlignmentAtom, AlignmentSegment, Private};
-use minocrab_ledger::{cell_write, counter_increment, emit, ImpactElem, LedgerValue};
+use minocrab_experimental::impact::raw::{
+    cell_write, counter_increment, emit, ImpactElem, LedgerValue,
+};
 use minocrab_std::v3::{contract, BytesNDyn, Disclose, Discloses, B32};
 
 label!(TheDigestHi = "the digest (hi)");

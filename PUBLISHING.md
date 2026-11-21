@@ -6,7 +6,7 @@ Nothing is published yet. Everything up to the publish itself is in place: every
 
 ## The set
 
-Thirteen crates, the transitive closure (regular and build dependencies) of the core, the compat crate, the EVM and Signet app crates and the signer interface:
+Fourteen crates, the transitive closure (regular and build dependencies) of the core, the compat crate, the experimental crate, the EVM and Signet app crates and the signer interface:
 
 | crate | what | stability |
 |---|---|---|
@@ -15,6 +15,7 @@ Thirteen crates, the transitive closure (regular and build dependencies) of the 
 | `minocrab` | the eDSL: wires, visibility, disclosure | core |
 | `minocrab-macros` | `#[circuit]`, `#[contract]`, `#[interface]`, the derives | core |
 | `minocrab-ledger` | Impact ledger-op emission | core |
+| `minocrab-experimental` | hand-written Impact (the raw op builders) and other escape hatches beneath the typed API | NONE, 0.0.x on purpose |
 | `minocrab-std` | the standard library (re-exports the eDSL and the macros) | core |
 | `minocrab-sim` | the native ZKIR simulator and the `minocrab` CLI | core |
 | `minocrab-taint` | the byte-atom taint lint | core |
@@ -30,7 +31,7 @@ Thirteen crates, the transitive closure (regular and build dependencies) of the 
 
 - **Core** (`minocrab-zkir`, `minocrab-ir`, `minocrab`, `minocrab-macros`, `minocrab-ledger`, `minocrab-std`, `minocrab-sim`, `minocrab-taint`): semver from 0.1.0, with the usual 0.x reading: a 0.(x+1).0 may break anything, a 0.x.(y+1) does not. The core crates share the workspace version and are released together. Within them, the README's stability tiers say which surface is meant to hold still across minor releases and which layers are internal and expected to move at the next one.
 - **Compat** (`minocrab-compat`): follows core, same version, same release. Its gadgets exist to keep a ported circuit byte-identical to compactc's output, so a change that moves a byte of a parity port's stream is breaking even when it type-checks.
-- **The experimental crate**, when it exists: published at 0.0.x with no compatibility promise, said in its README and crate docs. No core crate may depend on it, so its churn cannot reach a stable crate.
+- **Experimental** (`minocrab-experimental`): NO backwards-compatibility guarantee. Any release, a patch release included, may rename, change or remove any item; it holds what is experimental or an escape hatch beneath the typed API, and its README and crate docs open by saying so. It is versioned 0.0.x ON PURPOSE, in its own manifest rather than on the workspace version: under Cargo's semver rules every 0.0.x release is incompatible with every other, so no caret requirement moves a downstream build to the next release unasked. No core or published library crate depends on it, only the unpublished corpus (`workspace_versions` checks exactly that), so its churn cannot reach a stable crate.
 - **`signet-signer-interface`**: versioned by the deployed contract's wire format, not by the workspace. Any change to `artifact/interface-schema.txt` is a major version; adding a circuit is minor; re-pinning to a same-signature redeploy is a patch (the table and the reasons are in notes/interface-crates.org, "Versioning and publishing conventions").
 - **App crates** (`minocrab-evm`, `signet-protocol`, `minocrab-signet`): semver from 0.1.0 on the workspace version. A change to the wire vocabulary they encode is breaking whatever the Rust signature does.
 
@@ -48,7 +49,7 @@ Each carries `publish = false` with its reason in the manifest.
 
 ## How the manifests make this work
 
-- **Regular dependencies on our crates carry a version.** Each goes through `[workspace.dependencies]`, one place, path AND version: the path is used for the local build, the version is what crates.io resolves. `signet-signer-interface`'s entry carries its own version (0.3.0), not the workspace's. `crates/minocrab-contracts/tests/workspace_versions.rs` holds every entry to the version of the crate it names, and holds every published crate to depending on our crates only through those entries and only on published ones.
+- **Regular dependencies on our crates carry a version.** Each goes through `[workspace.dependencies]`, one place, path AND version: the path is used for the local build, the version is what crates.io resolves. `signet-signer-interface`'s entry carries its own version (0.3.0), and `minocrab-experimental`'s its own (0.0.1), not the workspace's. `crates/minocrab-contracts/tests/workspace_versions.rs` holds every entry to the version of the crate it names, and holds every published crate to depending on our crates only through those entries and only on published ones, and every crate but the corpus to not depending on `minocrab-experimental` at all.
 - **Dev-dependencies on our crates are versionless** (`{ path = … }`). Cargo strips a versionless dev-dependency on publish, which is what breaks the `minocrab-std` ↔ `minocrab-sim` dev-dependency cycle open, and it means no published crate ships a runnable test suite. `cargo publish` verifies a package by building its library and binaries, not by running its tests, so nothing in the set needs another crate's tests to publish.
 - **`include` lists** ship `src/**/*.rs`, `README.md`, `LICENSE-MIT` and `LICENSE-APACHE`, plus what the source reads at compile time: the Lean files `lean_proof!` embeds with `include_str!` (`minocrab-zkir`, `minocrab-ir`, `minocrab-std`) and, for `signet-signer-interface`, its `artifact/` pin and frozen schema as reference data. Tests and examples are excluded on purpose: the suites read `../../corpus` (the compactc artifacts) and `../../spec`, neither of which exists in a downstream checkout, so a shipped test could only fail. The warrant for these crates lives in the repository, not in the package; see [VERIFICATION.md](VERIFICATION.md).
 - **Both license texts are copied into every published crate's directory** and named in its `include` list. The SPDX expression `MIT OR Apache-2.0` in the manifest is a claim; the `.crate` tarball has to carry the texts it points at. The copies at `crates/*/LICENSE-{MIT,APACHE}` are the repository root's, byte for byte.
@@ -67,8 +68,8 @@ On a clean checkout of the commit being published (`git status` empty, the commi
    ```sh
    RUSTDOCFLAGS="-D warnings" cargo doc --no-deps \
      -p minocrab-zkir -p minocrab-ir -p minocrab -p minocrab-macros -p minocrab-ledger \
-     -p minocrab-std -p minocrab-sim -p minocrab-taint -p minocrab-compat -p minocrab-evm \
-     -p signet-protocol -p signet-signer-interface -p minocrab-signet
+     -p minocrab-experimental -p minocrab-std -p minocrab-sim -p minocrab-taint -p minocrab-compat \
+     -p minocrab-evm -p signet-protocol -p signet-signer-interface -p minocrab-signet
    ```
 7. Package and verify the whole set against the registry. Cargo resolves the set's members against each other through a local overlay, so this works before anything is published:
    ```sh
@@ -91,12 +92,13 @@ Each crate must be on crates.io before the next one resolves. `cargo publish` wa
 5. `cargo publish -p minocrab` (→ ir)
 6. `cargo publish -p minocrab-taint` (→ ir, zkir)
 7. `cargo publish -p minocrab-ledger` (→ minocrab, ir)
-8. `cargo publish -p minocrab-std` (→ minocrab, ledger, macros)
-9. `cargo publish -p minocrab-sim` (→ minocrab, ir, zkir)
-10. `cargo publish -p minocrab-compat` (→ minocrab, std, ledger, ir, zkir)
-11. `cargo publish -p minocrab-evm` (→ minocrab, std)
-12. `cargo publish -p signet-signer-interface` (→ minocrab, std, ledger)
-13. `cargo publish -p minocrab-signet` (→ minocrab, std, ledger, evm, signet-protocol, signet-signer-interface)
+8. `cargo publish -p minocrab-experimental` (→ minocrab, ledger)
+9. `cargo publish -p minocrab-std` (→ minocrab, ledger, macros)
+10. `cargo publish -p minocrab-sim` (→ minocrab, ir, zkir)
+11. `cargo publish -p minocrab-compat` (→ minocrab, std, ledger, ir, zkir)
+12. `cargo publish -p minocrab-evm` (→ minocrab, std)
+13. `cargo publish -p signet-signer-interface` (→ minocrab, std, ledger)
+14. `cargo publish -p minocrab-signet` (→ minocrab, std, ledger, evm, signet-protocol, signet-signer-interface)
 
 The last rehearsal before step 1 is a dry run of the whole set, which resolves the set's members against each other the way step 7 of the checklist does and stops short of every upload:
 

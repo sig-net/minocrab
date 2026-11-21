@@ -12,6 +12,9 @@ members = [
     # crate docs for why it exists). Nothing in the core depends on it.
     "crates/minocrab-compat",
     "crates/minocrab-ledger",
+    # M48 D: hand-written Impact, published at 0.0.x with no compatibility
+    # promise. Nothing in the core depends on it; only the corpus does.
+    "crates/minocrab-experimental",
     "crates/minocrab-contracts",
     # The EVM ABI layer and the Signet protocol, as publishable app crates;
     # minocrab-contracts re-exports both at their old paths.
@@ -68,6 +71,10 @@ minocrab = { path = "crates/minocrab", version = "0.1.0" }
 minocrab-abi = { path = "crates/minocrab-abi", version = "0.1.0" }
 minocrab-compat = { path = "crates/minocrab-compat", version = "0.1.0" }
 minocrab-evm = { path = "crates/minocrab-evm", version = "0.1.0" }
+# NOT the workspace version: 0.0.x on purpose, so every release is a breaking
+# one under Cargo's semver rules (the crate promises no compatibility). The
+# workspace_versions test holds this number to the crate's own manifest.
+minocrab-experimental = { path = "crates/minocrab-experimental", version = "0.0.1" }
 minocrab-ir = { path = "crates/minocrab-ir", version = "0.1.0" }
 minocrab-ledger = { path = "crates/minocrab-ledger", version = "0.1.0" }
 minocrab-macros = { path = "crates/minocrab-macros", version = "0.1.0" }

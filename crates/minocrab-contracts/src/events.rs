@@ -20,7 +20,7 @@
 
 use minocrab::v3::{Circuit3, Compiled3, FieldT, Wire3};
 use minocrab::{label, Private, Public};
-use minocrab_ledger::{
+use minocrab_experimental::impact::raw::{
     cell_write, counter_increment, counter_read, emit, emit_event, map_insert, ImpactElem,
     LedgerValue,
 };
