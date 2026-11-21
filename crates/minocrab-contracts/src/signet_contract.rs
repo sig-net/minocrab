@@ -1,17 +1,20 @@
-//! `signet-contract` (signet-midnight-integration) — the signet signer,
-//! the central Sig Network contract on Midnight that the erc20-vault calls
-//! cross-contract. Three stateless, unauthenticated emit-only circuits
-//! (verification is deliberately the reader's job — see the Compact
-//! original's header):
+//! The Sig Network contracts on Midnight (signet-midnight-integration
+//! v0.26.0-rc.15, `aa91570`): the SIGNET SIGNER (`packages/signet-signer`),
+//! which a client contract such as the erc20-vault calls cross-contract to
+//! file a request, and the SIGNET RESPONDER (`packages/signet-responder`),
+//! which the MPC calls in its own transactions to post a signature or an
+//! attestation. Three stateless, unauthenticated emit-only circuits
+//! (verification is deliberately the reader's job; see the Compact
+//! originals' headers):
 //!
 //! ```text
-//! signBidirectional(requestId: Bytes<32>, notification: { version: Uint<8>, payload: Bytes<128> }):
+//! signer.signBidirectional(requestId: Bytes<32>, notification: { version: Uint<8>, payload: Bytes<128> }):
 //!   emit (Misc { name: pad(32, "SignBidirectionalEvent"),
 //!                payload: Bytes[version, ...requestId, ...payload, ...zeros(95)] })
-//! respond({ requestId, signature: { bigR: {x, y}, s, recoveryId } }):
+//! responder.respond({ requestId, signature: { bigR: {x, y}, s, recoveryId } }):
 //!   emit (Misc { name: pad(32, "SignatureRespondedEvent"),
 //!                payload: Bytes[...requestId, ...x, ...y, ...s, recoveryId, ...zeros(127)] })
-//! respondBidirectional({ requestId, blockHeight: Uint<64>, outputKind: OutputKind,
+//! responder.respondBidirectional({ requestId, blockHeight: Uint<64>, outputKind: OutputKind,
 //!                        serializedOutputLength: Uint<64>, outputHash: Bytes<32>,
 //!                        digest: Bytes<32>, signature }):
 //!   emit (Misc { name: pad(32, "RespondBidirectionalEvent"),
@@ -20,11 +23,12 @@
 //!                               ...x, ...y, ...s, recoveryId, ...zeros(46)] })
 //! ```
 //!
-//! The source is midnight-integration tag v0.25.0 (`b62e67e`), the
-//! signet signer `@sig-net/midnight-contract` 0.25.0 deploys: the request id is
-//! inside both event structs, and the bidirectional attestation carries the
-//! block height, the MPC's verdict, the output width, the output hash and
-//! the digest.
+//! Until v0.25.0 the three circuits were one contract
+//! (`packages/signet-contract`); v0.26 split them along who calls them and
+//! changed nothing else: compactc's artifacts of all three are byte-identical
+//! to v0.25.0's, so these ports, their ZKIR and their keys did not move
+//! (notes/mainnet-pin.org). The module keeps its name, which names the
+//! circuits in every snapshot.
 //!
 //! No ledger fields, no witnesses; every argument is disclosed into the
 //! 256-byte event payload. `Misc` is the same tag-10 event as the events
@@ -33,10 +37,8 @@
 use minocrab::v3::{Circuit3, FieldT, Wire3};
 use minocrab::{Private, Public};
 use minocrab_std::v3::{contract, event, label, Disclose, Discloses, Serializer, B32};
-use signet_signer_interface::{
-    RequestId, RespondBidirectionalEventV1, SignBidirectionalEventNotification, Signature,
-    SignatureRespondedEventV1,
-};
+use signet_responder_interface::{RespondBidirectionalEventV1, Signature, SignatureRespondedEventV1};
+use signet_signer_interface::{RequestId, SignBidirectionalEventNotification};
 
 use signet_protocol::misc::{MISC_SIZE, MISC_TAG, MISC_VERSION};
 
@@ -92,7 +94,7 @@ fn misc_name(c: &mut Circuit3, name: &str) -> Serializer<Public> {
 /// circuits share, ready to push: `x`, `y`, `s` as `Bytes<32>`, `recoveryId`
 /// as a one-byte `Uint<8>`.
 ///
-/// The arguments are the interface crate's own types — `Signature`, wrapped
+/// The arguments are the responder interface crate's own types — `Signature`, wrapped
 /// in `SignatureRespondedEventV1` / `RespondBidirectionalEventV1` exactly as
 /// the Compact signature nests them: the argument IS the struct, at
 /// `Private` here and `Public` for any caller, one declaration.
@@ -124,12 +126,12 @@ impl DisclosedSignature {
     }
 }
 
-/// The signet signer — three stateless, unauthenticated emit-only
-/// circuits.
-pub struct SignetContract;
+/// The signet signer: one stateless, unauthenticated emit-only circuit,
+/// the one client contracts call.
+pub struct Signer;
 
 #[contract(lowering = minocrab_compat::profile)]
-impl SignetContract {
+impl Signer {
     /// `export circuit signBidirectional(requestId: RequestId,
     /// notification: SignBidirectionalEventNotification): []`
     ///
@@ -162,7 +164,14 @@ impl SignetContract {
         });
         Discloses::of(())
     }
+}
 
+/// The signet responder: the two stateless, unauthenticated emit-only
+/// circuits the MPC posts its responses through.
+pub struct Responder;
+
+#[contract(lowering = minocrab_compat::profile)]
+impl Responder {
     /// `export circuit respond(signatureRespondedEvent:
     /// SignatureRespondedEventV1): []` — `{ requestId, signature }`, nine
     /// field limbs.

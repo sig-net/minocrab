@@ -62,8 +62,10 @@ const CHUNK: usize = 8;
 /// The corpus directory each family's `.zkir` lives in, repo-relative.
 const VAULT_DIR: &str =
     "corpus/zkir/signet-midnight-examples/examples/erc20-vault/contract/src/erc20-vault/zkir";
-const SIGNET_DIR: &str =
-    "corpus/zkir/signet-midnight-integration-v0250/packages/signet-contract/src/signet-contract/zkir";
+const SIGNER_DIR: &str =
+    "corpus/zkir/signet-midnight-integration-v026/packages/signet-signer/src/signet-signer/zkir";
+const RESPONDER_DIR: &str =
+    "corpus/zkir/signet-midnight-integration-v026/packages/signet-responder/src/signet-responder/zkir";
 const MANAGER_DIR: &str = "corpus/zkir/aa-midnight-evm-experiment/contracts/manager/zkir";
 
 /// `(<preimage stem>, <repo-relative artifact path>)` for every dumped
@@ -108,9 +110,10 @@ fn corpus_table() -> Vec<(&'static str, String)> {
     ] {
         t.push((name, format!("{VAULT_DIR}/{name}.zkir")));
     }
-    // The signet signer's three emit-only circuits.
-    for name in ["signBidirectional", "respond", "respondBidirectional"] {
-        t.push((name, format!("{SIGNET_DIR}/{name}.zkir")));
+    // The signet signer's and the signet responder's three emit-only circuits.
+    t.push(("signBidirectional", format!("{SIGNER_DIR}/signBidirectional.zkir")));
+    for name in ["respond", "respondBidirectional"] {
+        t.push((name, format!("{RESPONDER_DIR}/{name}.zkir")));
     }
     // The manager: `depositShielded` (persistent_hash + transient_hash) and
     // the `execute` variants (keccak256 + persistent_hash + transient_hash +

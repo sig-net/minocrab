@@ -179,7 +179,7 @@ fn every_listed_module_is_a_port_or_minocrab_only() {
 /// lowering is. This list is the one place Rust names the ported contracts;
 /// [`every_ported_contract_is_listed`] checks it against the source, so a
 /// new port's block cannot be left out of it.
-const PORTED_CONTRACTS: [(&str, Option<fn(&mut Circuit3)>); 19] = [
+const PORTED_CONTRACTS: [(&str, Option<fn(&mut Circuit3)>); 20] = [
     ("adts", adts::Adts::LOWERING),
     ("attest", attest::Attest::LOWERING),
     ("bounded", bounded::Bounded::LOWERING),
@@ -193,7 +193,8 @@ const PORTED_CONTRACTS: [(&str, Option<fn(&mut Circuit3)>); 19] = [
     ("nested", nested::Nested::LOWERING),
     ("opaque", opaque::OpaqueLedger::LOWERING),
     ("serde_builtin", serde_builtin::SerdeBuiltin::LOWERING),
-    ("signet_contract", signet_contract::SignetContract::LOWERING),
+    ("signet_contract", signet_contract::Signer::LOWERING),
+    ("signet_contract", signet_contract::Responder::LOWERING),
     ("test_caller", test_caller::TestCaller::LOWERING),
     ("xcall", xcall::Xcall::LOWERING),
     ("xcall_with_payment", xcall_with_payment::XcallWithPayment::LOWERING),

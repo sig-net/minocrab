@@ -1,8 +1,10 @@
 //! THIS CRATE'S CLAIM, CHECKED.
 //!
 //! `src/lib.rs` asserts that a contract deployed from
-//! `signet-midnight-integration`'s `signet-contract` package exports three
-//! circuits with exactly these argument layouts. Everything needed to
+//! `signet-midnight-integration`'s `signet-signer` package exports one
+//! circuit, `signBidirectional`, with exactly this argument layout (the
+//! respond circuits moved to the responder at v0.26, and its interface is
+//! `signet-responder-interface`). Everything needed to
 //! settle that assertion is committed beside it — `artifact/`'s
 //! `contract-info.json` (the callee's own typed schema, as compactc wrote
 //! it) and `pin.json` (the distilled, hash-pinned facts of the compiled
@@ -24,19 +26,19 @@ use std::path::PathBuf;
 
 use minocrab::Public;
 use minocrab_abi::{circuit_schema, Artifact, Pin};
-use signet_signer_interface::{
-    RespondBidirectionalEventV1, RequestId, SignBidirectionalEventNotification,
-    SignatureRespondedEventV1, SignetSigner,
-};
+use signet_signer_interface::{RequestId, SignBidirectionalEventNotification, SignetSigner};
 
 /// Where the artifact came from, relative to the workspace root. The same
 /// string `pin.json` carries.
-const SOURCE: &str = "corpus/zkir/signet-midnight-integration-v0250/packages/signet-contract/src/signet-contract";
+const SOURCE: &str = "corpus/zkir/signet-midnight-integration-v026/packages/signet-signer/src/signet-signer";
 
-/// The three circuits' argument lists, as the interface declares them.
+/// A circuit of the SAME deployment's other contract, the responder, for
+/// the swapped-circuit mutation: the signer exports only one circuit.
+const RESPONDER_RESPOND_ZKIR: &str =
+    "corpus/zkir/signet-midnight-integration-v026/packages/signet-responder/src/signet-responder/zkir/respond.zkir";
+
+/// The circuit's argument list, as the interface declares it.
 type SignBidirectional = (RequestId<Public>, SignBidirectionalEventNotification<Public>);
-type Respond = (SignatureRespondedEventV1<Public>,);
-type RespondBidirectional = (RespondBidirectionalEventV1<Public>,);
 
 fn crate_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -60,12 +62,6 @@ fn schema() -> String {
          # Regenerate: cargo test -p signet-signer-interface -- --ignored\n\n",
     );
     out.push_str(&circuit_schema::<SignBidirectional, ()>(SignetSigner::SIGN_BIDIRECTIONAL));
-    out.push('\n');
-    out.push_str(&circuit_schema::<Respond, ()>(SignetSigner::RESPOND));
-    out.push('\n');
-    out.push_str(&circuit_schema::<RespondBidirectional, ()>(
-        SignetSigner::RESPOND_BIDIRECTIONAL,
-    ));
     out
 }
 
@@ -101,9 +97,6 @@ fn the_pinned_digests_match_the_bytes() {
 fn every_declared_circuit_matches_the_artifact() {
     let artifact = artifact();
     artifact.assert_interface_matches::<SignBidirectional, ()>(SignetSigner::SIGN_BIDIRECTIONAL);
-    artifact.assert_interface_matches::<Respond, ()>(SignetSigner::RESPOND);
-    artifact
-        .assert_interface_matches::<RespondBidirectional, ()>(SignetSigner::RESPOND_BIDIRECTIONAL);
 }
 
 /// The published ABI, frozen. Its diff is the semver decision.
@@ -231,14 +224,16 @@ mod mutation {
 
     /// THE `.zkir` IS AN INDEPENDENT ORACLE, case 1: `contract-info.json`
     /// and `pin.json` are left CORRECT, so checks 1-5 all pass; only the
-    /// compiled circuit is swapped for another of the same contract's. A
+    /// compiled circuit is swapped for another of the same deployment's
+    /// (the responder's `respond`, since the signer has one circuit). A
     /// deployment that shipped the wrong circuit under this name is
     /// exactly the drift nothing else here can see.
     #[test]
     fn the_zkir_catches_a_swapped_circuit() {
         let (info, pin, zkir) = parts();
-        let real = zkir.expect("the .zkir tree should be reachable in-workspace");
-        let dir = forged_zkir_dir("swapped", &std::fs::read_to_string(real.join("respond.zkir")).unwrap());
+        assert!(zkir.is_some(), "the .zkir tree should be reachable in-workspace");
+        let other = std::fs::read_to_string(workspace_root().join(RESPONDER_RESPOND_ZKIR)).unwrap();
+        let dir = forged_zkir_dir("swapped", &other);
         expect_failure(&rebuilt(info, pin, Some(dir)), ".zkir declares 9 inputs");
     }
 

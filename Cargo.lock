@@ -3264,6 +3264,7 @@ dependencies = [
  "sha2 0.11.0",
  "sha3",
  "signet-protocol",
+ "signet-responder-interface",
  "signet-signer-interface",
  "signet-sim",
  "tokio",
@@ -3365,6 +3366,7 @@ dependencies = [
  "minocrab-ledger",
  "minocrab-std",
  "signet-protocol",
+ "signet-responder-interface",
  "signet-signer-interface",
 ]
 
@@ -4796,8 +4798,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "signet-responder-interface"
+version = "0.1.0"
+dependencies = [
+ "minocrab",
+ "minocrab-abi",
+ "minocrab-ledger",
+ "minocrab-std",
+]
+
+[[package]]
 name = "signet-signer-interface"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "minocrab",
  "minocrab-abi",

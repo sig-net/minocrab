@@ -10,7 +10,7 @@ publish = false
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Managed artifact pipeline (.zkir/.bzkir/keys/expectedVk) for the Signet signer circuits"
+description = "Managed artifact pipeline (.zkir/.bzkir/keys/expectedVk) for the Signet signer and responder circuits"
 
 [lints]
 workspace = true

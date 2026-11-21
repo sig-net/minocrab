@@ -67,19 +67,23 @@ use support::signet_call::{
 
 const SIDES: [&str; 2] = ["minocrab", "compactc"];
 
-const CORPUS_DIR: &str =
-    "corpus/zkir/signet-midnight-integration-v0250/packages/signet-contract/src/signet-contract/zkir";
+/// compactc's artifacts: the signer's circuit and the responder's two.
+const SIGNER_DIR: &str =
+    "corpus/zkir/signet-midnight-integration-v026/packages/signet-signer/src/signet-signer/zkir";
+const RESPONDER_DIR: &str =
+    "corpus/zkir/signet-midnight-integration-v026/packages/signet-responder/src/signet-responder/zkir";
 
 fn ir_of(side: &str, circuit: &str) -> IrSource {
     match side {
         "minocrab" => match circuit {
-            "signBidirectional" => signet_contract::SignetContract::sign_bidirectional().ir,
-            "respond" => signet_contract::SignetContract::respond().ir,
-            "respondBidirectional" => signet_contract::SignetContract::respond_bidirectional().ir,
+            "signBidirectional" => signet_contract::Signer::sign_bidirectional().ir,
+            "respond" => signet_contract::Responder::respond().ir,
+            "respondBidirectional" => signet_contract::Responder::respond_bidirectional().ir,
             other => panic!("unknown signer circuit {other}"),
         },
         "compactc" => {
-            let path = format!("{}/../../{CORPUS_DIR}/{circuit}.zkir", env!("CARGO_MANIFEST_DIR"));
+            let dir = if circuit == "signBidirectional" { SIGNER_DIR } else { RESPONDER_DIR };
+            let path = format!("{}/../../{dir}/{circuit}.zkir", env!("CARGO_MANIFEST_DIR"));
             minocrab_zkir::v3::read_zkir(&path).expect("corpus golden parses")
         }
         other => panic!("unknown side {other}"),

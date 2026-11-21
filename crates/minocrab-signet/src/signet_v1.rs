@@ -48,7 +48,7 @@ use minocrab_std::v3::{
     bytes_limbs, bytes_literal_limbs, secp256k1_ecdsa_verify, BoundedUint, Bytes, BytesN,
     CircuitArg, ContractAddress, LedgerRepr, Secp256k1EcdsaSignature, Uint, Vis3, B32,
 };
-use signet_signer_interface::Signature;
+use signet_responder_interface::Signature;
 
 use minocrab_evm::reverse_bytes32;
 use crate::common::{Caip2Id, SigningPath};

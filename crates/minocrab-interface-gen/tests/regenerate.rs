@@ -17,7 +17,7 @@ use std::path::PathBuf;
 use minocrab_interface_gen::{check_crate, first_difference, Error};
 
 /// Every crate carrying an `artifact/generator.json`.
-const GENERATED: &[&str] = &["signet-signer-interface", "xcall-target-interface"];
+const GENERATED: &[&str] = &["signet-signer-interface", "signet-responder-interface", "xcall-target-interface"];
 
 fn crates_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..")

@@ -7,7 +7,7 @@
 //! difference.
 //!
 //! Source artifact:
-//! `corpus/zkir/signet-midnight-integration-v0250/packages/signet-contract/src/signet-contract`
+//! `corpus/zkir/signet-midnight-integration-v026/packages/signet-signer/src/signet-signer`
 //! (compiler 0.36.1, language 0.28.0, runtime 0.21.0), pinned by
 //! `artifact/pin.json` and checked by `tests/artifact_agreement.rs`.
 //!
@@ -31,7 +31,7 @@
 pub mod notification;
 
 use minocrab::Public;
-use minocrab_std::v3::{b32_newtype, interface, BoundedUint, BytesN, CircuitArg, Uint, Vis3, B32};
+use minocrab_std::v3::{b32_newtype, interface, BytesN, CircuitArg, Uint, Vis3};
 
 b32_newtype! {
     /// Compact `RequestId = Bytes<32>`.
@@ -45,45 +45,9 @@ pub struct SignBidirectionalEventNotification<V: Vis3> {
     pub payload: BytesN<V, 128>,
 }
 
-/// Compact `struct AffinePoint { x: Bytes<32>, y: Bytes<32> }`.
-#[derive(Clone, CircuitArg)]
-pub struct AffinePoint<V: Vis3> {
-    pub x: B32<V>,
-    pub y: B32<V>,
-}
-
-/// Compact `struct Signature { bigR: AffinePoint, s: Bytes<32>, recoveryId: Uint<8> }`.
-#[derive(Clone, CircuitArg)]
-pub struct Signature<V: Vis3> {
-    pub big_r: AffinePoint<V>,
-    pub s: B32<V>,
-    pub recovery_id: Uint<8, V>,
-}
-
-/// Compact `struct SignatureRespondedEventV1 { requestId: RequestId, signature: Signature }`.
-#[derive(Clone, CircuitArg)]
-pub struct SignatureRespondedEventV1<V: Vis3> {
-    pub request_id: RequestId<V>,
-    pub signature: Signature<V>,
-}
-
-/// Compact `struct RespondBidirectionalEventV1 { requestId: RequestId, blockHeight: Uint<64>, outputKind: OutputKind, serializedOutputLength: Uint<64>, outputHash: Bytes<32>, digest: Bytes<32>, signature: Signature }`.
-#[derive(Clone, CircuitArg)]
-pub struct RespondBidirectionalEventV1<V: Vis3> {
-    pub request_id: RequestId<V>,
-    pub block_height: Uint<64, V>,
-    pub output_kind: BoundedUint<3, V>,
-    pub serialized_output_length: Uint<64, V>,
-    pub output_hash: B32<V>,
-    pub digest: B32<V>,
-    pub signature: Signature<V>,
-}
-
 /// ```text
 /// contract SignetSigner {
 ///   circuit signBidirectional(requestId: RequestId, notification: SignBidirectionalEventNotification): [];
-///   circuit respond(signatureRespondedEvent: SignatureRespondedEventV1): [];
-///   circuit respondBidirectional(respondBidirectionalEvent: RespondBidirectionalEventV1): [];
 /// }
 /// ```
 #[interface]
@@ -93,10 +57,4 @@ pub trait SignetSigner {
         request_id: RequestId<Public>,
         notification: SignBidirectionalEventNotification<Public>,
     );
-
-    /// `circuit respond(signatureRespondedEvent: SignatureRespondedEventV1): []`
-    fn respond(signature_responded_event: SignatureRespondedEventV1<Public>);
-
-    /// `circuit respondBidirectional(respondBidirectionalEvent: RespondBidirectionalEventV1): []`
-    fn respond_bidirectional(respond_bidirectional_event: RespondBidirectionalEventV1<Public>);
 }

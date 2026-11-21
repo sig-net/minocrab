@@ -1,5 +1,5 @@
-//! The managed artifact pipeline for the three Signet signer circuits
-//! (M29 rungs A+B).
+//! The managed artifact pipeline for the three Signet circuits, the signet
+//! signer's and the signet responder's (M29 rungs A+B; the split, M48 L).
 //!
 //! `sig-net/mpc`'s former TypeScript sidecar never interpreted the IR:
 //! compactc's JS executor made the proof preimage and whatever sat at
@@ -41,18 +41,33 @@ use signet_protocol::hash_verifier_key;
 /// A signer circuit: its on-disk (Compact) name and how to build it.
 pub type Circuit = (&'static str, fn() -> Compiled3);
 
-/// The three Signet signer circuits, named the way compactc's artifacts and
-/// `@sig-net/midnight-contract`'s `expectedVk` name them
-/// (`signet_protocol::circuits`), each paired with the circuit that builds it
+/// The three Signet circuits, named the way compactc's artifacts and the
+/// packages' `expectedVk` tables name them (`signet_protocol::circuits`),
+/// each paired with the circuit that builds it
 /// (`crates/minocrab-contracts/src/signet_contract.rs`).
+///
+/// TWO DEPLOYED CONTRACTS since midnight-integration v0.26: the signet
+/// signer carries `signBidirectional` ([`SIGNER_CIRCUITS`]), the signet
+/// responder `respond` and `respondBidirectional` ([`RESPONDER_CIRCUITS`]).
+/// The circuits are v0.25.0's, byte for byte, so this directory's files did
+/// not move with the split. It stays ONE directory: a publisher takes the
+/// table of the contract it calls with `ManagedDir::deployment(address,
+/// RESPONDER_CIRCUITS)`, and each package's deploy tooling copies its own
+/// circuits' files.
 pub fn circuits() -> Vec<Circuit> {
-    use minocrab_contracts::signet_contract::SignetContract;
+    use minocrab_contracts::signet_contract::{Responder, Signer};
     vec![
-        (SIGN_BIDIRECTIONAL, SignetContract::sign_bidirectional as fn() -> Compiled3),
-        (RESPOND, SignetContract::respond as fn() -> Compiled3),
-        (RESPOND_BIDIRECTIONAL, SignetContract::respond_bidirectional as fn() -> Compiled3),
+        (SIGN_BIDIRECTIONAL, Signer::sign_bidirectional as fn() -> Compiled3),
+        (RESPOND, Responder::respond as fn() -> Compiled3),
+        (RESPOND_BIDIRECTIONAL, Responder::respond_bidirectional as fn() -> Compiled3),
     ]
 }
+
+/// The signet signer's circuits, by their Compact names.
+pub const SIGNER_CIRCUITS: &[&str] = &[SIGN_BIDIRECTIONAL];
+
+/// The signet responder's circuits, by their Compact names.
+pub const RESPONDER_CIRCUITS: &[&str] = &[RESPOND, RESPOND_BIDIRECTIONAL];
 
 /// Where the pinned `zkir-v3` binary is: `$ZKIR_V3` if set, else `zkir-v3`
 /// on `PATH` (a bare name with no `/` makes `Command` search `PATH` itself,

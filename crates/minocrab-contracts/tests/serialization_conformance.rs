@@ -1120,7 +1120,7 @@ fn v1_attestation_digest_commits_to_the_kind_and_the_width() {
 /// are built and parsed ONCE rather than per case.
 #[test]
 fn sign_bidirectional_misc_bytes_are_canonical_borsh() {
-    let ours = signet_contract::SignetContract::sign_bidirectional().ir;
+    let ours = signet_contract::Signer::sign_bidirectional().ir;
     let theirs = deployed::corpus_signet_zkir("signBidirectional");
     let strategy = (
         sign_bidirectional_misc(),
@@ -1169,7 +1169,7 @@ fn respond_misc_bytes_are_canonical_borsh() {
     let circuits = [(
         "respond",
         signet_contract::SIGNATURE_RESPONDED_EVENT,
-        signet_contract::SignetContract::respond().ir,
+        signet_contract::Responder::respond().ir,
         deployed::corpus_signet_zkir("respond"),
     )];
     let strategy = (respond_misc(), 0usize..minocrab_contracts::events::MISC_SIZE);

@@ -100,9 +100,9 @@ struct Subject {
 
 fn subjects() -> Vec<Subject> {
     vec![
-        Subject { circuit: "signBidirectional", build: signet_contract::SignetContract::sign_bidirectional },
-        Subject { circuit: "respond", build: signet_contract::SignetContract::respond },
-        Subject { circuit: "respondBidirectional", build: signet_contract::SignetContract::respond_bidirectional },
+        Subject { circuit: "signBidirectional", build: signet_contract::Signer::sign_bidirectional },
+        Subject { circuit: "respond", build: signet_contract::Responder::respond },
+        Subject { circuit: "respondBidirectional", build: signet_contract::Responder::respond_bidirectional },
     ]
 }
 

@@ -125,11 +125,16 @@ pub fn misc_preimage(inputs: Vec<Fr>, misc_bytes: &[u8]) -> ProofPreimage {
     call_preimage("respond", scalar_input(&inputs), misc_bytes)
 }
 
-/// A pinned signet-contract corpus artifact (what compactc emitted for the
-/// deployed signet signer).
+/// A pinned corpus artifact of the signet signer (`signBidirectional`) or
+/// the signet responder (the respond pair), what compactc emitted for them.
 pub fn corpus_signet_zkir(name: &str) -> IrSource {
+    let package = if name == "signBidirectional" {
+        "signet-signer/src/signet-signer"
+    } else {
+        "signet-responder/src/signet-responder"
+    };
     let path = format!(
-        "{}/../../corpus/zkir/signet-midnight-integration-v0250/packages/signet-contract/src/signet-contract/zkir/{name}.zkir",
+        "{}/../../corpus/zkir/signet-midnight-integration-v026/packages/{package}/zkir/{name}.zkir",
         env!("CARGO_MANIFEST_DIR")
     );
     minocrab_zkir::v3::read_zkir(&path).expect("corpus golden parses")

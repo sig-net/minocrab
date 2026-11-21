@@ -1,9 +1,10 @@
 //! THE OTHER DIRECTION: a contract we BUILD, against the interface crate
 //! it exports.
 //!
-//! `signet-signer-interface`'s own suite checks the crate against the
-//! DEPLOYED artifact — a claim about somebody else's contract. This checks
-//! it against `signet_contract`, the MinoCrab port of that same contract,
+//! `signet-signer-interface`'s and `signet-responder-interface`'s own suites
+//! check the crates against the DEPLOYED artifacts — a claim about somebody
+//! else's contracts. This checks them against `signet_contract`, the MinoCrab
+//! port of those same two contracts,
 //! which is a promise: anyone who imports the crate and calls our
 //! `signBidirectional` gets the layout the crate advertises.
 //!
@@ -22,10 +23,10 @@
 use minocrab::Public;
 use minocrab_abi::assert_ir_matches_interface;
 use minocrab_contracts::signet_contract;
-use signet_signer_interface::{
-    RequestId, RespondBidirectionalEventV1, SignBidirectionalEventNotification,
-    SignatureRespondedEventV1, SignetSigner,
+use signet_responder_interface::{
+    RespondBidirectionalEventV1, SignatureRespondedEventV1, SignetResponder,
 };
+use signet_signer_interface::{RequestId, SignBidirectionalEventNotification, SignetSigner};
 
 type SignBidirectional = (RequestId<Public>, SignBidirectionalEventNotification<Public>);
 type Respond = (SignatureRespondedEventV1<Public>,);
@@ -36,7 +37,7 @@ type RespondBidirectional = (RespondBidirectionalEventV1<Public>,);
 #[test]
 fn sign_bidirectional_matches_its_interface() {
     assert_ir_matches_interface::<SignBidirectional, ()>(
-        &signet_contract::SignetContract::sign_bidirectional().ir,
+        &signet_contract::Signer::sign_bidirectional().ir,
         SignetSigner::SIGN_BIDIRECTIONAL,
     );
 }
@@ -45,10 +46,10 @@ fn sign_bidirectional_matches_its_interface() {
 /// structs at `Private`.
 #[test]
 fn the_respond_circuits_match_their_interface() {
-    assert_ir_matches_interface::<Respond, ()>(&signet_contract::SignetContract::respond().ir, SignetSigner::RESPOND);
+    assert_ir_matches_interface::<Respond, ()>(&signet_contract::Responder::respond().ir, SignetResponder::RESPOND);
     assert_ir_matches_interface::<RespondBidirectional, ()>(
-        &signet_contract::SignetContract::respond_bidirectional().ir,
-        SignetSigner::RESPOND_BIDIRECTIONAL,
+        &signet_contract::Responder::respond_bidirectional().ir,
+        SignetResponder::RESPOND_BIDIRECTIONAL,
     );
 }
 
@@ -57,8 +58,8 @@ fn the_respond_circuits_match_their_interface() {
 #[test]
 fn a_mismatched_interface_is_rejected() {
     let problems = minocrab_abi::check_ir::<SignBidirectional, ()>(
-        &signet_contract::SignetContract::respond().ir,
-        SignetSigner::RESPOND,
+        &signet_contract::Responder::respond().ir,
+        SignetResponder::RESPOND,
     )
     .expect_err("respond does not have signBidirectional's argument list");
     assert!(

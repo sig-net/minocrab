@@ -293,7 +293,8 @@ pub fn circuits() -> Vec<Circuit> {
         c!("erc20_vault_pending::complete_redeem", || erc20_vault_pending::Vault::complete_redeem()),
         c!("erc20_vault_pending::refund_redeem", || erc20_vault_pending::Vault::refund_redeem()),
     ]);
-    listed.extend(of("signet_contract", &signet_contract::SignetContract::CIRCUITS));
+    listed.extend(of("signet_contract", &signet_contract::Signer::CIRCUITS));
+    listed.extend(of("signet_contract", &signet_contract::Responder::CIRCUITS));
     listed.extend(of("attest", &attest::Attest::CIRCUITS));
     listed.extend([
         c!("events::base", || events::base()),

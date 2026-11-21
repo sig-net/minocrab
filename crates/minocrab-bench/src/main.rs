@@ -148,8 +148,12 @@ impl Side {
 
 const VAULT: &str =
     "corpus/zkir/signet-midnight-examples/examples/erc20-vault/contract/src/erc20-vault/zkir";
-const SIGNET: &str =
-    "corpus/zkir/signet-midnight-integration-v0250/packages/signet-contract/src/signet-contract/zkir";
+/// The signet signer's and the signet responder's artifacts (midnight-integration
+/// v0.26.0-rc.15: two contracts, the three v0.25.0 circuits unchanged).
+const SIGNER: &str =
+    "corpus/zkir/signet-midnight-integration-v026/packages/signet-signer/src/signet-signer/zkir";
+const RESPONDER: &str =
+    "corpus/zkir/signet-midnight-integration-v026/packages/signet-responder/src/signet-responder/zkir";
 
 fn targets() -> Vec<Target> {
     macro_rules! t {
@@ -194,9 +198,9 @@ fn targets() -> Vec<Target> {
         t!(VAULT, "startRedeem", || erc20_vault::Vault::start_redeem()),
         t!(VAULT, "sendRedeem", || erc20_vault::Vault::send_redeem()),
         t!(VAULT, "completeRedeem", || erc20_vault::Vault::complete_redeem()),
-        t!(SIGNET, "signBidirectional", || signet_contract::SignetContract::sign_bidirectional()),
-        t!(SIGNET, "respond", || signet_contract::SignetContract::respond()),
-        t!(SIGNET, "respondBidirectional", || signet_contract::SignetContract::respond_bidirectional()),
+        t!(SIGNER, "signBidirectional", || signet_contract::Signer::sign_bidirectional()),
+        t!(RESPONDER, "respond", || signet_contract::Responder::respond()),
+        t!(RESPONDER, "respondBidirectional", || signet_contract::Responder::respond_bidirectional()),
     ]
 }
 

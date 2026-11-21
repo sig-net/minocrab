@@ -24,5 +24,6 @@ minocrab-evm.workspace = true
 # Its own version, not the workspace's: an interface crate is versioned per
 # callee (its manifest says why); [workspace.dependencies] carries the number.
 signet-signer-interface.workspace = true
+signet-responder-interface.workspace = true
 # The protocol facts (hash domains, output kinds) the circuit constants cast.
 signet-protocol.workspace = true

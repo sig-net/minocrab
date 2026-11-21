@@ -38,7 +38,7 @@ use midnight_ledger::verify::ProofVerificationMode;
 use midnight_storage::db::InMemoryDB;
 use midnight_transient_crypto::curve::Fr;
 use midnight_transient_crypto::proofs::{VerifierKey, Zkir};
-use minocrab_contracts::signet_contract::SignetContract;
+use minocrab_contracts::signet_contract::Responder;
 use minocrab_publisher::call::{RESPOND, SIGNER_CIRCUITS};
 use minocrab_publisher::prove::{params_provider, warm_params, InProcessProver, SignerResolver};
 use minocrab_publisher::publish::{publish, ChainContext, FundingKeys};
@@ -152,7 +152,7 @@ fn a_respond_intent_publishes_and_verifies() {
         std::fs::create_dir_all(root.join("keys")).expect("mkdir keys");
         std::fs::create_dir_all(root.join("zkir")).expect("mkdir zkir");
 
-        let ir = SignetContract::respond().ir;
+        let ir = Responder::respond().ir;
         let model = ir.model();
         let k = model.k();
         warm_params(&params, k).await.expect("KZG params for this k");

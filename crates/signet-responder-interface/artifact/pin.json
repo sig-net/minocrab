@@ -1,0 +1,50 @@
+{
+  "source": "corpus/zkir/signet-midnight-integration-v026/packages/signet-responder/src/signet-responder",
+  "compiler-version": "0.36.1",
+  "language-version": "0.28.0",
+  "runtime-version": "0.21.0",
+  "contract-info-sha256": "3605ad6bb9c5681711ea7fe085dc16d33602da2a2ee75e11c6161d46f7599607",
+  "circuits": {
+    "respond": {
+      "proof": true,
+      "zkir-sha256": "9f3674900608dfe577a38b1621ebd92cb45831410881c9d92ad38584d3fef4c6",
+      "inputs": 9,
+      "do-communications-commitment": true,
+      "constraints": [
+        "bits:8",
+        "bits:248",
+        "bits:8",
+        "bits:248",
+        "bits:8",
+        "bits:248",
+        "bits:8",
+        "bits:248",
+        "bits:8"
+      ]
+    },
+    "respondBidirectional": {
+      "proof": true,
+      "zkir-sha256": "7ef4a97c8bcbc21879753c8b365fa1d22bc9ccb41453cdce84c74a7dc0fffbc3",
+      "inputs": 16,
+      "do-communications-commitment": true,
+      "constraints": [
+        "bits:8",
+        "bits:248",
+        "bits:64",
+        "bounded:3:2",
+        "bits:64",
+        "bits:8",
+        "bits:248",
+        "bits:8",
+        "bits:248",
+        "bits:8",
+        "bits:248",
+        "bits:8",
+        "bits:248",
+        "bits:8",
+        "bits:248",
+        "bits:8"
+      ]
+    }
+  }
+}

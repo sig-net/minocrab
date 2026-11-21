@@ -27,6 +27,7 @@ members = [
     # Interface crates (M12): one per callee contract, each a
     # hand-authored-or-generated declaration plus its pinned artifact.
     "crates/signet-signer-interface",
+    "crates/signet-responder-interface",
     "crates/xcall-target-interface",
     # M29 rung A/B: the managed artifact pipeline for the Signet signer
     # circuits (zkir/keys/expectedVk).
@@ -87,7 +88,8 @@ signet-hashing = { path = "crates/signet-hashing", version = "0.1.0" }
 # NOT the workspace version: an interface crate is versioned per callee, by
 # the deployed contract's wire format (notes/interface-crates.org). The
 # workspace_versions test holds this number to the crate's own manifest.
-signet-signer-interface = { path = "crates/signet-signer-interface", version = "0.3.0" }
+signet-signer-interface = { path = "crates/signet-signer-interface", version = "0.4.0" }
+signet-responder-interface = { path = "crates/signet-responder-interface", version = "0.1.0" }
 
 # --- upstream -------------------------------------------------------------
 # Every midnight-* crate comes from crates.io at the version midnight-node
