@@ -49,14 +49,14 @@ use minocrab_std::v3::{
 };
 use signet_signer_interface::Signature;
 
-use crate::evm_abi::reverse_bytes32;
+use minocrab_evm::reverse_bytes32;
 use crate::signet_common::{Caip2Id, SigningPath};
 /// `checkedTruncationU128`, the module's own narrowing of an attested
 /// uint256; the body is the EVM ABI layer's, which decodes returns with it.
-pub use crate::evm_abi::checked_truncation_u128;
+pub use minocrab_evm::checked_truncation_u128;
 /// `evmAddressAbiWord` / `numericAbiWord`, the module's names for the EVM
 /// ABI layer's two word encoders (the same functions, not wrappers).
-pub use crate::evm_abi::{address_word as evm_address_abi_word, numeric_word as numeric_abi_word};
+pub use minocrab_evm::{address_word as evm_address_abi_word, numeric_word as numeric_abi_word};
 pub use signet_signer_interface::RequestId;
 
 fn bytes(length: u32) -> AlignmentAtom {

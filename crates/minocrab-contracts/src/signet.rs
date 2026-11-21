@@ -19,7 +19,7 @@
 //! re-exported here: the transaction parameters, the ECDSA plumbing and the
 //! ABI word decoder in [`crate::signet_v1`], the record layout and the
 //! stage-7 record in [`crate::record_v2`], the byte reversal in
-//! [`crate::evm_abi`]. Nothing outside this module's own tests reads the rest.
+//! [`minocrab_evm`]. Nothing outside this module's own tests reads the rest.
 
 use minocrab::v3::{Circuit3, FieldT, Wire3};
 use minocrab::{AlignmentAtom, Public};
@@ -32,7 +32,7 @@ use minocrab_std::v3::{
 use crate::common::{Caip2Id, SigningPath};
 use crate::record_v2::{record_atoms_through_caip2, request_id_of};
 
-pub use crate::evm_abi::reverse_bytes32;
+pub use minocrab_evm::reverse_bytes32;
 pub use crate::record_v2::{
     calculate_request_id_v2, construct_sign_bidirectional_event_v2, layout, layout_v2,
     EventRecordV2, SignBidirectionalEventV2, RECORD_FORMAT_VERSION,

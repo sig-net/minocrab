@@ -19,6 +19,8 @@ minocrab-ledger = { path = "../minocrab-ledger" }
 # (the contracts with a Compact twin, and the deployed signer). The
 # MinoCrab-only contracts keep importing minocrab-std.
 minocrab-compat = { path = "../minocrab-compat" }
+# The EVM ABI layer (typed calls, words, interfaces), re-exported at `evm`.
+minocrab-evm.workspace = true
 # AN IMPORTED INTERFACE CRATE (M12 stage 4): the vault calls the
 # signet signer through the callee's own published declaration, not through a
 # transliteration kept here. Ordinary cargo dependency — that is the whole

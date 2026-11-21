@@ -18,7 +18,6 @@ pub mod disclosure;
 pub mod erc20_vault;
 pub mod erc20_vault_pending;
 pub mod evm;
-pub mod evm_abi;
 pub mod evm_flow;
 pub mod events;
 pub mod events_borsh;

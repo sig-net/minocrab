@@ -125,7 +125,7 @@ use minocrab::v3::{Circuit3, FieldT, Wire3};
 use minocrab::{Fr, Private};
 use minocrab_std::v3::{Bytes, Uint, B32};
 
-use crate::evm_abi::{AbiArgs, AbiTuple, EvmCall, Payable};
+use minocrab_evm::{AbiArgs, AbiTuple, EvmCall, Payable};
 use crate::signet_flow::EvmTx;
 use crate::signet_v1::{EvmCalldata, OutputSchema};
 
@@ -187,7 +187,7 @@ pub trait Filing: 'static {
     /// width it implies is inside the signed digest, so an output of the
     /// wrong width cannot verify.
     ///
-    /// The schema and the call's [`AbiReturn`](crate::evm_abi::AbiReturn) narrowing have to agree, and
+    /// The schema and the call's [`AbiReturn`](minocrab_evm::AbiReturn) narrowing have to agree, and
     /// nothing here checks that they do: a `[]` schema with a `Bool` return
     /// asks the MPC for no output and then looks for a byte, which fails at
     /// the digest. Pair them the way [`Filed`]'s doc table does.
@@ -226,9 +226,9 @@ pub trait Filing: 'static {
 ///
 /// | `Return`             | `Schema`                                 | attested |
 /// |----------------------|------------------------------------------|----------|
-/// | [`Bool`](crate::evm_abi::Bool)             | [`schema::Success`](crate::signet_v1::schema::Success) | 1 byte |
-/// | [`U64`](crate::evm_abi::U64) / [`U128`](crate::evm_abi::U128) / [`U256`](crate::evm_abi::U256) | [`schema::AmountIn`](crate::signet_v1::schema::AmountIn), `Shares`, `Assets` | 32 bytes |
-/// | [`Unit`](crate::evm_abi::Unit)             | [`schema::NoReturn`](crate::signet_v1::schema::NoReturn) | nothing |
+/// | [`Bool`](minocrab_evm::Bool)             | [`schema::Success`](crate::signet_v1::schema::Success) | 1 byte |
+/// | [`U64`](minocrab_evm::U64) / [`U128`](minocrab_evm::U128) / [`U256`](minocrab_evm::U256) | [`schema::AmountIn`](crate::signet_v1::schema::AmountIn), `Shares`, `Assets` | 32 bytes |
+/// | [`Unit`](minocrab_evm::Unit)             | [`schema::NoReturn`](crate::signet_v1::schema::NoReturn) | nothing |
 ///
 /// WHY A WRAPPER RATHER THAN A PARAMETER ON THE SLOT: the schema is consumed
 /// by the TICKETS too (the attested width is the call's, and `refund`
@@ -686,7 +686,7 @@ fn finish_tx<C: EvmCall, const WORDS: usize>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::evm_abi::erc20;
+    use minocrab_evm::erc20;
 
     /// A `Filed` filing IS its call under its schema, and the gas limit is
     /// the call's own default.

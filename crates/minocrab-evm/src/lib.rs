@@ -52,7 +52,7 @@
 //! and a default would make the dangerous case the one nobody types:
 //!
 //! ```compile_fail,E0046
-//! use minocrab_contracts::evm::{erc20, Address, EvmCall, U64};
+//! use minocrab_evm::{erc20, Address, EvmCall, U64};
 //! use minocrab_std::v3::Uint;
 //! use minocrab::Private;
 //!
@@ -77,7 +77,7 @@
 //! ```compile_fail,E0277
 //! use minocrab::v3::Circuit3;
 //! use minocrab::Private;
-//! use minocrab_contracts::evm::{always, erc20, EvmCall, Unit};
+//! use minocrab_evm::{always, erc20, EvmCall, Unit};
 //! use minocrab_std::v3::Check;
 //!
 //! struct Nothing;
@@ -102,7 +102,7 @@
 //! ```compile_fail,E0277
 //! use minocrab::v3::Circuit3;
 //! use minocrab::Private;
-//! use minocrab_contracts::evm::{always, erc20, Address, EvmCall, Unit};
+//! use minocrab_evm::{always, erc20, Address, EvmCall, Unit};
 //! use minocrab_std::v3::Check;
 //!
 //! struct Nothing;
@@ -127,7 +127,7 @@
 //! ```
 //! use minocrab::v3::Circuit3;
 //! use minocrab::Private;
-//! use minocrab_contracts::evm::{always, erc20, Address, EvmCall, Unit};
+//! use minocrab_evm::{always, erc20, Address, EvmCall, Unit};
 //! use minocrab_std::v3::Check;
 //!
 //! struct Nothing;
@@ -152,7 +152,7 @@
 //! ```compile_fail,E0277
 //! use minocrab::v3::Circuit3;
 //! use minocrab::Private;
-//! use minocrab_contracts::evm::{always, erc20, Address, EvmCall, U64};
+//! use minocrab_evm::{always, erc20, Address, EvmCall, U64};
 //! use minocrab_std::v3::{Check, Uint};
 //!
 //! struct Balance;
@@ -176,7 +176,7 @@
 //! ```
 //! use minocrab::v3::Circuit3;
 //! use minocrab::Private;
-//! use minocrab_contracts::evm::{always, erc20, Address, EvmCall, U64};
+//! use minocrab_evm::{always, erc20, Address, EvmCall, U64};
 //! use minocrab_std::v3::{Check, Uint};
 //!
 //! struct Balance;
@@ -203,7 +203,7 @@
 //! ```compile_fail,E0277
 //! use minocrab::v3::Circuit3;
 //! use minocrab::Private;
-//! use minocrab_contracts::evm::{erc20, Address, Bool, EvmCall, Unit};
+//! use minocrab_evm::{erc20, Address, Bool, EvmCall, Unit};
 //! use minocrab_std::v3::{is_true, Bool as BoolWire, Check};
 //!
 //! struct Poke;
@@ -226,7 +226,7 @@
 //! ```compile_fail,E0277
 //! use minocrab::v3::Circuit3;
 //! use minocrab::Private;
-//! use minocrab_contracts::evm::{erc20, Bool, EvmCall, Unit};
+//! use minocrab_evm::{erc20, Bool, EvmCall, Unit};
 //! use minocrab_std::v3::{is_true, Bool as BoolWire, Check};
 //!
 //! struct Poke;
@@ -252,7 +252,7 @@
 //! ```
 //! use minocrab::v3::Circuit3;
 //! use minocrab::Private;
-//! use minocrab_contracts::evm::{always, erc20, Address, Bool, EvmCall, Unit};
+//! use minocrab_evm::{always, erc20, Address, Bool, EvmCall, Unit};
 //! use minocrab_std::v3::{is_true, Bool as BoolWire, Check};
 //!
 //! struct Poke;
@@ -303,10 +303,9 @@ pub mod weth;
 /// `evmAddressAbiWord(addr)` — 12 zero bytes then the 20 display-order
 /// address bytes. `addr` is the `Bytes<20>` single limb.
 ///
-/// MOVED HERE from `signet` (M37 rung A): this is the body,
-/// `signet::evm_address_abi_word` is now a delegation to it, and
-/// [`Address::word`] is the typed spelling. Byte-for-byte the same
-/// instructions in all three.
+/// The untyped-limb encoder; [`Address::word`] is the typed spelling, and
+/// the Signet module ports name this one `evm_address_abi_word`.
+/// Byte-for-byte the same instructions in all of them.
 pub fn address_word<V: Vis3>(c: &mut Circuit3, addr: Wire3<FieldT, V>) -> B32<V> {
     c.region("abi words", |c| {
         // The word is addr·2^96 (a 12-byte shift), so split the 160-bit
@@ -321,8 +320,7 @@ pub fn address_word<V: Vis3>(c: &mut Circuit3, addr: Wire3<FieldT, V>) -> B32<V>
 /// `numericAbiWord(value)` — an integer limb as a 32-byte big-endian ABI
 /// word: the value's little-endian bytes reversed into the tail.
 ///
-/// MOVED HERE from `signet` (M37 rung A) — see [`address_word`]. The
-/// typed spellings are [`Bool::word`], [`U24::word`], [`U64::word`] and
+/// The untyped-limb encoder, as [`address_word`] is. The typed spellings are [`Bool::word`], [`U24::word`], [`U64::word`] and
 /// [`U128::word`], which differ only in the RANGE their wire type claims:
 /// the encoding is the same reversal for all of them, and correct for any
 /// limb below `2^248`.
@@ -837,7 +835,7 @@ abi_tuple!(8; A => 0, B => 1, C => 2, D => 3, E => 4, F => 5, G => 6, H => 7);
 /// ```
 /// # use minocrab::v3::{Circuit3, FieldT};
 /// # use minocrab::Private;
-/// # use minocrab_contracts::evm::{AbiArgs, Address, U128};
+/// # use minocrab_evm::{AbiArgs, Address, U128};
 /// # use minocrab_std::v3::{Bytes, Uint};
 /// let mut c = Circuit3::new();
 /// let to = Bytes::<20, Private>::from_field_unchecked(c.arg::<FieldT>("to"));
@@ -903,7 +901,7 @@ abi_args!(
 /// deployment of its own declares a marker in one line:
 ///
 /// ```
-/// use minocrab_contracts::evm::Interface;
+/// use minocrab_evm::Interface;
 ///
 /// /// The MPC's integration target.
 /// pub struct SignetEvmTarget;
@@ -1028,7 +1026,7 @@ pub trait EvmCall {
     /// ```
     /// # use minocrab::v3::Circuit3;
     /// # use minocrab::Private;
-    /// # use minocrab_contracts::evm::{erc4626, Address, AbiType, EvmCall, U128, U64};
+    /// # use minocrab_evm::{erc4626, Address, AbiType, EvmCall, U128, U64};
     /// # use minocrab_std::v3::{Check, Uint};
     /// struct StrictDeposit;
     /// impl EvmCall for StrictDeposit {

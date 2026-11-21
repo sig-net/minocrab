@@ -3240,6 +3240,7 @@ dependencies = [
  "minocrab",
  "minocrab-abi",
  "minocrab-compat",
+ "minocrab-evm",
  "minocrab-ir",
  "minocrab-ledger",
  "minocrab-publisher",
@@ -3258,6 +3259,15 @@ dependencies = [
  "signet-sim",
  "tokio",
  "xcall-target-interface",
+]
+
+[[package]]
+name = "minocrab-evm"
+version = "0.1.0"
+dependencies = [
+ "minocrab",
+ "minocrab-std",
+ "sha3",
 ]
 
 [[package]]

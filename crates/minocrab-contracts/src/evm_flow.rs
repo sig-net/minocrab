@@ -86,6 +86,133 @@
 //! verification that follows — measured in
 //! `tests/treasury.rs::the_refund_pays_one_extra_digest`.
 //!
+//! # ERC-721 is not ERC-20
+//!
+//! [`erc721::TransferFrom`](crate::evm::erc721::TransferFrom) and
+//! [`erc20::TransferFrom`](crate::evm::erc20::TransferFrom) hash to the same
+//! selector and differ only in their return (nothing, and a `bool`).
+//! THE CALLEE'S INTERFACE IS THE TYPE THAT DISTINGUISHES THEM. A
+//! `Contract<Erc721>` is an address a contract has CLAIMED is an NFT, and
+//! the `Extends` bound on `request` will not let an `erc20::TransferFrom`
+//! near it — not because the bytes differ but because the claim does. Both
+//! directions are compile errors:
+//!
+//! ```compile_fail,E0277
+//! use minocrab::v3::Circuit3;
+//! use minocrab::{Private, Public};
+//! use minocrab_contracts::evm::{erc20, erc721, Filed};
+//! use minocrab_contracts::signet_v1::schema;
+//! use minocrab_contracts::evm_flow::{Contract, Pending};
+//! use minocrab_contracts::signet_flow::Signet;
+//! use minocrab_std::v3::{Bytes, Ledger, LedgerRepr, Uint};
+//!
+//! #[derive(LedgerRepr)] struct Amount { amount: Uint<64, Public> }
+//!
+//! #[derive(Ledger)]
+//! struct Block {
+//!     signet: Signet,
+//!     pulls: Pending<Filed<erc20::TransferFrom, schema::Success>, Amount, 3>,
+//! }
+//! const BLOCK: Block = Block::new();
+//!
+//! fn pull(
+//!     c: &mut Circuit3,
+//!     // AN NFT, whose `transferFrom` returns nothing …
+//!     callee: Contract<erc721::Erc721>,
+//!     from: Bytes<20, Private>,
+//!     to: Bytes<20, Private>,
+//!     amount: Uint<128, Private>,
+//!     nonce: Uint<64>,
+//!     env: Amount,
+//! ) {
+//!     // ERROR: the trait bound `Erc721: Extends<Erc20>` is not satisfied
+//!     BLOCK.pulls.request(
+//!         c, callee, (from, to, amount), nonce, |_, _| env,
+//!     );
+//! }
+//! ```
+//!
+//! and the other way round, where the flag would be discarded:
+//!
+//! ```compile_fail,E0277
+//! use minocrab::v3::Circuit3;
+//! use minocrab::{Private, Public};
+//! use minocrab_contracts::evm::{erc20, erc721, Filed};
+//! use minocrab_contracts::signet_v1::schema;
+//! use minocrab_contracts::evm_flow::{Contract, Pending};
+//! use minocrab_contracts::signet_flow::Signet;
+//! use minocrab_std::v3::{Bytes, Ledger, LedgerRepr, Uint, B32};
+//!
+//! #[derive(LedgerRepr)] struct Amount { amount: Uint<64, Public> }
+//!
+//! #[derive(Ledger)]
+//! struct Block {
+//!     signet: Signet,
+//!     pulls: Pending<Filed<erc721::TransferFrom, schema::NoReturn>, Amount, 3>,
+//! }
+//! const BLOCK: Block = Block::new();
+//!
+//! fn pull(
+//!     c: &mut Circuit3,
+//!     // A FUNGIBLE TOKEN, whose `transferFrom` returns a flag …
+//!     callee: Contract<erc20::Erc20>,
+//!     from: Bytes<20, Private>,
+//!     to: Bytes<20, Private>,
+//!     token_id: B32<Private>,
+//!     nonce: Uint<64>,
+//!     env: Amount,
+//! ) {
+//!     // ERROR: the trait bound `Erc20: Extends<Erc721>` is not satisfied
+//!     BLOCK.pulls.request(
+//!         c, callee, (from, to, token_id), nonce, |_, _| env,
+//!     );
+//! }
+//! ```
+//!
+//! THE POSITIVE TWIN — the same two slots, each filed against the callee
+//! whose interface it names, in one block:
+//!
+//! ```
+//! use minocrab::v3::Circuit3;
+//! use minocrab::{Private, Public};
+//! use minocrab_contracts::evm::{erc20, erc721, Filed};
+//! use minocrab_contracts::signet_v1::schema;
+//! use minocrab_contracts::evm_flow::{Contract, Pending};
+//! use minocrab_contracts::signet_flow::Signet;
+//! use minocrab_std::v3::{Bytes, Ledger, LedgerRepr, Uint, B32};
+//!
+//! #[derive(LedgerRepr)] struct Amount { amount: Uint<64, Public> }
+//!
+//! #[derive(Ledger)]
+//! struct Block {
+//!     signet: Signet,
+//!     coins: Pending<Filed<erc20::TransferFrom, schema::Success>, Amount, 3>,
+//!     nfts: Pending<Filed<erc721::TransferFrom, schema::NoReturn>, Amount, 3>,
+//! }
+//! const BLOCK: Block = Block::new();
+//!
+//! #[allow(clippy::too_many_arguments)]
+//! fn pull_both(
+//!     c: &mut Circuit3,
+//!     token: Contract<erc20::Erc20>,
+//!     nft: Contract<erc721::Erc721>,
+//!     from: Bytes<20, Private>,
+//!     to: Bytes<20, Private>,
+//!     amount: Uint<128, Private>,
+//!     token_id: B32<Private>,
+//!     nonce: Uint<64>,
+//! ) {
+//!     BLOCK.coins.request(
+//!         c, token, (from, to, amount), nonce,
+//!         |c, _| Amount { amount: Uint::from_field_unchecked(c.constant(0)) },
+//!     );
+//!     BLOCK.nfts.request(
+//!         c, nft, (from, to, token_id), nonce,
+//!         |c, _| Amount { amount: Uint::from_field_unchecked(c.constant(0)) },
+//!     );
+//! }
+//! ```
+//!
 //! # What does not compile
 //!
 //! A CALL SENT TO AN INTERFACE THAT DOES NOT EXPOSE IT — the first rung of
@@ -573,7 +700,7 @@ use minocrab_std::v3::{
 use minocrab::v3::Val;
 use signet_signer_interface::RequestId;
 
-use crate::evm_abi::{AbiArgs, AbiReturn, AbiTuple, AbiType, EvmCall, Extends, Interface, Payable};
+use minocrab_evm::{AbiArgs, AbiReturn, AbiTuple, AbiType, EvmCall, Extends, Interface, Payable};
 use crate::filing::{
     build_tx_filed, build_tx_from_words, build_tx_payable_filed, build_tx_with, Envelope, Filing,
 };

@@ -29,7 +29,7 @@ use super::{always, Address, Bool, Bytes32, EvmCall, Interface, Unit, U128, U256
 ///
 /// It says what the ADDRESS CLAIMS, not what it is: nothing here checks a
 /// deployment. A contract that hands an address to
-/// [`Contract::from_address`](crate::evm_flow::Contract::from_address) is
+/// `Contract::from_address` (the Signet layer's `evm_flow`) is
 /// making that claim, which is why the callee-allow-list hazard
 /// (notes/evm-calls.org §3.1) is about where the address came from.
 ///

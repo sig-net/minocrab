@@ -13,6 +13,9 @@ members = [
     "crates/minocrab-compat",
     "crates/minocrab-ledger",
     "crates/minocrab-contracts",
+    # The EVM ABI layer and the Signet protocol, as publishable app crates;
+    # minocrab-contracts re-exports both at their old paths.
+    "crates/minocrab-evm",
     "crates/minocrab-sim",
     "crates/minocrab-bench",
     "crates/minocrab-abi",
@@ -63,6 +66,7 @@ rust-version = "1.85"
 minocrab = { path = "crates/minocrab", version = "0.1.0" }
 minocrab-abi = { path = "crates/minocrab-abi", version = "0.1.0" }
 minocrab-compat = { path = "crates/minocrab-compat", version = "0.1.0" }
+minocrab-evm = { path = "crates/minocrab-evm", version = "0.1.0" }
 minocrab-ir = { path = "crates/minocrab-ir", version = "0.1.0" }
 minocrab-ledger = { path = "crates/minocrab-ledger", version = "0.1.0" }
 minocrab-macros = { path = "crates/minocrab-macros", version = "0.1.0" }
