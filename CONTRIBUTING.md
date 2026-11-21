@@ -66,7 +66,7 @@ taxonomy applies to any firing. Two that deserve their own sentence:
 - **The taint lint** (`tests/taint_lint.rs`) fires when a hash-preimage
   limb is not provably bounded — the class no test on honest inputs can
   see. **Never allowlist.** Either extend the marking rules in
-  `minocrab-ir/src/v3/taint.rs` with a *cited in-circuit warrant*, or
+  `minocrab-taint/src/lib.rs` with a *cited in-circuit warrant*, or
   take the finding to the maintainers. [notes/taint-lint.org](notes/taint-lint.org)
   has the classification of the frozen baseline.
 - **A differential suite** disagreeing with compactc means the port's

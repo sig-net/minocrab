@@ -39,13 +39,14 @@ the next resolves.
 ```
 1. minocrab-zkir            (midnight-* only)
 2. minocrab-ir              → zkir
-3. minocrab                 → ir
-4. minocrab-macros          (syn/quote only; anytime before minocrab-std)
-5. minocrab-ledger          → minocrab, ir
-6. minocrab-std             → minocrab, ledger, macros
-7. minocrab-sim             → minocrab, zkir
-8. minocrab-abi             → minocrab, ledger, zkir
-9. minocrab-interface-gen   → abi
+3. minocrab-taint           → ir, zkir
+4. minocrab                 → ir
+5. minocrab-macros          (syn/quote only; anytime before minocrab-std)
+6. minocrab-ledger          → minocrab, ir
+7. minocrab-std             → minocrab, ledger, macros
+8. minocrab-sim             → minocrab, zkir
+9. minocrab-abi             → minocrab, ledger, zkir
+10. minocrab-interface-gen  → abi
 ```
 
 **Dev-dependencies are deliberately versionless** (`{ path = … }`, no version).
@@ -64,13 +65,13 @@ it is lifted.)
 ```sh
 # What each crate would ship. Works today.
 # (Add --allow-dirty to run it against uncommitted work.)
-for c in minocrab-zkir minocrab-ir minocrab minocrab-macros minocrab-ledger \
+for c in minocrab-zkir minocrab-ir minocrab-taint minocrab minocrab-macros minocrab-ledger \
          minocrab-std minocrab-sim minocrab-abi minocrab-interface-gen; do
   cargo package --list -p "$c"
 done
 
 # Docs, as docs.rs would build them.
-cargo doc --no-deps -p minocrab-std   # …and each of the nine
+cargo doc --no-deps -p minocrab-std   # …and each of the ten
 
 # The real thing, once unblocked. --dry-run still runs the full verify build.
 cargo publish --dry-run -p minocrab-zkir

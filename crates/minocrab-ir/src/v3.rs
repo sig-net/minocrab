@@ -19,7 +19,6 @@ use minocrab_zkir::v3::IrMinorVersion;
 pub use midnight_base_crypto::fab::Alignment;
 
 pub mod passes;
-pub mod taint;
 
 /// A handle to one named, typed circuit value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]

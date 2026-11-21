@@ -59,6 +59,8 @@ minocrab-zkir = { path = "../minocrab-zkir" }
 # immediate at `finish`, so compactc's artifact is folded the same way before
 # the comparison. One definition of the fold, used by the pass and the test.
 minocrab-ir = { path = "../minocrab-ir" }
+# tests/taint_lint.rs: the lint over every circuit the workspace builds.
+minocrab-taint = { path = "../minocrab-taint" }
 midnight-onchain-vm.workspace = true
 midnight-onchain-state.workspace = true
 midnight-onchain-runtime.workspace = true

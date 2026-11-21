@@ -3233,6 +3233,7 @@ dependencies = [
  "minocrab-publisher",
  "minocrab-sim",
  "minocrab-std",
+ "minocrab-taint",
  "minocrab-zkir",
  "proptest",
  "rand 0.8.7",
@@ -3364,6 +3365,15 @@ dependencies = [
  "serde_json",
  "sha2 0.11.0",
  "sha3",
+]
+
+[[package]]
+name = "minocrab-taint"
+version = "0.1.0"
+dependencies = [
+ "midnight-base-crypto",
+ "minocrab-ir",
+ "minocrab-zkir",
 ]
 
 [[package]]

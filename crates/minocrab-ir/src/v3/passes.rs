@@ -1048,7 +1048,7 @@ pub fn run_pipeline_verified(
 // drop paths, and they are exactly the obligations M25's Lean prong
 // discharges unboundedly. The pass properties remain covered by this file's
 // unit tests. What DOES close under Kani is the taint lint's interval
-// arithmetic — see taint.rs.
+// arithmetic — see the minocrab-taint crate.
 
 #[cfg(kani)]
 #[allow(dead_code)]

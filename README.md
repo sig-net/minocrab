@@ -562,6 +562,7 @@ Only real gaps; candidates that failed the check are in [notes/readme-research.o
 ```
 crates/minocrab-zkir       L0  ZKIR bindings: read/write/round-trip, reusing midnight-zkir
 crates/minocrab-ir         L1  typed circuit builder over ZKIR instructions
+crates/minocrab-taint           the taint lint: hash-preimage limbs provably bounded
 crates/minocrab            L2  eDSL core: wires, visibility, disclosure tracking
 crates/minocrab-ledger     L2.5 Impact ledger ops, bit-identical public-input encoding
 crates/minocrab-std        L3  stdlib ports (hashing, ECDSA, Borsh serialization, Signet events)
@@ -583,7 +584,7 @@ Benchmark from a clean checkout (nix + direnv supply the pinned toolchain):
 nix run .#bench
 ```
 
-A contract depends on **`minocrab-std`** (which re-exports the eDSL and the decorators) plus `minocrab-sim` as a dev-dependency. Nine crates are meant for crates.io; nothing is published yet: seven of them still carry `publish = false` ([PUBLISHING.md](PUBLISHING.md)). Consume it as a git dependency for now. Every `midnight-*` dependency resolves from crates.io at the versions midnight-node 2.1.101 locks (ledger 9.1.0.1), so no `[patch.crates-io]` block is needed; a workspace on the same versions (sig-net/mpc) unifies with it.
+A contract depends on **`minocrab-std`** (which re-exports the eDSL and the decorators) plus `minocrab-sim` as a dev-dependency. Ten crates are meant for crates.io; nothing is published yet: seven of them still carry `publish = false` ([PUBLISHING.md](PUBLISHING.md)). Consume it as a git dependency for now. Every `midnight-*` dependency resolves from crates.io at the versions midnight-node 2.1.101 locks (ledger 9.1.0.1), so no `[patch.crates-io]` block is needed; a workspace on the same versions (sig-net/mpc) unifies with it.
 
 Deeper: `plan.org` (aim and design requirements), `milestones.org` (state of play), `notes/*.org` (findings and decisions of record).
 
@@ -596,7 +597,7 @@ Like the [GHC API](https://hackage.haskell.org/package/ghc), MinoCrab exposes it
 | tier | what | where |
 |---|---|---|
 | **stable** | the v3 eDSL authoring core (`Circuit3` + its instruction methods, `Wire3`/`AnyWire3`, the typed leaves, the FAB alignment types, `Compiled3`/`IrSource`) | `minocrab`, `minocrab-std` |
-| **stable** | the `Pass` trait + reference passes, the taint lint | `minocrab_ir::v3::{passes, taint}` |
+| **stable** | the `Pass` trait + reference passes; the taint lint | `minocrab_ir::v3::passes`; `minocrab-taint` |
 | **stable** | the measurement API: `cost`, `profile`, `assert_max_k`, the calibrated `rowcost` tables, the `minocrab` CLI | `minocrab-sim` |
 | **internal** | the raw `Builder3`/`Val` layers, the simulator VMs (compiled unconditionally; no stability promise) | `minocrab-ir`, `minocrab-sim` |
 | **internal** | the Impact ledger-op layer, the interface generator | `minocrab-ledger`, `minocrab-interface-gen` |

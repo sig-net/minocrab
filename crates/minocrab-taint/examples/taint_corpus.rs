@@ -12,7 +12,7 @@ fn main() {
             continue; // v2 or unreadable
         };
         v3 += 1;
-        let findings = minocrab_ir::v3::taint::audit(&ir.instructions);
+        let findings = minocrab_taint::audit(&ir.instructions);
         if !findings.is_empty() {
             fired += 1;
             total += findings.len();

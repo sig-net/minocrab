@@ -786,9 +786,9 @@ impl Flow {
             reads: instructions
                 .iter()
                 .map(|ins| {
-                    super::passes::operands(ins)
+                    minocrab_ir::v3::passes::operands(ins)
                         .iter()
-                        .chain(super::passes::returned(ins).iter())
+                        .chain(minocrab_ir::v3::passes::returned(ins).iter())
                         .filter_map(wire)
                         .collect()
                 })
@@ -796,7 +796,7 @@ impl Flow {
             defines: instructions
                 .iter()
                 .map(|ins| {
-                    super::passes::defined_identifiers(ins)
+                    minocrab_ir::v3::passes::defined_identifiers(ins)
                         .into_iter()
                         .map(|id| id.0)
                         .collect()
@@ -2194,7 +2194,7 @@ mod tests {
 }
 
 // ============================================================================
-// Kani harnesses (M23 R4) — compiled ONLY under `cargo kani -p minocrab-ir`
+// Kani harnesses (M23 R4) — compiled ONLY under `cargo kani -p minocrab-taint`
 // ============================================================================
 //
 // The lint's soundness rests on the exact interval arithmetic: a Max that

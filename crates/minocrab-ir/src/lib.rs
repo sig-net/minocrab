@@ -27,9 +27,8 @@
 //!
 //! # Stability
 //!
-//! [`v3::passes`] (the [`v3::passes::Pass`] trait and the reference passes),
-//! [`v3::taint`] and the re-exported ZKIR types are the surface a pass crate
-//! builds on. The raw [`v3::Builder3`] layer is the eDSL's implementation detail,
+//! [`v3::passes`] (the [`v3::passes::Pass`] trait and the reference passes)
+//! and the re-exported ZKIR types are the surface a pass crate builds on. The raw [`v3::Builder3`] layer is the eDSL's implementation detail,
 //! wrapped by `minocrab`'s `Circuit3`, and carries no stability promise.
 
 pub use midnight_base_crypto::fab::{Alignment, AlignmentAtom, AlignmentSegment};

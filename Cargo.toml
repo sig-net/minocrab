@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/minocrab-zkir",
     "crates/minocrab-ir",
+    "crates/minocrab-taint",
     "crates/minocrab",
     "crates/minocrab-macros",
     "crates/signet-sim",
@@ -62,6 +63,7 @@ minocrab-ir = { path = "crates/minocrab-ir", version = "0.1.0" }
 minocrab-ledger = { path = "crates/minocrab-ledger", version = "0.1.0" }
 minocrab-macros = { path = "crates/minocrab-macros", version = "0.1.0" }
 minocrab-std = { path = "crates/minocrab-std", version = "0.1.0" }
+minocrab-taint = { path = "crates/minocrab-taint", version = "0.1.0" }
 minocrab-zkir = { path = "crates/minocrab-zkir", version = "0.1.0" }
 signet-protocol = { path = "crates/signet-protocol", version = "0.1.0" }
 signet-hashing = { path = "crates/signet-hashing", version = "0.1.0" }

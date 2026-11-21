@@ -1,6 +1,6 @@
 //! The taint lint over every circuit the workspace builds (M23 R3).
 //!
-//! `minocrab_ir::v3::taint::audit` proves each byte-atom hash-preimage limb
+//! `minocrab_taint::audit` proves each byte-atom hash-preimage limb
 //! bounded to its own byte width or constant — the api-safety-survey §B3
 //! class no test on honest preimages can see. Running it over
 //! `support::circuits()` audits all present circuits AND every future one,
@@ -22,7 +22,7 @@
 //! transaction well-formedness, deliberately not encoded). compactc's own
 //! artifacts retain the identical residue — 4 of 92 v3 corpus artifacts,
 //! 85 findings, the same guarded-read circuits
-//! (`cargo run -p minocrab-ir --example taint_corpus`).
+//! (`cargo run -p minocrab-taint --example taint_corpus`).
 //!
 //! The remaining findings are FROZEN as a baseline, the way the row
 //! snapshot freezes rows: any NEW finding fails this test, so the
@@ -34,7 +34,7 @@ mod support;
 
 use std::collections::HashSet;
 
-use minocrab_ir::v3::taint;
+use minocrab_taint as taint;
 
 const BASELINE: &str = include_str!("taint_baseline.txt");
 
@@ -85,7 +85,7 @@ fn every_hash_limb_is_bounded_or_recorded() {
         "NEW taint finding(s) — a hash-preimage limb that is not provably \
          bounded to its atom's byte width:\n{}\n\
          Do NOT accept these into the baseline: either extend the taint \
-         rules in minocrab-ir/src/v3/taint.rs with a cited in-circuit \
+         rules in minocrab-taint/src/lib.rs with a cited in-circuit \
          warrant for the bounded source, or take the finding to dmd \
          (milestones.org M23 R3, notes/taint-lint.org).",
         render(&added),

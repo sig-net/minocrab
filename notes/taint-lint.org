@@ -7,16 +7,14 @@ supplies in-range values. Built 2026-08-27.
 
 * 1. Where it lives and how it runs
 
-- =minocrab_ir::v3::taint::audit(&[Instruction]) -> Vec<Finding>= — pure
+- =minocrab_taint::audit(&[Instruction]) -> Vec<Finding>= — pure
   function of one circuit's stream, ~150 lines of analysis plus the exact
-  interval arithmetic below. In =minocrab-ir= because that is where the pass
-  layer lives and where M23 R4's Kani harnesses will point
-  (=cargo kani -p minocrab-ir=).
+  interval arithmetic below. Its own crate, =minocrab-taint= (=crates/minocrab-taint/src/lib.rs=), since M48 I (2026-11-21); it was =minocrab_ir::v3::taint= before. It reads the stream through =minocrab_ir::v3::passes='s =operands= / =returned= / =defined_identifiers=, the same exhaustive lists the passes use. Its Kani harnesses run under =cargo kani -p minocrab-taint= (=./kani.sh= runs both crates by default).
 - The gate: =crates/minocrab-contracts/tests/taint_lint.rs= over
   =support::circuits()= — all 200 workspace circuits and every future one,
   since the snapshot registry is the one list a new circuit must join.
 - The corpus side-instrument (not a gate):
-  =cargo run -p minocrab-ir --example taint_corpus= audits every v3 corpus
+  =cargo run -p minocrab-taint --example taint_corpus= audits every v3 corpus
   artifact, i.e. compactc's own output, with the same rules.
 
 * 2. The subject, per the scoping spike
@@ -286,7 +284,7 @@ WHY N1–N3 WERE NOT WRITTEN UNILATERALLY. Each is sound and each cites only in-
 
 * 9. M23 R3 RULED — the subtraction warrants and the observability walk, as built (2026-10-13)
 
-dmd ruled on both classes §8 handed over: take N1–N3, and build option 4 as a real reachability walk rather than accept Class A into the baseline. Both are in =crates/minocrab-ir/src/v3/taint.rs=. The gate is GREEN for the first time since 2026-09-15, and the frozen set is *81 → 38*.
+dmd ruled on both classes §8 handed over: take N1–N3, and build option 4 as a real reachability walk rather than accept Class A into the baseline. Both are in =crates/minocrab-taint/src/lib.rs= (then =crates/minocrab-ir/src/v3/taint.rs=). The gate is GREEN for the first time since 2026-09-15, and the frozen set is *81 → 38*.
 
 The lint changes no circuit: the 226-circuit =MINOCRAB_ZKIR_DUMP= is byte-identical before and after (=diff -rq= empty). It is an analysis, and this is only ever a change in what it says.
 
@@ -363,4 +361,4 @@ Worth having as an instrument for the same reason §3's bound demand is: it name
 
 * 11. The passport oracle (2026-10-15, re-run on main 2026-11-19): 52 compactc artifacts, 33 findings in two classes
 
-Run over =corpus/zkir/passport-account-custody= (the account custody contract, passport PR #184; =cargo run -p minocrab-ir --example taint_corpus -- corpus/zkir/passport-account-custody=). On main at compactc 0.36.0: 21 of 52 fired, 33 findings. 18 are the kernel-caller read under the restricted-grant guard in the nine grant-withdraw circuits, two limbs each (the =%caller.*= inputs feeding a =bytes<32>= hash slot) — §8 class A's shape, compactc's residue. 15 are the base64 output's 12-byte limb in the =bytes<43>= WebAuthn client-data hash, one per P-256 circuit: a chain of selects over constants the lint cannot bound (a "select of bounded operands is bounded" rule would discharge them). The first run, on the parked zkir-3.1 branch under compactc 0.35.0, reported 213 in 35 artifacts; the other 180 were a false positive of that branch's own =ToBytes= rule, which main's rules do not produce. Classes and the proposed rules: =notes/passport-account-custody.org= §4. The port's own IR is not yet linted.
+Run over =corpus/zkir/passport-account-custody= (the account custody contract, passport PR #184; =cargo run -p minocrab-taint --example taint_corpus -- corpus/zkir/passport-account-custody=). On main at compactc 0.36.0: 21 of 52 fired, 33 findings. 18 are the kernel-caller read under the restricted-grant guard in the nine grant-withdraw circuits, two limbs each (the =%caller.*= inputs feeding a =bytes<32>= hash slot) — §8 class A's shape, compactc's residue. 15 are the base64 output's 12-byte limb in the =bytes<43>= WebAuthn client-data hash, one per P-256 circuit: a chain of selects over constants the lint cannot bound (a "select of bounded operands is bounded" rule would discharge them). The first run, on the parked zkir-3.1 branch under compactc 0.35.0, reported 213 in 35 artifacts; the other 180 were a false positive of that branch's own =ToBytes= rule, which main's rules do not produce. Classes and the proposed rules: =notes/passport-account-custody.org= §4. The port's own IR is not yet linted.

@@ -1,7 +1,7 @@
 //! M33 — the trusted-computing-base inventory, generated not typed.
 //!
 //! `TRUST.md` at the repository root carries a table, one row per source
-//! file of the seven eDSL crates: WHAT WARRANTS IT (which test, proof or
+//! file of the eight eDSL crates: WHAT WARRANTS IT (which test, proof or
 //! gate would catch a wrong line), and the failure that would hide there if
 //! it were wrong. The rows whose warrant is READING are the trusted
 //! computing base — the part a human reviewer has to read.
@@ -45,7 +45,7 @@ const ROWS: &[Row] = &[
     Row { path: "minocrab-ir/src/v3.rs", warrant: "every instruction-level differential (the emitted stream equals compactc's); v3_builder. The operand-type TABLES themselves: READING against midnight-zkir's src/ir_vm.rs", hides: "an instruction emitted with an operand type the VM rejects, on a path no fixture takes" },
     Row { path: "minocrab-ir/src/v3/passes.rs", warrant: "Lean (crates/minocrab-ir/lean, the pass theorems, M25/M27); v3_passes; the zkir dump + row snapshot (every pass is zero-movement on the shipped artifacts)", hides: "a pass that changes a circuit's statement while preserving its rows" },
     Row { path: "minocrab-ir/src/v3/passes/kept.rs", warrant: "its unit tests (each pass's map on a fixed stream and on 100,000 random streams per pass, composition, the panics); the debug-build checks in Builder3::finish_kept and Circuit3::finish, run on every circuit metadata_indices builds; v3_metadata (5,000 random Circuit3 programs)", hides: "an assert message or region moved onto the wrong instruction of the finished stream" },
-    Row { path: "minocrab-ir/src/v3/taint.rs", warrant: "Kani harnesses (./kani.sh, M23 R4) + unit tests for the Max arithmetic; 23 unit tests over the marking rules, the three subtraction warrants' near-miss refusals and the observability walk's refused sinks; the MARKING RULES' warrants are cited in-file per rule and are READING. The observability walk (M23 R3 Class A) reads operands through passes::operands / defined_identifiers, which the Lean dataflow gate diffs", hides: "a limb marked bounded that is not, or a guarded read discharged as unobservable whose digest in fact reaches an effect the walk's sink classification waves through — a false negative in the one lint that sees what honest inputs cannot" },
+    Row { path: "minocrab-taint/src/lib.rs", warrant: "Kani harnesses (./kani.sh, M23 R4) + unit tests for the Max arithmetic; 23 unit tests over the marking rules, the three subtraction warrants' near-miss refusals and the observability walk's refused sinks; the MARKING RULES' warrants are cited in-file per rule and are READING. The observability walk (M23 R3 Class A) reads operands through passes::operands / defined_identifiers, which the Lean dataflow gate diffs", hides: "a limb marked bounded that is not, or a guarded read discharged as unobservable whose digest in fact reaches an effect the walk's sink classification waves through — a false negative in the one lint that sees what honest inputs cannot" },
     // ---- L2: the eDSL --------------------------------------------------------------------
     Row { path: "minocrab/src/lib.rs", warrant: "compile_fail doctests (a private wire cannot reach an output); READING for the lattice itself", hides: "a Meet impl that lets private meet public as public" },
     Row { path: "minocrab/src/v3.rs", warrant: "every differential (the streams Circuit3 emits); v3_guard_scope (guard scopes); the generated disclosure set-equality tests + compile_fail (the disclose gate). The instruction methods' operand/immediate handling and public_input minting: READING against reduce-to-zkir.ss", hides: "a guard dropped on one effect inside `when`; a public input minted in the wrong order" },
@@ -97,7 +97,7 @@ const ROWS: &[Row] = &[
     Row { path: "minocrab-sim/src/bin/minocrab.rs", warrant: READING, hides: "nothing a proof depends on (the CLI)" },
 ];
 
-const CRATES: &[&str] = &["minocrab-zkir", "minocrab-ir", "minocrab", "minocrab-ledger", "minocrab-std", "minocrab-macros", "minocrab-sim"];
+const CRATES: &[&str] = &["minocrab-zkir", "minocrab-ir", "minocrab-taint", "minocrab", "minocrab-ledger", "minocrab-std", "minocrab-macros", "minocrab-sim"];
 
 fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").canonicalize().expect("repo root")
@@ -137,7 +137,7 @@ fn table() -> String {
         body.push_str(&format!("| `{}` | {} | {} |\n", row.path, warrant, row.hides));
     }
     let total = ROWS.len();
-    body.push_str(&format!("\n{total} files in the seven crates; {reading} of them have a warrant that is READING in whole or in part (the rows in bold).\n"));
+    body.push_str(&format!("\n{total} files in the eight crates; {reading} of them have a warrant that is READING in whole or in part (the rows in bold).\n"));
     body
 }
 
