@@ -37,7 +37,7 @@
 use std::marker::PhantomData;
 
 use minocrab::v3::{
-    AnyWire3, CallArg, CallResult, Circuit3, CircuitAbi, FieldT, JubjubPointT,
+    AnyWire3, Circuit3, CircuitAbi, FieldT, JubjubPointT,
     Secp256k1PointT, Wire3,
 };
 use minocrab::{Alignment, AlignmentAtom, AlignmentSegment, Fr, Public};
@@ -60,7 +60,7 @@ use minocrab_ledger::{
 
 use super::{
     coin_commitment, hash, Bool, BoundedUint, Bytes, Bytes0, BytesN, CoinRecipient, ContractAddress,
-    Either, JubjubPoint, Maybe, MerkleTreeDigest, Opaque, QualifiedShieldedCoinInfo3,
+    Either, Encode, JubjubPoint, Maybe, MerkleTreeDigest, Opaque, QualifiedShieldedCoinInfo3,
     Secp256k1Point, ShieldedCoinInfo3, TsType, Uint, UserAddress, B32,
 };
 
@@ -149,43 +149,66 @@ pub trait LedgerRepr: Sized {
     }
 }
 
-/// The leaf impls: pure delegation to the ABI traits, so a leaf's atoms and
-/// limb order are stated in exactly one place (`entry.rs` / `call.rs`).
-macro_rules! ledger_repr_via_abi {
+/// The leaf impls: [`ProofWires`] and [`LedgerRepr`] for a type that is
+/// already [`CircuitAbi`] + [`Encode<Public>`](super::Encode) +
+/// [`Decode<Public>`](super::Decode), by delegation only, so a leaf's atoms
+/// and limb order are stated in exactly one place (`entry.rs` / `call.rs`).
+///
+/// The where-clause is on the TYPE, not on its parameters: `Maybe<T>` is a
+/// ledger leaf exactly where `Maybe<T>` encodes and decodes, which is where
+/// its `CallArg` / `CallResult` impls say. Exported (hidden) because
+/// `b32_newtype!` expands it in other crates; every path is absolute.
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __ledger_leaf {
     ($( $(#[$m:meta])* [$($gen:tt)*] $ty:ty ),* $(,)?) => {$(
         $(#[$m])*
-        impl<$($gen)*> ProofWires for $ty {
-            fn push_wires(&self, out: &mut Vec<minocrab::v3::Val>) {
-                let mut slots = Vec::new();
-                <$ty as CallArg>::push_call_slots(self, &mut slots);
+        impl<$($gen)*> $crate::v3::ProofWires for $ty
+        where
+            $ty: $crate::v3::Encode<::minocrab::Public>,
+        {
+            fn push_wires(&self, out: &mut ::std::vec::Vec<::minocrab::v3::Val>) {
+                let mut slots = ::std::vec::Vec::new();
+                $crate::v3::Encode::<::minocrab::Public>::encode(self, &mut slots);
                 out.extend(slots.iter().map(|w| w.val()));
             }
         }
 
         $(#[$m])*
-        impl<$($gen)*> LedgerRepr for $ty {
-            fn atoms() -> Vec<AlignmentAtom> {
-                <$ty as CircuitAbi>::atoms()
+        impl<$($gen)*> $crate::v3::LedgerRepr for $ty
+        where
+            $ty: ::minocrab::v3::CircuitAbi
+                + $crate::v3::Encode<::minocrab::Public>
+                + $crate::v3::Decode<::minocrab::Public>,
+        {
+            fn atoms() -> ::std::vec::Vec<::minocrab::AlignmentAtom> {
+                <$ty as ::minocrab::v3::CircuitAbi>::atoms()
             }
 
-            fn push_limbs(&self, _c: &mut Circuit3, limbs: &mut Vec<Wire3<FieldT, Public>>) {
-                <$ty as CallArg>::push_call_slots(self, limbs)
+            fn push_limbs(
+                &self,
+                _c: &mut ::minocrab::v3::Circuit3,
+                limbs: &mut ::std::vec::Vec<::minocrab::v3::Wire3<::minocrab::v3::FieldT, ::minocrab::Public>>,
+            ) {
+                $crate::v3::Encode::<::minocrab::Public>::encode(self, limbs)
             }
 
             #[track_caller]
-            fn from_limbs(limbs: Vec<Wire3<FieldT, Public>>) -> Self {
+            fn from_limbs(
+                limbs: ::std::vec::Vec<::minocrab::v3::Wire3<::minocrab::v3::FieldT, ::minocrab::Public>>,
+            ) -> Self {
                 debug_assert_eq!(
                     limbs.len(),
-                    <$ty as CircuitAbi>::SLOTS,
+                    <$ty as ::minocrab::v3::CircuitAbi>::SLOTS,
                     "ledger read handed back the wrong number of limbs"
                 );
-                <$ty as CallResult>::from_call_slots(&limbs)
+                <$ty as $crate::v3::Decode<::minocrab::Public>>::decode(&limbs)
             }
         }
     )*};
 }
 
-ledger_repr_via_abi! {
+crate::__ledger_leaf! {
     [const BITS: u32] Uint<BITS, Public>,
     /// `MerkleTreeDigest` in a ledger slot — one limb under a `field` atom.
     /// A tree's roots are not STORED as digests (the tree holds them), but a
@@ -209,8 +232,7 @@ ledger_repr_via_abi! {
     /// `Either<A, B>` in a ledger or effects slot — the tag's limb then BOTH
     /// arms', whichever way the tag points. Reached by M17's `TokenType` and
     /// `UnshieldedRecipient`, which are `Either`s in Compact's own signatures.
-    [A: CircuitAbi + CallArg + CallResult, B: CircuitAbi + CallArg + CallResult]
-        Either<A, B, Public>,
+    [A, B] Either<A, B, Public>,
     /// `Opaque<'ts-type'>` in a ledger slot — one limb under a `compress`
     /// atom, which is the ordinary delegation. It is a `Cell` type, a `Map`
     /// KEY type, a `Map` VALUE type and a `Set` element type, all four of
@@ -223,7 +245,7 @@ ledger_repr_via_abi! {
     /// followed by the payload's, which is what the ABI delegation already
     /// says. The payload occupies its slots whether or not the tag is set;
     /// that is the format, not a choice made here.
-    [T: CircuitAbi + CallArg + CallResult] Maybe<T, Public>,
+    [T] Maybe<T, Public>,
 }
 
 /// `export ledger k: Secp256k1Point` — the one stored type whose limbs are
@@ -410,7 +432,7 @@ fn coin_operands(
 ) -> (LedgerValue, LedgerValue) {
     let cm = coin_commitment(c, coin, recipient);
     let mut slots = Vec::new();
-    coin.push_call_slots(&mut slots);
+    Encode::<Public>::encode(coin, &mut slots);
     (
         LedgerValue::bytes(32, vec![ImpactElem::Wire(cm.hi), ImpactElem::Wire(cm.lo)]),
         LedgerValue::new(

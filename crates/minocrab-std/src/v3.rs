@@ -62,7 +62,7 @@ pub use blind::{Monoid, Primitive};
 pub use hook::{CellArith, Hook, HookValue, Reachable};
 pub use stream::{ContentionFree, Fold, Serial, Step, Stream, StreamSpec};
 pub use vector::{Bounded, NonEmpty};
-pub use entry::{entry, entry_out, ArgPath, CircuitArg, CircuitArgs, CircuitOut};
+pub use entry::{entry, entry_out, ArgPath, CircuitArg, CircuitArgs, CircuitOut, Decode, Encode};
 
 /// The ledger block as types: `#[derive(Ledger)]`'s declaration-order
 /// indices and the typed slots ([`LedgerMap`] and [`LedgerSet`] with Compact's
@@ -1101,7 +1101,7 @@ impl<V: Vis3> B32<V> {
 ///
 /// The precedent is [`ContractAddress`] below, hand-written in exactly this
 /// shape; this macro is that impl set, once, in the idiom `select_via_field!`
-/// and `ledger_repr_via_abi!` already use in this crate.
+/// and `__ledger_leaf!` already use in this crate.
 ///
 /// Exported (`minocrab_std::v3::b32_newtype`) because generated interface
 /// crates invoke it: `minocrab-interface-gen` emits it for any Compact
@@ -1261,38 +1261,10 @@ macro_rules! b32_newtype {
             }
         }
 
-        impl $crate::v3::ProofWires for $name<::minocrab::Public> {
-            fn push_wires(&self, out: &mut Vec<::minocrab::v3::Val>) {
-                $crate::v3::ProofWires::push_wires(&self.0, out)
-            }
-        }
-
-        /// In a ledger slot: pure delegation to the ABI traits, the same
-        /// path `ledger_repr_via_abi!` takes for every leaf.
-        impl $crate::v3::LedgerRepr for $name<::minocrab::Public> {
-            fn atoms() -> Vec<::minocrab::AlignmentAtom> {
-                <Self as ::minocrab::v3::CircuitAbi>::atoms()
-            }
-
-            fn push_limbs(
-                &self,
-                _c: &mut ::minocrab::v3::Circuit3,
-                limbs: &mut Vec<::minocrab::v3::Wire3<::minocrab::v3::FieldT, ::minocrab::Public>>,
-            ) {
-                ::minocrab::v3::CallArg::push_call_slots(self, limbs)
-            }
-
-            #[track_caller]
-            fn from_limbs(
-                limbs: Vec<::minocrab::v3::Wire3<::minocrab::v3::FieldT, ::minocrab::Public>>,
-            ) -> Self {
-                debug_assert_eq!(
-                    limbs.len(),
-                    <Self as ::minocrab::v3::CircuitAbi>::SLOTS,
-                    "ledger read handed back the wrong number of limbs"
-                );
-                <Self as ::minocrab::v3::CallResult>::from_call_slots(&limbs)
-            }
+        $crate::__ledger_leaf! {
+            /// In a ledger slot and in a proof-wire walk: the leaf table's
+            /// own delegation, the path every leaf takes.
+            [] $name<::minocrab::Public>,
         }
 
         /// Borsh: one 32-byte atom over the `[hi, lo]` slot pair —

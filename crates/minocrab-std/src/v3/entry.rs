@@ -38,10 +38,10 @@
 //! to get right.
 
 use minocrab::v3::{
-    uint_atom_bytes, Circuit3, CircuitAbi, Compiled3, FieldT, JubjubPointT, Prim,
+    uint_atom_bytes, CallArg, CallResult, Circuit3, CircuitAbi, Compiled3, FieldT, JubjubPointT, Prim,
     Secp256k1PointT, Secp256k1ScalarT, Wire3,
 };
-use minocrab::{AlignmentAtom, Private, Public};
+use minocrab::{AlignmentAtom, Private, Public, Visibility};
 
 use super::{
     Bool, BoundedUint, Bytes, Bytes0, BytesN, ContractAddress, Either, JubjubPoint, Maybe,
@@ -652,6 +652,77 @@ impl CircuitArg for () {
     fn declare(_c: &mut Circuit3, _path: &ArgPath) -> Self {}
 
     fn push_slots(&self, _slots: &mut Vec<Wire3<FieldT, Private>>) {}
+}
+
+// ---- Encode / Decode ------------------------------------------------------
+//
+// The two value traits (notes/streamline-survey.org §8): [`Encode`], a
+// value's native field slots at a visibility, and [`Decode`], the value
+// rebuilt from them. [`CircuitAbi`](minocrab::v3::CircuitAbi) stays the
+// static layout (slot count, atoms, prims).
+//
+// Today they are VIEWS of the traits every leaf and every downstream record
+// already implements, by blanket impl and nothing else:
+//
+// | new | from | what it is |
+// |-----|------|------------|
+// | `Encode<Public>` | [`CallArg::push_call_slots`] | what a cross-contract argument, a ledger write and a proof-wire walk all push |
+// | `Encode<Private>` | [`CircuitArg::push_slots`] | a circuit argument's native slots (point slots skipped, see there) |
+// | `Decode<Public>` | [`CallResult::from_call_slots`] | what a call result and a ledger read rebuild |
+//
+// So a leaf's slots are still written once per visibility and direction,
+// in `call.rs` and `entry.rs`, and everything else in std that needs them
+// (the ledger leaf table, the proof wires, the coin operands) is written
+// against these two names.
+//
+// WHY THE BLANKETS RUN OLD → NEW, and why the traits live in std rather than
+// beside `CallArg` in core: the old traits are what downstream code
+// implements by hand (`#[derive(CircuitArg)]` expands to `CallArg` /
+// `CallResult` / `CircuitArg` in the user's crate, and the passport port and
+// the contracts write `CircuitArg` impls). A blanket the other way
+// (`impl<T: Encode<Public>> CallArg for T`) leaves those types without an
+// `Encode` impl, so `Maybe<T>`, `Either<A, B>` and `[T; N]` over them would
+// stop being call arguments the moment their own impls moved onto `Encode`.
+// Old → new makes every type that is a `CallArg` today an `Encode<Public>`,
+// downstream ones included. The `Private` blanket must sit in the crate that
+// owns `Encode` (orphan rule: `impl<T: CircuitArg> Encode<Private> for T`
+// names no local type), and `CircuitArg` is std's, so `Encode` is too.
+// Flipping the direction is step 3 of §8, with the one derive.
+
+/// A value's NATIVE FIELD SLOTS at visibility `V`, in slot order.
+///
+/// At `Public` that is every slot of [`CircuitAbi`](minocrab::v3::CircuitAbi);
+/// at `Private` it is every slot except the curve-point ones, whose wires
+/// are not field elements (see [`CircuitArg::push_slots`]).
+pub trait Encode<V: Visibility> {
+    /// Append this value's slots, in slot order.
+    fn encode(&self, slots: &mut Vec<Wire3<FieldT, V>>);
+}
+
+/// A value REBUILT from its native field slots at visibility `V`, in slot
+/// order — exactly [`CircuitAbi::SLOTS`](minocrab::v3::CircuitAbi::SLOTS)
+/// of them.
+pub trait Decode<V: Visibility>: Sized {
+    /// The value whose slots these are.
+    fn decode(slots: &[Wire3<FieldT, V>]) -> Self;
+}
+
+impl<T: CallArg> Encode<Public> for T {
+    fn encode(&self, slots: &mut Vec<Wire3<FieldT, Public>>) {
+        self.push_call_slots(slots)
+    }
+}
+
+impl<T: CircuitArg> Encode<Private> for T {
+    fn encode(&self, slots: &mut Vec<Wire3<FieldT, Private>>) {
+        self.push_slots(slots)
+    }
+}
+
+impl<T: CallResult> Decode<Public> for T {
+    fn decode(slots: &[Wire3<FieldT, Public>]) -> Self {
+        T::from_call_slots(slots)
+    }
 }
 
 // ---- CircuitArgs ------------------------------------------------------------
