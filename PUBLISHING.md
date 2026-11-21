@@ -98,7 +98,16 @@ Each crate must be on crates.io before the next one resolves. `cargo publish` wa
 12. `cargo publish -p signet-signer-interface` (→ minocrab, std, ledger)
 13. `cargo publish -p minocrab-signet` (→ minocrab, std, ledger, evm, signet-protocol, signet-signer-interface)
 
-Before step 1, `cargo publish --dry-run -p <crate>` works for steps 1 to 3 (their dependencies are all on crates.io already); from step 4 on, a crate's dry run needs the crates before it on the registry, and step 7 of the checklist is the check that covers them. After the last step, tag the commit (`git tag v0.1.0`) and push the tag.
+The last rehearsal before step 1 is a dry run of the whole set, which resolves the set's members against each other the way step 7 of the checklist does and stops short of every upload:
+
+```sh
+cargo publish --dry-run --workspace \
+  --exclude minocrab-contracts --exclude minocrab-bench --exclude signet-artifacts \
+  --exclude xcall-target-interface --exclude signet-sim --exclude minocrab-abi \
+  --exclude minocrab-interface-gen --exclude minocrab-publisher --exclude signet-hashing
+```
+
+A single-crate `cargo publish --dry-run -p <crate>` only works once the crates before it are on crates.io (before step 1, for steps 1 to 3 alone). After the last step, tag the commit (`git tag v0.1.0`) and push the tag.
 
 `minocrab-sim` ships a binary, and with it its `Cargo.lock`. That lock currently carries `chacha20 0.10.1`, which is yanked (a transitive dependency of the pinned `midnight-*` crates; `deny.toml` records it), so `cargo install minocrab-sim --locked` warns about it.
 
