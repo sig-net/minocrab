@@ -1107,7 +1107,7 @@ impl<V: Vis3> B32<V> {
         Bool::from_field_unchecked(c.mul(hi, lo))
     }
 
-    /// `a == b` as a [`Check`](predicate::Check), for `c.assert(a.equals(b).message(..))` and `not(..)`: it lowers where it is asserted to the same `test_eq`, `test_eq`, `mul` as [`B32::eq`].
+    /// `a == b` as a [`Check`], for `c.assert(a.equals(b).message(..))` and `not(..)`: it lowers where it is asserted to the same `test_eq`, `test_eq`, `mul` as [`B32::eq`].
     ///
     /// Both sides at one visibility, as for [`B32::eq`]:
     ///

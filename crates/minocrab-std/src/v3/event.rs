@@ -13,8 +13,8 @@
 //! private payload is a different type and does not compile; disclose the
 //! values first.
 //!
-//! [`Serializer`]: super::Serializer
-//! [`borsh::to_bytes`]: super::borsh::to_bytes
+//! [`Serializer`]: crate::v3::Serializer
+//! [`borsh::to_bytes`]: crate::v3::borsh::to_bytes
 
 use minocrab::v3::Circuit3;
 use minocrab::Public;
