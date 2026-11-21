@@ -586,7 +586,7 @@ Benchmark from a clean checkout (nix + direnv supply the pinned toolchain):
 nix run .#bench
 ```
 
-A contract depends on **`minocrab-std`** (which re-exports the eDSL and the decorators) plus `minocrab-sim` as a dev-dependency. Ten crates are meant for crates.io; nothing is published yet: seven of them still carry `publish = false` ([PUBLISHING.md](PUBLISHING.md)). Consume it as a git dependency for now. Every `midnight-*` dependency resolves from crates.io at the versions midnight-node 2.1.101 locks (ledger 9.1.0.1), so no `[patch.crates-io]` block is needed; a workspace on the same versions (sig-net/mpc) unifies with it.
+A contract depends on **`minocrab-std`** (which re-exports the eDSL and the decorators) plus `minocrab-sim` as a dev-dependency. Thirteen crates are meant for crates.io and are ready for it; nothing is published yet ([PUBLISHING.md](PUBLISHING.md) has the set, the order and what stays unpublished). Consume it as a git dependency for now. Every `midnight-*` dependency resolves from crates.io at the versions midnight-node 2.1.101 locks (ledger 9.1.0.1), so no `[patch.crates-io]` block is needed; a workspace on the same versions (sig-net/mpc) unifies with it.
 
 Deeper: `plan.org` (aim and design requirements), `milestones.org` (state of play), `notes/*.org` (findings and decisions of record).
 

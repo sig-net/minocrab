@@ -13,7 +13,7 @@ Pinned against the compiled Compact circuits: `tests/fixtures/api-parity-vectors
 
 Who reads it: sig-net/mpc (which carried its own copy as `compact-hashing`), `minocrab-publisher` (re-exported as `minocrab_publisher::hashing`), and the contract tests that drive a request → respond → settle round trip.
 
-`publish = false` until the `midnight-*` line is on crates.io at the pinned tags (see PUBLISHING.md).
+Not on crates.io (`publish = false`): its consumers link it by git, and no published crate depends on it (see PUBLISHING.md).
 
 [Repository README](https://github.com/sig-net/minocrab#readme)
 
