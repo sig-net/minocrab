@@ -1,0 +1,28 @@
+{
+  "version": { "major": 3, "minor": 1 },
+  "do_communications_commitment": true,
+  "inputs": [
+    { "name": "%x.0", "type": "Scalar<BLS12-381>" }
+  ],
+  "outputs": [
+    "Scalar<BLS12-381>",
+    "Base<Curve25519>",
+    "Scalar<BLS12-381>"
+  ],
+  "instructions": [
+    { "op": "to_bytes", "output": "%tmp.1", "input": "0x00" },
+    { "op": "from_bytes", "type": "Base<Curve25519>", "output": "%t.2", "bytes": "%tmp.1" },
+    { "op": "encode", "outputs": ["%fld.3", "%fld.4"], "input": "%t.2" },
+    { "op": "impact", "guard": "0x01", "inputs": ["0x10", "0x01", "0x01", "0x01", "0x02"] },
+    { "op": "impact", "guard": "0x01", "inputs": ["0x11", "0x01", "0x04", "0x01", "0x18", "0x08", "-0x02", "0x00", "%fld.3", "%fld.4", "%x.0"] },
+    { "op": "impact", "guard": "0x01", "inputs": ["0x91"] },
+    { "op": "public_input", "type": "Scalar<BLS12-381>", "output": "%t.5", "guard": null },
+    { "op": "public_input", "type": "Base<Curve25519>", "output": "%t.6", "guard": null },
+    { "op": "public_input", "type": "Scalar<BLS12-381>", "output": "%t.7", "guard": null },
+    { "op": "encode", "outputs": ["%fld.8", "%fld.9"], "input": "%t.6" },
+    { "op": "impact", "guard": "0x01", "inputs": ["0x30"] },
+    { "op": "impact", "guard": "0x01", "inputs": ["0x50", "0x01", "0x01", "0x02"] },
+    { "op": "impact", "guard": "0x01", "inputs": ["0x0c", "0x04", "0x01", "0x18", "0x08", "-0x02", "%t.5", "%fld.8", "%fld.9", "%t.7"] },
+    { "op": "output", "vals": ["%t.5", "%t.6", "%t.7"] }
+  ]
+}

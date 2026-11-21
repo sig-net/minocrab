@@ -29,6 +29,16 @@
       "result-type": {
         "type-name": "Field"
       }
+    },
+    {
+      "name": "peek",
+      "pure": false,
+      "proof": false,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Field"
+      }
     }
   ],
   "witnesses": [

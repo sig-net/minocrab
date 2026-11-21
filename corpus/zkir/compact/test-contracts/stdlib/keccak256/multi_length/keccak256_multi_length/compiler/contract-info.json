@@ -1,0 +1,680 @@
+{
+  "compiler-version": "0.36.1",
+  "compiler-commit": "7fa3a117c5e7efe9d2c51da04263e5f0b3509144",
+  "language-version": "0.28.0",
+  "runtime-version": "0.21.0",
+  "circuits": [
+    {
+      "name": "hashBytes1",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "value",
+          "type": {
+            "type-name": "Bytes",
+            "length": 1
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "hashBytes32",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "value",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "hashBytes33",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "value",
+          "type": {
+            "type-name": "Bytes",
+            "length": 33
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "hashBytes34",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "value",
+          "type": {
+            "type-name": "Bytes",
+            "length": 34
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "hashBytes35",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "value",
+          "type": {
+            "type-name": "Bytes",
+            "length": 35
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "hashBytes36",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "value",
+          "type": {
+            "type-name": "Bytes",
+            "length": 36
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "hashBytes37",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "value",
+          "type": {
+            "type-name": "Bytes",
+            "length": 37
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "hashBytes38",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "value",
+          "type": {
+            "type-name": "Bytes",
+            "length": 38
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "hashBytes39",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "value",
+          "type": {
+            "type-name": "Bytes",
+            "length": 39
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "hashBytes40",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "value",
+          "type": {
+            "type-name": "Bytes",
+            "length": 40
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "hashBytes41",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "value",
+          "type": {
+            "type-name": "Bytes",
+            "length": 41
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "hashBytes42",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "value",
+          "type": {
+            "type-name": "Bytes",
+            "length": 42
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "hashBytes43",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "value",
+          "type": {
+            "type-name": "Bytes",
+            "length": 43
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "hashBytes44",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "value",
+          "type": {
+            "type-name": "Bytes",
+            "length": 44
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "hashBytes45",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "value",
+          "type": {
+            "type-name": "Bytes",
+            "length": 45
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "hashBytes46",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "value",
+          "type": {
+            "type-name": "Bytes",
+            "length": 46
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "hashBytes47",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "value",
+          "type": {
+            "type-name": "Bytes",
+            "length": 47
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "hashBytes48",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "value",
+          "type": {
+            "type-name": "Bytes",
+            "length": 48
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "hashBytes49",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "value",
+          "type": {
+            "type-name": "Bytes",
+            "length": 49
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "hashBytes50",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "value",
+          "type": {
+            "type-name": "Bytes",
+            "length": 50
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "hashBytes51",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "value",
+          "type": {
+            "type-name": "Bytes",
+            "length": 51
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "hashBytes52",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "value",
+          "type": {
+            "type-name": "Bytes",
+            "length": 52
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "hashBytes53",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "value",
+          "type": {
+            "type-name": "Bytes",
+            "length": 53
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "hashBytes54",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "value",
+          "type": {
+            "type-name": "Bytes",
+            "length": 54
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "hashBytes55",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "value",
+          "type": {
+            "type-name": "Bytes",
+            "length": 55
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "hashBytes56",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "value",
+          "type": {
+            "type-name": "Bytes",
+            "length": 56
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "hashBytes57",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "value",
+          "type": {
+            "type-name": "Bytes",
+            "length": 57
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "hashBytes58",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "value",
+          "type": {
+            "type-name": "Bytes",
+            "length": 58
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "hashBytes59",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "value",
+          "type": {
+            "type-name": "Bytes",
+            "length": 59
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "hashBytes60",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "value",
+          "type": {
+            "type-name": "Bytes",
+            "length": 60
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "hashBytes61",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "value",
+          "type": {
+            "type-name": "Bytes",
+            "length": 61
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "hashBytes62",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "value",
+          "type": {
+            "type-name": "Bytes",
+            "length": 62
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "hashBytes63",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "value",
+          "type": {
+            "type-name": "Bytes",
+            "length": 63
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "hashBytes93",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "value",
+          "type": {
+            "type-name": "Bytes",
+            "length": 93
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "hashBytes94",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "value",
+          "type": {
+            "type-name": "Bytes",
+            "length": 94
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "hashBytes376",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "value",
+          "type": {
+            "type-name": "Bytes",
+            "length": 376
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "hashBytes1024",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "value",
+          "type": {
+            "type-name": "Bytes",
+            "length": 1024
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    }
+  ],
+  "witnesses": [
+  ],
+  "contracts": [
+  ],
+  "ledger": [
+  ]
+}

@@ -1,0 +1,41 @@
+{
+  "manifest-version": "1",
+  "compiler-version": "0.36.1",
+  "compiler-commit": "7fa3a117c5e7efe9d2c51da04263e5f0b3509144",
+  "language-version": "0.28.0",
+  "runtime-version": "0.21.0",
+  "compiler": {
+    "type": "directory",
+    "contract-info.json": {
+      "type": "file",
+      "size": 725,
+      "hash": "00bc8f19be0340d8a2797d4c706cf608bf693218de3b4e0e6cfcc224238dbd9d"
+    }
+  },
+  "contract": {
+    "type": "directory",
+    "index.d.ts": {
+      "type": "file",
+      "size": 1539,
+      "hash": "0dcb50b7c2f3f4d2b5796f4441e7e5bb18394cdf2ff4fdf13a6616ea5d708b90"
+    },
+    "index.js": {
+      "type": "file",
+      "size": 13458,
+      "hash": "8033e7e111996568771b99c2eb3abc2db3507a91eabcbcb65f69bd395789de1b"
+    },
+    "index.js.map": {
+      "type": "file",
+      "size": 667,
+      "hash": "9cb5df76396138414c17634538deae3ba39f28b8fb7cd76bc589ca764cd341c7"
+    }
+  },
+  "zkir": {
+    "type": "directory",
+    "secp256k1_base_roundtrip.zkir": {
+      "type": "file",
+      "size": 1025,
+      "hash": "e5273de49a653129134571dc1d435e4cb48dd0e40cf9a40ff533e06415a20f36"
+    }
+  }
+}

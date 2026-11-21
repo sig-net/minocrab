@@ -1,0 +1,107 @@
+{
+  "compiler-version": "0.36.1",
+  "compiler-commit": "7fa3a117c5e7efe9d2c51da04263e5f0b3509144",
+  "language-version": "0.28.0",
+  "runtime-version": "0.21.0",
+  "circuits": [
+    {
+      "name": "two",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "d",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "three",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "d",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    }
+  ],
+  "witnesses": [
+    {
+      "name": "sigOf",
+      "arguments": [
+        {
+          "name": "i",
+          "type": {
+            "type-name": "Uint",
+            "maxval": 255
+          }
+        }
+      ],
+      "result type": {
+        "type-name": "Struct",
+        "name": "Secp256k1EcdsaSignature",
+        "elements": [
+          {
+            "name": "r",
+            "type": {
+              "type-name": "Secp256k1Scalar"
+            }
+          },
+          {
+            "name": "s",
+            "type": {
+              "type-name": "Secp256k1Scalar"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "keyOf",
+      "arguments": [
+        {
+          "name": "i",
+          "type": {
+            "type-name": "Uint",
+            "maxval": 255
+          }
+        }
+      ],
+      "result type": {
+        "type-name": "Secp256k1Point"
+      }
+    }
+  ],
+  "contracts": [
+  ],
+  "ledger": [
+    {
+      "name": "n",
+      "index": 0,
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Uint",
+        "maxval": 18446744073709551615
+      }
+    }
+  ]
+}

@@ -29,6 +29,33 @@
       "result-type": {
         "type-name": "Field"
       }
+    },
+    {
+      "name": "callPeek",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "p",
+          "type": {
+            "type-name": "Contract",
+            "name": "Peeker",
+            "circuits": [
+              {
+                "name": "peek",
+                "argument-types": [
+                ],
+                "result-type": {
+                  "type-name": "Field"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Field"
+      }
     }
   ],
   "witnesses": [
@@ -50,6 +77,19 @@
         },
         {
           "name": "leak",
+          "argument-types": [
+          ],
+          "result-type": {
+            "type-name": "Field"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Peeker",
+      "circuits": [
+        {
+          "name": "peek",
           "argument-types": [
           ],
           "result-type": {

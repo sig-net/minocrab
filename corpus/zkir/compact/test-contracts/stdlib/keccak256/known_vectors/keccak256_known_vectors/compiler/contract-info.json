@@ -1,0 +1,140 @@
+{
+  "compiler-version": "0.36.1",
+  "compiler-commit": "7fa3a117c5e7efe9d2c51da04263e5f0b3509144",
+  "language-version": "0.28.0",
+  "runtime-version": "0.21.0",
+  "circuits": [
+    {
+      "name": "hashBytes0",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "value",
+          "type": {
+            "type-name": "Bytes",
+            "length": 0
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "hashBytes1",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "value",
+          "type": {
+            "type-name": "Bytes",
+            "length": 1
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "hashBytes2",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "value",
+          "type": {
+            "type-name": "Bytes",
+            "length": 2
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "hashBytes4",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "value",
+          "type": {
+            "type-name": "Bytes",
+            "length": 4
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "hashBytes5",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "value",
+          "type": {
+            "type-name": "Bytes",
+            "length": 5
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "hashBytes10",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "value",
+          "type": {
+            "type-name": "Bytes",
+            "length": 10
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "hashBytes18",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "value",
+          "type": {
+            "type-name": "Bytes",
+            "length": 18
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    }
+  ],
+  "witnesses": [
+  ],
+  "contracts": [
+  ],
+  "ledger": [
+  ]
+}

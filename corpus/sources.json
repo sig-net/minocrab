@@ -6,7 +6,7 @@
     {
       "name": "compact",
       "url": "https://github.com/LFDT-Minokawa/compact",
-      "rev": "56c3b7796f78de582bee907318737077fb6e210f",
+      "rev": "7fa3a117c5e7efe9d2c51da04263e5f0b3509144",
       "license": "Apache-2.0",
       "paths": [
         "examples",
