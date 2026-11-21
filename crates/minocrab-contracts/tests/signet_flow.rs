@@ -219,6 +219,52 @@ fn the_block_is_laid_out_by_slot_width() {
     assert_eq!(TOY.withdrawals.record_path().depth(), 1);
 }
 
+/// THE DERIVE READS TYPES, NOT NAMES. The same block as [`Toy`] with its
+/// slot types reached through `use … as` aliases, plus a field of a user
+/// type merely SPELLED `Pending`: `Signet` is the anchor because its type
+/// says `IS_ANCHOR`, the aliased `Pending` slots hang off it because theirs
+/// say `NEEDS_ANCHOR`, and the user's `Pending` (an ordinary counter) is
+/// laid out like any other field. A tenth field leaves every path of the
+/// first nine unchanged, so a settle on this block is the same circuit.
+mod user {
+    pub type Pending = minocrab_std::v3::LedgerCounter;
+}
+
+#[derive(Ledger)]
+struct Aliased {
+    initialized: LedgerCounter,
+    signet: SigConfig,
+    deposits: Deferred<ToyDeposit, DepositEnv, 2>,
+    withdrawals: Deferred<ToyWithdrawal, WithdrawEnv, 2>,
+    tally: user::Pending,
+}
+
+use minocrab_contracts::evm_flow::Pending as Deferred;
+use minocrab_contracts::signet_flow::Signet as SigConfig;
+
+const ALIASED: Aliased = Aliased::new();
+
+#[circuit]
+fn claim_aliased(c: &mut Circuit3, ticket: Succeeded<ToyDeposit>) -> Discloses<Settled> {
+    let outcome = ALIASED.deposits.complete(c, ticket);
+    let _amount = outcome.env.amount;
+    Discloses::of(())
+}
+
+#[test]
+fn an_aliased_anchor_works_and_a_type_named_pending_is_ordinary() {
+    assert_eq!(ALIASED.initialized.index(), 0);
+    assert_eq!(ALIASED.signet.signer.index(), 1);
+    assert_eq!(ALIASED.deposits.record_path().as_slice(), &[5]);
+    assert_eq!(ALIASED.withdrawals.record_path().as_slice(), &[7]);
+    assert_eq!(ALIASED.tally.index(), 9);
+    // The slot read its `Signet` at the anchor's offset: the settle, which
+    // reads the MPC key from it, is the same circuit as on `Toy`.
+    let (aliased, toy) = (format!("{:?}", claim_aliased().ir), format!("{:?}", claim().ir));
+    assert!(aliased.len() > 1000, "the IR's Debug form is its instructions");
+    assert_eq!(aliased, toy);
+}
+
 /// Each circuit builds, and at a cost a settle's secp256k1 verification
 /// (identity-key check included, compactc 0.36) dominates: k = 16.
 #[test]

@@ -176,11 +176,11 @@ pub struct Outbox<F: Filing, Env: LedgerRepr, const WORDS: usize> {
 
 impl<F: Filing, Env: LedgerRepr, const WORDS: usize> Outbox<F, Env, WORDS> {
     /// The slot's seven fields from flat index `start`, against the block's
-    /// `Signet` at `signet_start` — what `#[derive(Ledger)]` emits for a
-    /// field whose type is spelled `Outbox`.
-    pub const fn at_block_with_signet(total: usize, start: usize, signet_start: usize) -> Self {
+    /// `Signet` at `signet_start` — what `#[derive(Ledger)]` calls, the
+    /// slot being `LedgerWidth::NEEDS_ANCHOR`.
+    pub const fn at_block_anchored(total: usize, start: usize, signet_start: usize) -> Self {
         Outbox {
-            pending: Pending::at_block_with_signet(total, start, signet_start),
+            pending: Pending::at_block_anchored(total, start, signet_start),
             stream: Stream::at_block(total, start + 2),
         }
     }
@@ -200,6 +200,7 @@ impl<F: Filing, Env: LedgerRepr, const WORDS: usize> Outbox<F, Env, WORDS> {
 
 impl<F: Filing, Env: LedgerRepr, const WORDS: usize> LedgerWidth for Outbox<F, Env, WORDS> {
     const WIDTH: usize = 2 + <Stream<OutboxSpec<Env, WORDS>> as LedgerWidth>::WIDTH;
+    const NEEDS_ANCHOR: bool = true;
 }
 
 impl<F: Filing, Env: LedgerRepr + ProofWires, const WORDS: usize> Outbox<F, Env, WORDS>

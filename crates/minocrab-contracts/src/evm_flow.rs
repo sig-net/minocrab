@@ -321,11 +321,11 @@
 //! }
 //! ```
 //!
-//! A `Pending` slot in a block with no `Signet` field — the derive's own
+//! A `Pending` slot in a block with no `Signet` field — `anchor_start`'s
 //! error, because there would be no configuration to read the MPC key,
 //! the nonce and the chain from:
 //!
-//! ```compile_fail
+//! ```compile_fail,E0080
 //! use minocrab_contracts::evm::{erc20, Filed};
 //! use minocrab_contracts::signet_v1::schema;
 //! use minocrab_contracts::evm_flow::{Owned, Pending};
@@ -337,14 +337,14 @@
 //! #[derive(Ledger)]
 //! struct Block {
 //!     initialized: LedgerCounter,
-//!     // ERROR: a `Pending` slot needs the block's `Signet` field …
+//!     // ERROR[E0080]: a field of this ledger block needs the block's anchor …
 //!     transfers: Pending<Filed<erc20::Transfer, schema::Success>, Owned<Amount>, 2>,
 //! }
 //! ```
 //!
 //! TWO `Signet` fields — one contract, one MPC key, one nonce sequence:
 //!
-//! ```compile_fail
+//! ```compile_fail,E0080
 //! use minocrab_contracts::evm::{erc20, Filed};
 //! use minocrab_contracts::signet_v1::schema;
 //! use minocrab_contracts::evm_flow::{Owned, Pending};
@@ -357,7 +357,7 @@
 //! #[derive(Ledger)]
 //! struct Block {
 //!     signet: Signet,
-//!     // ERROR: #[derive(Ledger)] wants EXACTLY ONE `Signet` field per block
+//!     // ERROR[E0080]: this ledger block has two anchor fields …
 //!     other: Signet,
 //!     transfers: Pending<Filed<erc20::Transfer, schema::Success>, Owned<Amount>, 2>,
 //! }
@@ -1035,8 +1035,8 @@ impl<E: LedgerRepr> LedgerRepr for Owned<E> {
 /// `error[E0080]` (notes/evm-calls.org §3).
 ///
 /// The `Signet` handle is built by `#[derive(Ledger)]`, which finds the
-/// block's one `Signet` field and threads its offset in
-/// ([`Self::at_block_with_signet`]). That is why `request`, `complete` and
+/// block's one `Signet` field (its `LedgerWidth::IS_ANCHOR`) and threads its
+/// offset in ([`Self::at_block_anchored`]). That is why `request`, `complete` and
 /// `refund` take no `&SELF.signet`.
 pub struct Pending<F: Filing, Env, const WORDS: usize = 2> {
     records: LedgerMap<RequestId<Public>, Record<F, WORDS>>,
@@ -1047,9 +1047,9 @@ pub struct Pending<F: Filing, Env, const WORDS: usize = 2> {
 
 impl<F: Filing, Env, const WORDS: usize> Pending<F, Env, WORDS> {
     /// The slot's two fields from flat index `start`, against the block's
-    /// `Signet` at `signet_start` — what `#[derive(Ledger)]` emits for a
-    /// field whose type is spelled `Pending`.
-    pub const fn at_block_with_signet(total: usize, start: usize, signet_start: usize) -> Self {
+    /// `Signet` at `signet_start` — what `#[derive(Ledger)]` calls, the
+    /// slot being `LedgerWidth::NEEDS_ANCHOR`.
+    pub const fn at_block_anchored(total: usize, start: usize, signet_start: usize) -> Self {
         const {
             assert!(
                 WORDS == <<Called<F> as EvmCall>::Args as AbiTuple>::WORDS,
@@ -1093,9 +1093,9 @@ pub struct Fired<F: Filing, const WORDS: usize = 2> {
 
 impl<F: Filing, const WORDS: usize> Fired<F, WORDS> {
     /// The slot's one field at flat index `start`, against the block's
-    /// `Signet` at `signet_start` — what `#[derive(Ledger)]` emits for a
-    /// field whose type is spelled `Fired`.
-    pub const fn at_block_with_signet(total: usize, start: usize, signet_start: usize) -> Self {
+    /// `Signet` at `signet_start` — what `#[derive(Ledger)]` calls, the
+    /// slot being `LedgerWidth::NEEDS_ANCHOR`.
+    pub const fn at_block_anchored(total: usize, start: usize, signet_start: usize) -> Self {
         const {
             assert!(
                 WORDS == <<Called<F> as EvmCall>::Args as AbiTuple>::WORDS,
@@ -1153,10 +1153,13 @@ impl<F: Filing, const WORDS: usize> Fired<F, WORDS> {
     }
 }
 
-impl<F: Filing, const WORDS: usize> LedgerWidth for Fired<F, WORDS> {}
+impl<F: Filing, const WORDS: usize> LedgerWidth for Fired<F, WORDS> {
+    const NEEDS_ANCHOR: bool = true;
+}
 
 impl<F: Filing, Env, const WORDS: usize> LedgerWidth for Pending<F, Env, WORDS> {
     const WIDTH: usize = 2;
+    const NEEDS_ANCHOR: bool = true;
 }
 
 impl<F: Filing, Env: LedgerRepr, const WORDS: usize> Pending<F, Env, WORDS>

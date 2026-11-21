@@ -690,23 +690,109 @@ pub fn repr_limbs<T: LedgerRepr>() -> usize {
     T::atoms().iter().map(atom_limbs).sum()
 }
 
-/// How many LEDGER FIELDS a declared slot occupies.
+/// How many LEDGER FIELDS a declared slot occupies, and whether it is the
+/// block's ANCHOR or hangs off it.
 ///
 /// Every slot in this module is one field. A slot that is a GROUP of fields
 /// (`signet_flow::Pending`, whose request map and environment map are two
 /// consecutive fields) says so here, and `#[derive(Ledger)]` lays the block
-/// out from these widths: `Self::at_block(total, start)` on each slot type
-/// takes the block's field count and the slot's first flat index, and
-/// [`FieldPath::in_block`] does the segmentation. Nothing is written by
-/// hand — a slot cannot be given the wrong width because the width is the
-/// type's.
+/// out from these widths: `Self::at_block_anchored(total, start, anchor)` on
+/// each slot type takes the block's field count, the slot's first flat index
+/// and the anchor's, and [`FieldPath::in_block`] does the segmentation.
+/// Nothing is written by hand — a slot cannot be given the wrong width
+/// because the width is the type's.
+///
+/// THE ANCHOR is a slot other slots of the block are built against: a slot
+/// with [`NEEDS_ANCHOR`](Self::NEEDS_ANCHOR) reads the fields of the one
+/// slot with [`IS_ANCHOR`](Self::IS_ANCHOR), so it is handed that slot's
+/// start offset instead of taking it as an argument on every call. The
+/// derive finds the anchor through these consts, never through a type's
+/// name, and [`anchor_start`] rejects a block with two anchors or with a
+/// slot that needs one and none, at compile time.
 pub trait LedgerWidth {
     /// Consecutive ledger fields this slot occupies.
     const WIDTH: usize = 1;
+    /// This slot is the block's anchor (at most one per block).
+    const IS_ANCHOR: bool = false;
+    /// This slot is built against the block's anchor (which must exist).
+    const NEEDS_ANCHOR: bool = false;
 }
 
-/// `at_block` and a one-field [`LedgerWidth`] for each slot type: the
-/// declared-form constructor `#[derive(Ledger)]` calls.
+/// THE ANCHOR'S START OFFSET in a ledger block, from one
+/// `(IS_ANCHOR, NEEDS_ANCHOR, start)` row per field in declaration order —
+/// what `#[derive(Ledger)]` evaluates once per block, in a `const`.
+///
+/// A block with no anchor gets `0`, which only an ordinary slot can receive
+/// and which it ignores. Panics, so E0080 when evaluated in a `const`, on
+/// the two blocks that cannot be laid out. Two anchors:
+///
+/// ```compile_fail,E0080
+/// use minocrab_std::v3::{Ledger, LedgerCounter, LedgerWidth};
+///
+/// // A stand-in anchor (in an application, a slot like `signet_flow::Signet`).
+/// pub struct Anchor;
+/// impl Anchor {
+///     pub const fn at_block_anchored(_: usize, _: usize, _: usize) -> Self { Anchor }
+/// }
+/// impl LedgerWidth for Anchor { const IS_ANCHOR: bool = true; }
+///
+/// #[derive(Ledger)]
+/// struct Block { one: Anchor, two: Anchor, n: LedgerCounter }
+/// ```
+///
+/// A slot that needs an anchor, in a block without one:
+///
+/// ```compile_fail,E0080
+/// use minocrab_std::v3::{Ledger, LedgerCounter, LedgerWidth};
+///
+/// // A stand-in for a slot like `evm_flow::Pending`.
+/// pub struct Hangs;
+/// impl Hangs {
+///     pub const fn at_block_anchored(_: usize, _: usize, _: usize) -> Self { Hangs }
+/// }
+/// impl LedgerWidth for Hangs { const NEEDS_ANCHOR: bool = true; }
+///
+/// #[derive(Ledger)]
+/// struct Block { n: LedgerCounter, hangs: Hangs }
+/// ```
+pub const fn anchor_start(fields: &[(bool, bool, usize)]) -> usize {
+    let mut anchor = None;
+    let mut needed = false;
+    let mut i = 0;
+    while i < fields.len() {
+        let (is_anchor, needs_anchor, start) = fields[i];
+        if is_anchor {
+            assert!(
+                anchor.is_none(),
+                "this ledger block has two anchor fields (types with \
+                 `LedgerWidth::IS_ANCHOR`), and a block has at most one: every \
+                 slot with `NEEDS_ANCHOR` is built against it. Delete one of \
+                 them (for the Sig Network slots, the block keeps one \
+                 `signet: Signet`)."
+            );
+            anchor = Some(start);
+        }
+        needed |= needs_anchor;
+        i += 1;
+    }
+    match anchor {
+        Some(start) => start,
+        None => {
+            assert!(
+                !needed,
+                "a field of this ledger block needs the block's anchor (its \
+                 type sets `LedgerWidth::NEEDS_ANCHOR`) and no field is one \
+                 (sets `LedgerWidth::IS_ANCHOR`). Add the anchor field the \
+                 slot's type documents (for the Sig Network slots `Pending`, \
+                 `Fired` and `Outbox`, add `pub signet: Signet,`)."
+            );
+            0
+        }
+    }
+}
+
+/// `at_block`, `at_block_anchored` and a one-field [`LedgerWidth`] for each
+/// slot type: the declared-form constructors `#[derive(Ledger)]` calls.
 macro_rules! one_field_slot {
     ($( [$($gen:tt)*] $ty:ty ),* $(,)?) => {$(
         impl<$($gen)*> $ty {
@@ -715,6 +801,12 @@ macro_rules! one_field_slot {
             /// ([`FieldPath::in_block`]).
             pub const fn at_block(total: usize, index: usize) -> Self {
                 Self::at_path(FieldPath::in_block(total, index).as_slice())
+            }
+
+            /// [`Self::at_block`], under the name `#[derive(Ledger)]` calls
+            /// on every field: an ordinary slot ignores the block's anchor.
+            pub const fn at_block_anchored(total: usize, index: usize, _anchor: usize) -> Self {
+                Self::at_block(total, index)
             }
         }
 

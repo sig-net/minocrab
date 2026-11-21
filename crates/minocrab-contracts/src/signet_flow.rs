@@ -162,6 +162,12 @@ impl Signet {
         }
     }
 
+    /// [`Self::at_block`], under the name `#[derive(Ledger)]` calls on every
+    /// field. `Signet` IS the anchor, so the anchor offset is its own.
+    pub const fn at_block_anchored(total: usize, start: usize, _anchor: usize) -> Self {
+        Self::at_block(total, start)
+    }
+
     /// The deployment's writes, for a contract's `initialize`: the MPC key,
     /// its version and the destination chain id. The signer cell is sealed
     /// and set at deployment.
@@ -183,8 +189,12 @@ impl Signet {
     }
 }
 
+/// The block's ANCHOR: every `evm_flow` slot (`Pending`, `Fired`, `Outbox`)
+/// is built against the block's one `Signet`, so a block has at most one and
+/// needs one if it has any of those.
 impl LedgerWidth for Signet {
     const WIDTH: usize = 4;
+    const IS_ANCHOR: bool = true;
 }
 
 // ---- the request ---------------------------------------------------------------------

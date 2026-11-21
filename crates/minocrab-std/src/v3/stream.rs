@@ -153,14 +153,19 @@ pub struct Stream<P: StreamSpec> {
 
 impl<P: StreamSpec> Stream<P> {
     /// The stream's fields from flat index `start` of a block of `total`
-    /// fields — what `#[derive(Ledger)]` emits for a field spelled
-    /// `Stream<…>`.
+    /// fields.
     pub const fn at_block(total: usize, start: usize) -> Self {
         Stream {
             total,
             start,
             _p: PhantomData,
         }
+    }
+
+    /// [`Self::at_block`], under the name `#[derive(Ledger)]` calls on every
+    /// field: a stream ignores the block's anchor.
+    pub const fn at_block_anchored(total: usize, start: usize, _anchor: usize) -> Self {
+        Self::at_block(total, start)
     }
 
     /// Handle → body. Field `start`.
