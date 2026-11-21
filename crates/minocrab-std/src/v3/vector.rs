@@ -152,14 +152,21 @@ impl<T, const MAX: usize> Bounded<T, MAX, Public> {
 impl<X: Clone, const MAX: usize> Bounded<X, MAX, Private> {
     /// The WITNESS-SIDE constructor's padding: `items` (at most `MAX` of
     /// them) followed by `default`, and the length. Refuses more than `MAX`
-    /// items here, before any proof.
+    /// items here, before any proof. A `MAX` above 255 is a compile error:
+    ///
+    /// ```compile_fail,E0080
+    /// # use minocrab_std::v3::Bounded;
+    /// # use minocrab::Private;
+    /// // error[E0080]: `Bounded<T, MAX>` needs MAX <= 255
+    /// let _ = Bounded::<u8, 256, Private>::pad(&[1], 0);
+    /// ```
     pub fn pad(items: &[X], default: X) -> (u8, [X; MAX]) {
         assert!(
             items.len() <= MAX,
             "Bounded<_, {MAX}>: {} items do not fit",
             items.len()
         );
-        assert!(MAX <= 255, "Bounded's length is a byte");
+        const { assert!(MAX <= 255, "`Bounded<T, MAX>` needs MAX <= 255: the length is one byte") };
         let mut slots = Vec::with_capacity(MAX);
         slots.extend_from_slice(items);
         slots.resize(MAX, default);

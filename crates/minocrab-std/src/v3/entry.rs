@@ -854,17 +854,25 @@ impl<T: CircuitOut> CircuitOut for Maybe<T, Public> {
 ///
 /// The body may return anything that occupies no output slot — `()`, or a
 /// [`Discloses<D>`](super::Discloses) declaration over it. Returning a
-/// value means naming it, which is [`entry_out`].
+/// value means naming it, which is [`entry_out`]; returning one here is a compile error:
+///
+/// ```compile_fail,E0080
+/// # use minocrab_std::v3::{entry, Uint};
+/// # use minocrab::Public;
+/// // error[E0080]: this circuit returns output slots, which need a label
+/// let _ = entry(|c, _: ()| Uint::<64, Public>::constant(c, 1));
+/// ```
 #[track_caller]
 pub fn entry<A: CircuitArgs, O: CircuitOut>(
     body: impl FnOnce(&mut Circuit3, A) -> O,
 ) -> Compiled3 {
-    assert_eq!(
-        O::SLOTS,
-        0,
-        "this circuit returns {} output slots, which need a label: use entry_out",
-        O::SLOTS
-    );
+    const {
+        assert!(
+            O::SLOTS == 0,
+            "this circuit returns output slots, which need a label: use `entry_out(label, ..)` \
+             (or `#[circuit(output = \"..\")]`)"
+        )
+    };
     entry_out("", body)
 }
 

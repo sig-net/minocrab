@@ -306,15 +306,27 @@ pub fn alignment_of<V: Vis3, T: CircuitBorsh<V>>(value: &T) -> Alignment {
 /// THIS is the path that costs rows — the M7 segment packing, one `div_mod`
 /// per 31-byte output-limb boundary a field straddles. Where the bytes are
 /// only going to be hashed, use [`limbs_of`] instead and pay nothing.
+///
+/// An `N` below `T::LEN` is a compile error:
+///
+/// ```compile_fail,E0080
+/// # use minocrab::v3::{Circuit3, FieldT};
+/// # use minocrab_std::v3::{borsh::to_bytes, B32};
+/// # let mut c = Circuit3::new();
+/// let a = B32 { hi: c.arg::<FieldT>("hi"), lo: c.arg::<FieldT>("lo") };
+/// // error[E0080]: Bytes<N> cannot hold T's Borsh encoding
+/// let _ = to_bytes::<40, _, _>(&mut c, &[a, a]);
+/// ```
 pub fn to_bytes<const N: usize, V: Vis3, T: CircuitBorsh<V>>(
     c: &mut Circuit3,
     value: &T,
 ) -> BytesN<V, N> {
-    assert!(
-        N >= T::LEN,
-        "Bytes<{N}> cannot hold a {}-byte Borsh encoding",
-        T::LEN
-    );
+    const {
+        assert!(
+            N >= T::LEN,
+            "Bytes<N> cannot hold T's Borsh encoding: N must be at least T::LEN"
+        )
+    };
     let mut out = Serializer::new();
     value.push_segments(&mut out);
     out.finish::<N>(c)
@@ -338,11 +350,12 @@ pub fn to_bytes_constrained<const N: usize, V: Vis3, T: CircuitBorsh<V>>(
     c: &mut Circuit3,
     value: &T,
 ) -> BytesN<V, N> {
-    assert!(
-        N >= T::LEN,
-        "Bytes<{N}> cannot hold a {}-byte Borsh encoding",
-        T::LEN
-    );
+    const {
+        assert!(
+            N >= T::LEN,
+            "Bytes<N> cannot hold T's Borsh encoding: N must be at least T::LEN"
+        )
+    };
     let mut out = Serializer::constrained();
     value.push_segments(&mut out);
     out.finish::<N>(c)
@@ -582,11 +595,12 @@ pub fn read_split<const N: usize, V: Vis3, T: CircuitBorsh<V>>(
     c: &mut Circuit3,
     bytes: &BytesN<V, N>,
 ) -> T {
-    assert!(
-        N >= T::LEN,
-        "a {}-byte value cannot be read out of Bytes<{N}>",
-        T::LEN
-    );
+    const {
+        assert!(
+            N >= T::LEN,
+            "T cannot be read out of Bytes<N>: N must be at least T::LEN"
+        )
+    };
     let mut reader = Split::new(bytes);
     let value = read_canonical::<V, T, _>(c, &mut reader);
     reader.assert_pad_zero(c);
@@ -603,11 +617,12 @@ pub fn read_witness_checked<const N: usize, W: Vis3, T: CircuitBorsh<Private>>(
     c: &mut Circuit3,
     bytes: &BytesN<W, N>,
 ) -> T {
-    assert!(
-        N >= T::LEN,
-        "a {}-byte value cannot be read out of Bytes<{N}>",
-        T::LEN
-    );
+    const {
+        assert!(
+            N >= T::LEN,
+            "T cannot be read out of Bytes<N>: N must be at least T::LEN"
+        )
+    };
     let mut reader = WitnessCheck::<N>::new(bytes);
     let value = read_canonical::<Private, T, _>(c, &mut reader);
     reader.finish(c);

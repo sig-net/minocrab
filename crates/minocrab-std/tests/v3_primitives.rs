@@ -160,3 +160,15 @@ fn cell_increment_differs_from_add_one_only_in_names() {
     assert_ne!(increment, add_one);
     assert_eq!(increment.replace("%add.2", "%add.1"), add_one);
 }
+
+/// The positive twins of the compile_fail doctests on the const asserts
+/// (`entry`, `Bounded::pad`, `borsh::to_bytes`): at the bound they build.
+#[test]
+fn the_const_asserts_admit_their_bound() {
+    let _ = minocrab_std::v3::entry(|_c, _: ()| ());
+    let (len, _) = minocrab_std::v3::Bounded::<u8, 255, Private>::pad(&[1], 0);
+    assert_eq!(len, 1);
+    let mut c = Circuit3::new();
+    let a = B32 { hi: c.arg::<FieldT>("hi"), lo: c.arg::<FieldT>("lo") };
+    let _ = minocrab_std::v3::borsh::to_bytes::<64, _, _>(&mut c, &[a, a]);
+}
