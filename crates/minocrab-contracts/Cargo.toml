@@ -15,57 +15,41 @@ workspace = true
 minocrab = { path = "../minocrab" }
 minocrab-std = { path = "../minocrab-std" }
 minocrab-ledger = { path = "../minocrab-ledger" }
-# M48 D: the hand-written Impact ops the ports write (`impact::raw`, the
-# UNCHECKED form, since they reproduce compactc's stream). minocrab-ledger
-# stays for the cross-contract items (`XcallCommitment`, `XcallResult`),
-# which are not experimental.
+# The hand-written Impact ops the ports write (`impact::raw`, unchecked,
+# since they reproduce compactc's stream).
 minocrab-experimental.workspace = true
-# M48 C: the compactc-shaped gadgets and `profile`, for the PARITY PORTS only
-# (the contracts with a Compact twin, and the deployed signer). The
-# MinoCrab-only contracts keep importing minocrab-std.
+# The compactc-shaped gadgets and `profile`, for the parity ports only (the
+# contracts with a Compact twin, and the deployed signer).
 minocrab-compat = { path = "../minocrab-compat" }
 # The EVM ABI layer (typed calls, words, interfaces), re-exported at `evm`.
 minocrab-evm.workspace = true
 # The Signet protocol and the typed-call ledger slot, re-exported at
 # `signet_v1`, `signet_flow`, `evm_flow`, `evm` and `common`.
 minocrab-signet.workspace = true
-# AN IMPORTED INTERFACE CRATE (M12 stage 4): the vault calls the
-# signet signer through the callee's own published declaration, not through a
-# transliteration kept here. Ordinary cargo dependency — that is the whole
-# point of the mechanism.
+# Imported interface crates: the vault calls the signet signer through the
+# callee's own published declaration.
 signet-signer-interface = { path = "../signet-signer-interface" }
 signet-responder-interface = { path = "../signet-responder-interface" }
-# A GENERATED interface crate (M12 stage 5): nothing here implements the
-# xcall target, and nothing needs to — the crate was produced from its
-# compiled artifact by minocrab-interface-gen.
+# A generated interface crate, produced from its compiled artifact by
+# minocrab-interface-gen.
 xcall-target-interface = { path = "../xcall-target-interface" }
-# M30 C1: the Misc envelope constants and the signer event names are DEFINED
-# there, so the contract that emits the events and the publisher that builds
-# them read one definition — and the publisher no longer depends on this
-# crate (see the dev-dependency below for the direction that remains).
+# The Misc envelope constants and the signer event names, one definition
+# shared with the publisher.
 signet-protocol.workspace = true
-# M37 rung A: `EvmCall::selector()` is the first four bytes of
-# `keccak256("name(argtypes)")`, hashed HERE — in Rust, at circuit-build time
-# — and embedded as an immediate. Nothing in-circuit hashes keccak (in-circuit
-# hashing stays Poseidon); this was a dev-dependency until the eDSL itself
-# needed it.
+# `EvmCall::selector()` hashes keccak in Rust at circuit-build time and
+# embeds the result as an immediate.
 sha3.workspace = true
 
 [dev-dependencies]
 signet-sim = { path = "../signet-sim" }
-# M30 rung A: the signet signer's construction path is LIBRARY code now — the
-# publisher's `call` module — and these suites build their preimages through
-# it, so what they gate is what a publisher produces. Since M30 C1 the edge
-# runs ONE way: the publisher reads its constants from signet-protocol and
-# depends on this crate only as a dev-dependency of its own (keygen from the
-# circuit in tests/real_proof.rs), so the cycle cargo allowed is gone.
+# The suites build signer preimages through the publisher's `call` module,
+# so what they gate is what a publisher produces.
 minocrab-publisher = { path = "../minocrab-publisher" }
-# The Borsh SCHEMA walk (M11 stage 3): `#[borsh(spec = …)]`'s generated
-# cross-check calls minocrab-std's schema module, which is feature-gated so
-# that only TEST builds link borsh. Resolver 2 keeps this out of the lib build.
+# The Borsh schema walk for `#[borsh(spec = …)]`'s cross-check; feature-gated
+# so only test builds link borsh.
 minocrab-std = { path = "../minocrab-std", features = ["borsh-schema"] }
 minocrab-sim = { path = "../minocrab-sim" }
-# The callee-side interface check (M12 stage 6): our own built IrSource
+# The callee-side interface check: our own built IrSource
 # against the schema signet-signer-interface publishes.
 minocrab-abi = { path = "../minocrab-abi" }
 minocrab-zkir = { path = "../minocrab-zkir" }
@@ -89,12 +73,12 @@ midnight-curves.workspace = true
 # recipient's side is plain curve arithmetic, and `JubjubSubgroup::generator()`
 # is a `group::Group` method.
 group.workspace = true
-# The burn well-formedness test (M10 avenue 6) only: the pinned ledger's own
+# The burn well-formedness test only: the pinned ledger's own
 # Transaction::well_formed, with mock-verify so no proof server is needed.
 midnight-zswap.workspace = true
 midnight-ledger.workspace = true
 rand.workspace = true
-# The serialization-conformance suite's dual oracle (M11 stage 0): borsh and
+# The serialization-conformance suite's dual oracle: borsh and
 # serde+bincode-fixint, which agree byte-for-byte on the circuit-safe subset.
 # See the workspace manifest for why bincode 2.
 borsh.workspace = true
@@ -103,20 +87,13 @@ serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 proptest.workspace = true
-# THE ABI ORACLE (M38 rung D): tests/evm_alloy_oracle.rs declares each call
+# The ABI oracle: tests/evm_alloy_oracle.rs declares each call
 # a second time with `sol!` and asserts our selector and our encoded words
 # against alloy's. See the workspace manifest for why the pins are exact.
 alloy-sol-types.workspace = true
 alloy-primitives.workspace = true
-# The M29 E real-proving gate (tests/signet_real_proof.rs) only. Declared
-# here rather than in `[workspace.dependencies]` for the same reason
-# crates/minocrab-bench declares them: two test/bench crates want them and
-# nothing shipping does.
-# - tokio: `Transaction::prove` and `IrSource::keygen` are async; the gate
-#   drives them on a multi-thread runtime, as the proving path does in
-#   production.
-# - libc: `getrusage(RUSAGE_SELF)` for peak RSS, the same measurement the
-#   benchmark harness reports.
+# The real-proving gate (tests/signet_real_proof.rs) only: tokio drives the
+# async keygen and prove; libc's `getrusage` reports peak RSS.
 tokio = { version = "1", features = ["rt-multi-thread"] }
 libc = "0.2"
 # `ProvingProvider`'s own error type is `anyhow::Error`, so implementing the

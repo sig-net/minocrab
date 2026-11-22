@@ -8,42 +8,33 @@ members = [
     "crates/minocrab-macros",
     "crates/signet-sim",
     "crates/minocrab-std",
-    # M48 C: the compactc-shaped gadgets the parity ports import (see its
-    # crate docs for why it exists). Nothing in the core depends on it.
+    # The compactc-shaped gadgets the parity ports import. Nothing in the core depends on it.
     "crates/minocrab-compat",
     "crates/minocrab-ledger",
-    # M48 D: hand-written Impact, published at 0.0.x with no compatibility
-    # promise. Nothing in the core depends on it; only the corpus does.
+    # Hand-written Impact, 0.0.x with no compatibility promise. Only the corpus depends on it.
     "crates/minocrab-experimental",
     "crates/minocrab-contracts",
-    # The EVM ABI layer and the Signet protocol, as publishable app crates;
-    # minocrab-contracts re-exports both at their old paths.
+    # The EVM ABI layer and the Signet protocol, as publishable app crates
+    # (minocrab-contracts re-exports both).
     "crates/minocrab-evm",
     "crates/minocrab-signet",
     "crates/minocrab-sim",
     "crates/minocrab-bench",
     "crates/minocrab-abi",
     "crates/minocrab-interface-gen",
-    # Interface crates (M12): one per callee contract, each a
-    # hand-authored-or-generated declaration plus its pinned artifact.
+    # Interface crates: one per callee contract, a declaration plus its pinned artifact.
     "crates/signet-signer-interface",
     "crates/signet-responder-interface",
     "crates/xcall-target-interface",
-    # M29 rung A/B: the managed artifact pipeline for the Signet signer
-    # circuits (zkir/keys/expectedVk).
+    # The managed artifact pipeline for the Signet signer circuits (zkir/keys/expectedVk).
     "crates/signet-artifacts",
-    # M30 C1: the Signet protocol facts (Misc envelope, signer circuit and
-    # event names, hashVerifierKey) — the one publishable crate the contract,
-    # the artifact pipeline and the publisher all read, so mpc's graph never
-    # pulls the corpus crate.
+    # The Signet protocol facts the contract, the artifact pipeline and the
+    # publisher all read, so mpc's graph never pulls the corpus crate.
     "crates/signet-protocol",
-    # The protocol's off-circuit hashes (request id, transaction digest,
-    # attested output hash, attestation digest) over the ledger's own
-    # FieldRepr — one definition for mpc, the publisher and the contract
-    # tests, pinned against compiled-Compact vectors.
+    # The protocol's off-circuit hashes, one definition for mpc, the publisher
+    # and the contract tests, pinned against compiled-Compact vectors.
     "crates/signet-hashing",
-    # M30: the MPC publisher's pure core — build/prove/sign/seal a respond
-    # intent, with no node I/O, for sig-net/mpc to link behind IntentClient.
+    # The MPC publisher's pure core (build/prove/sign/seal a respond intent, no node I/O).
     "crates/minocrab-publisher",
 ]
 
@@ -52,29 +43,21 @@ version = "0.1.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/sig-net/minocrab"
-# THE FLOOR IS THE DEPENDENCIES', NOT OURS. Our own code needs 1.79 (inline
-# `const { assert!(..) }` blocks — minocrab-std/src/leaves.rs and the contract
-# suites). Every pinned `midnight-*` crate is edition 2024 (base-crypto,
-# transient-crypto, zkir, serialize, onchain-vm, storage, …), which rustc
-# accepts from 1.85, so nothing here can build below that. Declaring 1.79
-# would be a claim we cannot honour.
+# The floor is the dependencies': the pinned `midnight-*` crates are edition
+# 2024, which rustc accepts from 1.85 (our own code needs 1.79).
 rust-version = "1.85"
 
 [workspace.dependencies]
 # --- our own crates -------------------------------------------------------
-# path AND version, in one place: a path-only dependency cannot be published
-# (crates.io resolves the version requirement, the path is only used for the
-# local build). Regular dependencies only — DEV-dependencies deliberately stay
-# plain `{ path = … }`, because cargo strips a versionless dev-dependency when
-# it publishes, and that is what breaks the minocrab-std ↔ minocrab-sim dev
-# cycle open for a first publish.
+# Path and version, because a path-only dependency cannot be published. Regular
+# dependencies only: dev-dependencies stay plain `{ path = … }` so cargo strips
+# them on publish, which keeps the minocrab-std ↔ minocrab-sim dev cycle open.
 minocrab = { path = "crates/minocrab", version = "0.1.0" }
 minocrab-abi = { path = "crates/minocrab-abi", version = "0.1.0" }
 minocrab-compat = { path = "crates/minocrab-compat", version = "0.1.0" }
 minocrab-evm = { path = "crates/minocrab-evm", version = "0.1.0" }
-# NOT the workspace version: 0.0.x on purpose, so every release is a breaking
-# one under Cargo's semver rules (the crate promises no compatibility). The
-# workspace_versions test holds this number to the crate's own manifest.
+# 0.0.x on purpose: every release is breaking under Cargo's semver rules.
+# The workspace_versions test holds this to the crate's own manifest.
 minocrab-experimental = { path = "crates/minocrab-experimental", version = "0.0.1" }
 minocrab-ir = { path = "crates/minocrab-ir", version = "0.1.0" }
 minocrab-ledger = { path = "crates/minocrab-ledger", version = "0.1.0" }
@@ -85,23 +68,16 @@ minocrab-taint = { path = "crates/minocrab-taint", version = "0.1.0" }
 minocrab-zkir = { path = "crates/minocrab-zkir", version = "0.1.0" }
 signet-protocol = { path = "crates/signet-protocol", version = "0.1.0" }
 signet-hashing = { path = "crates/signet-hashing", version = "0.1.0" }
-# NOT the workspace version: an interface crate is versioned per callee, by
-# the deployed contract's wire format (notes/interface-crates.org). The
-# workspace_versions test holds this number to the crate's own manifest.
+# Versioned by the callee's wire format, not the workspace (notes/interface-crates.org).
+# The workspace_versions test holds this to the crate's own manifest.
 signet-signer-interface = { path = "crates/signet-signer-interface", version = "0.4.0" }
 signet-responder-interface = { path = "crates/signet-responder-interface", version = "0.1.0" }
 
 # --- upstream -------------------------------------------------------------
-# Every midnight-* crate comes from crates.io at the version midnight-node
-# 2.1.101 locks, the release Mainnet, Preprod and Preview run (ledger 9.1.0.1),
-# so the ledger types minocrab links are the chain's. sig-net/mpc resolves the
-# same set; a workspace that links minocrab-publisher unifies with it without a
-# `[patch.crates-io]` block. Cargo.lock holds the registry proving crates
-# (midnight-proofs, -circuits, -zk-stdlib, -curves) at the node's versions too.
-# zkir-v3: the crates.io `midnight-zkir` 3.x line, imported under its old name.
-# Its 3.2.0 `zkir/` is the source the pinned compactc's own flake.lock pins for
-# the bundled zkir-v3 binary (midnight-zkir eeb8a316, zkir-3.2.0-rc.2), manifest
-# version aside, so the crate and the binaries speak one ZKIR (hazard 1).
+# Every midnight-* crate is at the version midnight-node 2.1.101 locks (ledger
+# 9.1.0.1, the version the live networks run), the same set sig-net/mpc resolves.
+# midnight-zkir 3.2.0 is the source the pinned compactc bundles as zkir-v3, so the
+# crate and the binaries speak one ZKIR.
 midnight-zkir-v3 = { version = "=3.2.0", package = "midnight-zkir" }
 # zkir-v3's own dependencies, so types unify (Fr etc.).
 midnight-transient-crypto = "3.0.1"
@@ -112,23 +88,14 @@ midnight-onchain-vm = "4.0.1"
 # The tagged (de)serialization framework (ProofPreimage/key files on disk).
 midnight-serialize = "1.2.1"
 midnight-onchain-state = "4.0.1"
-# The Impact VM's driver: QueryContext::query is the intended public entry for
-# "apply this op stream to this state" (it owns the [context, effects, state]
-# stack convention, the Effects encode/decode and the charged-state gas
-# update). M10's verification harness executes the reference op streams
-# through it rather than re-implementing any of that.
+# The Impact VM's driver: QueryContext::query applies an op stream to a state;
+# the verification harness runs the reference op streams through it.
 midnight-onchain-runtime = "4.0.1"
-# ContractAddress/TokenType — the key types QueryContext and Effects are
-# expressed in. Already in the graph via onchain-state; named here so the
-# harness can spell them.
+# ContractAddress/TokenType, named here so the harness can spell them.
 midnight-coin-structure = "3.0.1"
 midnight-storage = "3.0.0"
-# The zswap Offer/Input/Output types and the top-level ledger Transaction,
-# used ONLY by the M10 burn well-formedness test (avenue 6): it constructs a
-# transaction of the burn's exact shape and drives it through the pinned
-# ledger's own `Transaction::well_formed` to prove the single claimed shielded
-# spend of a user-recipient output is accepted with the receive/nullifier sets
-# empty. Dev-dependency of minocrab-contracts only; nothing shipping links it.
+# The zswap types and the ledger Transaction, for the burn well-formedness test
+# (a dev-dependency of minocrab-contracts only).
 midnight-zswap = "9.0.1"
 midnight-ledger = { version = "1.0.1", package = "midnight-ledger-v9" }
 # Crypto primitives zkir-v3's off-circuit interpreter uses directly (the v3
@@ -146,31 +113,13 @@ proptest = "1"
 # rand 0.8 to match the pinned midnight-ledger's zswap constructors (they take
 # `impl Rng + CryptoRng` from rand ^0.8). Test-only.
 rand = "0.8"
-# The two CONFORMANCE ORACLES of the serialization format (M11 stage 0,
-# notes/borsh-format.org): the flat fixed little-endian layout is the one
-# borsh and serde/bincode-fixint agree on, so the spec types derive both and
-# the property asserts the two agree with each other and with the deployed
-# bytes. `unstable__schema` is what exports BorshSchemaContainer, the source
-# of the frozen offset tables. Dev-dependencies only — nothing shipping links
-# either, same posture as the midnight-ledger dev-deps.
+# The serialization format's two conformance oracles (notes/borsh-format.org),
+# dev-dependencies only. `unstable__schema` exports BorshSchemaContainer.
 borsh = { version = "1.6", features = ["derive", "unstable__schema"] }
-# bincode 2, not 1.3: 2.0.1 is ALREADY in the lock (midnight-zk-stdlib pulls
-# it, with the serde feature), so the second oracle costs zero new lock
-# entries, where bincode 1.3 would add a whole second major version. Its
-# fixint + little-endian config is spelled out at the call site.
+# bincode 2: already in the lock via midnight-zk-stdlib, so it adds no entries.
 bincode = { version = "2", features = ["serde"] }
-# THE ABI ORACLE (M38 rung D, notes/evm-interfaces.org §7): Ethereum's own
-# encoder, so that `EvmCall::selector()` and `AbiType::word` are checked
-# against something that is not our own arithmetic read back to itself.
-# `sol!` compiles a Solidity function declaration into a `SolCall` with
-# `SIGNATURE`, `SELECTOR` and `abi_encode()`.
-#
-# EXACT PINS (`=1.6.1`), not carets: this is a FIXTURE, and its value is
-# that it is the encoder the MPC itself runs — sig-net/mpc's Cargo.lock
-# resolves alloy-primitives 1.6.1 and alloy-sol-types 1.6.1. A caret would
-# let the oracle drift to a version no deployment uses, silently, on any
-# `cargo update`. Dev-dependencies of minocrab-contracts only; nothing
-# shipping links either.
+# The ABI oracle (notes/evm-interfaces.org §7), dev-dependencies only. Exact
+# pins: the version sig-net/mpc's Cargo.lock resolves, so it is the MPC's encoder.
 alloy-sol-types = "=1.6.1"
 alloy-primitives = "=1.6.1"
 
@@ -179,34 +128,17 @@ alloy-primitives = "=1.6.1"
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(kani)'] }
 
 [workspace.lints.clippy]
-# Two lints fight the tree's deliberate shapes, decided once here (M34 A,
-# CONTRIBUTING.md "What an instrument MEANS when it fires"): a circuit's `Discloses<(A, B, …)>`
-# return type IS its disclosure declaration, one label per published value,
-# and the harnesses' scenario tuples are the same shape; and byte literals
-# copied from an artifact keep the artifact's digit grouping so a reviewer
-# can diff them against it.
+# `Discloses<(A, B, …)>` return types and the harnesses' scenario tuples are
+# deliberately complex; byte literals keep the digit grouping of their artifact.
 type_complexity = "allow"
 unusual_byte_groupings = "allow"
 
 [profile.dev]
-# DEBUG INFO IS THE TARGET DIRECTORY (dmd, 2026-08-16, at 36 GB). On macOS the
-# dev default is `split-debuginfo = "unpacked"`, which leaves DWARF in a `.o`
-# per codegen unit beside the artifact, and cargo NEVER prunes target/ — every
-# fingerprint change writes a fresh generation and keeps the old one. The pile
-# measured 29.8 GB across 218,997 `.o` files, against 6.6 GB of rlibs and
-# 3.2 GB of test binaries. This workspace amplifies it: 29 test targets in
-# minocrab-contracts alone, minocrab-std built twice (the `borsh-schema`
-# feature duplicates the graph below it), and dependencies at opt-level 3.
-#
-# `line-tables-only` keeps what a failing test actually needs — file and line
-# in every backtrace and panic — and drops the type and variable DWARF nothing
-# here reads. A debugger stepping through dependency code is the thing given
-# up; `debug = true` restores it locally for as long as it is wanted.
+# Full debug info dominates target/ size; line tables keep file and line in
+# backtraces. Set `debug = true` locally to step through code in a debugger.
 debug = "line-tables-only"
 
 [profile.dev.package."*"]
-# Dependencies carry the field arithmetic (midnight-ledger, transient-crypto,
-# the hash chips); optimized once here, our own crates stay unoptimized with
-# fast incremental rebuilds. Routine loop = plain `cargo test`; --release
-# remains for the heavy gates (row_snapshot, elevated-case runs, bench).
+# Dependencies carry the field arithmetic, so they are optimized; our own
+# crates stay unoptimized for fast rebuilds.
 opt-level = 3

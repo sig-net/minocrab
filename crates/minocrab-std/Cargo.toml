@@ -10,7 +10,7 @@ readme = "README.md"
 keywords = ["midnight", "zero-knowledge", "circuit", "stdlib", "borsh"]
 categories = ["cryptography::cryptocurrencies", "cryptography"]
 # lean/ is the machine-checked proof development for the numeric and
-# visibility invariants (M25) — the warrant behind the leaves' const
+# visibility invariants — the warrant behind the leaves' const
 # asserts, shipped with the crate the way minocrab-ir ships its pass
 # proofs (tests/lean_claims.rs is the in-repo drift gate; .lake/ build
 # artifacts must not ship).
@@ -29,7 +29,7 @@ include = [
 workspace = true
 
 [dependencies]
-# The constant-preimage fold of `hash::Preimage` (2026-10): SHA-256 over the
+# The constant-preimage fold of `hash::Preimage`: SHA-256 over the
 # FAB binary encoding, computed here when every limb is an immediate. All
 # three already reach this crate through `minocrab` and `minocrab-ledger`,
 # so the dependency graph does not grow.
@@ -37,12 +37,10 @@ midnight-base-crypto.workspace = true
 midnight-transient-crypto.workspace = true
 sha2.workspace = true
 minocrab.workspace = true
-# The typed ledger block (M9 phase 7): `ledger`'s LedgerMap/LedgerCell/
-# LedgerCounter are one-line wrappers over this crate's op emission, so the
-# ADTs sit ABOVE the ops — minocrab-ledger stays the pure op layer its module
-# docs describe and gains no dependency of its own.
+# The typed ledger block wraps this crate's op emission, so minocrab-ledger
+# stays the pure op layer.
 minocrab-ledger.workspace = true
-# The Borsh SCHEMA walk (borsh::schema) only, behind the off-by-default
+# The Borsh schema walk (borsh::schema) only, behind the off-by-default
 # `borsh-schema` feature: nothing shipping links borsh, and a test build turns
 # the feature on from its own [dev-dependencies] entry (see
 # minocrab-contracts).
@@ -66,7 +64,7 @@ all-features = true
 # tests/passport_upstream.rs reads the IR back as JSON to compare opcodes.
 serde_json.workspace = true
 minocrab-sim = { path = "../minocrab-sim" }
-# The blind ops' gate (M40, tests/blind.rs) seeds a `StateValue` and runs
+# The blind ops' gate (tests/blind.rs) seeds a `StateValue` and runs
 # each transcript through Midnight's on-chain VM via the executor; these
 # three are the state tree's own types. Already in the lock.
 midnight-onchain-state.workspace = true
@@ -79,11 +77,9 @@ minocrab-zkir = { path = "../minocrab-zkir" }
 midnight-zkir-v3.workspace = true
 midnight-curves.workspace = true
 sha3.workspace = true
-# The persistent-hash oracle of the Borsh flavor (M11 stage 9): the digest the
+# The persistent-hash oracle of the Borsh flavor: the digest the
 # chip produces must be SHA-256 of `borsh::to_vec`. Already in the lock (the
 # simulator hashes with it), so no new dependency enters the graph.
-# The Borsh layer's conformance oracle (M11 stage 1): the in-circuit bytes are
-# asserted equal to `borsh::to_vec` of a plain Rust twin, which is the whole
-# claim of the module — the subset IS Borsh. Dev-dependency only, same posture
-# as minocrab-contracts' (nothing shipping links borsh).
+# The Borsh layer's conformance oracle: the in-circuit bytes are asserted
+# equal to `borsh::to_vec` of a plain Rust twin. Dev-dependency only.
 borsh.workspace = true

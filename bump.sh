@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# The runnable half of notes/version-bump.org — the M8 churn-resilience
-# workflow. Read that file for the DRIFT TAXONOMY: what a failure in each
+# The runnable half of notes/version-bump.org — the churn-resilience
+# workflow. Read that file for the drift taxonomy: what a failure in each
 # instrument means and what the correct response is.
 #
 #   ./bump.sh pins     what we pin, what upstream ships, what moved (network)
@@ -8,7 +8,7 @@
 #   ./bump.sh accept   every regenerator, i.e. accept-the-new-baseline
 #
 # Run inside the direnv/nix shell (`nix develop -c ./bump.sh gates` also
-# works). Nix supplies BINARIES ONLY — cargo, compactc, zkir-v3, node; every
+# works). Nix supplies binaries only — cargo, compactc, zkir-v3, node; every
 # build below is plain cargo.
 set -uo pipefail
 cd "$(dirname "$0")"
@@ -117,7 +117,7 @@ cmd_pins() {
 
 # ------------------------------------------------------------------ `gates`
 #
-# The ordered gate sequence. Order is DIAGNOSIS order, cheapest and most
+# The ordered gate sequence. Order is diagnosis order, cheapest and most
 # specific first: if the corpus stops round-tripping, nothing later tells you
 # anything you did not already know.
 
@@ -142,7 +142,7 @@ stage() {
   return 0
 }
 
-# The corpus's own gate: the pinned compiler must not compile FEWER files
+# The corpus's own gate: the pinned compiler must not compile fewer files
 # than the committed report says it did.
 check_compile_report() {
   local committed now
@@ -165,7 +165,7 @@ cmd_gates() {
   printf '  compactc pin  %s\n  ledger        %s\n  rustc         %s\n' \
     "$(pinned_compactc)" "$(pinned_ledger_versions)" "$(rustc --version 2>&1)"
 
-  # Before anything is built: does the pin even RESOLVE? A version that
+  # Before anything is built: does the pin even resolve? A version that
   # renames or drops a crate fails here in seconds, and every later stage would only
   # reprint the same cargo error.
   stage "dependency resolution" \
@@ -178,7 +178,7 @@ cmd_gates() {
     return 1
   fi
 
-  # Likewise: a tree that does not BUILD makes every test stage reprint the
+  # Likewise: a tree that does not build makes every test stage reprint the
   # same rustc errors. Separating "does not build" from "tests disagree" is
   # worth one --no-run pass, which the stages below then reuse.
   stage "workspace builds" \
@@ -252,7 +252,7 @@ cmd_gates() {
 # ----------------------------------------------------------------- `accept`
 #
 # Every regenerator, in dependency order. This is the "the new baseline is
-# correct" path and it is DELIBERATELY one step: after a real bump several
+# correct" path and it is deliberately one step: after a real bump several
 # snapshots move together, and regenerating them one at a time is how a
 # session ends up with a half-accepted tree.
 
@@ -275,10 +275,9 @@ cmd_accept() {
     fi
   done
 
-  # ONE cargo invocation for all of them: a per-crate loop resolves a
+  # One cargo invocation for all of them: a per-crate loop resolves a
   # different feature set each time and rebuilds the whole midnight-* graph
-  # in between. Measured on the first `accept` run — most of its eight
-  # minutes was that.
+  # in between.
   bold "2. re-pin the artifacts and their published ABI"
   if [ ${#pinned[@]} -gt 0 ]; then
     cargo test "${pinned[@]}" -- --ignored regenerate_pin_and_schema || rc=1

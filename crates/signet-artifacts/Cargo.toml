@@ -1,11 +1,7 @@
 [package]
 name = "signet-artifacts"
-# M29 rung A/B: the managed-directory pipeline for the three Signet signer
-# circuits — `.zkir` from minocrab, `.bzkir` + prover/verifier keys from the
-# pinned `zkir-v3` binary, and the `expectedVk` hash table a publisher's
-# build/prove paths check. Not depended on by anything else in the
-# workspace, so it carries no `[workspace.dependencies]` entry
-# (workspace_versions.rs only checks those).
+# The managed-directory pipeline for the Signet signer circuits (`.zkir`,
+# `.bzkir`, keys, `expectedVk`). Nothing else depends on it.
 publish = false
 version.workspace = true
 edition.workspace = true
@@ -20,7 +16,7 @@ minocrab = { path = "../minocrab" }
 minocrab-contracts = { path = "../minocrab-contracts" }
 minocrab-zkir = { path = "../minocrab-zkir" }
 # The circuit names the files are called by, and `hash_verifier_key` — the
-# function `expectedVk.json` is written with — are DEFINED there (M30 C1);
+# function `expectedVk.json` is written with — are defined there;
 # the publisher reads the same definition when it checks the table.
 signet-protocol.workspace = true
 # The manifest's sha256 lines.

@@ -15,7 +15,7 @@ categories = [
 ]
 include = ["src/**/*.rs", "README.md", "LICENSE-MIT", "LICENSE-APACHE"]
 
-# The gate-count CLI (M24): `minocrab rows|diff <file.zkir>` for people not
+# The gate-count CLI: `minocrab rows|diff <file.zkir>` for people not
 # using the Rust API. Reuses this crate's cost() + minocrab-zkir's read_zkir.
 [lints]
 workspace = true
@@ -29,8 +29,7 @@ doc = false
 [dependencies]
 minocrab.workspace = true
 minocrab-zkir.workspace = true
-# The CLI's `pass` subcommand runs the published passes over a .zkir file
-# (M24 point 4); a regular dependency since then, not just the tests'.
+# The CLI's `pass` subcommand runs the published passes over a .zkir file.
 minocrab-ir.workspace = true
 # v3 simulator: reuse zkir-v3's public off-circuit helpers and the same
 # crypto crates its interpreter calls (see src/vm.rs).
@@ -38,7 +37,7 @@ midnight-zkir-v3.workspace = true
 midnight-transient-crypto.workspace = true
 midnight-base-crypto.workspace = true
 midnight-curves.workspace = true
-# The EXECUTOR (`exec`): Midnight's own Impact VM, run in
+# The executor (`exec`): Midnight's own Impact VM, run in
 # `ResultModeGather` against a live `StateValue`. See notes/executor.org.
 midnight-onchain-vm.workspace = true
 midnight-onchain-state.workspace = true

@@ -1,17 +1,12 @@
 [package]
 name = "signet-signer-interface"
 description = "The Sig Network signet signer's cross-contract interface, as an importable MinoCrab crate"
-# PUBLISHED (dmd, 2026-11-21): minocrab-signet takes `RequestId`,
-# `SignetSigner` and `construct_notification_v1` from it.
+# Published: minocrab-signet takes `RequestId`, `SignetSigner` and
+# `construct_notification_v1` from it.
 #
-# NOT the workspace version: versions here are PER CALLEE (the note's "one
-# crate per contract" rule — a callee that breaks its ABI must not force a
-# bump on an unrelated one). 0.4 follows the signet signer at midnight-integration
-# v0.26.0-rc.15, which keeps `signBidirectional` alone: `respond` and
-# `respondBidirectional` moved to the signet responder (signet-responder-
-# interface), with their argument types. Removing a circuit is MAJOR by the
-# mechanical rule; the `signBidirectional` schema is unchanged, so no caller's
-# commitment moves. tests/artifact_agreement.rs holds it to the artifact.
+# Versioned per callee, not by the workspace: 0.4 is the signet signer at
+# midnight-integration v0.26.0-rc.15 (`signBidirectional` only).
+# tests/artifact_agreement.rs holds it to the artifact.
 version = "0.4.0"
 edition.workspace = true
 license.workspace = true
@@ -45,5 +40,5 @@ minocrab-std.workspace = true
 minocrab-ledger.workspace = true
 
 [dev-dependencies]
-# The agreement suite ONLY: nothing shipping links the artifact checker.
+# The agreement suite only: nothing shipping links the artifact checker.
 minocrab-abi = { path = "../minocrab-abi" }

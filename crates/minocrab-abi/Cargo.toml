@@ -3,8 +3,7 @@ name = "minocrab-abi"
 description = "Artifact agreement: check a MinoCrab interface crate against the callee contract's compiled compactc artifact, as a test"
 version.workspace = true
 # Not in the crates.io set (PUBLISHING.md): nothing published depends on it
-# (the interface crates take it as a dev-dependency only). Ready to join as a
-# leaf, after minocrab-ledger, if the owner adds it.
+# (the interface crates take it as a dev-dependency only).
 publish = false
 edition.workspace = true
 license.workspace = true
@@ -27,11 +26,8 @@ minocrab-ledger.workspace = true
 minocrab-zkir.workspace = true
 midnight-zkir-v3.workspace = true
 serde = { workspace = true }
-# `raw_value` for ONE field: a Compact `Uint`'s `maxval` can be 2^128 − 1,
-# which serde_json's default `Number` cannot hold (it degrades to f64 and
-# loses the low bits). Deserializing that field from its RAW JSON text is
-# exact. The feature is additive — it adds `RawValue`, it does not change
-# how numbers are parsed anywhere else.
+# `raw_value` for one field: a Compact `Uint`'s `maxval` can be 2^128 − 1,
+# which serde_json's default `Number` loses precision on.
 serde_json = { workspace = true, features = ["raw_value"] }
 sha2.workspace = true
 thiserror.workspace = true

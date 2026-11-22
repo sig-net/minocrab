@@ -1,15 +1,12 @@
 [package]
 name = "signet-responder-interface"
 description = "The Sig Network signet responder's interface, as an importable MinoCrab crate"
-# PUBLISHED: minocrab-signet takes `Signature` and the response structs from
+# Published: minocrab-signet takes `Signature` and the response structs from
 # it. The responder is the contract the MPC posts its signatures and
-# attestations to since midnight-integration v0.26 split the signet signer in
-# two; no client contract calls it cross-contract (clients read its events).
+# attestations to; no client contract calls it cross-contract.
 #
-# NOT the workspace version: versions here are PER CALLEE (the "one crate per
-# contract" rule of notes/interface-crates.org). 0.1.0 is the responder at
-# midnight-integration v0.26.0-rc.15, whose two circuits are the v0.25.0
-# signet signer's respond and respondBidirectional, unchanged on the wire.
+# Versioned per callee (notes/interface-crates.org): 0.1.0 is the responder
+# at midnight-integration v0.26.0-rc.15.
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
@@ -43,5 +40,5 @@ minocrab-std.workspace = true
 minocrab-ledger.workspace = true
 
 [dev-dependencies]
-# The agreement suite ONLY: nothing shipping links the artifact checker.
+# The agreement suite only: nothing shipping links the artifact checker.
 minocrab-abi = { path = "../minocrab-abi" }

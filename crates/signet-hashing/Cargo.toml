@@ -1,15 +1,8 @@
 [package]
 name = "signet-hashing"
-# The Signet protocol's hashes, off circuit: what the MPC computes to name a
-# request (the request id over its record), to attest an execution (the
-# attested output hash and the attestation digest it signs), and what a
-# client contract's circuits recompute. One definition for sig-net/mpc (which
-# linked its own `compact-hashing` copy), for `minocrab-publisher` (which
-# builds the attestation half of `respondBidirectional`) and for the tests
-# that drive the contracts. Reads its domain tags and enums from
-# `signet-protocol`; hashes with the pinned ledger's own `transient_hash` and
-# `FieldRepr`, so it carries the `midnight-*` line and the publish guard
-# PUBLISHING.md describes.
+# The Signet protocol's hashes, off circuit (request id, attested output
+# hash, attestation digest): one definition for sig-net/mpc, the publisher and
+# the contract tests, over the pinned ledger's own `transient_hash`.
 description = "The Signet protocol's off-circuit hashes: request id, EVM type-2 transaction digest, attested output hash and attestation digest, over the ledger's own field representation"
 version.workspace = true
 # Not in the crates.io set (PUBLISHING.md): its consumers link it by git, and
