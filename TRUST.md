@@ -1,20 +1,6 @@
-# TRUST.md — what a human must read, in what order
+# TRUST.md: where the machines stop
 
-Most of this tree is warranted by machinery: the differentials against
-compactc's own artifacts, the frozen snapshots, the spec-and-property
-harness, the reference-VM cross-check, the Lean gates. The part that is
-not is small and nameable, and this document names it — file by file,
-with the test or proof that would catch a wrong line, and the failure that
-would hide there if nothing did. The rows whose warrant is **READING** are
-the trusted computing base. Everything else is where a reviewer's hour
-buys the least, because a machine already stands there.
-
-The table is generated (`crates/minocrab-contracts/tests/trust_base.rs`): the classification is data in that test, and a test fails when a source file of the seven eDSL crates has no row, a row names a file that is gone, or this table is stale. The table carries no line counts, so editing a file does not make it stale; adding, removing or reclassifying one does. Regenerate with `MINOCRAB_TRUST_BASE=1 cargo test -p minocrab-contracts --test trust_base` and review the diff. THE ONE ERROR THIS TABLE MUST NOT CONTAIN is a warrant claimed that is not there: where unsure, a row says READING and you downgrade it, never the reverse.
-
-[VERIFICATION.md](VERIFICATION.md) is the companion: it says what each
-suite warrants; this says where the suites stop.
-
-## 1. The inventory
+Most of this tree is warranted by tests, proofs and gates. This file lists the part that is not: for each source file of the eight eDSL crates, what would catch a wrong line (a test, a proof or a gate), and the failure that would hide there if nothing did. The rows whose warrant is **READING** are the trusted computing base, the part a human reviewer has to read. The table is generated from `crates/minocrab-contracts/tests/trust_base.rs`, which fails when a source file has no row, a row names a file that is gone, or the table is stale; regenerate with `MINOCRAB_TRUST_BASE=1 cargo test -p minocrab-contracts --test trust_base`. The read order, its time budget and the grep checklist for the escape hatches are in [VERIFICATION.md](VERIFICATION.md) §6 and §7, and what each warrant names is explained there.
 
 <!-- GENERATED BEGIN: trust_base.rs -->
 | file | what warrants it | the failure that would hide there |
@@ -73,55 +59,3 @@ suite warrants; this says where the suites stop.
 
 51 files in the eight crates; 17 of them have a warrant that is READING in whole or in part (the rows in bold).
 <!-- GENERATED END -->
-
-## 2. The read order, with a time budget
-
-Bottom of the stack first, because every layer above is written against
-the one below. Times are for someone who knows Midnight's ledger and ZKIR
-v3 internals; double them otherwise. Each item says what to compare against
-in the pinned ledger sources (the crates.io `midnight-*` versions
-`Cargo.toml` names) and in compactc's compiler sources (`corpus/src/compact/`).
-
-| # | read | budget | the question it answers | compare against |
-|---|---|---|---|---|
-| 1 | `crates/minocrab-zkir/src/` | 15 min | is the IR type Midnight's own, re-exported, and is the file envelope the only thing added? | midnight-zkir's `src/ir.rs` — nothing here should redefine a type |
-| 2 | `crates/minocrab/src/lib.rs` | 15 min | is the visibility lattice sound: can private meet public and come out public anywhere? | the four `Meet` impls, by hand |
-| 3 | `crates/minocrab-ir/src/builder.rs` | 1.5 h | does every instruction's operand-type table match what the VM accepts, including immediates? | midnight-zkir's `src/ir_vm.rs` (`preprocess`, the per-instruction arms) |
-| 4 | `crates/minocrab/src/circuit.rs` | 3 h | the disclosure gate (one method, `disclose*`), the guard scopes (`when`, `guarded`), public-input minting order; can an effect escape its guard? | `compiler/zkir-v3-passes/reduce-to-zkir.ss` for the guard and read conventions; `tests/guard_scope.rs` for what is pinned |
-| 5 | `crates/minocrab-ledger/src/{impact,ops,reads,kernel,calls}.rs` (split by concern, M26 — `lib.rs` itself is crate doc and re-exports, and `tests.rs` is the crate's own unit tests) | 4 h | is each Impact op encoded as compactc's vm-code says, and does every read mint its gates before the op? Concentrate on ops no fixture reaches (VERIFICATION.md §5) | `compiler/midnight-ledger.ss` (vm-code per kernel/ADT function), `ledger/src/verify.rs` (transcript rules) |
-| 6 | `crates/minocrab-macros/src/` | 2 h | do the expansions add anything the hand-written twins do not — argument order, constraints, the generated tests' bodies? | the twin tests (`circuit`, `derive`, `interface_macro`): read the twin, then the expansion |
-| 7 | `crates/minocrab-sim/src/vm.rs` | 1.5 h | is the simulator a port of `preprocess`, and is it ever trusted alone? | midnight-zkir's `src/ir_vm.rs::preprocess`; `IrSource::check` at every call site of `simulate` |
-| 8 | `crates/minocrab-ir/src/passes.rs`, `crates/minocrab-taint/src/lib.rs` | 2 h | does each pass have its Lean theorem, and does each taint marking rule cite an in-circuit warrant? | `crates/minocrab-ir/lean/`; `notes/taint-lint.org §4` |
-| 9 | `crates/minocrab-std/src/` | 1 day | not line by line: the SEAMS — every `from_field_unchecked`, every `.field()` that drops a range obligation, every `or_default()` | the greps in §3; `notes/api-safety-survey.org §A1-A2` |
-
-About three days for the READING rows plus the seams; the differentials
-cover the rest and a reviewer's time is better spent running them
-(VERIFICATION.md §6 has the one-day gate run).
-
-## 3. The checklist — the escape hatches, greppable by design
-
-Run against `crates/*/src`. Each hit is a place where an obligation is
-discharged by hand rather than by a type:
-
-```
-grep -rn 'from_field_unchecked'      # the unchecked type claim; the twin is from_field_checked
-grep -rn '\.field()'                 # a typed leaf becoming a raw wire — the range obligation drops here
-grep -rn 'or_default()'              # a guarded-off read consumed as the type's default
-grep -rnE 'disclose(_as)?\('         # every private→public transition, each declared in a signature
-grep -rnE 'PRECONDITION|caller.s job'  # invariants in prose rather than checked
-grep -rn 'unsafe'                    # should be empty in the eDSL crates
-```
-
-The taint lint (`tests/taint_lint.rs`) is the one instrument that sees the
-class no test on honest inputs can; its frozen baseline is classified in
-`notes/taint-lint.org §5`, and a reviewer should read the baseline as a
-list of open questions, not as accepted findings.
-
-## 4. What this document does not cover
-
-The contracts crate (the vault lineages, the corpus ports) is warranted by
-its differentials and the spec harness and is not inventoried here; the
-`signet-sim` crate is a test aid; the interface crates are generated from
-artifacts and gated by `artifact_agreement`. The design of record for this
-inventory, including how the warrant column was decided, is
-[notes/trust-base.org](notes/trust-base.org).

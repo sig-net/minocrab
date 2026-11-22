@@ -1,15 +1,10 @@
 # Contributing
 
-The discipline that keeps this codebase correct lives in a *process*, not
-just in the tests. If you edit this repo like a normal repo, the
-instruments decay into noise and the correctness story dies quietly. This
-file is the process, written down. It is short on purpose: where a topic
-has a full write-up, this points at it instead of duplicating it.
+The discipline that keeps this codebase correct lives in a *process*, not just in the tests. If you edit this repo like a normal repo, the instruments decay into noise and the correctness story dies quietly. This file is the working loop and the house rules; [VERIFICATION.md](VERIFICATION.md) says what each gate means when it fires, and [PUBLISHING.md](PUBLISHING.md) covers releases.
 
-## The loop: how to make a change
+## Run the gates: how to make a change
 
-1. **Baseline first.** Before touching circuit-adjacent code, dump every
-   circuit's serialized ZKIR:
+1. **Baseline first.** Before touching circuit-adjacent code, dump every circuit's serialized ZKIR:
 
    ```
    MINOCRAB_ZKIR_DUMP=/tmp/before cargo test -p minocrab-contracts \
@@ -27,114 +22,31 @@ has a full write-up, this points at it instead of duplicating it.
      --test row_snapshot --test interface_snapshot   # the frozen tables
    ```
 
-   Then re-dump to `/tmp/after` and `diff -rq /tmp/before /tmp/after`.
-   The dump is the instrument the snapshots cannot replace: `row_snapshot`
-   freezes `(k, rows)` and is blind to an instruction reorder at equal
-   rows or a removed `Copy`; `interface_snapshot` freezes `(label, type)`
-   and is blind to everything else. Byte-equality of the dumps sees all
-   of it. CI runs this comparison against your PR's base automatically.
+   Then re-dump to `/tmp/after` and `diff -rq /tmp/before /tmp/after`. CI runs this comparison against your PR's base automatically. Clippy (`cargo clippy --workspace --all-targets -- -D warnings`) and `cargo deny check` are CI jobs too.
 
-4. **Explain every moved byte.** Zero movement needs no words. Any
-   movement needs the commit message to say *which* circuits moved, *by
-   how much*, and *why that is the intended change* — see the history for
-   the house style (`git log --grep "byte-identical"`). Movement that you
-   cannot explain is a bug in your change, not an acceptable cost.
+4. **Explain every moved byte.** Zero movement needs no words. Any movement needs the commit message to say which circuits moved, by how much, and why that is the intended change (`git log --grep "byte-identical"` shows the house style). Movement you cannot explain is a bug in your change.
 
-5. **Regenerate, never paste.** Every snapshot has a regenerator that
-   writes its table back between `GENERATED` markers so acceptance is a
-   reviewable `git diff`:
+5. **Regenerate, never paste.** Every snapshot has a regenerator that writes its table back between `GENERATED` markers, so acceptance is a reviewable `git diff`:
 
    ```
    cargo test -p minocrab-contracts --test row_snapshot -- --ignored regenerate_row_snapshot
    cargo test -p minocrab-contracts --test interface_snapshot -- --ignored regenerate_interface_snapshot
    MINOCRAB_TAINT_BASELINE=1 cargo test -p minocrab-contracts --test taint_lint
+   MINOCRAB_TRUST_BASE=1 cargo test -p minocrab-contracts --test trust_base
    ```
 
-   `./bump.sh accept` runs every regenerator in dependency order (that
-   script's home turf is toolchain bumps — see below — but the
-   regenerators are the same ones).
+   `./bump.sh accept` runs every regenerator in dependency order.
 
-## What an instrument MEANS when it fires
-
-Do not guess. The **drift taxonomy** in
-[notes/version-bump.org](notes/version-bump.org) names twelve
-instruments, what a failure in each one *means*, and which of four
-responses is right (accept the new baseline / fix your change / repin /
-investigate upstream). It was written for toolchain bumps but the
-taxonomy applies to any firing. Two that deserve their own sentence:
-
-- **The taint lint** (`tests/taint_lint.rs`) fires when a hash-preimage
-  limb is not provably bounded — the class no test on honest inputs can
-  see. **Never allowlist.** Either extend the marking rules in
-  `minocrab-taint/src/lib.rs` with a *cited in-circuit warrant*, or
-  take the finding to the maintainers. [notes/taint-lint.org](notes/taint-lint.org)
-  has the classification of the frozen baseline.
-- **A differential suite** disagreeing with compactc means the port's
-  statement changed. That is never routine; see
-  [VERIFICATION.md](VERIFICATION.md) for what each suite warrants.
-- **Clippy** (`cargo clippy --workspace --all-targets -- -D warnings`, the
-  `clippy` CI job) is STYLE: fix the finding zero-movement (the dump gate
-  says whether it moved anything), or allow it at the site with a one-line
-  reason. No crate-wide allows. The two lints that fight the tree's
-  deliberate shapes — `type_complexity` (a circuit's `Discloses<(…)>` IS
-  its declaration) and `unusual_byte_groupings` (literals keep their
-  artifact's grouping) — are decided once in `Cargo.toml`
-  `[workspace.lints]`, and every crate opts in with `[lints] workspace =
-  true`.
-- **The interface semver job** (`interface-wire-compat-semver`, PRs only)
-  is WIRE COMPATIBILITY, not style: an interface crate's surface is
-  governed by the callee's deployed artifact, so a reported break means
-  the wire moved. Stop, and read `tests/artifact_agreement.rs` in the
-  crate it names; regenerate nothing until you know why.
-- **The supply-chain job** (`cargo deny check`, the `deny` CI job,
-  `deny.toml`) is SUPPLY CHAIN: a firing advisory means a real RUSTSEC
-  finding on something we depend on (fix or, if genuinely inapplicable,
-  add a reasoned entry to `[advisories.ignore]` — never a bare skip); a
-  firing license or source means a new dependency (or transitive one)
-  outside the tree's actual license/source posture — extend the allow
-  list only after confirming the license/host by hand, never widen it
-  with a wildcard. [notes/supply-chain.org](notes/supply-chain.org) has
-  the full rationale and every current ignore's reason.
-
-## The class tests cannot see
-
-Some hazards are invisible to every test that runs on honest inputs
-(unconstrained hash-preimage wires, guarded-witness misuse, private
-guards driving public effects). The method for finding them is a
-*survey*: read the code asking "what can a malicious prover vary?",
-write each finding down with severity and either a fix or a written
-refusal. [notes/api-safety-survey.org](notes/api-safety-survey.org) §0
-is the method and the worked example;
-[notes/newtype-survey.org](notes/newtype-survey.org) is a second one.
-The escape-hatch greps double as a code-review checklist:
-
-```
-grep -rn "\.bytes()"            # everywhere a newtype's distinction is dropped
-grep -rn "disclose"             # every Private -> Public gate
-grep -rn "from_field_unchecked" # every unproven width claim
-grep -rn "_guarded\|_under"     # every guarded read/effect
-```
+When a gate fires and you do not know what it means, read [VERIFICATION.md](VERIFICATION.md) §3 before changing anything. Never allowlist a taint-lint finding.
 
 ## Toolchain bumps
 
-`./bump.sh pins` answers "is there anything to take?"; `gates` runs the
-instruments in diagnosis order; `accept` regenerates everything into a
-reviewable diff. The whole workflow, the four independent pins, and the
-hazards are in [notes/version-bump.org](notes/version-bump.org). A bump
-is a routine chore; treat any surprise as taxonomy, not noise.
+`./bump.sh pins` answers "is there anything to take?"; `gates` runs the instruments in diagnosis order; `accept` regenerates everything into a reviewable diff. The workflow, the four independent pins and the hazards are in [notes/version-bump.org](notes/version-bump.org).
 
 ## House rules
 
 - Correctness (and *obvious* correctness) > performance > idiomatic Rust.
 - Never compile below ZKIR. Reuse Midnight's code before writing our own.
-- Nix provides binaries only; the build is plain `cargo` (see
-  [CLAUDE.md](CLAUDE.md) for the full list, including the API-rejection
-  ladder: missing impl > non-unifying types > inline-const assert >
-  build-time panic, in that order of preference).
-- Findings and decisions go to `notes/` as they are made
-  ([ONBOARDING.md](ONBOARDING.md) maps the notes); milestones are ticked
-  in `milestones.org` in place.
-- The elevated gates before publishing a spec-anchored claim:
-  `PROPTEST_CASES=1000000` on the vault spec suite, and a fresh
-  single-session `./bench.sh` for any number that lands in
-  [BENCHMARK.md](BENCHMARK.md).
+- Nix provides binaries only; the build is plain `cargo` (see [CLAUDE.md](CLAUDE.md) for the full list, including the API-rejection ladder: missing impl > non-unifying types > inline-const assert > build-time panic, in that order of preference).
+- Findings and decisions go to `notes/` as they are made; milestones are ticked in `milestones.org` in place.
+- The elevated gates before publishing a spec-anchored claim: `PROPTEST_CASES=1000000` on the vault spec suite, and a fresh single-session `./bench.sh` for any number that lands in [BENCHMARK.md](BENCHMARK.md).
