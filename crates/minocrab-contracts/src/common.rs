@@ -23,7 +23,7 @@ pub use minocrab_signet::common::{
 /// native field element (notes/ledger-abi.org §3) — 5 limbs, matching
 /// `encode`'s output.
 ///
-/// The table itself lives on the ARGUMENT type (M9 phase 5), because a
+/// The table itself lives on the argument type, because a
 /// point's alignment is one fact: the same five atoms describe the value
 /// entering a circuit and the value written to a `Secp256k1Point` cell.
 pub fn secp256k1_point_atoms() -> Vec<AlignmentAtom> {
@@ -165,7 +165,7 @@ pub fn mint_shielded_token(
     });
 }
 
-/// A full-value burn that CLAIMS A NULLIFIER: the contract spends a coin it
+/// A full-value burn that claims a nullifier: the contract spends a coin it
 /// owns, so the spend is authorised by nullifying it.
 ///
 /// The other burn is [`burn_spend`], and the difference is protocol rather
@@ -230,8 +230,8 @@ fn burn_body(
     }
 }
 
-/// The OPTIMIZED burn (M10 rung vi, avenue 6): the surrendered coin is
-/// destroyed by a SINGLE claimed shielded spend of the burn-address output —
+/// The optimized burn: the surrendered coin is
+/// destroyed by a single claimed shielded spend of the burn-address output —
 /// no `receiveShielded` custody claim and no nullifier. The user funds the
 /// burn Output directly (`createZswapOutput(coin, shieldedBurnAddress())`, a
 /// Void witness — off-circuit — with NO `createZswapInput` preceding it), and
@@ -246,16 +246,16 @@ fn burn_body(
 /// now the only one). Well-formedness of exactly this shape against the pinned
 /// ledger is proven in tests/erc20_vault_opt_burn_wellformed.rs.
 ///
-/// A full-value burn as ONE CLAIMED SPEND, with no nullifier claim and no
+/// A full-value burn as one claimed spend, with no nullifier claim and no
 /// `kernel.self()` read — the burn recipient is `left(default)` rather than
 /// self, so there is no owned coin to nullify. See [`burn_coin`] for the twin
 /// that does nullify, and why the two names are not a cost distinction.
 ///
-/// The burn Output keeps the port's EVOLVED nonce (the transientHash +
+/// The burn Output keeps the port's evolved nonce (the transientHash +
 /// div_mod, ~165 rows), so its commitment is byte-identical to the one the
 /// compat burn already builds and the off-chain twin already constructs; only
 /// the receive coinCommitment and the nullifier — two SHA-256 pair hashes,
-/// ~11,280 rows — are removed. `me` is no longer read (the burn recipient is
+/// ~11,280 rows — are removed. `me` is not read (the burn recipient is
 /// `left(default)`, not `self`), so it is not a parameter.
 pub fn burn_spend(
     c: &mut Circuit,
@@ -292,7 +292,7 @@ pub fn burn_spend(
 /// the shared body of the static-`left(pk)` mints: compactc folds the
 /// recipient selects and the auto-receive branch.
 ///
-/// ONE name for every artifact (M18): the `kernel.self()` read comes from
+/// One name for every artifact: the `kernel.self()` read comes from
 /// [`kernel::self_address`], so a compat circuit gets its per-mint read
 /// (compactc parity) and an opt-lineage circuit that opened with
 /// [`kernel::cache_self_address`] gets the cached wires — a circuit that

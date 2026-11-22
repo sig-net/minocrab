@@ -1,6 +1,6 @@
 //! `test-caller-contract` (signet-midnight-integration) — the minimal
 //! Signet caller. Only `initialise` is ported so far: it is the corpus's
-//! smallest circuit exercising ledger READS (a Counter read and a Cell
+//! smallest circuit exercising ledger reads (a Counter read and a Cell
 //! read) alongside writes.
 //!
 //! Compact original (signet-midnight-integration v0.26.0-rc.15, `aa91570`):
@@ -66,9 +66,8 @@ impl TestCaller {
         response_key: Secp256k1Point,
     ) -> Discloses<(MpcResponseKey,)> {
         let response_key = response_key.point();
-        // Kept even though guard threading no longer uses it: dropping this
-        // `Copy` would renumber every later identifier, moving the ZKIR
-        // (notes/edsl-trim.org §B, the removal's zero-movement gate).
+        // The `one` compactc threads, unused here: dropping this `Copy` would
+        // renumber every later identifier, moving the ZKIR (notes/edsl-trim.org §B).
         let _ = c.constant(1u64);
 
         // assert(initialised == 0, "Already initialised: …")

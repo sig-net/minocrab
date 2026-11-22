@@ -3,7 +3,7 @@
 //! v0.7.0-rc.2 pins).
 //!
 //! Every one of them is `upgradeFromTransient(transientHash([HashDomain.x,
-//! …]))`: Poseidon over the preimage's FIELD-ALIGNED representation, then
+//! …]))`: Poseidon over the preimage's field-aligned representation, then
 //! the field element written out as 32 bytes. The field representation is
 //! the ledger's: [`FieldRepr`] packs a `Bytes<N>` as the compiler's FAB
 //! alignment does (the `N mod 31` leftover bytes as the first limb, then
@@ -185,7 +185,7 @@ impl Attestation {
 
 // ---- the transaction ---------------------------------------------------------
 
-/// `EvmCalldata`: the ABI selector and the USED words. The circuit's struct
+/// `EvmCalldata`: the ABI selector and the used words. The circuit's struct
 /// has a capacity and a `noWords`; off circuit the words present are the
 /// words used, and the capacity, which the digest does not commit to, is the
 /// requester's business.
@@ -195,7 +195,7 @@ pub struct EvmCalldata {
     pub words: Vec<[u8; 32]>,
 }
 
-/// `EvmAccessListEntry`: an address and its USED storage keys.
+/// `EvmAccessListEntry`: an address and its used storage keys.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EvmAccessListEntry {
     pub address: [u8; 20],
@@ -203,7 +203,7 @@ pub struct EvmAccessListEntry {
 }
 
 /// `EvmType2TxParams`: an EIP-1559 transaction as the record carries it,
-/// with the calldata and the access list holding their USED entries only.
+/// with the calldata and the access list holding their used entries only.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EvmType2TxParams {
     pub chain_id: u64,

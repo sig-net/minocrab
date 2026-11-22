@@ -1,18 +1,18 @@
-//! `xcontract-events`, THROUGH THE BORSH API (M11 stage 6) — the twin of
+//! `xcontract-events`, through the Borsh API — the twin of
 //! [`crate::xcontract_events`].
 //!
 //! Same discipline as [`crate::events_borsh`]: the original is pinned and
-//! differential-green against compactc, this twin emits THE SAME BYTES and
+//! differential-green against compactc, this twin emits the same bytes and
 //! builds them out of declared types. What makes this the more interesting of
-//! the two twins is that the payload is MATERIALISED — the token hashes it
+//! the two twins is that the payload is materialised — the token hashes it
 //! (`persistentHash<Bytes<256>>(payload)`) and returns the digest across a
 //! cross-contract call — so both halves of the padding rule are exercised on
 //! one shape:
 //!
 //! - `payload = to_bytes::<256>(DepositEvent)` — 56 Borsh bytes then 200 zero
-//!   bytes, and it is THOSE 256 bytes that are hashed, exactly as deployed;
+//!   bytes, and it is those 256 bytes that are hashed, exactly as deployed;
 //! - `misc = to_bytes::<288>(Misc { name, payload })` — here `LEN == 288`
-//!   exactly, so there is no pad at all: the envelope IS the Borsh encoding
+//!   exactly, so there is no pad at all: the envelope is the Borsh encoding
 //!   of a `{[u8; 32], [u8; 256]}` struct.
 //!
 //! The caller side (`depositViaVault`) serializes nothing and is not twinned:
@@ -31,14 +31,14 @@ use minocrab_std::{contract, event, BytesN, ContractAddress, Disclose, Discloses
 
 use crate::events::{MISC_SIZE, MISC_TAG, MISC_VERSION};
 use crate::events_borsh::DepositEvent;
-// The labels are the ORIGINAL's: same callee, same two disclosed values.
+// The labels are the original's: same callee, same two disclosed values.
 use crate::xcontract_events::{
     Amount, Caller, DEPOSIT_COUNT, EMITTED_DEPOSITS, EVENT_NAME, LAST_AMOUNT, PAYLOAD_SIZE,
 };
 
 /// `Misc { name: Bytes<32>, payload: Bytes<256> }` — 288 Borsh bytes, the
 /// deployed envelope declared exactly as it is: a name and an opaque
-/// fixed-width payload slot, whose CONTENTS are `borsh(DepositEvent)`
+/// fixed-width payload slot, whose contents are `borsh(DepositEvent)`
 /// followed by the payload's own zero pad.
 #[derive(CircuitBorsh)]
 pub struct Misc<V: Vis> {
@@ -67,9 +67,8 @@ impl XcontractEventsBorsh {
         let caller = caller.bytes();
         let a = amount.disclose_as::<Amount>(c).field();
         let cal = caller.disclose_as::<Caller>(c);
-        // Kept even though guard threading no longer uses it: dropping this
-        // `Copy` would renumber every later identifier, moving the ZKIR
-        // (notes/edsl-trim.org §B, the removal's zero-movement gate).
+        // The `one` compactc threads, unused here: dropping this `Copy` would
+        // renumber every later identifier, moving the ZKIR (notes/edsl-trim.org §B).
         let _ = c.constant(1u64);
 
         // const sequence = depositCount as Uint<64> — read before the increment.
@@ -90,7 +89,7 @@ impl XcontractEventsBorsh {
         };
         let payload = borsh::to_bytes::<PAYLOAD_SIZE, Public, _>(c, &event);
 
-        // eventHash = persistentHash<Bytes<256>>(payload) — over the WHOLE
+        // eventHash = persistentHash<Bytes<256>>(payload) — over the whole
         // envelope, Borsh bytes and zero pad alike, as deployed.
         let alignment = BytesN::<Public, PAYLOAD_SIZE>::alignment();
         let limbs: Vec<_> = payload.limbs().iter().map(|w| w.erase()).collect();

@@ -1,11 +1,11 @@
 //! The compiled `.zkir`, read for the two facts an interface crate can be
 //! checked against: how many inputs the circuit declares, and the
-//! CONSTRAINT PREFIX it opens with.
+//! constraint prefix it opens with.
 //!
 //! compactc emits every argument's constraints first, in slot order, before
 //! any other instruction (`emit-constraints-for` runs over the whole
 //! flattened argument list at circuit entry). That prefix is therefore the
-//! callee's argument ABI as the PROVER sees it — not as the compiler's JSON
+//! callee's argument ABI as the prover sees it — not as the compiler's JSON
 //! describes it — so comparing it against
 //! [`Prim::constraint`](minocrab::Prim::constraint) run over an
 //! interface crate's own types checks the interface against the artifact

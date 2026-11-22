@@ -1,9 +1,7 @@
 //! The FAB primitives a signer call is built out of.
 //!
-//! Moved verbatim from `minocrab-contracts`' `tests/support/signet_call.rs`
-//! (M29 rung C) so that the construction path is LIBRARY code a publisher
-//! links, not test code a publisher would have to re-derive. The suites there
-//! now call these.
+//! Library code a publisher links, not test code a publisher would have to
+//! re-derive; `minocrab-contracts`' `tests/support/signet_call.rs` calls these.
 
 use midnight_base_crypto::fab::{
     AlignedValue, Alignment, AlignmentAtom, AlignmentSegment, Value, ValueAtom,
@@ -43,12 +41,12 @@ pub fn cell<D: DB>(av: AlignedValue) -> StateValue<D, AlignedValueChecked> {
 
 /// A flat `[Field; n]` aligned value over `limbs`.
 ///
-/// The ledger reads a call's `input` ONLY through
+/// The ledger reads a call's `input` only through
 /// `AlignedValue::value_only_field_repr` — for the proof preimage's `inputs`
 /// (via `ValueReprAlignedValue::field_vec`) and for the communication
 /// commitment. The alignment itself never reaches the transaction, so an
 /// argument list whose typed alignment is `[Bytes<32>, Bytes<1>, …]` and this
-/// flat one produce the SAME preimage;
+/// flat one produce the same preimage;
 /// `minocrab-contracts`' `tests/signet_construction.rs::
 /// the_alignment_does_not_reach_the_preimage` asserts that byte for byte.
 pub fn scalar_input(limbs: &[Fr]) -> AlignedValue {

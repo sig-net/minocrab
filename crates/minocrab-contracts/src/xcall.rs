@@ -1,6 +1,6 @@
 //! `xcall` (signet-midnight-experiments) — the cross-contract calling
 //! experiment: caller contract A holds a sealed reference to target
-//! contract B and calls its circuits cross-contract (M5).
+//! contract B and calls its circuits cross-contract.
 //!
 //! Compact original (caller):
 //! ```text
@@ -20,7 +20,7 @@
 //! callBig(data: Bytes<256>):    increment + target.depositBig(data)
 //! callEmit(recipient, amount):  increment + target.depositEmit(r, a)
 //! ```
-//! `callEmit` and `callOnce` differ only in WHICH entry point they claim,
+//! `callEmit` and `callOnce` differ only in which entry point they claim,
 //! which is a constant of the circuit: their ZKIR differs in exactly the two
 //! entry-point-hash limbs of the claim.
 //!
@@ -60,7 +60,7 @@ struct DepositArgs {
 label! {
     Recipient = "recipient";
     Amount = "amount";
-    /// `callBig`'s 256-byte argument — nine limbs, ONE logical value.
+    /// `callBig`'s 256-byte argument — nine limbs, one logical value.
     Data = "data";
 }
 
@@ -79,7 +79,7 @@ fn disclose_args(c: &mut Circuit, args: DepositArgs) -> (B32<Public>, Wire<Field
 ///
 /// Named once because the family is built through [`entry`]: the entry
 /// point's return type and the hand-written set-equality test below have to
-/// be the SAME declaration, and an alias is what makes that a compiler fact.
+/// be the same declaration, and an alias is what makes that a compiler fact.
 type CallDisclosures = Discloses<(Recipient, Amount, XcallCommitment)>;
 
 /// The sealed `target` reference. `at_field` means every call site does its
@@ -103,9 +103,8 @@ impl Xcall {
         amount: Uint<128>,
     ) -> Discloses<(Recipient, Amount)> {
         let (r, a) = disclose_args(c, DepositArgs { recipient, amount });
-        // Kept even though guard threading no longer uses it: dropping this
-        // `Copy` would renumber every later identifier, moving the ZKIR
-        // (notes/edsl-trim.org §B, the removal's zero-movement gate).
+        // The `one` compactc threads, unused here: dropping this `Copy` would
+        // renumber every later identifier, moving the ZKIR (notes/edsl-trim.org §B).
         let _ = c.constant(1u64);
 
         let amount_val = LedgerValue::bytes(16, vec![ImpactElem::Wire(a)]);
@@ -127,9 +126,8 @@ impl Xcall {
         amount: Uint<128>,
     ) -> Discloses<(Recipient, Amount, XcallCommitment)> {
         let (r, a) = disclose_args(c, DepositArgs { recipient, amount });
-        // Kept even though guard threading no longer uses it: dropping this
-        // `Copy` would renumber every later identifier, moving the ZKIR
-        // (notes/edsl-trim.org §B, the removal's zero-movement gate).
+        // The `one` compactc threads, unused here: dropping this `Copy` would
+        // renumber every later identifier, moving the ZKIR (notes/edsl-trim.org §B).
         let _ = c.constant(1u64);
         emit(c, &counter_increment(CALL_COUNT, 1));
         TARGET_CONTRACT.deposit_emit(c, r, Uint::from_field_unchecked(a));
@@ -144,9 +142,8 @@ impl Xcall {
         data: BytesN<Private, 256>,
     ) -> Discloses<(Data, XcallCommitment)> {
         let data: BytesN<Public, 256> = data.disclose_as::<Data>(c);
-        // Kept even though guard threading no longer uses it: dropping this
-        // `Copy` would renumber every later identifier, moving the ZKIR
-        // (notes/edsl-trim.org §B, the removal's zero-movement gate).
+        // The `one` compactc threads, unused here: dropping this `Copy` would
+        // renumber every later identifier, moving the ZKIR (notes/edsl-trim.org §B).
         let _ = c.constant(1u64);
 
         emit(c, &counter_increment(CALL_COUNT, 1));
@@ -159,9 +156,8 @@ impl Xcall {
     /// the contract boundary.
     #[circuit]
     pub fn target_deposit_big(c: &mut Circuit, _data: BytesN<Private, 256>) -> Discloses<()> {
-        // Kept even though guard threading no longer uses it: dropping this
-        // `Copy` would renumber every later identifier, moving the ZKIR
-        // (notes/edsl-trim.org §B, the removal's zero-movement gate).
+        // The `one` compactc threads, unused here: dropping this `Copy` would
+        // renumber every later identifier, moving the ZKIR (notes/edsl-trim.org §B).
         let _ = c.constant(1u64);
         emit(c, &counter_increment(T_CALL_COUNT, 1));
         // The callee's own argument never leaves the private domain: it is
@@ -193,9 +189,8 @@ fn call_n_times(n: usize) -> Compiled {
         // Explicit: built through `entry`, outside the `#[contract]` block, so its attribute does not reach it.
         minocrab_compat::profile(c);
         let (r, a) = disclose_args(c, args);
-        // Kept even though guard threading no longer uses it: dropping this
-        // `Copy` would renumber every later identifier, moving the ZKIR
-        // (notes/edsl-trim.org §B, the removal's zero-movement gate).
+        // The `one` compactc threads, unused here: dropping this `Copy` would
+        // renumber every later identifier, moving the ZKIR (notes/edsl-trim.org §B).
         let _ = c.constant(1u64);
 
         emit(c, &counter_increment(CALL_COUNT, 1));

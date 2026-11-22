@@ -1,11 +1,11 @@
-//! THE PUBLISHED ABI, as text.
+//! The published ABI, as text.
 //!
 //! An interface crate freezes this rendering of its own declarations in a
-//! snapshot file. It is derived entirely from the TYPES — no artifact is
+//! snapshot file. It is derived entirely from the types — no artifact is
 //! consulted — so what it captures is what the crate promises its
 //! dependants:
 //!
-//! - the entry-point NAME and its 32-byte hash (the key the ledger matches
+//! - the entry-point name and its 32-byte hash (the key the ledger matches
 //!   a `claimContractCall` against);
 //! - every argument slot's flattened primitive type and the constraint it
 //!   carries, in wire order;
@@ -13,9 +13,9 @@
 //!   communications commitment hashes;
 //! - the same for the result.
 //!
-//! ITS DIFF IS THE SEMVER DECISION. Reordering or retyping an argument
+//! Its diff is the semver decision. Reordering or retyping an argument
 //! changes the commitment layout, so the ledger stops matching and every
-//! deployed caller breaks: a changed snapshot is a MAJOR version, by
+//! deployed caller breaks: a changed snapshot is a major version, by
 //! construction rather than by judgement. See
 //! notes/interface-crates.org §"Versioning and publishing".
 

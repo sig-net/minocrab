@@ -1,6 +1,6 @@
 //! `xcontract-events` (signet-midnight-experiments) — provable event
-//! attribution across a cross-contract call (M5): vault A calls token B's
-//! `deposit`, B emits a DepositEvent and returns its hash, and BOTH sides
+//! attribution across a cross-contract call: vault A calls token B's
+//! `deposit`, B emits a DepositEvent and returns its hash, and both sides
 //! record the hash in authenticated state. The communication commitment
 //! guarantees the hash A stores is exactly what B returned.
 //!
@@ -86,7 +86,7 @@ pub struct XcontractEvents;
 impl XcontractEvents {
     /// `export circuit depositViaVault(amount: Uint<128>): Bytes<32>`.
     ///
-    /// The corpus's only circuits with a RETURN VALUE, so the only users of
+    /// The corpus's only circuits with a return value, so the only users of
     /// `#[circuit(output = ..)]`: the label names the disclosed value, and
     /// `CircuitOut for B32<Public>` suffixes the two limbs `(hi)`/`(lo)` — the
     /// hand-written labels, unchanged.
@@ -96,9 +96,8 @@ impl XcontractEvents {
         amount: Uint<128>,
     ) -> Discloses<(Amount, XcallCommitment, XcallResult), B32<Public>> {
         let a = amount.disclose_as::<Amount>(c).field();
-        // Kept even though guard threading no longer uses it: dropping this
-        // `Copy` would renumber every later identifier, moving the ZKIR
-        // (notes/edsl-trim.org §B, the removal's zero-movement gate).
+        // The `one` compactc threads, unused here: dropping this `Copy` would
+        // renumber every later identifier, moving the ZKIR (notes/edsl-trim.org §B).
         let _ = c.constant(1u64);
 
         emit(c, &counter_increment(VAULT_CALL_COUNT, 1));
@@ -127,9 +126,8 @@ impl XcontractEvents {
         let caller = caller.bytes();
         let a = amount.disclose_as::<Amount>(c).field();
         let cal = caller.disclose_as::<Caller>(c);
-        // Kept even though guard threading no longer uses it: dropping this
-        // `Copy` would renumber every later identifier, moving the ZKIR
-        // (notes/edsl-trim.org §B, the removal's zero-movement gate).
+        // The `one` compactc threads, unused here: dropping this `Copy` would
+        // renumber every later identifier, moving the ZKIR (notes/edsl-trim.org §B).
         let _ = c.constant(1u64);
 
         // const sequence = depositCount as Uint<64> — read before the increment.

@@ -14,23 +14,23 @@
 //! persistentVec8(data: Vector<8, Bytes<32>>): … digest = …persistentHash…
 //! ```
 //!
-//! # The one family that is NOT a `#[circuit]` (M9 phase 5)
+//! # The one family that is not a `#[circuit]`
 //!
-//! `control`/`persistent`/`keccak`/`transient` take their input WIDTH as a
+//! `control`/`persistent`/`keccak`/`transient` take their input width as a
 //! Rust parameter — the experiment sweeps 32/64/128/256/1024 bytes in a
 //! loop, and the sweep is the point — while a `CircuitArg` is a type and
 //! `CircuitArgs::SLOTS` is a `const`. Expressing these through the typed
 //! API would mean either const-generic entry points the sweeping loops
 //! cannot call, or a `match` over the sizes that happen to be swept today,
 //! turning a general experiment into a closed enumeration with a panic for
-//! any new size. Neither is worth it HERE, because the soundness the typed
+//! any new size. Neither is worth it here, because the soundness the typed
 //! layer buys is already present: [`BytesNDyn::constrain_input`] derives the
 //! per-limb widths from the same `len` that declared the limbs, so there is
 //! no hand-written parallel constraint block to drift. [`persistent_vec8`],
-//! whose shape is fixed, IS ported.
+//! whose shape is fixed, is ported.
 //!
-//! The same sixteen circuits are therefore the ONLY ones in the corpus
-//! without a typed disclosure declaration (M9 closure): a `Discloses<..>` is
+//! The same sixteen circuits are therefore the only ones in the corpus
+//! without a typed disclosure declaration: a `Discloses<..>` is
 //! a return type, and these have no typed entry point to return from —
 //! `hash_circuit` calls `Circuit::finish` itself. Nothing is hidden by that.
 //! Each discloses exactly one value, the digest it writes to the ledger, and
@@ -92,9 +92,8 @@ fn hash_circuit(len: usize, kind: HashKind) -> Compiled {
     // Explicit: built by hand, outside the `#[contract]` block, so its attribute does not reach it.
     minocrab_compat::profile(&mut c);
     let data = bytesn_arg(&mut c, len);
-    // Kept even though guard threading no longer uses it: dropping this
-    // `Copy` would renumber every later identifier, moving the ZKIR
-    // (notes/edsl-trim.org §B, the removal's zero-movement gate).
+    // The `one` compactc threads, unused here: dropping this `Copy` would
+    // renumber every later identifier, moving the ZKIR (notes/edsl-trim.org §B).
     let _ = c.constant(1u64);
 
     emit(&mut c, &counter_increment(CALL_COUNT, 1));
@@ -155,16 +154,15 @@ impl Hashing {
     /// `persistentVec8(data: Vector<8, Bytes<32>>)`: the same 256 bytes as a
     /// data structure — 8 × `Bytes<32>` atoms, 16 limbs.
     ///
-    /// The one circuit of this experiment whose argument WIDTH is fixed, so the
+    /// The one circuit of this experiment whose argument width is fixed, so the
     /// one that is a `#[circuit]`: `[B32; 8]` declares `data_0_hi` … `data_7_lo`
     /// and constrains all sixteen limbs from the type (see the module docs for
     /// why the `Bytes<len>` family stays hand-declared).
     #[circuit]
     pub fn persistent_vec8(c: &mut Circuit, data: [B32<Private>; 8]) -> Discloses<(TheDigest,)> {
         let parts = data;
-        // Kept even though guard threading no longer uses it: dropping this
-        // `Copy` would renumber every later identifier, moving the ZKIR
-        // (notes/edsl-trim.org §B, the removal's zero-movement gate).
+        // The `one` compactc threads, unused here: dropping this `Copy` would
+        // renumber every later identifier, moving the ZKIR (notes/edsl-trim.org §B).
         let _ = c.constant(1u64);
 
         emit(c, &counter_increment(CALL_COUNT, 1));

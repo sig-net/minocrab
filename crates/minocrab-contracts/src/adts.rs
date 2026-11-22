@@ -1,12 +1,12 @@
 //! `adts.compact` — every ledger-ADT operation Compact exposes, one circuit
-//! each (M16, notes/ledger-adts.org).
+//! each (notes/ledger-adts.org).
 //!
-//! Not a corpus contract, and the reason is the M14/M15 one measured again:
+//! Not a corpus contract, for the same reason as `bounded` and `opaque`:
 //! our IR is v3, only the three sig-net sources carry `--feature-zkir-v3`, and
 //! between them their v3 artifacts exercise `Set.insert`, `Set.member` and
 //! `List.pushFront` — three of the thirty-one operations here. So the source
 //! is ours, lives beside its differential at `tests/fixtures/adts/`, and is
-//! compiled with the PINNED compactc (the invocation is in the fixture's
+//! compiled with the pinned compactc (the invocation is in the fixture's
 //! header). `pushFront`'s corpus provenance is recovered separately, in
 //! `tests/adts_differential.rs`.
 //!
@@ -20,10 +20,10 @@
 //! | `MerkleTree<n, T>` | `Array[2]` = `{tree, next index}` | [`LedgerMerkleTree`] |
 //! | `HistoricMerkleTree<n, T>` | `Array[3]` = `{tree, next index, past roots}` | [`LedgerHistoricMerkleTree`] |
 //!
-//! TWO THINGS WORTH READING TWICE. `List.head` returns a `Maybe<T>` and
+//! Two things worth reading twice. `List.head` returns a `Maybe<T>` and
 //! contains Impact-level `branch`/`jmp` — transcript control flow, not circuit
 //! control flow, so its cost is fixed whether the list is empty or not. And
-//! the five `insert*` methods on each tree are only TWO instruction streams:
+//! the five `insert*` methods on each tree are only two instruction streams:
 //! what differs inside a pair is where the 32-byte leaf came from (hashed from
 //! the item, handed over, or hashed from the type's default).
 
@@ -46,7 +46,7 @@ label! {
 /// The tree depth both fixture trees are declared at (`MerkleTree<10, …>`).
 pub const DEPTH: u8 = 10;
 
-/// THE LEDGER BLOCK — declaration order is the field index, matching the
+/// The ledger block — declaration order is the field index, matching the
 /// fixture's `export ledger` block one for one.
 #[derive(Ledger)]
 pub struct Adts {
@@ -114,7 +114,7 @@ impl Adts {
 
     /// `export circuit listPushFront(x: Bytes<32>): [] { l.pushFront(disclose(x)); }`
     ///
-    /// The one M16 operation with corpus provenance: `test-caller-contract`'s
+    /// The one operation here with corpus provenance: `test-caller-contract`'s
     /// `requestLog.pushFront(requestId)` is this instruction stream with a
     /// different field index.
     #[circuit]

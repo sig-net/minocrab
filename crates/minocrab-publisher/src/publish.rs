@@ -1,4 +1,4 @@
-//! M30 rung B — build → prove → balance → sign → seal, as four steps and one
+//! Build → prove → balance → sign → seal, as four steps and one
 //! pipeline.
 //!
 //! Each step is a free function taking what it needs, so a caller can stop
@@ -37,7 +37,7 @@ use crate::intent::{build_intent, preimage_tx, PreimageTx, ProvenTx, SealedTx};
 
 /// Everything the chain tells the publisher, and nothing it invents.
 ///
-/// `parameters` is the CHAIN's — `LedgerState::parameters`, fetched from the
+/// `parameters` is the chain's — `LedgerState::parameters`, fetched from the
 /// node — and not `INITIAL_PARAMETERS`: see [`crate::call`]'s header for the
 /// 2.208 ms vs 1.303 ms measurement that makes this a correctness matter
 /// rather than a tidiness one.
@@ -74,7 +74,7 @@ pub struct FundingKeys {
     pub dust_registration: Vec<SigningKey>,
 }
 
-/// BUILD: one signer call, one intent, one transaction — not yet proved.
+/// Build: one signer call, one intent, one transaction — not yet proved.
 pub fn build<D: DB, R: Rng + CryptoRng + ?Sized>(
     ctx: &ChainContext<D>,
     call: &SignerCall<D>,
@@ -87,7 +87,7 @@ pub fn build<D: DB, R: Rng + CryptoRng + ?Sized>(
     Ok(preimage_tx(&ctx.network_id, ctx.segment, intent))
 }
 
-/// PROVE: in process, through `prover`.
+/// Prove: in process, through `prover`.
 pub async fn prove<D: DB>(
     ctx: &ChainContext<D>,
     tx: &PreimageTx<D>,
@@ -98,7 +98,7 @@ pub async fn prove<D: DB>(
         .map_err(|e| PublishError::Proving(format!("{e:?}")))
 }
 
-/// SIGN: `Intent::sign` for every intent in the transaction, at its own
+/// Sign: `Intent::sign` for every intent in the transaction, at its own
 /// segment id.
 ///
 /// Generic over the proof kind so that the step is the same one whether it
@@ -135,7 +135,7 @@ pub fn sign<P: ProofKind<D>, D: DB>(
     }))
 }
 
-/// SEAL: `PedersenRandomness` → `PureGeneratorPedersen`, the only binding
+/// Seal: `PedersenRandomness` → `PureGeneratorPedersen`, the only binding
 /// shape `well_formed` accepts. Must come last: it closes over every intent's
 /// contents, so anything merged in afterwards would invalidate it.
 pub fn seal<P: ProofKind<D>, D: DB>(

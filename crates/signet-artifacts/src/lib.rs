@@ -1,5 +1,5 @@
 //! The managed artifact pipeline for the three Signet circuits, the signet
-//! signer's and the signet responder's (M29 rungs A+B; the split, M48 L).
+//! signer's and the signet responder's.
 //!
 //! `sig-net/mpc`'s former TypeScript sidecar never interpreted the IR:
 //! compactc's JS executor made the proof preimage and whatever sat at
@@ -25,7 +25,7 @@
 //! ```
 //!
 //! Circuit names on disk are the Compact names compactc's own artifacts use
-//! (`signBidirectional`, `respond`, `respondBidirectional`), NOT the Rust
+//! (`signBidirectional`, `respond`, `respondBidirectional`), not the Rust
 //! function names — consumers look them up by the Compact name
 //! (`@sig-net/midnight-contract`'s `expectedVk` keys, mpc's `chain-midnight`).
 
@@ -46,11 +46,11 @@ pub type Circuit = (&'static str, fn() -> Compiled);
 /// each paired with the circuit that builds it
 /// (`crates/minocrab-contracts/src/signet_contract.rs`).
 ///
-/// TWO DEPLOYED CONTRACTS since midnight-integration v0.26: the signet
+/// Two deployed contracts since midnight-integration v0.26: the signet
 /// signer carries `signBidirectional` ([`SIGNER_CIRCUITS`]), the signet
 /// responder `respond` and `respondBidirectional` ([`RESPONDER_CIRCUITS`]).
 /// The circuits are v0.25.0's, byte for byte, so this directory's files did
-/// not move with the split. It stays ONE directory: a publisher takes the
+/// not move with the split. It stays one directory: a publisher takes the
 /// table of the contract it calls with `ManagedDir::deployment(address,
 /// RESPONDER_CIRCUITS)`, and each package's deploy tooling copies its own
 /// circuits' files.
@@ -93,9 +93,9 @@ pub fn zkir_v3_available() -> Option<PathBuf> {
     ok.then_some(bin)
 }
 
-/// sha256(bytes) as lowercase hex, for the manifest. The SAME computation as
+/// sha256(bytes) as lowercase hex, for the manifest. The same computation as
 /// `signet_protocol::hash_verifier_key` (compact-js's `hashVerifierKey`,
-/// defined there since M30 C1, pinned under node by
+/// defined there, pinned under node by
 /// `tests/hash_verifier_key_pin.rs`) on different files; spelled through
 /// `sha2` here so the manifest does not read as a verifier-key hash.
 fn sha256_hex(bytes: &[u8]) -> String {
@@ -182,7 +182,7 @@ pub fn generate(out_dir: &Path, zkir_v3: &Path) -> anyhow::Result<()> {
     }
 
     // 2. `zkir-v3 compile-many <zkir_dir> <key_dir>`: keygen for every
-    // `.zkir`/`.bzkir` found in `zkir_dir`, AND (as a side effect of the
+    // `.zkir`/`.bzkir` found in `zkir_dir`, and (as a side effect of the
     // binary's own `maybe_bzkir`, which writes a `.bzkir` sibling the first
     // time it loads a bare `.zkir`) the `.bzkir` files land in `zkir_dir`
     // too, so no separate `.bzkir` step exists.

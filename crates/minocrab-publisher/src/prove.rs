@@ -13,11 +13,11 @@
 //! (`ledger::prove::Resolver`) insists on a `ZswapResolver`, whose parameter
 //! sets a respond transaction has no use for — it carries no shielded offer.
 //! `zkir::LocalProvingProvider`, the public one, is the ZKIR **v2** crate's
-//! and will not load our `ir-source[v3-generic]`. So this is a MECHANICAL
-//! TRANSLATION of `CombinedProofProvider`'s v3 arm (midnight-ledger
+//! and will not load our `ir-source[v3-generic]`. So this is a mechanical
+//! translation of `CombinedProofProvider`'s v3 arm (midnight-ledger
 //! `04c9c5d`, `ledger/src/test_utilities.rs:749-818`, a test utility the
 //! published `midnight-ledger-v9` keeps private), the same one
-//! `minocrab-contracts`' `tests/signet_real_proof.rs` made for M29 E.
+//! `minocrab-contracts`' `tests/signet_real_proof.rs` uses.
 //!
 //! # The dust half of the resolver
 //!
@@ -50,7 +50,7 @@ use crate::keys::ManagedDir;
 /// `~/.cache/midnight/zk-params`), fetching only what is missing.
 ///
 /// `FetchMode::OnDemand` will reach `srs.midnight.network` for a parameter set
-/// that is NOT cached. Ship the params in the image and it never does.
+/// that is not cached. Ship the params in the image and it never does.
 pub fn params_provider() -> Result<MidnightDataProvider, PublishError> {
     MidnightDataProvider::new(FetchMode::OnDemand, OutputMode::Log, vec![]).map_err(|e| {
         PublishError::Io { path: "the KZG parameter cache".to_string(), source: e }

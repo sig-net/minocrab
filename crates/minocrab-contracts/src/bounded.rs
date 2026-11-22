@@ -1,16 +1,16 @@
 //! `bounded.compact` — Compact's `Uint<0..n>` at every shape the bound can
-//! take, through [`minocrab_std::BoundedUint`] (M14,
-//! notes/bounded-integers.org).
+//! take, through [`minocrab_std::BoundedUint`]
+//! (notes/bounded-integers.org).
 //!
 //! Not a corpus contract: no compiled corpus artifact carries a
 //! non-power-of-two bound (the scan is in the fixture's header and in the
 //! note's §5), so the source is ours and lives beside its differential at
-//! `tests/fixtures/bounded/`, compiled with the PINNED compactc. Everything
+//! `tests/fixtures/bounded/`, compiled with the pinned compactc. Everything
 //! else is the established route — one module per contract, one `#[circuit]`
 //! per exported circuit, and a differential asserting call-compatibility
 //! with compactc's own artifact.
 //!
-//! **THE RANGE END IS EXCLUSIVE.** compactc rejects `Uint<0..0>` with "range
+//! **the range end is exclusive.** compactc rejects `Uint<0..0>` with "range
 //! end for Uint type is 0 but must be at least 1 (the range end is
 //! exclusive)", and `contract-info.json` publishes `maxval: 9` for
 //! `Uint<0..10>`. So `BoundedUint<10>` IS `Uint<0..10>`, digit for digit,
@@ -23,11 +23,11 @@
 //! | `b10` / `b300` / `b1000` / `b70000` | the README fairness bullet's four bounds | `less_than x n bits` + `assert` |
 //! | `b1` | `Uint<0..1>` — holds only zero | `constrain_eq x 0` |
 //! | `b2` | `Uint<0..2>` — Boolean | `constrain_to_boolean x` |
-//! | `b256` | a bound that IS a power of two | `constrain_bits x 8`, no `less_than` |
-//! | `b255` | the bound that LOOKS sized and is not (0..=254) | `less_than x 255 8` + `assert` |
+//! | `b256` | a bound that is a power of two | `constrain_bits x 8`, no `less_than` |
+//! | `b255` | the bound that looks sized and is not (0..=254) | `less_than x 255 8` + `assert` |
 //! | `bEnum` | a 3-name fieldless enum = `Uint<0..3>` | `less_than x 3 2` + `assert` |
 //! | `bStruct` | a bounded field beside sized ones | the four constraints, in field order |
-//! | `bCompare` | two bounded arguments, compared | constraints at 18 bits, the COMPARISON at 17 |
+//! | `bCompare` | two bounded arguments, compared | constraints at 18 bits, the comparison at 17 |
 //!
 //! Which of the four constraints a bound gets is never this file's decision
 //! and never the leaf's: [`BoundedUint::constrain_input`] hands the maxval to
@@ -46,10 +46,10 @@ label! {
     RightOperand = "right operand";
 }
 
-/// THE LEDGER BLOCK — `export ledger dummy: Counter;` and
+/// The ledger block — `export ledger dummy: Counter;` and
 /// `export ledger flag: Boolean;`, declaration order being the field index.
 ///
-/// `dummy` exists for one reason: a PURE exported Compact circuit produces no
+/// `dummy` exists for one reason: a pure exported Compact circuit produces no
 /// `.zkir` at all, so a circuit that is only an argument constraint has to
 /// touch the ledger to be compiled into an artifact worth comparing against.
 #[derive(Ledger)]
@@ -109,7 +109,7 @@ impl Bounded {
     }
 
     /// `export circuit b1(x: Uint<0..1>): []` — the type holding only zero, so
-    /// the table's `constrain_eq 0` arm. Its FAB atom is ZERO bytes wide.
+    /// the table's `constrain_eq 0` arm. Its FAB atom is zero bytes wide.
     #[circuit]
     pub fn b1(c: &mut Circuit, x: BoundedUint<1>) -> Discloses<()> {
         let _ = x;
@@ -126,8 +126,8 @@ impl Bounded {
         Discloses::of(())
     }
 
-    /// `export circuit b256(x: Uint<0..256>): []` — a bound that IS a power of
-    /// two, which compactc lowers as a BIT WIDTH (`constrain_bits 8`), not a
+    /// `export circuit b256(x: Uint<0..256>): []` — a bound that is a power of
+    /// two, which compactc lowers as a bit width (`constrain_bits 8`), not a
     /// `less_than`. The leaf does not reject it and does not special-case it:
     /// `Prim::unsigned(255)` normalizes to `Prim::Uint { bits: 8 }` and the
     /// table does the rest, so `BoundedUint<256>` and `Uint<8>` emit the same
@@ -152,7 +152,7 @@ impl Bounded {
 
     /// `enum Status { pending, live, closed }` as an argument: Compact's
     /// `Uint<0..3>`, so `less_than 3` at 2 bits. A fieldless enum has no Rust
-    /// representation beyond its index — the VARIANT INDEX is the whole value —
+    /// representation beyond its index — the variant index is the whole value —
     /// which is why the interface generator maps it to this same leaf.
     #[circuit]
     pub fn b_enum(c: &mut Circuit, x: BoundedUint<3>) -> Discloses<()> {
@@ -172,7 +172,7 @@ impl Bounded {
     /// `export circuit bCompare(a: Uint<0..70000>, b: Uint<0..70000>): []
     /// { flag = disclose(a) < disclose(b); }` — the circuit that shows the two
     /// widths apart: each argument is range-constrained at compactc's
-    /// even-rounded 18 bits, and the ORDERING between them runs at 17, the bit
+    /// even-rounded 18 bits, and the ordering between them runs at 17, the bit
     /// length of the largest legal value. Both numbers come from the type, so
     /// neither is hand-written here.
     #[circuit]

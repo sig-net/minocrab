@@ -1,6 +1,6 @@
 //! Compact-compatible hashing for the protocol values — the MPC's
 //! `chain-midnight/src/hashing.rs` and `compact-hashing/src/lib.rs` at
-//! `10360c3c` (develop, 2026-09-05; "fix(midnight): align Compact hashing",
+//! `10360c3c` (develop; "fix(midnight): align Compact hashing",
 //! #1206), translated. Both are Poseidon (`transient_hash`) over the FAB
 //! field representation, upgraded to 32 bytes — what the Signet module
 //! computes in-circuit since signet-midnight `fff3421c`.
@@ -30,16 +30,16 @@ pub fn compute_response_hash(request_id: &[u8; 32], serialized_output: &[u8]) ->
     upgrade_from_transient(transient_hash(&preimage)).0
 }
 
-/// The LEGACY request id — keccak256 over the record's byte layout — which
-/// is what the DEPLOYED signet signer's callers minted before `fff3421c` and
+/// The legacy request id — keccak256 over the record's byte layout — which
+/// is what the deployed signet signer's callers minted before `fff3421c` and
 /// what the MPC's captured fixture carries. Kept so the fixture stays
 /// readable under the rule it was filed under.
 pub fn legacy_request_id(bytes: &[u8]) -> [u8; 32] {
     Keccak256::digest(bytes).into()
 }
 
-/// THE V1 HASHES — `@sig-net/midnight` 0.24.1, translated from
-/// `minocrab_contracts::signet_v1` (M44 rung D; the MPC's own reader has not
+/// The V1 hashes — `@sig-net/midnight` 0.24.1, translated from
+/// `minocrab_contracts::signet_v1` (the MPC's own reader has not
 /// moved, see [`crate::records::SignBidirectionalRecordV1`]).
 ///
 /// Three differences from the `fff3421c` rules above, and each one is why a
@@ -47,11 +47,11 @@ pub fn legacy_request_id(bytes: &[u8]) -> [u8; 32] {
 ///
 /// - every hash is prefixed with a [`v1::hash_domain`] tag, so a transaction
 ///   digest and a request id over the same limbs differ;
-/// - the request id hashes a SEVEN-FIELD preimage whose transaction enters as
-///   its own digest, which in turn hashes only the USED calldata words —
+/// - the request id hashes a seven-field preimage whose transaction enters as
+///   its own digest, which in turn hashes only the used calldata words —
 ///   never the whole record cell;
 /// - the attestation digest commits to the block height, the MPC's verdict
-///   and the output's WIDTH beside the output itself.
+///   and the output's width beside the output itself.
 pub mod v1 {
     use midnight_transient_crypto::curve::Fr;
     use midnight_transient_crypto::hash::{transient_hash, upgrade_from_transient};
@@ -89,7 +89,7 @@ pub mod v1 {
     }
 
     /// `calculateEvmType2TxParamsDigestV1` over an empty access list: the
-    /// tagged head, then each USED word chained on under its own tag.
+    /// tagged head, then each used word chained on under its own tag.
     ///
     /// `calldata` is `None` for a transaction with no calldata, in which case
     /// `is_some`, the selector and the word count all enter as zero — the
@@ -154,7 +154,7 @@ pub mod v1 {
     }
 
     /// The request id of a decoded V1 record: its own transaction digested
-    /// over the words its `noWords` declares USED, then
+    /// over the words its `noWords` declares used, then
     /// [`request_id`]. This is how a reader verifies that a record was filed
     /// under the id it is keyed by.
     pub fn record_request_id(record: &crate::records::SignBidirectionalRecordV1) -> [u8; 32] {
@@ -211,7 +211,7 @@ pub mod v1 {
         (a.output_hash, a.digest)
     }
 
-    /// A `Bytes<N>`'s FAB limbs in SLOT order: the leftover
+    /// A `Bytes<N>`'s FAB limbs in slot order: the leftover
     /// most-significant chunk first, then 31-byte limbs — `[]` for `Bytes<0>`,
     /// one limb for `Bytes<1>`, `[hi, lo]` for `Bytes<32>`.
     pub fn output_limbs(bytes: &[u8]) -> Vec<Fr> {

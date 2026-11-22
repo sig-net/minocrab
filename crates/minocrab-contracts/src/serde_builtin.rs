@@ -31,7 +31,7 @@ impl SerdeBuiltin {
     /// `export circuit checkRoundtrip(bytes: Bytes<128>): []`
     ///
     /// `Discloses<()>` is the positive statement that this circuit reveals
-    /// NOTHING: the roundtrip is checked entirely inside the private domain, and
+    /// nothing: the roundtrip is checked entirely inside the private domain, and
     /// only the counter increment is public. The generated test says so.
     #[circuit]
     pub fn check_roundtrip(c: &mut Circuit, bytes: BytesN<Private, 128>) -> Discloses<()> {

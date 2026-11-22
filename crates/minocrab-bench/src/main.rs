@@ -1,5 +1,5 @@
-//! M6 baseline benchmark harness: the erc20-vault contract (twenty-nine
-//! circuits since M44) and its signet signer dependency, proved under
+//! Baseline benchmark harness: the erc20-vault contract (twenty-nine
+//! circuits) and its signet signer dependency, proved under
 //! each toolchain at the same pinned versions.
 //!
 //! A run is a matrix of circuits ([`Target`]) × [`Side`]s, and sides are
@@ -8,13 +8,11 @@
 //! - `minocrab` — the direct ports, built in-process from `minocrab-contracts`;
 //! - `compactc` — the corpus `.zkir` goldens.
 //!
-//! `minocrab` and `compactc` prove the SAME preimage per circuit: the
+//! `minocrab` and `compactc` prove the same preimage per circuit: the
 //! differential tests establish PI-equality on these preimages and (with
 //! `MINOCRAB_DUMP_PREIMAGES`) dump them for this harness, so those numbers
-//! price the identical statement. (The M10/M11 `opt` and `borsh` sides,
-//! which proved their own preimages, were retired with their forks in M28 —
-//! notes/vault-refresh.org §0; `Preimages::PerSide` is kept for the next
-//! side that cannot share a statement.)
+//! price the identical statement. (`Preimages::PerSide` is for a side that
+//! cannot share a statement.)
 //!
 //! Run via `./bench.sh` (dumps preimages, then runs this binary in release
 //! mode). Modes:
@@ -67,9 +65,8 @@ enum Preimages {
     Shared,
     /// A per-side subdirectory, for a side that cannot share the port's
     /// preimage because it proves its *own* statement for the same logical
-    /// operation (the retired `opt` side was one; the methodology caveat is
-    /// notes/vault-optimization.org §Sequencing). No declared side uses it
-    /// today.
+    /// operation (the methodology caveat is
+    /// notes/vault-optimization.org §Sequencing). No declared side uses it.
     #[allow(dead_code)]
     PerSide(&'static str),
 }
@@ -462,7 +459,7 @@ fn cells() -> Vec<(Target, Side)> {
     out
 }
 
-/// Per-region cost profiles (the M7 target-picker, now attributed by
+/// Per-region cost profiles (the target-picker, attributed by
 /// estimated rows as well as instruction count). Built in-process from the
 /// eDSL circuits — no proving, so `--profiles` can refresh them alone after
 /// a region-annotation change. compactc's parsed `.zkir` carries no regions,

@@ -1,10 +1,10 @@
-//! `events`, THROUGH THE BORSH API (M11 stage 6) — the twin of
+//! `events`, through the Borsh API — the twin of
 //! [`crate::events`].
 //!
-//! The original is PINNED: it is differential-green against compactc's
-//! `events` artifacts and does not move. This twin emits THE SAME BYTES —
+//! The original is pinned: it is differential-green against compactc's
+//! `events` artifacts and does not move. This twin emits the same bytes —
 //! stage 0 proved the deployed `Misc` payloads are already canonical Borsh
-//! for the fixed-width subset — but builds them out of DECLARED TYPES
+//! for the fixed-width subset — but builds them out of declared types
 //! (`#[derive(CircuitBorsh)]`, [`minocrab_std::borsh::to_bytes`]) instead
 //! of hand-rolled [`Serializer`] pushes. Nothing about the format changes;
 //! what changes is that the layout is a type rather than a call sequence, and
@@ -19,17 +19,17 @@
 //! bytes, and writes it into the 288-byte envelope under the padding rule
 //! ("bytes `0..LEN` are the Borsh encoding, bytes `LEN..N` MUST be zero").
 //!
-//! THE TWO DESCRIBE THE SAME 288 BYTES, because both pads are contiguous:
+//! The two describe the same 288 bytes, because both pads are contiguous:
 //! `32 + 56 + 200 (payload pad) + 0 (envelope pad)` and
 //! `32 + 56 + 232 (envelope pad)` lay the same bytes at the same offsets. The
 //! nested form is the one a circuit can build in a single packing pass — the
 //! two-level form would materialise the intermediate `Bytes<256>` and re-pack
-//! it, which costs rows for no byte. Where the payload IS materialised
+//! it, which costs rows for no byte. Where the payload is materialised
 //! because something hashes it, the two-level form is the right one and
 //! [`crate::xcontract_events_borsh`] uses it.
 //!
 //! Byte-identity with the original is asserted in
-//! `tests/events_differential.rs`, which hands the twin the SAME preimage —
+//! `tests/events_differential.rs`, which hands the twin the same preimage —
 //! the one carrying the exact 288-byte `Misc` transcript that compactc's own
 //! artifact accepts.
 
@@ -44,7 +44,7 @@ use minocrab_experimental::impact::raw::{
 use minocrab_std::borsh::{self, CircuitBorsh};
 use minocrab_std::{entry, event, CircuitArg, Disclose, Discloses, Uint, Vis, B32};
 
-// The labels and the declaration are the ORIGINAL's: the twin discloses the
+// The labels and the declaration are the original's: the twin discloses the
 // same two values under the same two names, which is part of what "same
 // circuit, different serializer" means.
 use crate::events::{
@@ -70,13 +70,13 @@ pub struct MiscDepositEvent<V: Vis> {
     pub payload: DepositEvent<V>,
 }
 
-/// `pad(32, name)` as a constant pair, LOW LIMB DECLARED FIRST.
+/// `pad(32, name)` as a constant pair, low limb declared first.
 ///
 /// [`B32::pad`] would do, and emits the same two constants — but in the other
 /// order, because a struct literal evaluates `hi` before `lo`. The original's
 /// `Serializer::push_literal` chunks the 32 bytes into `[0..31]` then `[31]`,
 /// so it declares the low limb first, and matching that is what makes the two
-/// circuits BYTE-IDENTICAL ZKIR rather than merely equivalent — a much
+/// circuits byte-identical ZKIR rather than merely equivalent — a much
 /// stronger gate for a stage whose whole claim is "same bytes, built through
 /// the API". Two constants in the other order would have cost nothing and
 /// proven less.
@@ -112,7 +112,7 @@ struct DepositArgs {
 /// The circuit family: the workload plus `emits` Misc events.
 ///
 /// Built through [`entry`] rather than `#[circuit]`: the attribute makes a
-/// NULLARY constructor, and this family is parameterized by a Rust value
+/// nullary constructor, and this family is parameterized by a Rust value
 /// (`emits`), which is not a circuit argument. The argument list is the
 /// derived struct either way, so the typed-argument guarantee is the same
 /// one — only the entry point's spelling differs.
@@ -121,9 +121,8 @@ fn base_with_emits(emits: usize) -> Compiled {
         minocrab_compat::profile(c);
         let recipient = args.recipient;
         let amount = args.amount;
-        // Kept even though guard threading no longer uses it: dropping this
-        // `Copy` would renumber every later identifier, moving the ZKIR
-        // (notes/edsl-trim.org §B, the removal's zero-movement gate).
+        // The `one` compactc threads, unused here: dropping this `Copy` would
+        // renumber every later identifier, moving the ZKIR (notes/edsl-trim.org §B).
         let _ = c.constant(1u64);
 
         let a = amount.disclose_as::<Amount>(c).field();
@@ -137,11 +136,11 @@ fn base_with_emits(emits: usize) -> Compiled {
 
         for i in 0..emits {
             c.region("emit Misc", |c| {
-                // THE WHOLE SERIALIZATION, as one declared value. The leaves are
+                // The whole serialization, as one declared value. The leaves are
                 // already canonical where they are produced — `amount` and
                 // `recipient` by their argument constraints, `sequence` by being
                 // a `Bytes<8>` cell read, the name by being a constant — so
-                // `constrain_canonical` is deliberately NOT re-emitted here; it
+                // `constrain_canonical` is deliberately not re-emitted here; it
                 // would duplicate the very constraints above and move rows. The
                 // precondition `to_bytes` states (leaves in range) is met by
                 // those, and `tests/events_differential.rs` pins the resulting

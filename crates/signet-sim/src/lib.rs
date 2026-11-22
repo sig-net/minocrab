@@ -1,26 +1,25 @@
 //! The Sig Network MPC as a pure function — the `Responder` a Midnight
-//! contract's tests drive instead of a cluster (M35 rung D,
-//! notes/signet-async.org §6).
+//! contract's tests drive instead of a cluster (notes/signet-async.org §6).
 //!
-//! The boundary it simulates is the PROTOCOL boundary: (the signet signer's
+//! The boundary it simulates is the protocol boundary: (the signet signer's
 //! `SignBidirectionalEvent`, the caller's ledger state, an EVM outcome) →
 //! (the attestation the caller's settle circuit takes). Inside that
 //! boundary it does what the MPC does, with the MPC's own code where the
 //! MPC has any — [`reader`] and [`hashing`] are translated from
 //! `sig-net/mpc` `chain-signatures/chain-midnight` and `compact-hashing`,
-//! [`kdf`] from `signet-crypto`, all at `10360c3c` (develop, 2026-09-05,
+//! [`kdf`] from `signet-crypto`, all at `10360c3c` (develop,
 //! after "align Compact hashing", #1206), pinned by the fixtures and goldens
 //! the MPC pins itself against — so a record format or a hash that drifts
 //! from what the reader computes fails here the way it fails in production.
 //!
 //! The one thing it does not do is execute an EVM: the outcome is an
-//! ORACLE the test supplies ([`EvmOutcome`]).
+//! oracle the test supplies ([`EvmOutcome`]).
 //!
 //! What it can and cannot exercise today: the attestation it produces has
 //! the wire shape and key the caller's settle circuit verifies, but driving
 //! that circuit end to end needs a transcript executor for v3 circuits
 //! (ledger reads answered from a live state), which this workspace does not
-//! have — the harness item dmd holds in M26. Until that lands, the round
+//! have. Until it does, the round
 //! trip stops at the attestation, and the circuit-side acceptance is
 //! covered by the vault harness's own signing model.
 
@@ -61,22 +60,22 @@ pub struct Attestation {
     /// `serializedOutput` on the wire: the kind byte then the body.
     pub output: Vec<u8>,
     /// Over the attestation digest (Poseidon, [`hashing::compute_response_hash`]),
-    /// under the response key. In the signet signer's WIRE form (big-endian);
+    /// under the response key. In the signet signer's wire form (big-endian);
     /// [`Signature::circuit_input`] is what a settle circuit takes.
     pub signature: Signature,
     /// The record the MPC read, for the test's own assertions.
     pub record: SignBidirectionalRecordV2,
 }
 
-/// The MPC's V1 answer (M44 rung D): what a `Succeeded`/`Failed` ticket
+/// The MPC's V1 answer: what a `Succeeded`/`Failed` ticket
 /// takes.
 ///
-/// THREE THINGS THE V2 ATTESTATION DID NOT CARRY. The block HEIGHT the call
+/// Three things the V2 attestation DID not carry. The block height the call
 /// was observed at (the spec's M2 field, which the outbox's last-seen check
 /// consumes, and which the reference contract used to have to smuggle in as
-/// a call's return word); the VERDICT as its own field
+/// a call's return word); the verdict as its own field
 /// ([`hashing::v1::output_kind`]) rather than as a response-kind byte glued
-/// to the front of the output; and the attested WIDTH, inside the digest, so
+/// to the front of the output; and the attested width, inside the digest, so
 /// an output of the wrong length cannot verify.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AttestationV1 {
@@ -84,7 +83,7 @@ pub struct AttestationV1 {
     pub block_height: u64,
     /// `OutputKind` — executed, failed or unviable.
     pub output_kind: u64,
-    /// `serializedOutput`: the EVM body ALONE. No kind byte in front of it,
+    /// `serializedOutput`: the EVM body alone. No kind byte in front of it,
     /// and empty for a non-execution. It travels off chain: the responder's
     /// event carries only its width and [`Self::output_hash`].
     pub output: Vec<u8>,
@@ -147,7 +146,7 @@ impl SigNetSim {
         (ProjectivePoint::GENERATOR * self.root).to_affine()
     }
 
-    /// The RESPONSE key for `caller` at `key_version`: derived under the
+    /// The response key for `caller` at `key_version`: derived under the
     /// fixed path `"midnight response key"` with the caller contract's
     /// address as the requester (the MPC's `respond_bidirectional_path`).
     pub fn response_key(&self, key_version: u32, caller: &[u8; 32]) -> AffinePoint {
@@ -158,7 +157,7 @@ impl SigNetSim {
         kdf::derive_epsilon_midnight(key_version, &hex::encode(caller), kdf::MIDNIGHT_RESPOND_BIDIRECTIONAL_PATH)
     }
 
-    /// The USER key a request signs its EVM transaction with, and its EVM
+    /// The user key a request signs its EVM transaction with, and its EVM
     /// address: `(key_version, requester = caller, path = hex(record.path))`.
     pub fn user_address(&self, record: &SignBidirectionalRecordV2, caller: &[u8; 32]) -> [u8; 20] {
         let epsilon = kdf::derive_epsilon_midnight(u32::from(record.key_version), &hex::encode(caller), &hex::encode(record.path));
@@ -182,7 +181,7 @@ impl SigNetSim {
         hashing::compute_response_hash(request_id, output)
     }
 
-    /// EVERYTHING THE MPC DOES, ON V1 RECORDS: resolve, decide the verdict,
+    /// Everything the MPC does, ON V1 records: resolve, decide the verdict,
     /// sign `calculateSignetAttestationDigestV1`.
     ///
     /// It is a method rather than a second `Responder` impl because the
@@ -207,7 +206,7 @@ impl SigNetSim {
             Resolved::Dropped { reason, detail } => return Err(Refusal::Dropped { reason, detail }),
         };
         // The requester the key derives under is the address the record was
-        // READ from — the notification's caller address — never the record's
+        // read from — the notification's caller address — never the record's
         // own `sender` field (convert.rs's rule).
         let caller = unpacked.caller_address;
         let (output_kind, output) = match outcome {
@@ -252,7 +251,7 @@ impl Responder for SigNetSim {
             Resolved::Dropped { reason, detail } => return Err(Refusal::Dropped { reason, detail }),
         };
         // The requester the key derives under is the address the record was
-        // READ from — the notification's caller address — never the record's
+        // read from — the notification's caller address — never the record's
         // own `sender` field (convert.rs's rule).
         let caller = unpacked.caller_address;
         let output = match outcome {
@@ -287,7 +286,7 @@ mod tests {
     use records::{CompactMaybe, EvmCalldata, EvmType2TxParams, RECORD_FORMAT_VERSION};
     use request_id::binary_repr_v2;
 
-    /// The MPC's captured caller state: the DEPLOYED-format record at ledger
+    /// The MPC's captured caller state: the deployed-format record at ledger
     /// field 4 decodes and hashes back to its id — the regression the MPC
     /// keeps, now kept here against the same bytes.
     #[test]
@@ -307,7 +306,7 @@ mod tests {
             Resolved::Dropped { reason, .. } => assert_eq!(reason, "rid-mismatch"),
             other => panic!("expected a rid-mismatch drop, got {other:?}"),
         }
-        // And the stage-7 decoder REFUSES it by name: the format-version byte
+        // And the stage-7 decoder refuses it by name: the format-version byte
         // is where the deployed record's sender starts.
         match resolve_verified_record_v2(map, id) {
             Resolved::Dropped { reason, .. } => assert_eq!(reason, "record-version"),
@@ -394,10 +393,10 @@ mod tests {
         }
     }
 
-    /// The stage-7 decode round-trips a ledger cell; the cell's FAB BYTE
+    /// The stage-7 decode round-trips a ledger cell; the cell's FAB byte
     /// representation is the record's byte layout (so the legacy rule and
     /// the drift gates agree on the bytes); and the live id is Poseidon over
-    /// the cell's FIELD representation.
+    /// the cell's field representation.
     #[test]
     fn a_stage_7_record_decodes_and_hashes_over_its_fab_representation() {
         use midnight_base_crypto::repr::BinaryHashRepr;
@@ -483,15 +482,14 @@ mod tests {
         assert!(matches!(sim.respond(&payload(id, caller, &[1]), &root2, EvmOutcome::NeverExecuted), Err(Refusal::Dropped { reason: "rid-mismatch", .. })));
     }
 
-    /// N OUTBOX CALLS, AS THE MPC SEES THEM (M39 rung D, retargeted at the
-    /// outbox in M41 C): N sign events at CONSECUTIVE EVM nonces, whether
+    /// N outbox calls, as the MPC sees them: N sign events at consecutive EVM nonces, whether
     /// they were emitted in one Midnight transaction or N.
     ///
     /// What `evm_flow::Outbox::emit` files is exactly this: one record per
     /// emitted call in the slot's one record map, each built by the same
     /// `file_request` an unbatched request uses, differing in the contract's
     /// request nonce (the counter is read and bumped once per filing) and in
-    /// the EVM nonce — which the CALL assigned blind (`last + 1`, the
+    /// the EVM nonce — which the call assigned blind (`last + 1`, the
     /// ledger's own add, snapshotted into the call's entry) and the emit
     /// read off that landed snapshot, never a requester's choice (the spec's
     /// O3: state is a function of the source chain). The MPC's side of that

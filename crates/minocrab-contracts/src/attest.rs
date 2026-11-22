@@ -45,9 +45,8 @@ label! {
 /// call-count increment, emitted in source order (increment first).
 fn ledger_writes(c: &mut Circuit, request_id: B32<Private>) {
     let request_id = request_id.disclose_as::<AttestedRequestId>(c);
-    // Kept even though guard threading no longer uses it: dropping this
-    // `Copy` would renumber every later identifier, moving the ZKIR
-    // (notes/edsl-trim.org §B, the removal's zero-movement gate).
+    // The `one` compactc threads, unused here: dropping this `Copy` would
+    // renumber every later identifier, moving the ZKIR (notes/edsl-trim.org §B).
     let _ = c.constant(1u64);
 
     let key = LedgerValue::bytes(
@@ -87,7 +86,7 @@ fn deserialize_respond_output<V: Vis>(
 /// The shared body of `shaVerify` / `keccakVerify`, parameterized by the
 /// digest hash. The two circuits differ in the hash builtin alone, so the
 /// entry points are two `#[circuit]` functions over one body — an attribute
-/// generates a nullary constructor, so a body shared by a Rust PARAMETER
+/// generates a nullary constructor, so a body shared by a Rust parameter
 /// cannot itself be one.
 fn hash_verify(
     c: &mut Circuit,

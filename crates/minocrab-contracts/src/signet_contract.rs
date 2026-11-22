@@ -1,7 +1,7 @@
 //! The Sig Network contracts on Midnight (signet-midnight-integration
-//! v0.26.0-rc.15, `aa91570`): the SIGNET SIGNER (`packages/signet-signer`),
+//! v0.26.0-rc.15, `aa91570`): the Signet signer (`packages/signet-signer`),
 //! which a client contract such as the erc20-vault calls cross-contract to
-//! file a request, and the SIGNET RESPONDER (`packages/signet-responder`),
+//! file a request, and the Signet responder (`packages/signet-responder`),
 //! which the MPC calls in its own transactions to post a signature or an
 //! attestation. Three stateless, unauthenticated emit-only circuits
 //! (verification is deliberately the reader's job; see the Compact
@@ -42,19 +42,19 @@ use signet_signer_interface::{RequestId, SignBidirectionalEventNotification};
 
 use signet_protocol::misc::{MISC_SIZE, MISC_TAG, MISC_VERSION};
 
-/// The three event names, `pad(32, …)` — DEFINED in `signet-protocol`
-/// (M30 C1), where the publisher that BUILDS these envelopes reads them; the
-/// contract that EMITS them reads the same definition. Re-exported so the
+/// The three event names, `pad(32, …)` — defined in `signet-protocol`,
+/// where the publisher that builds these envelopes reads them; the
+/// contract that emits them reads the same definition. Re-exported so the
 /// suites keep their spelling.
 pub use signet_protocol::circuits::{
     RESPOND_BIDIRECTIONAL_EVENT, SIGNATURE_RESPONDED_EVENT, SIGN_BIDIRECTIONAL_EVENT,
 };
 
 // Every argument of these three circuits goes into the event payload, so
-// the declarations below ARE the parameter lists — which is exactly what a
+// the declarations below are the parameter lists — which is exactly what a
 // disclosure declaration is for. `EmittedRequestId` rather than
 // `RequestId`: that name is already the interface crate's type for the
-// value being disclosed. The labels are the field paths WITHIN the event
+// value being disclosed. The labels are the field paths within the event
 // struct, as they were when the id was a separate argument.
 label! {
     EmittedRequestId = "requestId";
@@ -74,9 +74,8 @@ label! {
 /// `emit (Misc { name: pad(32, name), payload })` — the serializer holds
 /// name ‖ payload bytes, zero-padded to the 288-byte Misc.
 fn emit_misc(c: &mut Circuit, s: Serializer<Public>) {
-    // Kept even though guard threading no longer uses it: dropping this
-    // `Copy` would renumber every later identifier, moving the ZKIR
-    // (notes/edsl-trim.org §B, the removal's zero-movement gate).
+    // The `one` compactc threads, unused here: dropping this `Copy` would
+    // renumber every later identifier, moving the ZKIR (notes/edsl-trim.org §B).
     let _ = c.constant(1u64);
     let serialized = s.finish::<MISC_SIZE>(c);
     event::emit(c, MISC_VERSION, MISC_TAG, &serialized);
@@ -96,7 +95,7 @@ fn misc_name(c: &mut Circuit, name: &str) -> Serializer<Public> {
 ///
 /// The arguments are the responder interface crate's own types — `Signature`, wrapped
 /// in `SignatureRespondedEventV1` / `RespondBidirectionalEventV1` exactly as
-/// the Compact signature nests them: the argument IS the struct, at
+/// the Compact signature nests them: the argument is the struct, at
 /// `Private` here and `Public` for any caller, one declaration.
 /// `tests/contract_matches_its_interface.rs` checks the built IR against
 /// the interface slot for slot.
@@ -135,8 +134,8 @@ impl Signer {
     /// `export circuit signBidirectional(requestId: RequestId,
     /// notification: SignBidirectionalEventNotification): []`
     ///
-    /// The notification's type comes from `signet-signer-interface` — THE
-    /// CRATE THIS CONTRACT'S OWN CALLERS IMPORT. There is one declaration of
+    /// The notification's type comes from `signet-signer-interface` — the
+    /// crate this contract's own callers import. There is one declaration of
     /// the record, used at `Private` here (the callee witnesses its arguments)
     /// and at `Public` by every caller, so the two sides of the wire cannot
     /// disagree about its layout; `tests/contract_matches_its_interface.rs`

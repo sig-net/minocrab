@@ -1,7 +1,7 @@
-//! `nested.compact` — NESTED LEDGER ADTs at the RAW op layer (M22 stage B1,
-//! notes/coin-arms-nested-adts.org §2).
+//! `nested.compact` — nested ledger ADTs at the raw op layer
+//! (notes/coin-arms-nested-adts.org §2).
 //!
-//! DELIBERATELY UNTYPED, and kept that way. Stage B1 built the LOWERING —
+//! Deliberately untyped, and kept that way. Stage B1 built the lowering —
 //! [`LedgerKey`], the general-path encoder, and the `_at` twin of every op
 //! builder — and every circuit here reaches into `minocrab_ledger` and hands
 //! it a `&[LedgerKey]` by hand. That proved the encoding before any API was
@@ -9,20 +9,20 @@
 //!
 //! Stage B2 then built the surface (`at_key` handles, the `LedgerSlot` split)
 //! and re-expressed every circuit below through it in
-//! `tests/nested_typed.rs`, asserted BYTE-IDENTICAL to these. This module is
+//! `tests/nested_typed.rs`, asserted byte-identical to these. This module is
 //! what that comparison is against, so it stays raw: it is the only place in
 //! the workspace where the nested path is written out rather than derived,
 //! and a typed-layer bug that moved the path would move only one side.
 //!
-//! WHAT A NESTED ACCESS ACTUALLY IS. compactc's `propagate-ledger-paths.ss`
+//! What a nested access actually is. compactc's `propagate-ledger-paths.ss`
 //! walks the accessor chain `mm.lookup(k).insert(k2, v)`, folds every
-//! INTERMEDIATE `lookup` into the path `f` at compile time, and runs only the
-//! LAST accessor's vm-code. So the nested form emits the same five
+//! intermediate `lookup` into the path `f` at compile time, and runs only the
+//! last accessor's vm-code. So the nested form emits the same five
 //! instructions the flat form does, with `f = [field, k]` instead of
 //! `f = [field]`: the `idxp` gains a low nibble and the closing `insc` a
 //! bigger `n`. There is no new opcode, no new instruction, and no branch.
 //!
-//! MAP IS THE ONLY NESTABLE ADT, and that is compactc's kind-checker rather
+//! Map is the only nestable ADT, and that is compactc's kind-checker rather
 //! than our choice — `Set<List<T>>` is "expected non-ADT type but received
 //! ledger ADT type". The fixture declares every shape the checker accepts.
 
@@ -51,7 +51,7 @@ label! {
     Root = "root";
 }
 
-// THE LEDGER BLOCK — declaration order is the field index, matching the
+// The ledger block — declaration order is the field index, matching the
 // fixture's `export ledger` block one for one. Plain `u8` constants rather
 // than a `#[derive(Ledger)]` struct, because the handle types that could name
 // a nested field are stage B2's and inventing them here would pre-empt the
@@ -67,8 +67,8 @@ const MMM: u8 = 6; // Map<Bytes<32>, Map<Bytes<32>, Map<Bytes<32>, Uint<64>>>>
 /// The tree depth both nested trees are declared at.
 const DEPTH: u8 = 8;
 
-/// The path `[field, k]` — one `Map.lookup` deep. THIS IS THE WHOLE OF THE
-/// NESTED API at the raw layer: build the list, hand it to the op.
+/// The path `[field, k]` — one `Map.lookup` deep. This is the whole of the
+/// nested API at the raw layer: build the list, hand it to the op.
 fn under(c: &mut Circuit, field: u8, k: &B32<Public>) -> [LedgerKey; 2] {
     [LedgerKey::Field(field), LedgerKey::Value(k.ledger_value(c))]
 }
@@ -113,7 +113,7 @@ impl Nested {
 
     /// `mm.lookup(disclose(k)).insertDefault(disclose(k2));`
     ///
-    /// The INNER value type is `Uint<64>`, not an ADT, so the pushed default
+    /// The inner value type is `Uint<64>`, not an ADT, so the pushed default
     /// is a cell of zeros — contrast [`Nested::outer_insert_default`].
     #[circuit]
     pub fn map_insert_default(
@@ -134,9 +134,9 @@ impl Nested {
 
     /// `return mm.lookup(disclose(k)).lookup(disclose(k2));`
     ///
-    /// TWO `idx` instructions, and the second is not part of `f`: the path
+    /// Two `idx` instructions, and the second is not part of `f`: the path
     /// reaches the inner map (`0x51`) and the leaf key descends with its own
-    /// one-element `idx` (`0x50`). Only an INTERMEDIATE `lookup` folds into
+    /// one-element `idx` (`0x50`). Only an intermediate `lookup` folds into
     /// the path.
     #[circuit(output = "value")]
     pub fn map_lookup(
@@ -214,10 +214,10 @@ impl Nested {
 
     /// `mm.lookup(disclose(k)).resetToDefault();`
     ///
-    /// PATH SUPPRESSION COMES ALIVE. At depth 1 the leading `idxp` and the
+    /// Path suppression comes alive. At depth 1 the leading `idxp` and the
     /// closing `insc` are both suppressed and a reset is three instructions;
     /// at depth 2 both reappear — `idxp [field]; push k; pushs (empty map);
-    /// ins 1; insc 1` — and what gets PUSHED is the last path element, the
+    /// ins 1; insc 1` — and what gets pushed is the last path element, the
     /// key, not the field index.
     #[circuit]
     pub fn map_reset(c: &mut Circuit, k: B32<Private>) -> Discloses<(Key,)> {
@@ -227,12 +227,12 @@ impl Nested {
         Discloses::of(())
     }
 
-    /// `mm.insertDefault(disclose(k));` — the OUTER map, at depth 1.
+    /// `mm.insertDefault(disclose(k));` — the outer map, at depth 1.
     ///
-    /// The value type IS an ADT here, and `VMstate-value-ADT` discards the
+    /// The value type is an ADT here, and `VMstate-value-ADT` discards the
     /// value and pushes the ADT's own `(initial-value …)`: `0x11 0x02`, the
     /// empty map, where the flat `insertDefault` would push a cell of zeros.
-    /// The one place stage B1 found the crate would have been WRONG rather
+    /// The one place stage B1 found the crate would have been wrong rather
     /// than merely unable.
     #[circuit]
     pub fn outer_insert_default(c: &mut Circuit, k: B32<Private>) -> Discloses<(Key,)> {
@@ -382,7 +382,7 @@ impl Nested {
     ///
     /// The seventh whole-field-replace op, and stage B1 left it uncovered
     /// (its depth-1 twin is in the `adts` fixture). It is [`Nested::map_reset`]
-    /// instruction for instruction — a `Set`'s initial value IS the empty map
+    /// instruction for instruction — a `Set`'s initial value is the empty map
     /// — which is why `set_reset_at` delegates.
     #[circuit]
     pub fn set_reset(c: &mut Circuit, k: B32<Private>) -> Discloses<(Key,)> {
@@ -499,7 +499,7 @@ impl Nested {
 
     /// `mh.lookup(disclose(k)).resetHistory();`
     ///
-    /// THE ONE OPERATION whose closing depth is `len(f) + 2` — `0xa4` at
+    /// The one operation whose closing depth is `len(f) + 2` — `0xa4` at
     /// depth 2, where `0xa3` was the deepest anything else reached.
     #[circuit]
     pub fn hmt_reset_history(c: &mut Circuit, k: B32<Private>) -> Discloses<(Key,)> {

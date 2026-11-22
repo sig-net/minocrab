@@ -1,25 +1,25 @@
 //! `erc20-vault` (signet-midnight-examples tag `erc20-vault-v0.7.0-rc.2`,
-//! `6054146`, on `@sig-net/midnight` 0.26.0-rc.15) — THE benchmark target,
-//! on the FLUSH PATTERN, the Signet V1 vocabulary and per-token fees. Ported
+//! `6054146`, on `@sig-net/midnight` 0.26.0-rc.15) — the benchmark target,
+//! on the flush pattern, the Signet V1 vocabulary and per-token fees. Ported
 //! circuit by circuit, instruction order following the Compact source; each
 //! port carries a differential test against compactc's artifact
 //! (`tests/erc20_vault_differential.rs`).
 //!
-//! TWENTY-NINE CIRCUITS. Admin without EVM transactions: `initialise`,
+//! Twenty-nine circuits. Admin without EVM transactions: `initialise`,
 //! `setGasParams`, `addAllowedToken`, `setTokenFees`, `setFeeRecipient`.
 //! The request queue every action shares: `flushQueue` and
-//! `queueAttestation`. Then seven actions, each a START (queue the request
-//! under a caller-chosen index), a SEND (record the flushed request's Signet
-//! event and notify the MPC) and a COMPLETE (consume the flushed attestation
+//! `queueAttestation`. Then seven actions, each a start (queue the request
+//! under a caller-chosen index), a send (record the flushed request's Signet
+//! event and notify the MPC) and a complete (consume the flushed attestation
 //! and settle): nonce replacement (`startReplaceNonce` / `sendReplaceNonce` /
 //! `completeReplaceNonce`), approvals (`startApproveRouter` +
 //! `startApproveStata` / `sendApprove` / `completeApprove`), deposit,
 //! withdraw, swap, supply and redeem.
 //!
-//! THE FLUSH PATTERN (notes/vault-flush.org): the six steps of every action
+//! The flush pattern (notes/vault-flush.org): the six steps of every action
 //! are start → flush → send → queue the attestation → flush → complete, so a
 //! user circuit writes only entries keyed by its own request and reads
-//! configuration only the deployer changes, and `flushQueue` is the ONE
+//! configuration only the deployer changes, and `flushQueue` is the one
 //! circuit that touches the two contended cells (`globalLastSeen`,
 //! `vaultAccountNonce`). Requests are identified three ways along the way:
 //! the caller's `inIndex` (a `Uint<64>`), the flush's `requestIndex`
@@ -28,9 +28,9 @@
 //! height, strictly above the `globalLastSeen` the flush pinned into the
 //! request; the MPC's verdict ([`OutputKind`]) picks the completion's arms.
 //!
-//! WHAT 0.7.0-rc.2 CHANGED FROM `375071b` (notes/mainnet-pin.org §2): one
+//! What 0.7.0-rc.2 changed from `375071b` (notes/mainnet-pin.org §2): one
 //! `queueAttestation` for every output width, verifying the attestation
-//! WITHOUT the output (the signature covers the output's width and hash) and
+//! without the output (the signature covers the output's width and hash) and
 //! recording the width and hash, against which every complete checks the
 //! output it is given (`verifyAttestedOutputV1`); `allowedTokens` is a map
 //! to each token's `TokenFees`, and the four vault-paid starts take a coin
@@ -40,7 +40,7 @@
 //! deserialize the response unguarded over `executed ? output : 0`
 //! (upstream's compact#856 workaround, kept although 0.36.1 fixed #856).
 //!
-//! The ledger block is 37 fields, which compactc SEGMENTS three ways (seven
+//! The ledger block is 37 fields, which compactc segments three ways (seven
 //! at `[0, i]`, fifteen at `[1, i − 7]`, fifteen at `[2, i − 22]`) —
 //! `#[derive(Ledger)]` computes the same paths, and every notification's
 //! depth and path bytes are read off the map handle.
@@ -291,7 +291,7 @@ pub use crate::common::secp256k1_point_atoms;
 
 b32_newtype! {
     /// `ownershipCommitment(inIndex, sk)` — pinned into every buffered
-    /// request, proven at complete. Deliberately NOT a [`UserCommitment`]:
+    /// request, proven at complete. Deliberately not a [`UserCommitment`]:
     /// reuse would link a request's ownership to its depositor identity.
     RequestOwnership,
     /// `requestIndex(entry)` — the `outputRequestBuffer` key: Poseidon over
@@ -473,8 +473,8 @@ pub struct RedeemArgs {
 
 // ---- the ledger block ------------------------------------------------------------------
 
-/// THE LEDGER BLOCK — the Compact `ledger` declarations in the module doc,
-/// as types. Declaration order IS the field index and `#[derive(Ledger)]`
+/// The ledger block — the Compact `ledger` declarations in the module doc,
+/// as types. Declaration order is the field index and `#[derive(Ledger)]`
 /// computes each field's segmented path from it.
 #[derive(Ledger)]
 pub struct Vault {
@@ -546,7 +546,7 @@ fn assert_deployer(c: &mut Circuit) {
 
 /// `userCommitment(sk)` — `upgradeFromTransient(transientHash([sk, pad(32,
 /// "vault:user:")]))`: the identity commitment, the deployer's gate and the
-/// MPC's key-derivation PATH of a deposit. The SECRET leads the pad since
+/// MPC's key-derivation path of a deposit. The secret leads the pad since
 /// `375071b` (the seventeen-circuit vault hashed the pad first), so this is
 /// the vault's own and not `common::commitment_transient`.
 fn user_commitment(c: &mut Circuit, sk: &common::SecretKey<Private>) -> UserCommitment<Private> {
@@ -572,7 +572,7 @@ fn vault_token_domain_separator(c: &mut Circuit, erc20_address: Wire<FieldT, Pub
 }
 
 /// `ownershipCommitment(inIndex, sk)` — `upgradeFromTransient(transientHash([sk,
-/// inIndex, pad(32, "vault:request:")]))`, over a FRESH witness.
+/// inIndex, pad(32, "vault:request:")]))`, over a fresh witness.
 fn ownership_commitment(c: &mut Circuit, in_index: Wire<FieldT, Private>) -> RequestOwnership<Private> {
     let sk = common::witness_sk(c).bytes();
     c.region("ownership commitment (transientHash)", |c| {
@@ -681,7 +681,7 @@ fn no_calldata<const WORDS: usize>(c: &mut Circuit) -> signet_v1::EvmCalldata<Pr
 /// `EvmType2TxParams<WORDS, 0, 0> { chainId: evmChainId, nonce: entry.evmNonce,
 /// maxPriorityFeePerGas, maxFeePerGas, gasLimit, to, value: 0, calldata,
 /// accessListEntryCount: 0, accessList: [] }` — the `evmChainId` read is
-/// made HERE, first in the literal, before a `to` that is a cell read.
+/// made here, first in the literal, before a `to` that is a cell read.
 fn tx_params<const WORDS: usize>(
     c: &mut Circuit,
     entry: &RequestBufferEntry,
@@ -711,12 +711,12 @@ fn tx_params<const WORDS: usize>(
 /// `signetSigner.signBidirectional(requestId,
 /// constructSignBidirectionalEventNotificationV1(kernel.self(), depth,
 /// path))` — the signer read, the caller's own address, the notification and
-/// the cross-contract call. The notification's depth and path bytes ARE the
+/// the cross-contract call. The notification's depth and path bytes are the
 /// request map's compiled ledger path, read off the handle.
 fn notify_signet<K, V>(c: &mut Circuit, request_id: &RequestId<Public>, map: &LedgerMap<K, V>) {
     c.region("xcall: notify signet", |c| {
-        // compactc evaluates a call's RECEIVER before its argument
-        // expressions, so the sealed-cell read is pinned FIRST.
+        // compactc evaluates a call's receiver before its argument
+        // expressions, so the sealed-cell read is pinned first.
         let signer = SignetSigner::at_field_path(VAULT.signet_signer.field_path().as_slice()).pin(c);
         let me = kernel::self_address(c);
         let path = map.field_path();
@@ -783,7 +783,7 @@ fn send_request<const WORDS: usize, SP, SR, A>(
 
 /// `settleRequest(requestId, action): [RequestBufferEntry, AttestationRecord]`
 /// — the open request and the flushed attestation that settles it, the height
-/// bound, the ownership proof over a FRESH witness, and the three removals.
+/// bound, the ownership proof over a fresh witness, and the three removals.
 fn settle_request(c: &mut Circuit, request_id: &RequestId<Public>, action: u64) -> (RequestBufferEntry, AttestationRecord) {
     c.region("settle request", |c| {
         let out_index = VAULT.eviction_map.lookup_required(c, request_id, "Request not sent").stale(c);
@@ -849,7 +849,7 @@ fn as_u64(c: &mut Circuit, amount: Uint<128, Public>) -> Uint<64, Public> {
 }
 
 /// `mintShieldedToken(vaultTokenDomainSeparator(erc20), amount, disclose(nonce),
-/// left(pk))` to an ALREADY-witnessed key.
+/// left(pk))` to an already-witnessed key.
 fn mint_to_key(c: &mut Circuit, erc20: Wire<FieldT, Public>, amount: Uint<64, Public>, mint_nonce: &CoinNonce<Public>, pk: &minocrab_std::ZswapCoinPublicKey<Public>) {
     let domain_sep = vault_token_domain_separator(c, erc20);
     common::mint_shielded_token_to_key(c, &domain_sep, amount, mint_nonce, pk);
@@ -865,7 +865,7 @@ struct ShieldedCoinArg {
 }
 
 /// `assert(coin.color == tokenType(vaultTokenDomainSeparator(erc20),
-/// kernel.self()), message)` — the surrendered coin must be THIS vault's
+/// kernel.self()), message)` — the surrendered coin must be this vault's
 /// token for `erc20`.
 fn assert_vault_color(c: &mut Circuit, erc20: Wire<FieldT, Public>, coin: &ShieldedCoinArg, message: &'static str) {
     let domain_sep = vault_token_domain_separator(c, erc20);
@@ -1313,7 +1313,7 @@ impl Vault {
     // ==== Replace nonce ==================================================================
 
     /// `export circuit startReplaceNonce(inIndex: Uint<64>, requestId:
-    /// RequestId, action: Action): []` — EMERGENCY USE ONLY: queues a
+    /// RequestId, action: Action): []` — emergency use only: queues a
     /// zero-value self-transfer at the nonce of the sent request named, read
     /// off that request's own event. Deployer-gated.
     #[circuit]
@@ -1493,7 +1493,7 @@ impl Vault {
     /// `export circuit startDeposit(inIndex: Uint<64>, evmNonce: Uint<64>,
     /// gas: GasParams, depositRequest: DepositRequest): []` — queues
     /// `transfer(vaultEvmAddress, amount)` on an allowed ERC20, signed by the
-    /// MPC with the DEPOSITOR's derived account at their own nonce and gas.
+    /// MPC with the depositor's derived account at their own nonce and gas.
     #[circuit]
     pub fn start_deposit(
         c: &mut Circuit,

@@ -1,9 +1,8 @@
 //! One error type for the whole publisher.
 //!
-//! Everything here is a RUNTIME rejection — a malformed deployment table, a
+//! Everything here is a runtime rejection — a malformed deployment table, a
 //! transcript the ledger will not partition, a key file that is not on disk —
-//! so it is a `Result`, not a compile error (CLAUDE.md's "compile errors over
-//! panics" ranks the value-dependent case last, and this is that case). The
+//! so it is a `Result`, not a compile error (the value-dependent case). The
 //! upstream failures the ledger reports are generic over the storage backend
 //! (`PartitionFailure<D>`, `MalformedTransaction<D>`, `TransactionProvingError
 //! <D>`), so they are carried here as their `Debug` rendering rather than
@@ -48,12 +47,12 @@ pub enum PublishError {
     /// ran, and the reason a lying endpoint's respond call fails safe.
     #[error("{circuit}: the deployed verifier key hashes to {got}, not the expected {expected}")]
     VerifierKeyMismatch { circuit: String, expected: String, got: String },
-    /// The package's OWN `expectedVk.json` disagrees with its OWN
+    /// The package's own `expectedVk.json` disagrees with its own
     /// `.verifier` file for one circuit — a mismatch between the shipped
     /// table and the shipped keys, caught before anything is deployed or
-    /// proved against them (`ManagedDir::deployment`, M30 C2). Distinct from
+    /// proved against them (`ManagedDir::deployment`). Distinct from
     /// [`PublishError::VerifierKeyMismatch`], which compares against a
-    /// DEPLOYED contract's operation, not the package's own files.
+    /// deployed contract's operation, not the package's own files.
     #[error(
         "{circuit}: {json_path} records {json_hash}, but the verifier key on disk hashes to \
          {file_hash} — the shipped expectedVk table and the shipped keys are out of sync \

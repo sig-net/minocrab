@@ -1,10 +1,10 @@
-//! `kernel.compact` — the kernel primitives and token-stdlib circuits M4 left
-//! (M17, notes/kernel-tokens.org).
+//! `kernel.compact` — the kernel primitives and token-stdlib circuits
+//! (notes/kernel-tokens.org).
 //!
 //! Not a corpus contract, for the fourth milestone running and the same
 //! measured reason: across the three `--feature-zkir-v3` sources the
 //! kernel/token surface used is `kernel.self`, `receiveShielded`,
-//! `mintShieldedToken` and `sendImmediateShielded` — all SHIELDED, and not one
+//! `mintShieldedToken` and `sendImmediateShielded` — all shielded, and not one
 //! v3 use of an unshielded primitive, of `balance*`, of `blockTime*` or of
 //! `mergeCoin`.
 //!
@@ -35,7 +35,7 @@ label! {
     InputCoin = "input coin";
 }
 
-/// THE LEDGER BLOCK — one counter, because a Compact circuit that touches
+/// The ledger block — one counter, because a Compact circuit that touches
 /// nothing produces no artifact to compare against.
 #[derive(Ledger)]
 pub struct KernelTokens {
@@ -45,12 +45,12 @@ pub struct KernelTokens {
 /// The contract's ledger block.
 pub const KT: KernelTokens = KernelTokens::new();
 
-// THE CONTRACT — every circuit `kernel.compact` exports, as an `impl` of
+// The contract — every circuit `kernel.compact` exports, as an `impl` of
 // the state they run against (the `#[contract]` block below the argument
 // types). `KernelTokens::CIRCUITS` is the derived set: the differential and
 // the snapshots enumerate it instead of a hand-written list, so a circuit
 // that exists here cannot be missed by them.
-// ---- the SHIELDED compositions ----------------------------------------------
+// ---- the shielded compositions ----------------------------------------------
 
 /// `QualifiedShieldedCoinInfo` as an argument — a coin the contract can spend,
 /// which is [`ShieldedCoinArg`] plus its place in the commitment tree.
@@ -317,7 +317,7 @@ impl KernelTokens {
 
     /// `export circuit sSendUnshielded(color, a, r): []`
     ///
-    /// The first M17 circuit with a CONDITIONAL: its auto-receive runs only when
+    /// A circuit with a conditional: its auto-receive runs only when
     /// the recipient is this contract, which is a guarded `kernel.self()` read
     /// feeding a guarded effect.
     #[circuit]
@@ -377,8 +377,8 @@ impl KernelTokens {
     /// r: Either<ZswapCoinPublicKey, ContractAddress>, v: Uint<128>):
     /// ShieldedSendResult`
     ///
-    /// The largest M17 circuit, and the one with a conditional in both flavours:
-    /// an effect branch (the self-send auto-receive) and a VALUE branch (change,
+    /// The largest circuit here, and the one with a conditional in both flavours:
+    /// an effect branch (the self-send auto-receive) and a value branch (change,
     /// or none).
     #[circuit(output = "result")]
     pub fn s_send_shielded(

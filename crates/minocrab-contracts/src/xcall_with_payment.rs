@@ -1,5 +1,5 @@
 //! `xcall-with-payment` (signet-midnight-experiments) — cross-contract
-//! calls carrying coin data (M5). The caller holds a sealed target
+//! calls carrying coin data. The caller holds a sealed target
 //! reference (field 0) and calls `notify(coin: ShieldedCoinInfo)` /
 //! `confirmRequest(requestId: Bytes<32>)`; the target's `confirmRequest`
 //! records the request id.
@@ -75,9 +75,8 @@ impl XcallWithPayment {
     /// `target.notify(disclose(coin))`. ShieldedCoinInfo = { nonce: Bytes<32>,
     /// color: Bytes<32>, value: Uint<128> }, 5 FAB limbs.
     ///
-    /// NAME-COLUMN CHANGE (M9 phase 5): the coin's five slots were declared
-    /// `nonce_hi` … `value`, an abbreviation of the Compact parameter, and the
-    /// mechanical rule gives them the parameter's own name — `coin_nonce_hi` …
+    /// Name column: the mechanical rule gives the coin's five slots the
+    /// parameter's own name — `coin_nonce_hi` …
     /// `coin_value`, which is what the target's `notify`/`pay` already called
     /// them. Types and order are untouched; argument names are ours, not
     /// compactc's (notes/ledger-abi.org §6).
@@ -89,9 +88,8 @@ impl XcallWithPayment {
         let nonce = coin.nonce.disclose_as::<Nonce>(c);
         let color = coin.color.disclose_as::<Color>(c);
         let value = coin.value.disclose_as::<Value>(c).field();
-        // Kept even though guard threading no longer uses it: dropping this
-        // `Copy` would renumber every later identifier, moving the ZKIR
-        // (notes/edsl-trim.org §B, the removal's zero-movement gate).
+        // The `one` compactc threads, unused here: dropping this `Copy` would
+        // renumber every later identifier, moving the ZKIR (notes/edsl-trim.org §B).
         let _ = c.constant(1u64);
         TARGET_CONTRACT.notify(
             c,
@@ -112,9 +110,8 @@ impl XcallWithPayment {
         request_id: B32<Private>,
     ) -> Discloses<(RequestId, XcallCommitment)> {
         let request_id = request_id.disclose_as::<RequestId>(c);
-        // Kept even though guard threading no longer uses it: dropping this
-        // `Copy` would renumber every later identifier, moving the ZKIR
-        // (notes/edsl-trim.org §B, the removal's zero-movement gate).
+        // The `one` compactc threads, unused here: dropping this `Copy` would
+        // renumber every later identifier, moving the ZKIR (notes/edsl-trim.org §B).
         let _ = c.constant(1u64);
         TARGET_CONTRACT.confirm_request(c, request_id);
         Discloses::of(())
@@ -126,9 +123,8 @@ impl XcallWithPayment {
     #[circuit]
     pub fn notify(c: &mut Circuit, coin: CoinArg) -> Discloses<(CoinNonce, CoinColor, CoinValue)> {
         let coin = disclose_coin(c, coin);
-        // Kept even though guard threading no longer uses it: dropping this
-        // `Copy` would renumber every later identifier, moving the ZKIR
-        // (notes/edsl-trim.org §B, the removal's zero-movement gate).
+        // The `one` compactc threads, unused here: dropping this `Copy` would
+        // renumber every later identifier, moving the ZKIR (notes/edsl-trim.org §B).
         let _ = c.constant(1u64);
         receive_shielded(c, &coin);
         write_coin_to_self(c, TREASURY, &coin);
@@ -146,9 +142,8 @@ impl XcallWithPayment {
     ) -> Discloses<(RequestId, CoinNonce, CoinColor, CoinValue)> {
         let request_id = request_id.disclose_as::<RequestId>(c);
         let coin = disclose_coin(c, coin);
-        // Kept even though guard threading no longer uses it: dropping this
-        // `Copy` would renumber every later identifier, moving the ZKIR
-        // (notes/edsl-trim.org §B, the removal's zero-movement gate).
+        // The `one` compactc threads, unused here: dropping this `Copy` would
+        // renumber every later identifier, moving the ZKIR (notes/edsl-trim.org §B).
         let _ = c.constant(1u64);
         receive_shielded(c, &coin);
         write_coin_to_self(c, TREASURY, &coin);
@@ -168,9 +163,8 @@ impl XcallWithPayment {
         request_id: B32<Private>,
     ) -> Discloses<(RequestId,)> {
         let request_id = request_id.disclose_as::<RequestId>(c);
-        // Kept even though guard threading no longer uses it: dropping this
-        // `Copy` would renumber every later identifier, moving the ZKIR
-        // (notes/edsl-trim.org §B, the removal's zero-movement gate).
+        // The `one` compactc threads, unused here: dropping this `Copy` would
+        // renumber every later identifier, moving the ZKIR (notes/edsl-trim.org §B).
         let _ = c.constant(1u64);
         let elem = LedgerValue::bytes(
             32,

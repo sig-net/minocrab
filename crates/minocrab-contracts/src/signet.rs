@@ -49,7 +49,7 @@ pub use crate::signet_v1::{
 /// Re-exported from the interface crate (where the generator emits it from
 /// the callee's own `RequestId = Bytes<32>` alias) so a vault fork can write
 /// `signet::RequestId` without importing the crate: the forks already declare
-/// a DISCLOSURE LABEL called `RequestId`, and the module qualifier keeps the
+/// a disclosure label called `RequestId`, and the module qualifier keeps the
 /// two apart at every use.
 pub use signet_signer_interface::RequestId;
 
@@ -159,8 +159,8 @@ impl<const WORDS: usize, const LEN_OUT: usize, const LEN_RESPOND: usize>
     }
 }
 
-/// What the LEDGER holds a request as: the atoms of the record type, and its
-/// limbs in FAB slot order. Both directions live here, in ONE impl, which is
+/// What the ledger holds a request as: the atoms of the record type, and its
+/// limbs in FAB slot order. Both directions live here, in one impl, which is
 /// the point — the map that stores a request and the settle circuit that
 /// reads it back cannot be given different atom lists, because neither
 /// writes one (`LedgerMap<_, VaultRecord>` takes them from this type).
@@ -282,30 +282,29 @@ pub fn verify_respond_bidirectional_event<V: Vis, const LEN_OUTPUT: usize>(
 }
 
 /// `calculateSignetAttestationDigest(requestId, output)` where the output is
-/// a TYPED Borsh value — M11 stage 5's form of the digest.
+/// a typed Borsh value.
 ///
 /// The preimage is `borsh({ request_id: [u8; 32], output: T })`: a Borsh
 /// struct is the concatenation of its fields, so this is the request id's 32
-/// bytes followed by `borsh(output)`. What is hashed is Poseidon over LIMBS,
+/// bytes followed by `borsh(output)`. What is hashed is Poseidon over limbs,
 /// and the limbs are the MPC's (`compact-hashing::compute_response_hash`,
 /// `signet_sim::hashing`): the id's `[hi, lo]` slot pair, then the serialized
-/// output PACKED AS ONE BYTE STRING in FAB's 31-byte limbing, slot order —
+/// output packed as one byte string in FAB's 31-byte limbing, slot order —
 /// exactly what [`calculate_attestation_digest`] takes as `output_limbs`.
 ///
-/// NOT one limb per Borsh leaf. That was this function's first form
-/// (`limbs_of(output).transient_hash`), which agreed with the MPC under
-/// keccak / persistentHash — where the hash is over BYTES and the two limb
-/// splits are the same bytes — and stopped agreeing when M28 moved the
-/// protocol to `transientHash`: Poseidon absorbs field elements, so a kind
+/// Not one limb per Borsh leaf (`limbs_of(output).transient_hash`): that
+/// agrees with the MPC only under
+/// keccak / persistentHash — where the hash is over bytes and the two limb
+/// splits are the same bytes — and not under the protocol's
+/// `transientHash`: Poseidon absorbs field elements, so a kind
 /// byte and a payload as two limbs is a different preimage from the two
-/// bytes as one limb. notes/signet-async.org §10; decided by dmd 2026-09-07
-/// (decisions.org T1): pack in-circuit, unilaterally.
+/// bytes as one limb (notes/signet-async.org §10).
 ///
-/// COST: the M7 segment packing (`Serializer::finish_limbs`) — constant-weight
+/// Cost: the segment packing (`Serializer::finish_limbs`) — constant-weight
 /// mul/add per leaf, one `div_mod` only where a leaf straddles a 31-byte
 /// boundary, which no shipped output does. The Serializer's precondition —
 /// every leaf already range-constrained, or the packing is not injective —
-/// is discharged by the caller: the output is a circuit ARGUMENT
+/// is discharged by the caller: the output is a circuit argument
 /// (`Succeeded` / `Failed` tickets), constrained at entry by
 /// `CircuitArg::constrain`, and `Pending::complete` asserts its kind besides.
 pub fn calculate_attestation_digest_borsh<V: Vis, T: CircuitBorsh<V>>(
@@ -319,7 +318,7 @@ pub fn calculate_attestation_digest_borsh<V: Vis, T: CircuitBorsh<V>>(
     })
 }
 
-/// [`calculate_attestation_digest_borsh`] BEFORE the `upgradeFromTransient`
+/// [`calculate_attestation_digest_borsh`] before the `upgradeFromTransient`
 /// — the raw Poseidon output — for a settle that hashes more than one
 /// candidate preimage and selects between them before upgrading
 /// (`Pending::refund`: the MPC's failure output is the kind byte alone, the
@@ -344,8 +343,8 @@ pub fn attestation_transient_hash_borsh<V: Vis, T: CircuitBorsh<V>>(
     c.transient_hash(&limbs)
 }
 
-/// [`verify_respond_bidirectional_event`] over a TYPED Borsh output — M11
-/// stage 5. Same signature check, same MPC key, a digest whose preimage
+/// [`verify_respond_bidirectional_event`] over a typed Borsh output.
+/// Same signature check, same MPC key, a digest whose preimage
 /// carries the response kind.
 pub fn verify_respond_bidirectional_event_borsh<V: Vis, T: CircuitBorsh<V>>(
     c: &mut Circuit,
@@ -489,9 +488,9 @@ mod tests {
         assert_eq!(EventRecord::<7, 38, 37>::LIMBS, 43);
     }
 
-    /// M11 STAGE 7, both instantiations: the record's atoms are the deployed
+    /// The stage-7 record, both instantiations: the record's atoms are the deployed
     /// record's with a `bytes<1>` version in front and a `bytes<1>` kind where
-    /// the two schema atoms were — stated against the DEPLOYED list rather
+    /// the two schema atoms were — stated against the deployed list rather
     /// than against a second hand count, so the two formats cannot drift in
     /// the middle.
     #[test]
@@ -516,7 +515,7 @@ mod tests {
         }
     }
 
-    /// The stage-7 records' shapes as NUMBERS: 24 atoms / 31 limbs / 338
+    /// The stage-7 records' shapes as numbers: 24 atoms / 31 limbs / 338
     /// bytes for the vault instantiation, 29 / 41 / 498 for the swap one.
     /// (The deployed pair is 24 / 33 / 404 and 29 / 43 / 571.)
     #[test]

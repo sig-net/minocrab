@@ -1,6 +1,6 @@
 //! Sig Network's epsilon derivation for Midnight, and the derived key.
 //!
-//! MECHANICAL TRANSLATION of `signet-crypto/src/kdf.rs` at `b940f0a7`
+//! Mechanical translation of `signet-crypto/src/kdf.rs` at `b940f0a7`
 //! (the Midnight arms only), pinned by the same golden vectors the MPC
 //! pins itself against (`fixtures/midnight-epsilon.json`).
 
@@ -12,7 +12,7 @@ use sha3::{Digest, Keccak256};
 pub const EPSILON_DERIVATION_PREFIX_V1: &str = "sig.network v1.0.0 epsilon derivation";
 pub const EPSILON_DERIVATION_PREFIX_V2: &str = "sig.network v2.0.0 epsilon derivation";
 pub const MIDNIGHT_CHAIN_ID: &str = "midnight:mainnet";
-/// The path the MPC derives its RESPONSE key under, per caller.
+/// The path the MPC derives its response key under, per caller.
 pub const MIDNIGHT_RESPOND_BIDIRECTIONAL_PATH: &str = "midnight response key";
 
 /// A hash reduced into the scalar field ("from_non_biased" upstream: the

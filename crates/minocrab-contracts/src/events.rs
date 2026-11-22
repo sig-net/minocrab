@@ -31,8 +31,8 @@ pub const CALL_COUNT: u8 = 0;
 pub const LAST_AMOUNT: u8 = 1;
 pub const BALANCES: u8 = 2;
 
-/// The Misc event constants (compiler/midnight-events.ss:71) — DEFINED in
-/// `signet-protocol` (M30 C1), the publishable crate the publisher reads them
+/// The Misc event constants (compiler/midnight-events.ss:71) — defined in
+/// `signet-protocol`, the publishable crate the publisher reads them
 /// from; re-exported here so the suites keep their spelling.
 pub use signet_protocol::misc::{MISC_SIZE, MISC_TAG, MISC_VERSION};
 
@@ -49,13 +49,13 @@ label! {
     pub(crate) Recipient = "recipient";
 }
 
-/// What EVERY circuit in this family discloses, whatever `emits` is: the two
+/// What every circuit in this family discloses, whatever `emits` is: the two
 /// arguments, and nothing the emit loop adds (a log is a public statement, not
 /// a disclosure).
 ///
 /// Named once, because the family is built through [`entry`] rather than
 /// `#[circuit]`: the entry point's return type and the set-equality test below
-/// must be the SAME declaration, and an alias is the only spelling that makes
+/// must be the same declaration, and an alias is the only spelling that makes
 /// that a compiler fact rather than a convention.
 pub(crate) type DepositDisclosures = Discloses<(Amount, Recipient)>;
 
@@ -81,10 +81,10 @@ struct DepositArgs {
 /// The circuit family: the workload plus `emits` Misc events.
 ///
 /// Built through [`entry`] rather than `#[circuit]`: the attribute makes a
-/// NULLARY constructor, and this family is parameterized by a Rust value
+/// nullary constructor, and this family is parameterized by a Rust value
 /// (`emits`), which is not a circuit argument. The argument list is the
 /// derived struct either way, so the typed-argument guarantee is the same
-/// one — only the entry point's spelling differs. The DECLARATION is the
+/// one — only the entry point's spelling differs. The declaration is the
 /// same one too: `entry` takes any `CircuitOut` of zero slots, and
 /// [`DepositDisclosures`] is one (see [`Discloses`]).
 fn base_with_emits(emits: usize) -> Compiled {
@@ -93,9 +93,8 @@ fn base_with_emits(emits: usize) -> Compiled {
         minocrab_compat::profile(c);
         let recipient = args.recipient;
         let amount = args.amount;
-        // Kept even though guard threading no longer uses it: dropping this
-        // `Copy` would renumber every later identifier, moving the ZKIR
-        // (notes/edsl-trim.org §B, the removal's zero-movement gate).
+        // The `one` compactc threads, unused here: dropping this `Copy` would
+        // renumber every later identifier, moving the ZKIR (notes/edsl-trim.org §B).
         let _ = c.constant(1u64);
 
         let a = amount.disclose_as::<Amount>(c).field();
@@ -142,7 +141,7 @@ pub fn emit_n(n: usize) -> Compiled {
 
 /// The set-equality test `#[circuit]` would have generated, hand-written
 /// because this family has no attribute to generate it from — one assertion
-/// per INSTANTIATION, over the same [`DepositDisclosures`] the entry point
+/// per instantiation, over the same [`DepositDisclosures`] the entry point
 /// returns and through the same public
 /// [`assert_declared_disclosures`](minocrab_std::assert_declared_disclosures)
 /// the expansion calls. Nothing about the machinery is macro-only; the
