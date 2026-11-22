@@ -33,7 +33,7 @@ struct Row {
 
 const READING: &str = "READING";
 
-/// The classification. Order is the read order of `TRUST.md` §2 (bottom of
+/// The classification. Order is the read order of `VERIFICATION.md` §7 (bottom of
 /// the stack first). Warrant names are test files, proof modules or gates
 /// a reviewer can run; "READING" means nothing but a human's eyes.
 const ROWS: &[Row] = &[
@@ -66,7 +66,7 @@ const ROWS: &[Row] = &[
     Row { path: "minocrab-ledger/src/tests.rs", warrant: READING, hides: "a unit test that pins the wrong constant or asserts a weaker property than intended, unnoticed because it still passes" },
     // ---- L3: the standard library ---------------------------------------------------------
     Row { path: "minocrab-std/src/lib.rs", warrant: READING, hides: "nothing beyond re-exports" },
-    Row { path: "minocrab-std/src/leaves.rs", warrant: "every differential; leaves / bounded / literals / secp; lean_claims (the typed-leaf claims, crates/minocrab-std/lean). `from_field_unchecked` sites: READING (the grep in TRUST.md §3)", hides: "a leaf whose type promises a bound its constructor did not constrain" },
+    Row { path: "minocrab-std/src/leaves.rs", warrant: "every differential; leaves / bounded / literals / secp; lean_claims (the typed-leaf claims, crates/minocrab-std/lean). `from_field_unchecked` sites: READING (the grep in VERIFICATION.md §6)", hides: "a leaf whose type promises a bound its constructor did not constrain" },
     Row { path: "minocrab-std/src/ledger.rs", warrant: "every contract differential; ledger; nested_typed; the derive's layout pinned against compactc's `batch` for all 256 block sizes and the sixteen-field probe", hides: "a typed slot reading the wrong field, or a segmented path computed differently from compactc" },
     Row { path: "minocrab-std/src/borsh.rs", warrant: "serialization_conformance (vectors shared with the published TypeScript decoder, spec/ts); borsh; the borsh differentials", hides: "a non-canonical encoding accepted, breaking the digest's injectivity (api-safety-survey §B3)" },
     Row { path: "minocrab-std/src/borsh/schema.rs", warrant: "the generated schema cross-check test per #[derive(CircuitBorsh)] (layout ≡ borsh's schema of the spec type)", hides: "a layout table disagreeing with the published spec" },
