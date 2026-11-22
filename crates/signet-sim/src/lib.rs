@@ -15,13 +15,11 @@
 //! The one thing it does not do is execute an EVM: the outcome is an
 //! oracle the test supplies ([`EvmOutcome`]).
 //!
-//! What it can and cannot exercise today: the attestation it produces has
-//! the wire shape and key the caller's settle circuit verifies, but driving
-//! that circuit end to end needs a transcript executor for v3 circuits
-//! (ledger reads answered from a live state), which this workspace does not
-//! have. Until it does, the round
-//! trip stops at the attestation, and the circuit-side acceptance is
-//! covered by the vault harness's own signing model.
+//! What it exercises: the attestation it produces has the wire shape and
+//! key the caller's settle circuit verifies. Driving that circuit is not
+//! this crate's job: circuit execution against ledger state is
+//! `minocrab_sim::exec`, which the round-trip test in `minocrab-contracts`
+//! uses.
 
 pub mod hashing;
 pub mod kdf;
