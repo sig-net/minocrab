@@ -122,8 +122,8 @@ pub const RESPONSE_KINDS: u32 = 7;
 /// The discriminant is what makes cross-circuit attestation replay
 /// structurally impossible: the kind is inside the signed preimage, so two
 /// settle circuits' digests differ for the same request id and outcome, and
-/// each circuit asserts its own kind (`EvmCall::KIND`, checked by
-/// `Pending::complete`).
+/// each circuit asserts its own kind (the `RESPONSE_KIND_*` constants below,
+/// which this lineage's `Filing` impls name).
 ///
 /// The call type names the kind, so this table's last
 /// column is a type in [`crate::evm`] rather than a response struct here:
@@ -133,7 +133,7 @@ pub const RESPONSE_KINDS: u32 = 7;
 /// | 0 | claim | `deposit` | `claim` | `bool success` | [`Deposit`] → `erc20::Transfer` |
 /// | 1 | withdraw | `withdraw` | `complete_withdraw` | `bool success` | [`Withdrawal`] → `erc20::Transfer` |
 /// | 2 | swap | `swap` | `complete_swap` | `uint64 amountIn` | [`Swap`] → `uniswap_v3::ExactOutputSingle` |
-/// | 3 | failure | — | `refund_*` | — | `evm_flow::FAILURE_KIND` |
+/// | 3 | failure | — | `refund_*` | — | — (response-only) |
 /// | 4 | approve | `approve_router`, `approve_stata` | — | `bool` | [`Approval`] → `erc20::Approve` |
 /// | 5 | supply | `supply` | `complete_supply` | `uint64 shares` | [`Supply`] → `erc4626::Deposit` |
 /// | 6 | redeem | `redeem` | `complete_redeem` | `uint64 assets` | [`Redeem`] → `erc4626::Redeem` |
