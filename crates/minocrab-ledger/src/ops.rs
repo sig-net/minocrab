@@ -48,12 +48,12 @@ fn ins1() -> ImpactOp {
     })
 }
 
-// --- PATH SUPPRESSION -------------------------------------------------------
+// --- path suppression -------------------------------------------------------
 //
-// Nine operations REPLACE a whole field rather than reach inside it —
+// Nine operations replace a whole field rather than reach inside it —
 // `Cell.write`, `Cell.writeCoin`, `Cell.resetToDefault`,
 // `Counter.resetToDefault`, and the five collections' `resetToDefault`
-// (midnight-ledger.ss:554, 561, 573, 616, 627, 715, 821, 1015, 1178). They
+// (midnight-ledger.ss:612, 619, 631, 674, 685, 773, 879, 1074, 1237). They
 // alone split `f` into "the path to the container" and "the key to write":
 //
 //   (idx [pushPath #t] [path (suppress-null (reverse (cdr (reverse f))))])
@@ -62,18 +62,18 @@ fn ins1() -> ImpactOp {
 //   (ins [cached #t] [n (suppress-zero (sub1 (length f)))])
 //
 // `suppress-null` / `suppress-zero` (vm.ss:192-194) turn the degenerate
-// operand into `VMsuppress`, which `assemble1` maps to the EMPTY operand list
+// operand into `VMsuppress`, which `assemble1` maps to the empty operand list
 // and `assemble` then drops — the instruction disappears. At depth 1 both
 // vanish, which is why a top-level `Cell` write is three instructions. At
-// depth 2 BOTH become live: `idxp [field]` and `insc 1` reappear, exactly as
+// depth 2 both become live: `idxp [field]` and `insc 1` reappear, exactly as
 // the probe of `a.lookup(k).resetToDefault()` shows.
 //
 // This is the one place our encoding must diverge from `Op::field_repr`:
 // upstream's `Op::Ins { n: 0 }` writes `0xa0` rather than nothing, so the
-// suppressed `insc` has to be OMITTED here and not encoded as zero.
+// suppressed `insc` has to be omitted here and not encoded as zero.
 // (`Op::Idx` with an empty path already writes nothing, so that half agrees.)
 
-/// The leading `idxp` of a whole-field-replace op: the path MINUS its last
+/// The leading `idxp` of a whole-field-replace op: the path minus its last
 /// element, suppressed away entirely when that leaves nothing.
 fn idxp_container(path: &[LedgerKey]) -> Vec<ImpactOp> {
     let head = &path[..path.len() - 1];
@@ -99,11 +99,10 @@ fn insc_container(path: &[LedgerKey]) -> Vec<ImpactOp> {
 // Every builder comes in two forms: `foo(index: u8, ..)` for a top-level
 // field and `foo_at(path: &[LedgerKey], ..)` for the general case. The `u8`
 // form is a one-line wrapper over the one-element path, so the widening adds
-// a capability without moving a single byte of what the crate already emits
-// (M22 stage B1's zero-movement gate).
+// a capability without moving a single byte of what the crate emits.
 
 /// `Counter.increment(amount)` on ledger field `index`
-/// (midnight-ledger.ss:605-609): `idxp [field]; addi amount; insc 1`.
+/// (midnight-ledger.ss:663-667): `idxp [field]; addi amount; insc 1`.
 pub fn counter_increment(index: u8, amount: u32) -> Vec<ImpactOp> {
     counter_increment_at(&field_path(index), amount)
 }
@@ -118,14 +117,14 @@ pub fn counter_increment_at(path: &[LedgerKey], amount: u32) -> Vec<ImpactOp> {
 }
 
 /// `field = value` — Cell write to a top-level field
-/// (midnight-ledger.ss:552-558 with the idxp/insc pair suppressed for
+/// (midnight-ledger.ss:610-616 with the idxp/insc pair suppressed for
 /// top-level fields, reduce-to-zkir.ss:595-608): `push key; pushs value;
 /// ins 1`.
 pub fn cell_write(index: u8, value: &LedgerValue) -> Vec<ImpactOp> {
     cell_write_at(&field_path(index), value)
 }
 
-/// [`cell_write`] on a general path — one of the NINE whole-field-replace ops
+/// [`cell_write`] on a general path — one of the nine whole-field-replace ops
 /// (see "PATH SUPPRESSION" above), so the leading `idxp` and closing `insc`
 /// are live at depth 2 and suppressed at depth 1:
 ///
@@ -142,7 +141,7 @@ pub fn cell_write_at(path: &[LedgerKey], value: &LedgerValue) -> Vec<ImpactOp> {
 }
 
 /// `Cell<QualifiedShieldedCoinInfo>.writeCoin(coin, recipient)` on the
-/// top-level field `index` (midnight-ledger.ss:567-583): the coin's
+/// top-level field `index` (midnight-ledger.ss:625-641): the coin's
 /// Merkle-tree index is resolved by indexing the context's
 /// commitment-index map (context\[1\]) with the coin's commitment (from the
 /// stack) and concatenated onto the coin, writing the resulting
@@ -171,10 +170,10 @@ pub fn cell_write_coin_at(path: &[LedgerKey], cm: &LedgerValue, coin: &LedgerVal
     ops
 }
 
-/// THE QUALIFY DANCE — the six instructions all four coin arms share
+/// The qualify dance — the six instructions all four coin arms share
 /// (`Cell.writeCoin`, `Set.insertCoin`, `Map.insertCoin`,
-/// `List.pushFrontCoin`; midnight-ledger.ss:567-583, :670-696, :769-795,
-/// :918-968).
+/// `List.pushFrontCoin`; midnight-ledger.ss:625-641, :728-754, :827-853,
+/// :977-1027).
 ///
 /// It turns a `ShieldedCoinInfo` into the `QualifiedShieldedCoinInfo` the
 /// four store, by resolving the coin's Merkle-tree index on chain and
@@ -194,7 +193,7 @@ pub fn cell_write_coin_at(path: &[LedgerKey], cm: &LedgerValue, coin: &LedgerVal
 /// a `bytes<32>`); `coin` the 3-atom `[bytes<32>, bytes<32>, bytes<16>]`
 /// `ShieldedCoinInfo`.
 ///
-/// THE ONLY THING THAT DIFFERS between the four arms is `dup_n` and what
+/// The only thing that differs between the four arms is `dup_n` and what
 /// surrounds the six — each arm is its plain twin with one push replaced by
 /// this. The reach is past the pushes the arm has already made, the result
 /// slot, the `2n` path items the leading `idx` left, and the effects, so it
@@ -219,7 +218,7 @@ fn qualify_coin(dup_n: u8, cm: &LedgerValue, coin: &LedgerValue) -> [ImpactOp; 6
 /// items the leading `idx` left, and the effects. At `len(f) = 1` they are
 /// 3, 4, 5 and 7 (pinned by the tests below).
 ///
-/// compactc notes at midnight-ledger.ss:576-577 that a long `f` overflows the
+/// compactc notes at midnight-ledger.ss:634-635 that a long `f` overflows the
 /// `dup` nibble; [`dup`] asserts what compactc only comments.
 pub(crate) fn cell_coin_dup(len: usize) -> u8 {
     (3 + 2 * (len - 1)) as u8
@@ -261,7 +260,7 @@ pub fn map_insert_at(path: &[LedgerKey], key: &LedgerValue, value: &LedgerValue)
 }
 
 /// `Map<K, QualifiedShieldedCoinInfo>.insertCoin(key, coin, recipient)` on
-/// ledger field `index` (midnight-ledger.ss:769-795) — [`map_insert`] with
+/// ledger field `index` (midnight-ledger.ss:827-853) — [`map_insert`] with
 /// its `pushs value` replaced by `qualify_coin`:
 ///
 /// ```text
@@ -333,7 +332,7 @@ pub fn set_insert_at(path: &[LedgerKey], elem: &LedgerValue) -> Vec<ImpactOp> {
 }
 
 /// `Set<QualifiedShieldedCoinInfo>.insertCoin(coin, recipient)` on ledger
-/// field `index` (midnight-ledger.ss:670-696) — [`set_insert`] with its
+/// field `index` (midnight-ledger.ss:728-754) — [`set_insert`] with its
 /// `push elem` replaced by `qualify_coin`:
 ///
 /// ```text
@@ -342,8 +341,8 @@ pub fn set_insert_at(path: &[LedgerKey], elem: &LedgerValue) -> Vec<ImpactOp> {
 /// pushs null; ins 1; insc 1
 /// ```
 ///
-/// The qualified coin is the KEY the `Null` is stored under, so the dance
-/// runs BEFORE the `pushs null` — the `dup 4` reaches the context past the
+/// The qualified coin is the key the `Null` is stored under, so the dance
+/// runs before the `pushs null` — the `dup 4` reaches the context past the
 /// set, the two path items the `idxp` left, and the effects.
 pub fn set_insert_coin(index: u8, cm: &LedgerValue, coin: &LedgerValue) -> Vec<ImpactOp> {
     set_insert_coin_at(&field_path(index), cm, coin)
@@ -362,7 +361,7 @@ pub fn set_insert_coin_at(path: &[LedgerKey], cm: &LedgerValue, coin: &LedgerVal
     ops
 }
 
-/// `set.remove(elem)` on ledger field `index` — the SAME instruction stream
+/// `set.remove(elem)` on ledger field `index` — the same instruction stream
 /// `map.remove(key)` is, because a Compact `Set` is a `Map` with `Null`
 /// values and `remove` does not touch the value (fixture `setRemove` is
 /// `map_remove`'s stream, notes/ledger-adts.org §1). Named for the caller's
@@ -378,7 +377,7 @@ pub fn set_remove_at(path: &[LedgerKey], elem: &LedgerValue) -> Vec<ImpactOp> {
 
 /// `map.insertDefault(key)` / a `Map` whose value type's default is written
 /// (midnight-ledger.ss Map `insertDefault`): `idxp [field]; push key;
-/// pushs default; ins 1; insc 1`. `value_atoms` is the VALUE type's
+/// pushs default; ins 1; insc 1`. `value_atoms` is the value type's
 /// alignment; the limbs are zeros ([`default_value`]).
 pub fn map_insert_default(index: u8, key: &LedgerValue, value_atoms: Vec<AlignmentAtom>) -> Vec<ImpactOp> {
     map_insert(index, key, &default_value(value_atoms))
@@ -393,17 +392,17 @@ pub fn map_insert_default_at(
     map_insert_at(path, key, &default_value(value_atoms))
 }
 
-/// `map.insertDefault(key)` where the VALUE TYPE IS AN ADT — a different
+/// `map.insertDefault(key)` where the value type is AN ADT — a different
 /// instruction from [`map_insert_default`] (notes/coin-arms-nested-adts.org
 /// records how this one was found).
 ///
 /// compactc's `insert`/`insertDefault` push `(state-value 'ADT value
 /// value_type)`, and `assemble-operand-acc`'s `VMstate-value-ADT` case
-/// (reduce-to-zkir.ss:424-433) DISCARDS the value and emits the ADT's own
+/// (reduce-to-zkir.ss:424-433) discards the value and emits the ADT's own
 /// `(initial-value …)` whenever the type is an ADT — the empty map for
 /// `Map`/`Set`, `[null, null, cell 0u64]` for `List`, `cell 0u64` for
 /// `Counter`, the blank tree pair for the two trees. Only when the type is
-/// NOT an ADT does it fall through to `(cons 1 val)`, the plain cell
+/// not an ADT does it fall through to `(cons 1 val)`, the plain cell
 /// [`map_insert_default`] pushes.
 ///
 /// So an ADT-valued `insertDefault` is `idxp f; push key; pushs <the ADT's
@@ -433,8 +432,8 @@ pub fn map_insert_adt_default_at(
 /// push f[len-1]; pushs initial; ins 1; insc len(f)-1`, the first and last
 /// suppressed at depth 1.
 ///
-/// One of the NINE whole-field-replace ops — see "PATH SUPPRESSION" above and
-/// notes/ledger-adts.org finding (d). Five of the six `resetToDefault`s go
+/// One of the nine whole-field-replace ops — see "PATH SUPPRESSION" above and
+/// notes/ledger-adts.org. Five of the six `resetToDefault`s go
 /// through here; `HistoricMerkleTree`'s open-codes its own because its
 /// closing pair is asymmetric.
 fn reset_to_at(path: &[LedgerKey], initial: StateValue<InMemoryDB>) -> Vec<ImpactOp> {
@@ -481,9 +480,9 @@ pub fn empty_counter() -> StateValue<InMemoryDB> {
     StateValue::Cell(Sp::new(u64_aligned(0)))
 }
 
-/// `counter.resetToDefault()` on field `index` (midnight-ledger.ss:614-620) —
+/// `counter.resetToDefault()` on field `index` (midnight-ledger.ss:672-678) —
 /// the fourth of the nine whole-field-replace ops, and the one the crate had
-/// no builder for until a NESTED `Map<K, Counter>` needed it.
+/// no builder for until a nested `Map<K, Counter>` needed it.
 pub fn counter_reset(index: u8) -> Vec<ImpactOp> {
     counter_reset_at(&field_path(index))
 }
@@ -561,12 +560,12 @@ pub fn list_push_front_at(path: &[LedgerKey], value: &LedgerValue) -> Vec<Impact
 }
 
 /// `List<QualifiedShieldedCoinInfo>.pushFrontCoin(coin, recipient)` on field
-/// `index` (midnight-ledger.ss:918-968) — the one arm that is NOT a
+/// `index` (midnight-ledger.ss:977-1027) — the one arm that is not a
 /// one-for-one swap, because [`list_push_front`] builds its new node with the
 /// value already in it and this cannot: the qualified coin does not exist
 /// until the dance has run against a node that is already on the stack.
 ///
-/// So the node is pushed BLANK, the position key `0u8` goes on, the dance
+/// So the node is pushed blank, the position key `0u8` goes on, the dance
 /// runs, and an `insc 1` puts the coin at `node[0]`. Eight instructions
 /// longer than `pushFront`'s thirteen; the tail is identical.
 ///
@@ -648,9 +647,9 @@ fn empty_merkle_tree(depth: u8) -> [StateValue<InMemoryDB>; 2] {
 }
 
 /// A `MerkleTree`'s initial value as one `StateValue`
-/// (midnight-ledger.ss:973): `[merkle-tree nat (), cell 0u64]`.
+/// (midnight-ledger.ss:1032): `[merkle-tree nat (), cell 0u64]`.
 ///
-/// The constant `resetToDefault` writes AND the one an ADT-valued
+/// The constant `resetToDefault` writes and the one an ADT-valued
 /// `insertDefault` pushes — `VMstate-value-ADT` expands the declared
 /// `(initial-value …)` in both cases, which is why there is one function
 /// rather than two tables (see [`map_insert_adt_default_at`]).
@@ -658,11 +657,11 @@ pub fn empty_merkle_tree_value(depth: u8) -> StateValue<InMemoryDB> {
     StateValue::Array(empty_merkle_tree(depth).into_iter().collect())
 }
 
-/// A `HistoricMerkleTree`'s initial value (midnight-ledger.ss:1129):
+/// A `HistoricMerkleTree`'s initial value (midnight-ledger.ss:1188):
 /// [`empty_merkle_tree_value`] plus an empty history map.
 ///
 /// NOTE the asymmetry with [`historic_merkle_tree_reset_at`], which pushes
-/// this and then APPENDS the blank tree's root to the history; the declared
+/// this and then appends the blank tree's root to the history; the declared
 /// initial value itself has the history empty.
 pub fn empty_historic_merkle_tree_value(depth: u8) -> StateValue<InMemoryDB> {
     let [tree, next] = empty_merkle_tree(depth);
@@ -680,7 +679,7 @@ pub fn merkle_tree_reset_at(path: &[LedgerKey], depth: u8) -> Vec<ImpactOp> {
 }
 
 /// `mt.insert(item)` / `mt.insertHash(hash)` on field `index`
-/// (midnight-ledger.ss MerkleTree `insert`): ONE stream for both, because the
+/// (midnight-ledger.ss MerkleTree `insert`): one stream for both, because the
 /// two differ only in where the 32-byte leaf came from — `insert` hashes the
 /// item (`rt-leaf-hash`, computed above this layer) and `insertHash` is
 /// handed it. The fixture's `mtInsert` and `mtInsertHash` are identical
@@ -713,13 +712,13 @@ pub fn merkle_tree_insert_at(path: &[LedgerKey], leaf: &LedgerValue) -> Vec<Impa
 }
 
 /// `mt.insertIndex(item, i)` / `insertHashIndex(hash, i)` /
-/// `insertIndexDefault(i)` on field `index` — again ONE stream for all three,
+/// `insertIndexDefault(i)` on field `index` — again one stream for all three,
 /// which differ only in the leaf (the item's hash, the given hash, or the
-/// DEFAULT value's hash).
+/// default value's hash).
 ///
 /// The tail is `next = max(next, i + 1)`, and it is where the Impact-level
 /// `branch`/`jmp` lives — transcript control flow, not circuit control flow
-/// (notes/ledger-adts.org finding (b)):
+/// (notes/ledger-adts.org):
 ///
 /// ```text
 /// idxp [field]; idxp [0]; push i; pushs (cell leaf); ins 2
@@ -769,11 +768,11 @@ pub fn merkle_tree_insert_index_at(
 // --- HistoricMerkleTree: the same, plus an `Array[2]` history map -----------
 
 /// The history append every `HistoricMerkleTree` mutation ends with: descend
-/// to position 2 and insert the tree's NEW root as a key with a `Null` value.
+/// to position 2 and insert the tree's new root as a key with a `Null` value.
 ///
 /// The two closing `ins` are the caller's, because the mutations and
-/// `resetToDefault` close in OPPOSITE ORDERS: an insert ends `ins 1; insc 2`,
-/// a reset `insc 2; ins 1` (midnight-ledger.ss:1183-1190 against :1211-1228).
+/// `resetToDefault` close in opposite orders: an insert ends `ins 1; insc 2`,
+/// a reset `insc 2; ins 1` (midnight-ledger.ss:1242-1249 against :1270-1287).
 /// A shared "closing" argument would have hidden that.
 fn history_append() -> Vec<ImpactOp> {
     vec![
@@ -790,13 +789,13 @@ fn history_append() -> Vec<ImpactOp> {
 
 /// `hmt.insert(item)` / `hmt.insertHash(hash)` — [`merkle_tree_insert`] with
 /// the history append spliced in, and the `insc 2` that closed it demoted to
-/// `insc 1` because the append now closes the operation.
+/// `insc 1` because the append closes the operation.
 pub fn historic_merkle_tree_insert(index: u8, leaf: &LedgerValue) -> Vec<ImpactOp> {
     historic_merkle_tree_insert_at(&field_path(index), leaf)
 }
 
 /// [`historic_merkle_tree_insert`] on a general path. The `insc` the plain
-/// tree closed with is demoted to a LITERAL 1 (midnight-ledger.ss:1222) at
+/// tree closed with is demoted to a literal 1 (midnight-ledger.ss:1281) at
 /// every depth; only the new closing `insc` tracks `len(f) + 1`.
 pub fn historic_merkle_tree_insert_at(path: &[LedgerKey], leaf: &LedgerValue) -> Vec<ImpactOp> {
     let mut ops = merkle_tree_insert_at(path, leaf);
@@ -835,13 +834,13 @@ pub fn historic_merkle_tree_insert_index_at(
 
 /// `hmt.resetHistory()` on field `index` (midnight-ledger.ss
 /// HistoricMerkleTree `resetHistory`): replace the history with a one-entry
-/// map holding the CURRENT root.
+/// map holding the current root.
 pub fn historic_merkle_tree_reset_history(index: u8) -> Vec<ImpactOp> {
     historic_merkle_tree_reset_history_at(&field_path(index))
 }
 
-/// [`historic_merkle_tree_reset_history`] on a general path — the ONE
-/// operation whose closing depth is `len(f) + 2` (midnight-ledger.ss:1338).
+/// [`historic_merkle_tree_reset_history`] on a general path — the one
+/// operation whose closing depth is `len(f) + 2` (midnight-ledger.ss:1397).
 pub fn historic_merkle_tree_reset_history_at(path: &[LedgerKey]) -> Vec<ImpactOp> {
     vec![
         idx_path(false, true, path),
@@ -861,7 +860,7 @@ pub fn historic_merkle_tree_reset_history_at(path: &[LedgerKey]) -> Vec<ImpactOp
     ]
 }
 
-/// `hmt.resetToDefault()` on field `index` — the ONE `resetToDefault` that is
+/// `hmt.resetToDefault()` on field `index` — the one `resetToDefault` that is
 /// not three instructions, because the fresh history has to be seeded with
 /// the blank tree's root.
 pub fn historic_merkle_tree_reset(index: u8, depth: u8) -> Vec<ImpactOp> {
@@ -916,15 +915,15 @@ pub fn emit_event(version: u32, tag: u8, payload: &LedgerValue) -> Vec<ImpactOp>
     vec![ImpactOp(elems, None), ImpactOp::constant(&Op::Log)]
 }
 
-// --- BLIND OPS (M40, notes/stream-design.org) --------------------------------
+// --- blind ops (notes/stream-design.org) --------------------------------------
 //
-// A ledger op that fetches a cell and stores or combines it WITHOUT a
+// A ledger op that fetches a cell and stores or combines it without a
 // `popeq` never goes stale: the chain executes it at inclusion against
 // whatever the cell holds then, and the circuit embeds no public input for
 // it. `Counter.increment` (`idxp; addi; insc`) is the one such op Compact
 // has. These are the rest of the family the on-chain VM can express with
 // its real op set (Lt Neg And Or Add Branch Jmp Dup Swap Pop Idx Ins): a
-// blind SNAPSHOT of a cell into a map entry, and a blind COMBINE of a cell
+// blind snapshot of a cell into a map entry, and a blind combine of a cell
 // with a public constant under add, max, min, and, or, and first-write.
 //
 // None of these is expressible in Compact, so there is no compactc
@@ -936,15 +935,15 @@ pub fn emit_event(version: u32, tag: u8, payload: &LedgerValue) -> Vec<ImpactOp>
 // key)` pairs of the walk and then the value, so after `idxp f` the state
 // sits `2·len(f) − 1` below the top; `ins n` pops the value then `n` pairs;
 // `lt` pops `b` then `a` and pushes `a < b`; `branch k` pops a Boolean cell
-// and skips `k` ops when it is TRUE; `dup n` copies the element `n` below the
+// and skips `k` ops when it is true; `dup n` copies the element `n` below the
 // top; `swap n` exchanges the top with the element `n + 1` below it. A value
-// pushed with `push` (storage = false) is WEAK and the runtime refuses to
-// persist it, so a constant that may be WRITTEN goes in with `pushs`.
+// pushed with `push` (storage = false) is weak and the runtime refuses to
+// persist it, so a constant that may be written goes in with `pushs`.
 
-/// The blind SNAPSHOT: `map[key] = cell`, the circuit never learning the
+/// The blind snapshot: `map[key] = cell`, the circuit never learning the
 /// value. `idxp m; push key; dup 2·len(m)+1; idx c; ins 1; insc len(m)`.
 ///
-/// The `dup` is `Map.insertCoin`'s reach-back (midnight-ledger.ss:769-795):
+/// The `dup` is `Map.insertCoin`'s reach-back (midnight-ledger.ss:827-853):
 /// after `idxp m; push key` the state is `2·len(m) + 1` below the top, so a
 /// copy of it, indexed by the cell's path, is the value the insert takes.
 /// The value an `idx` fetches is as strong as the state it came from, so it
@@ -972,7 +971,7 @@ pub fn cell_snapshot_into_map_at(
     ]
 }
 
-/// The blind CELL-TO-CELL COPY: `dst = src`, the circuit never learning the
+/// The blind cell-to-cell copy: `dst = src`, the circuit never learning the
 /// value: `idxp dst[..len-1]; push dst[len-1]; dup 2·len(dst)−1; idx src;
 /// ins 1; insc len(dst)−1` — [`cell_write_at`] with its `pushs value`
 /// replaced by the reach-back of [`cell_snapshot_into_map_at`]. After the
@@ -996,8 +995,8 @@ pub fn cell_copy_at(src: &[LedgerKey], dst: &[LedgerKey]) -> Vec<ImpactOp> {
     ops
 }
 
-/// The blind MOVE of a map entry: `map[to] = map[from]; map.remove(from)`,
-/// the circuit never learning the value, and an ABSENT `from` failing the
+/// The blind move of a map entry: `map[to] = map[from]; map.remove(from)`,
+/// the circuit never learning the value, and an absent `from` failing the
 /// transaction:
 ///
 /// ```text
@@ -1042,10 +1041,10 @@ pub fn map_move_entry_at(map: &[LedgerKey], from: &LedgerValue, to: &LedgerValue
     ops
 }
 
-/// The blind ADD: `cell = cell + delta` on a `Uint<64>` cell, `delta` a
+/// The blind add: `cell = cell + delta` on a `Uint<64>` cell, `delta` a
 /// public circuit value: `idxp f; push delta; add; insc len(f)`.
 ///
-/// `Counter.increment`'s `addi` takes a LITERAL (an op immediate); a delta
+/// `Counter.increment`'s `addi` takes a literal (an op immediate); a delta
 /// the circuit computes goes through `push` + `add`, one op more. Both
 /// overflow-check on chain (`vm.rs` `add`: `checked_add`, the transaction
 /// fails), and neither embeds a public input.
@@ -1058,7 +1057,7 @@ pub fn cell_add_at(path: &[LedgerKey], delta: &LedgerValue) -> Vec<ImpactOp> {
     ]
 }
 
-/// The blind SUB: `cell = cell − delta` on a `Uint<64>` cell:
+/// The blind sub: `cell = cell − delta` on a `Uint<64>` cell:
 /// `idxp f; push delta; sub; insc len(f)`. `sub` pops Δ then the cell and
 /// leaves `cell − Δ` (`vm.rs`: `sub(&b, a)` with `a` the top), and it is
 /// `checked_sub`, so an underflow fails the transaction.
@@ -1071,7 +1070,7 @@ pub fn cell_sub_at(path: &[LedgerKey], delta: &LedgerValue) -> Vec<ImpactOp> {
     ]
 }
 
-/// The blind MAX: `cell = max(cell, delta)` on a `Uint<64>` cell, the
+/// The blind max: `cell = max(cell, delta)` on a `Uint<64>` cell, the
 /// kernel-mint / compactc `Counter.raiseTo` pattern:
 ///
 /// ```text
@@ -1088,8 +1087,8 @@ pub fn cell_max_at(path: &[LedgerKey], delta: &LedgerValue) -> Vec<ImpactOp> {
     cell_extremum_at(path, delta, true)
 }
 
-/// The blind MIN: [`cell_max_at`] without the `neg`, so the Δ-wins arm runs
-/// when `cur < Δ` is FALSE, i.e. when Δ is the smaller.
+/// The blind min: [`cell_max_at`] without the `neg`, so the Δ-wins arm runs
+/// when `cur < Δ` is false, i.e. when Δ is the smaller.
 pub fn cell_min_at(path: &[LedgerKey], delta: &LedgerValue) -> Vec<ImpactOp> {
     cell_extremum_at(path, delta, false)
 }
@@ -1116,7 +1115,7 @@ fn cell_extremum_at(path: &[LedgerKey], delta: &LedgerValue, max: bool) -> Vec<I
     ops
 }
 
-/// The blind AND: `cell = cell && delta` on a `Boolean` cell:
+/// The blind and: `cell = cell && delta` on a `Boolean` cell:
 /// `idxp f; push delta; and; insc len(f)`.
 pub fn cell_and_at(path: &[LedgerKey], delta: &LedgerValue) -> Vec<ImpactOp> {
     cell_boolean_at(path, delta, Op::And)
@@ -1137,7 +1136,7 @@ fn cell_boolean_at(path: &[LedgerKey], delta: &LedgerValue, op: VmOp) -> Vec<Imp
     ]
 }
 
-/// The blind FIRST-WRITE: `if !flag { value_cell = value; flag = true }`,
+/// The blind first-write: `if !flag { value_cell = value; flag = true }`,
 /// the two-cell layout of a `First` accumulator:
 ///
 /// ```text
@@ -1174,7 +1173,7 @@ pub fn cell_write_first_at(
 // spells an opcode itself and the encoding stays `Op::field_repr`'s.
 
 /// `branch k`: pop a Boolean cell, skip the next `k` instructions when it
-/// is TRUE.
+/// is true.
 pub fn branch(skip: u32) -> ImpactOp {
     ImpactOp::constant(&Op::Branch { skip })
 }

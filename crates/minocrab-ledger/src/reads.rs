@@ -21,13 +21,13 @@ pub fn popeq(cached: bool, result: &LedgerValue) -> ImpactOp {
 
 /// Emit `ops` as Impact instructions (one per op).
 ///
-/// The guard is AMBIENT (notes/edsl-trim.org §B): [`Circuit::impact_mixed`]
+/// The guard is ambient (notes/edsl-trim.org §B): [`Circuit::impact_mixed`]
 /// resolves whatever scope the call sits in — the native `1u64` for
 /// straight-line code, which inlines as an immediate rather than naming a
 /// `Copy`, or a branch condition's wire inside [`Circuit::when`]. There is
 /// no explicit guard parameter here to thread.
 ///
-/// THE STALE-READ CHECK runs here, before anything is emitted: an op that
+/// The stale-read check runs here, before anything is emitted: an op that
 /// stores an author's value (a cell write, a map insert, a list push; see
 /// [`ImpactOp`]) has that value run through [`Circuit::refuse_stale`],
 /// which refuses at build time a value computed from an inline ledger read
@@ -51,7 +51,7 @@ pub fn emit(c: &mut Circuit, ops: &[ImpactOp]) {
 // --- reads ------------------------------------------------------------------
 //
 // A ledger read = `public_input` gates witnessing the read value from
-// `public_transcript_outputs` (one per FAB limb, minted BEFORE the op's
+// `public_transcript_outputs` (one per FAB limb, minted before the op's
 // impact instructions — reduce-to-zkir.ss:620-633), then the op's impact
 // stream whose trailing `popeq[c]` embeds those same wires as the expected
 // result. Reads therefore emit directly into the circuit and return the
@@ -61,9 +61,9 @@ pub fn emit(c: &mut Circuit, ops: &[ImpactOp]) {
 /// Mint one `public_input` gate per FAB limb of `atoms`; returns the wires
 /// plus the same wires packaged for a `popeq[c]` embed.
 ///
-/// [`Circuit::public_transcript_input`] resolves the AMBIENT scope
+/// [`Circuit::public_transcript_input`] resolves the ambient scope
 /// (notes/edsl-trim.org §B): unguarded in straight-line code, or under
-/// whatever [`Circuit::when`] the call sits inside — compactc puts the SAME
+/// whatever [`Circuit::when`] the call sits inside — compactc puts the same
 /// guard on the gates and the op's impact instructions
 /// (completeWithdraw.zkir:292-297).
 pub fn mint_read(c: &mut Circuit, atoms: Vec<AlignmentAtom>) -> (Vec<Wire<FieldT, Public>>, LedgerValue) {
@@ -99,7 +99,7 @@ pub(crate) const U64_ATOM: AlignmentAtom = AlignmentAtom::Bytes { length: 8 };
 pub(crate) const BOOL_ATOM: AlignmentAtom = AlignmentAtom::Bytes { length: 1 };
 
 /// `Cell.read()` of the top-level field `index`
-/// (midnight-ledger.ss:547-551): `dup 0; idx [field]; popeq` — both the idx
+/// (midnight-ledger.ss:605-609): `dup 0; idx [field]; popeq` — both the idx
 /// and the popeq uncached (`f-cached` = #f). `atoms` is the cell type's FAB
 /// alignment; returns one wire per limb, in slot order.
 pub fn cell_read(
@@ -125,9 +125,9 @@ pub fn cell_read_at(
 ///
 /// The read shape — `dup 0; idx [field]; popeq` with the witnessed value
 /// embedded in the `popeq` — is the same whatever minted the value; what
-/// differs is HOW the value was witnessed. A `Bytes<32>` cell mints one
+/// differs is how the value was witnessed. A `Bytes<32>` cell mints one
 /// native gate per limb ([`mint_read`], which is what [`cell_read`]
-/// does). A `Secp256k1Point` cell mints ONE TYPED gate and derives its five
+/// does). A `Secp256k1Point` cell mints one typed gate and derives its five
 /// limbs with an `encode` instruction (claim.zkir:29-33), so the limbs are
 /// computed rather than read and the caller has to build the value itself.
 /// Both end here.
@@ -144,7 +144,7 @@ pub fn cell_read_embedded_at(c: &mut Circuit, path: &[LedgerKey], value: &Ledger
     );
 }
 
-/// `Counter.read()` on field `index` (midnight-ledger.ss:590-594):
+/// `Counter.read()` on field `index` (midnight-ledger.ss:648-652):
 /// `dup 0; idx [field]; popeqc` — the popeq is cached even on the first
 /// access (unlike Cell.read). Returns the u64 counter value.
 pub fn counter_read(c: &mut Circuit, index: u8) -> Wire<FieldT, Public> {
@@ -162,7 +162,7 @@ pub fn counter_read_at(c: &mut Circuit, path: &[LedgerKey]) -> Wire<FieldT, Publ
     wires[0]
 }
 
-/// `Counter.lessThan(threshold)` (midnight-ledger.ss:595-600):
+/// `Counter.lessThan(threshold)` (midnight-ledger.ss:653-658):
 /// `dup 0; idx [field]; push threshold (u64 cell); lt; popeqc` → Boolean.
 pub fn counter_less_than(
     c: &mut Circuit,
@@ -193,7 +193,7 @@ pub fn counter_less_than_at(
     wires[0]
 }
 
-/// `Map.member(key)` on field `index` (midnight-ledger.ss:649-655):
+/// `Map.member(key)` on field `index` (midnight-ledger.ss:792-798):
 /// `dup 0; idx [field]; push key; member; popeqc` → Boolean.
 pub fn map_member(c: &mut Circuit, index: u8, key: &LedgerValue) -> Wire<FieldT, Public> {
     map_member_at(c, &field_path(index), key)
@@ -221,7 +221,7 @@ pub fn map_member_at(
 }
 
 /// `Map.lookup(key)` on field `index`, for flat (Cell) value types
-/// (midnight-ledger.ss:741-747): `dup 0; idx [field]; idx {key}; popeq` —
+/// (midnight-ledger.ss:799-805): `dup 0; idx [field]; idx {key}; popeq` —
 /// the key descent and the popeq both uncached. `value_atoms` is the value
 /// type's FAB alignment.
 pub fn map_lookup(
@@ -235,10 +235,10 @@ pub fn map_lookup(
 
 /// [`map_lookup`] on a general path.
 ///
-/// NOTE THE TWO `idx`: the path reaches the MAP, and the key descent is a
-/// SECOND one-element `idx` (`(idx … [path (list key)])`,
-/// midnight-ledger.ss:745-746). A leaf lookup does not append its key to
-/// `f`; only an INTERMEDIATE `lookup` — the one whose result is another ADT —
+/// NOTE the two `idx`: the path reaches the map, and the key descent is a
+/// second one-element `idx` (`(idx … [path (list key)])`,
+/// midnight-ledger.ss:803-804). A leaf lookup does not append its key to
+/// `f`; only an intermediate `lookup` — the one whose result is another ADT —
 /// does, and that one emits nothing at all.
 pub fn map_lookup_at(
     c: &mut Circuit,
@@ -260,7 +260,7 @@ pub fn map_lookup_at(
     wires
 }
 
-/// `Map.size()` on field `index` (midnight-ledger.ss:728-733):
+/// `Map.size()` on field `index` (midnight-ledger.ss:786-791):
 /// `dup 0; idx [field]; size; popeqc` → Uint64.
 pub fn map_size(c: &mut Circuit, index: u8) -> Wire<FieldT, Public> {
     map_size_at(c, &field_path(index))
@@ -282,7 +282,7 @@ pub fn map_size_at(c: &mut Circuit, path: &[LedgerKey]) -> Wire<FieldT, Public> 
     wires[0]
 }
 
-/// `Map.isEmpty()` on field `index` (midnight-ledger.ss:720-727):
+/// `Map.isEmpty()` on field `index` (midnight-ledger.ss:778-785):
 /// `dup 0; idx [field]; size; push 0 (u64 cell); eq; popeqc` → Boolean.
 pub fn map_is_empty(c: &mut Circuit, index: u8) -> Wire<FieldT, Public> {
     map_is_empty_at(c, &field_path(index))
@@ -355,7 +355,7 @@ pub fn list_length_at(c: &mut Circuit, path: &[LedgerKey]) -> Wire<FieldT, Publi
 /// `list.isEmpty()` on field `index`: `dup 0; idx [field]; idx [1]; type;
 /// push 1u8; eq; popeqc` → Boolean.
 ///
-/// The `1` is `Op::Type`'s code for `Null` (vm.rs:414-425 — a DIFFERENT
+/// The `1` is `Op::Type`'s code for `Null` (vm.rs:414-425 — a different
 /// numbering from `StateValue::field_repr`'s, where `Null` is `0`), so this
 /// reads as "the tail is null", which is what an empty list's tail is. See
 /// notes/ledger-adts.org §1, which also disposes of the upstream comment
@@ -390,11 +390,11 @@ const TYPE_NULL: u8 = 1;
 /// wires: the tag's, then `elem_atoms`'.
 ///
 /// The one ledger operation with Impact-level control flow in its middle. The
-/// `branch` is taken when the head IS null (`Op::Branch` jumps on a truthy
+/// `branch` is taken when the head is null (`Op::Branch` jumps on a truthy
 /// cell, vm.rs:1015-1021), landing on the `None` path; the fall-through
 /// builds `(1, head)` with a `concat`. Both are constant instructions under
-/// the same guard, so the CIRCUIT does not branch — see
-/// notes/ledger-adts.org finding (b).
+/// the same guard, so the circuit does not branch — see
+/// notes/ledger-adts.org.
 ///
 /// ```text
 /// dup 0; idx [field]; idx [0]; dup 0; type; push 1u8; eq
@@ -501,7 +501,7 @@ pub fn merkle_tree_is_full_at(
 }
 
 /// `mt.checkRoot(rt)` on field `index`: `dup 0; idx [field]; idx [0]; root;
-/// push rt (field cell); eq; popeqc` → Boolean. `root` is the CURRENT root,
+/// push rt (field cell); eq; popeqc` → Boolean. `root` is the current root,
 /// so this is an equality — the historic twin is [`historic_merkle_tree_check_root`].
 pub fn merkle_tree_check_root(
     c: &mut Circuit,
@@ -535,7 +535,7 @@ pub fn merkle_tree_check_root_at(
 }
 
 /// `hmt.checkRoot(rt)` on field `index`: `dup 0; idx [field]; idx [2];
-/// push rt; member; popeqc` → Boolean. A `member` on the HISTORY map, not an
+/// push rt; member; popeqc` → Boolean. A `member` on the history map, not an
 /// `eq` on the current root — which is the whole difference between the two
 /// tree ADTs at read time.
 pub fn historic_merkle_tree_check_root(

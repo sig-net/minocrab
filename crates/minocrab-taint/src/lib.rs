@@ -1,4 +1,4 @@
-//! The taint lint (M23 R3): every byte-atom hash-preimage limb must be
+//! The taint lint: every byte-atom hash-preimage limb must be
 //! provably bounded to its own byte width, or constant.
 //!
 //! This mechanizes notes/api-safety-survey.org §B3 — "the limb packing is
@@ -13,23 +13,23 @@
 //! every limb it absorbs: `fab_decode_to_bytes_atom` decomposes each `bytes`
 //! limb with `assigned_to_le_bytes(f, Some(width))`, which makes the circuit
 //! unsatisfiable if the limb exceeds its width (zkir-v3 ir_vm.rs:125-175;
-//! midnight-circuits decomposition.rs, "Unsatisfiable Circuit"). So the LIMB
+//! midnight-circuits decomposition.rs, "Unsatisfiable Circuit"). So the limb
 //! is always bound by the digest. What the chip cannot see is one level up:
-//! a limb PACKED from several narrower segments (`a + b·2^8k + …`) is only
+//! a limb packed from several narrower segments (`a + b·2^8k + …`) is only
 //! injective in those segments if each segment is bounded to its own slot.
 //! The lint therefore asks for a derivable bound on the limb wire — and the
 //! bound propagation below only succeeds when every wire feeding the packing
 //! arithmetic is itself constrained-or-constant, which is exactly §B3's
 //! precondition, checked mechanically.
 //!
-//! # The Impact/popeq warrant (M23 R3 ruling, dmd 2026-08-28)
+//! # The Impact/popeq warrant
 //!
-//! A wire embedded in an UNCONDITIONAL `popeq`/`popeqc` Impact op is bounded
-//! to its limb's byte width. The warrant is EXTERNAL and two-linked: the
+//! A wire embedded in an unconditional `popeq`/`popeqc` Impact op is bounded
+//! to its limb's byte width. The warrant is external and two-linked: the
 //! verifier checks the pushed elements against the transaction's declared
 //! transcript, and the ledger accepts the transaction only if the
 //! transcript's expected value equals the normalized stored value actually
-//! read (`process_read`). Guarded reads are NOT marked — a false guard
+//! read (`process_read`). Guarded reads are not marked — a false guard
 //! pushes zeros, the comparison passes, and the wire is genuinely free.
 //! See `mark_popeq` in this file for the exact parse and conditions.
 //!
@@ -37,28 +37,28 @@
 //!
 //! What a clean run does and does not prove:
 //!
-//! - BOUNDS, not shift-layout disjointness. A packing whose segments overlap
+//! - Bounds, not shift-layout disjointness. A packing whose segments overlap
 //!   bit ranges is the serializer's own layout invariant, pinned by its
 //!   byte-equality tests — not this lint's.
-//! - The popeq bounds are CONDITIONAL ON THE LEDGER. Unlike every other
+//! - The popeq bounds are conditional on the ledger. Unlike every other
 //!   marking rule (each cited to an in-circuit constraint), the popeq rule's
 //!   chain runs through the ledger's normalization invariant and the
 //!   transcript equality check — outside the circuit. A clean run therefore
 //!   reads: "every hash-preimage limb is bounded in-circuit, or is an
 //!   unconditional ledger read the platform binds". If the ledger's
 //!   invariant broke, the lint would not know.
-//! - Guard recognition is SYNTACTIC: only an immediate non-zero Impact guard
+//! - Guard recognition is syntactic: only an immediate non-zero Impact guard
 //!   counts as unconditional. A variable guard that is provably always 1
 //!   still leaves its read unmarked (over-fires, never under-fires).
-//! - The `guard` on `PublicInput`/`PrivateInput` is NOT a second warrant.
+//! - The `guard` on `PublicInput`/`PrivateInput` is not a second warrant.
 //!   In-circuit that arm ignores it entirely (zkir-v3 ir_vm.rs:978-1004
 //!   resolves the wire out of the preprocessed witness memory, `guard: _`),
 //!   so a `public_input … guard: %g` is exactly as free as an unguarded one;
 //!   the "a skipped read yields 0, also in range" reading describes the
-//!   OFF-circuit `run`/preprocess semantics (the witness GENERATOR), not a
+//!   off-circuit `run`/preprocess semantics (the witness generator), not a
 //!   constraint. Pinned by `a_guarded_read_under_a_guarded_popeq_stays_free`
 //!   and written up in notes/taint-lint.org §8.
-//! - An ASSERT is a bound source in exactly THREE rules, all of them about
+//! - An assert is a bound source in exactly three rules, all of them about
 //!   the one shape a subtraction lowers to — `assert(a ≥ b); add(a, neg(b))`,
 //!   where `Neg` wraps and the producer walk alone concludes nothing. N1
 //!   needs no assert (a constant minuend and a range-constrained
@@ -68,33 +68,33 @@
 //!   in the lint reads an `Assert`, and in particular an assert is never
 //!   evidence about a wire it does not name — see
 //!   `the_subtraction_warrants_refuse_a_mismatched_assert` for the three ways
-//!   a near-miss must still fire. A subtraction whose MINUEND is itself
+//!   a near-miss must still fire. A subtraction whose minuend is itself
 //!   unbounded stays a finding, which is what keeps `manager::execute` in the
-//!   baseline (M23 R3 Class B, notes/taint-lint.org §8).
-//! - A GUARDED read can be discharged without a bound, by OBSERVABILITY
-//!   (M23 R3 Class A, option 4 of notes/taint-lint.org §8). Its value really
+//!   baseline (Class B, notes/taint-lint.org §8).
+//! - a guarded read can be discharged without a bound, by observability
+//!   (Class A, option 4 of notes/taint-lint.org §8). Its value really
 //!   is free when the guard is false, and no bound is invented; what is
 //!   checked instead is that nothing can be stolen with it — every Impact
 //!   that could publish anything derived from the read is guarded by a bit
 //!   that is zero whenever the read's own guard is, and nothing constrains
-//!   the derived values or returns them. When the guard IS true the popeq
+//!   the derived values or returns them. When the guard is true the popeq
 //!   binds the read, which is the rule above. This is a reachability claim,
-//!   so it is REFUSED on anything the walk cannot account for: an
+//!   so it is refused on anything the walk cannot account for: an
 //!   unconditional or differently-guarded Impact, an `Assert`/`ConstrainEq`/
 //!   `ConstrainBits`, an `Output`, or a derived wire steering another read's
 //!   guard. Two stated limits of its own:
-//!   - it discharges the READ wire, not a wire merely DERIVED from one. A
+//!   - it discharges the read wire, not a wire merely derived from one. A
 //!     `cond_select` of a confined read that feeds a hash limb keeps its
 //!     finding — the safe direction, and why the `manager::*` `%sel.*`
-//!     residue stands — UNLESS the select's bit is an IMMEDIATE, which makes
+//!     residue stands — unless the select's bit is an immediate, which makes
 //!     the output the chosen operand exactly (an alias, not a derivation).
-//!   - "zero whenever `g` is zero" is SYNTACTIC, through
+//!   - "zero whenever `g` is zero" is syntactic, through
 //!     `cond_select{a: _, b: 0, bit: k}` chains only. A guard that is
 //!     semantically but not syntactically dominated marks nothing.
-//! - popeq ONLY. Wires embedded in pushes (`push`/`pushs` cell contents) and
+//! - popeq only. Wires embedded in pushes (`push`/`pushs` cell contents) and
 //!   dynamic `idx` keys also flow to the transcript, but their in-range
 //!   argument is different (transaction well-formedness, not a read of
-//!   normalized state) and is NOT encoded; such wires stay unbounded unless
+//!   normalized state) and is not encoded; such wires stay unbounded unless
 //!   something in-circuit bounds them.
 //! - Field-absorbing hashes (`TransientHash`, `HashToCurve`) are out of
 //!   scope by design — no byte atoms, no packing-injectivity question.
@@ -107,19 +107,19 @@
 //!
 //! The subjects are `Keccak256` and `PersistentHash` — the two instructions
 //! that carry an `alignment` and absorb byte atoms. `TransientHash` (and
-//! `HashToCurve`) absorb native FIELD elements — no byte atoms, no
+//! `HashToCurve`) absorb native field elements — no byte atoms, no
 //! injective-packing concern — and are deliberately out of scope.
 //!
 //! # Soundness direction
 //!
-//! Under-marking is SAFE (the lint over-fires and a human looks); OVER-marking
+//! Under-marking is safe (the lint over-fires and a human looks); over-marking
 //! is the danger (a false negative hides a real hole). Every marking rule
 //! below cites the upstream in-circuit constraint that justifies it; when
-//! unsure, we do not mark. A firing on an existing circuit goes to dmd before
+//! unsure, we do not mark. A firing on an existing circuit is reviewed before
 //! any allowlist entry is written; extending the marking rules (with a cited
 //! warrant) is preferred over allowlisting.
 
-// Ordered maps for the same reason as passes.rs (M23 R4): std's
+// Ordered maps for the same reason as passes.rs: std's
 // randomly-seeded HashMap is opaque to a model checker, and this pass is a
 // named future proof target.
 use std::collections::{BTreeMap, BTreeSet};
@@ -160,7 +160,7 @@ pub fn audit(instructions: &[Instruction]) -> Vec<Finding> {
     // identifier is ever rebound: upstream's synthesis memory is push-only
     // and `Builder` mints fresh identifiers), so a constraint anywhere in
     // the stream bounds the wire for the whole circuit — the same argument
-    // `dedup_range_constraints` makes. The wildcard here is the SAFE
+    // `dedup_range_constraints` makes. The wildcard here is the safe
     // direction: a missed constraint only under-marks, which over-fires.
     let mut bound: BTreeMap<String, Max> = BTreeMap::new();
     for ins in instructions {
@@ -171,7 +171,7 @@ pub fn audit(instructions: &[Instruction]) -> Vec<Finding> {
             Instruction::ConstrainToBoolean { val: Operand::Variable(id) } => {
                 note(&mut bound, id, Max::all_ones(1));
             }
-            // ir_vm.rs bounds BOTH operands in-circuit: the output's canonical
+            // ir_vm.rs bounds both operands in-circuit: the output's canonical
             // FR_BITS bits, split at `bits`, must recompose to the modulus and
             // the divisor, so `modulus < 2^bits` and
             // `divisor < 2^(FR_BITS − bits)` (zkir 3.2.0, the
@@ -208,8 +208,8 @@ pub fn audit(instructions: &[Instruction]) -> Vec<Finding> {
                     }
                 }
             }
-            // The Impact/popeq warrant (M23 R3 ruling, dmd 2026-08-28): an
-            // UNCONDITIONAL popeq[c] binds each embedded wire to the ledger
+            // The Impact/popeq warrant: an
+            // unconditional popeq[c] binds each embedded wire to the ledger
             // read it witnesses — see `mark_popeq` for the parse, the guard
             // condition, and the honest scope of the warrant.
             Instruction::Impact { guard, inputs } => {
@@ -225,21 +225,21 @@ pub fn audit(instructions: &[Instruction]) -> Vec<Finding> {
     // stream asserts. Position-independent for the same reason as pass A: an
     // `assert` constrains the witness wherever it sits, so a fact recorded
     // here bounds a wire defined before it. These feed the N1-N3 warrants in
-    // pass B's `Add` arm — the ONLY rules in the lint that read an `Assert`
-    // (notes/taint-lint.org §8, M23 R3's Class B).
+    // pass B's `Add` arm — the only rules in the lint that read an `Assert`
+    // (notes/taint-lint.org §8, Class B).
     let shapes = Shapes::index(instructions);
     let ge_facts = shapes.ge_facts(instructions);
 
-    // Pass A3 — the guarded ledger reads discharged by OBSERVABILITY rather
+    // Pass A3 — the guarded ledger reads discharged by observability rather
     // than by a bound: a forged value reaches no effect that is not already
-    // inert whenever the read's own guard is false (M23 R3 Class A, option 4
+    // inert whenever the read's own guard is false (Class A, option 4
     // of notes/taint-lint.org §8).
     let confined = confined_reads(instructions, &shapes, &Flow::of(instructions));
 
     // Pass B — one forward walk: propagate producer bounds (operands always
     // precede their uses in SSA, so forward order reaches the fixpoint given
     // pass A), track which identifiers hold `Bytes32` values (for `Encode`),
-    // and audit each hash as it appears. This match is EXHAUSTIVE on purpose,
+    // and audit each hash as it appears. This match is exhaustive on purpose,
     // like `operands_mut`: a new upstream instruction must break this build
     // rather than silently escape the audit — the unsound direction is a new
     // byte-absorbing hash falling through a wildcard.
@@ -282,7 +282,7 @@ pub fn audit(instructions: &[Instruction]) -> Vec<Finding> {
                     note(&mut bound, &outputs[1], Max::all_ones(8));
                 }
             }
-            // Both outputs recomposed from the CANONICAL full bit
+            // Both outputs recomposed from the canonical full bit
             // decomposition of `val` (assigned_to_le_bits(.., true), the
             // DivModPowerOfTwo arm): mod from bits[..bits] (< 2^bits), div
             // from bits[bits..] — and div = val >> bits, so any bound on
@@ -295,7 +295,7 @@ pub fn audit(instructions: &[Instruction]) -> Vec<Finding> {
                 }
             }
             // output = divisor·2^bits + modulus as an integer below p (its
-            // canonical bits ARE the two operands), with both operands in
+            // canonical bits are the two operands), with both operands in
             // range (pass A above).
             Instruction::ReconstituteField { divisor, modulus, bits, output } => {
                 let d = op_max(&bound, divisor)
@@ -319,7 +319,7 @@ pub fn audit(instructions: &[Instruction]) -> Vec<Finding> {
                 note(&mut bound, low, Max::all_ones(8 * LIMB_BYTES as u32));
                 note(&mut bound, high, Max::all_ones(8));
             }
-            // A rename: the output IS the operand.
+            // A rename: the output is the operand.
             Instruction::Copy { val, output } => {
                 if let Some(m) = op_max(&bound, val) {
                     note(&mut bound, output, m);
@@ -348,7 +348,7 @@ pub fn audit(instructions: &[Instruction]) -> Vec<Finding> {
                         }
                     }
                 }
-                // A SUBTRACTION, which is the same instruction: `Neg` wraps and
+                // A subtraction, which is the same instruction: `Neg` wraps and
                 // is unmarked, so the interval arithmetic above concludes
                 // nothing for `add(a, neg(b))`. The three warrants recover the
                 // bound where the stream proves the difference non-negative.
@@ -421,11 +421,11 @@ pub fn audit(instructions: &[Instruction]) -> Vec<Finding> {
             }
             Instruction::PublicInput { val_t, output, .. }
             | Instruction::PrivateInput { val_t, output, .. } => {
-                // The witnessed VALUE is free; only its shape is `val_t`
-                // (the instruction's own doc), so nothing is bounded HERE.
-                // A `PublicInput` embedded in an UNCONDITIONAL popeq is
+                // The witnessed value is free; only its shape is `val_t`
+                // (the instruction's own doc), so nothing is bounded here.
+                // A `PublicInput` embedded in an unconditional popeq is
                 // bounded by pass A's Impact arm (`mark_popeq`) — via the
-                // ledger's external warrant, per the M23 R3 ruling — and a
+                // ledger's external warrant — and a
                 // guarded one stays free, deliberately.
                 if *val_t == IrType::Bytes(32) {
                     is_bytes32.insert(output.0.clone());
@@ -434,7 +434,7 @@ pub fn audit(instructions: &[Instruction]) -> Vec<Finding> {
 
             // ---- everything else neither bounds nor absorbs bytes -------
             // Field-absorbing hashes (no byte atoms — out of scope by the
-            // R3 spec), curve/field ops whose outputs are field- or
+            // spec), curve/field ops whose outputs are field- or
             // point-wide, and the no-output instructions.
             Instruction::TransientHash { .. }
             | Instruction::HashToCurve { .. }
@@ -493,8 +493,8 @@ pub fn audit(instructions: &[Instruction]) -> Vec<Finding> {
 /// (`fab_decode_to_bytes_atom`, zkir-v3 ir_vm.rs:125-175): a `field` atom
 /// consumes one operand unchecked (field-wide, nothing narrower to enforce);
 /// a `bytes n` atom consumes its leftover (most significant, `n mod 31`
-/// bytes) limb FIRST when `n` is not a multiple of 31, then `n / 31` full
-/// 31-byte limbs. NB `bytes 0` consumes NOTHING here — unlike the Impact
+/// bytes) limb first when `n` is not a multiple of 31, then `n / 31` full
+/// 31-byte limbs. NB `bytes 0` consumes nothing here — unlike the Impact
 /// FAB rule (`minocrab_ledger::atom_limbs`, which floors at one limb), the
 /// hash decoder's `chunks + (stray != 0)` is zero for `n = 0`.
 fn audit_hash(
@@ -511,7 +511,7 @@ fn audit_hash(
     for (ai, segment) in alignment.0.iter().enumerate() {
         let atom = match segment {
             AlignmentSegment::Atom(atom) => atom,
-            // The in-circuit decoder REJECTS option segments ("not yet
+            // The in-circuit decoder rejects option segments ("not yet
             // implemented") — a circuit carrying one cannot synthesize, so
             // this fires only on a malformed stream, and the mapping past
             // it is undefined.
@@ -647,35 +647,35 @@ fn check_limb(
     }
 }
 
-/// The Impact/popeq warrant (M23 R3 ruling, dmd 2026-08-28): if `inputs`
-/// parses EXACTLY as `popeq`/`popeqc` — `[0x0c|0x0d, atom count, one
+/// The Impact/popeq warrant: if `inputs`
+/// parses exactly as `popeq`/`popeqc` — `[0x0c|0x0d, atom count, one
 /// alignment element per atom, then the limbs]` (`Op::field_repr`,
 /// ops.rs:477-480; header encoding fab.rs:596-608: `bytes<n>` → n,
-/// `compress` → p−1, `field` → p−2) — bound each `bytes` limb WIRE to its
+/// `compress` → p−1, `field` → p−2) — bound each `bytes` limb wire to its
 /// limb's byte width.
 ///
-/// THE WARRANT, and why it is EXTERNAL: the caller has checked the Impact's
+/// The warrant, and why it is external: the caller has checked the Impact's
 /// guard is an immediate non-zero, so the instruction unconditionally pushes
 /// these very elements into the public-input stream, where the verifier
 /// checks them against the transaction's declared transcript op — and the
 /// ledger accepts that transaction only if the transcript's expected value
 /// equals the value actually read from state (`process_read`), whose
 /// `ValueAtom`s are normalized in-range for their atoms. So the wire equals
-/// a stored, normalized limb: ≤ its byte width. Nothing IN THE CIRCUIT
+/// a stored, normalized limb: ≤ its byte width. Nothing in the circuit
 /// enforces this — the chain runs through the ledger's own invariant, which
-/// is why guarded reads are NOT marked here (a false guard pushes
+/// is why guarded reads are not marked here (a false guard pushes
 /// `select(guard, x, 0) = 0`, the comparison passes on zero, and the wire is
-/// genuinely free). A VARIABLE guard that happens to always be 1 is also not
+/// genuinely free). A variable guard that happens to always be 1 is also not
 /// marked — conservatively, since the lint cannot prove it.
 ///
 /// The FAB limbing (`AlignedValue::field_repr`, fab.rs:486-511): `bytes<n>`
 /// is stray-FIRST — the leftover `n mod 31` most-significant bytes, then
-/// `n / 31` full 31-byte limbs — and `bytes<0>` is ONE zero limb (the
+/// `n / 31` full 31-byte limbs — and `bytes<0>` is one zero limb (the
 /// `atom_limbs` floor; its stored value normalizes to zero, so the bound is
 /// exactly 0). `field` and `compress` atoms occupy one field-wide limb each
 /// and bound nothing. Anything that does not parse cleanly — wrong opcode,
 /// non-immediate header, limb count mismatch, leftover elements — marks
-/// NOTHING: under-marking is the safe direction.
+/// nothing: under-marking is the safe direction.
 fn mark_popeq(inputs: &[Operand], bound: &mut BTreeMap<String, Max>) {
     for (op, width) in popeq_limbs(inputs).unwrap_or_default() {
         if let (Operand::Variable(id), Some(width)) = (op, width) {
@@ -738,17 +738,17 @@ fn popeq_limbs(inputs: &[Operand]) -> Option<Vec<(&Operand, Option<usize>)>> {
     Some(limbs.iter().zip(widths).collect())
 }
 
-// ---- the observability warrant (M23 R3 Class A, notes/taint-lint.org §8) ----
+// ---- the observability warrant (Class A, notes/taint-lint.org §8) ----------
 //
-// `mark_popeq` refuses to bound a read whose popeq guard is a WIRE, and that
+// `mark_popeq` refuses to bound a read whose popeq guard is a wire, and that
 // refusal is right: in-circuit the `public_input` arm ignores its guard
 // entirely, and a false guard makes the Impact push `select(g, x, 0) = 0`, so
 // the verifier's comparison passes on the zero and the wire is genuinely free.
 // No bound exists to prove, and inventing one would be the over-marking the
 // module docs forbid.
 //
-// What makes such a read sound is a DIFFERENT argument, and option 4 of §8:
-// OBSERVABILITY. When `g` is false, every effect a forged value could reach is
+// What makes such a read sound is a different argument, and option 4 of §8:
+// Observability. When `g` is false, every effect a forged value could reach is
 // itself inert — each Impact that would publish the digest is guarded by a bit
 // that is zero whenever `g` is, so it pushes zeros too, and nothing constrains
 // the digest. The branch has no effect to steal, so a forged preimage buys the
@@ -757,7 +757,7 @@ fn popeq_limbs(inputs: &[Operand]) -> Option<Vec<(&Operand, Option<usize>)>> {
 // unobservable, or observable but bound: either way the packing's injectivity
 // cannot be exploited.
 //
-// This is a REACHABILITY obligation rather than a bound, and §8 is explicit
+// This is a reachability obligation rather than a bound, and §8 is explicit
 // that "a single unguarded consumer makes it wrong" — so the classification
 // below is exhaustive and every unknown is a refusal.
 
@@ -765,13 +765,13 @@ fn popeq_limbs(inputs: &[Operand]) -> Option<Vec<(&Operand, Option<usize>)>> {
 /// clones the instruction, so calling it inside the closure's fixpoint would
 /// be quadratic in clones; this pays for it once per circuit.
 struct Flow {
-    /// Every wire the instruction READS — `passes::operands` (all reads but
+    /// Every wire the instruction reads — `passes::operands` (all reads but
     /// the terminator's) plus `passes::returned` (the terminator's). Both are
     /// exhaustive by construction and are the lists the Lean dataflow gate
     /// diffs against `MinocrabZkir.Dataflow` (tests/lean_dataflow.rs), so a
     /// new upstream operand position cannot hide from this walk.
     reads: Vec<BTreeSet<String>>,
-    /// Every wire the instruction BINDS (`passes::defined_identifiers`).
+    /// Every wire the instruction binds (`passes::defined_identifiers`).
     defines: Vec<Vec<String>>,
 }
 
@@ -814,8 +814,8 @@ const DOMINANCE_FUEL: u32 = 32;
 /// The guarded ledger reads whose forgery reaches no effect — discharged by
 /// observability rather than by a bound.
 fn confined_reads(instructions: &[Instruction], shapes: &Shapes, flow: &Flow) -> BTreeSet<String> {
-    // The reads in question: a wire embedded as a SIZED limb of a popeq whose
-    // guard is a WIRE. An immediate-guarded popeq is `mark_popeq`'s case and
+    // The reads in question: a wire embedded as a sized limb of a popeq whose
+    // guard is a wire. An immediate-guarded popeq is `mark_popeq`'s case and
     // already bounded; a field- or compress-wide limb witnesses no byte atom.
     let mut guarded: BTreeMap<String, String> = BTreeMap::new();
     for ins in instructions {
@@ -832,17 +832,17 @@ fn confined_reads(instructions: &[Instruction], shapes: &Shapes, flow: &Flow) ->
         .filter(|(read, g)| confined(instructions, shapes, flow, read, g))
         .map(|(read, _)| read)
         .collect();
-    // A `cond_select` whose BIT IS AN IMMEDIATE is its chosen operand, exactly:
-    // the synthesis arm assigns an immediate as a FIXED cell
+    // A `cond_select` whose bit is an immediate is its chosen operand, exactly:
+    // the synthesis arm assigns an immediate as a fixed cell
     // (`resolve_operand`, zkir-v3 3.2.0 `ir_vm.rs:956-968`) and selects with it
     // (`I::CondSelect`, `ir_vm.rs:1064-1071`), so the output is constrained
     // equal to `a` when the bit is 1 and to `b` when it is 0, whatever the
     // prover holds. Such a wire is the confined read under another name: the
     // walk that confined the read already followed it, and the limb it feeds is
-    // the read's own value. Only the identity aliases; a select on a WIRE bit
+    // the read's own value. Only the identity aliases; a select on a wire bit
     // stays a derived wire and keeps its finding (the stated limit above).
     // `std::v3::coin_commitment`'s `is_left ? left : right` with a constant
-    // `is_left` is the shape that needs it (M48 L, notes/taint-lint.org §12).
+    // `is_left` is the shape that needs it (notes/taint-lint.org §12).
     loop {
         let mut grew = false;
         for ins in instructions {
@@ -902,17 +902,17 @@ fn confined(
             return true;
         }
         match ins {
-            // THE TRANSCRIPT. An Impact pushes `select(guard, x, 0)`, so it is
+            // The transcript. An Impact pushes `select(guard, x, 0)`, so it is
             // inert exactly when its guard is zero, and therefore inert
             // whenever `g` is zero iff its guard is dominated by `g`. An
-            // IMMEDIATE guard is never dominated by a wire: it publishes
+            // immediate guard is never dominated by a wire: it publishes
             // whatever `g` does.
             Instruction::Impact { guard: Operand::Variable(h), .. } => {
                 shapes.dominated_by(&h.0, g, DOMINANCE_FUEL)
             }
             Instruction::Impact { .. } => false,
 
-            // A CONSTRAINT on a derived wire. A forged value then changes
+            // A constraint on a derived wire. A forged value then changes
             // whether the circuit is satisfiable, which may well be safe — but
             // that is a different argument from "no effect to steal", and this
             // rule does not make it. Refuse.
@@ -924,13 +924,13 @@ fn confined(
             // Leaving the circuit named is an effect of its own.
             Instruction::Output { .. } => false,
 
-            // A derived wire used as the GUARD of a read — the only way these
-            // two can read a tainted wire — steers the transcript WALK, how
+            // A derived wire used as the guard of a read — the only way these
+            // two can read a tainted wire — steers the transcript walk, how
             // many elements are consumed. That is observable even though the
             // arm ignores the guard in-circuit. Refuse.
             Instruction::PublicInput { .. } | Instruction::PrivateInput { .. } => false,
 
-            // Everything else only COMPUTES: whatever it binds is already in
+            // Everything else only computes: whatever it binds is already in
             // the closure, so its own consumers are checked in turn.
             // Exhaustive on purpose, like pass B — a new upstream instruction
             // that reaches the transcript must break this build rather than be
@@ -1016,7 +1016,7 @@ fn field_max() -> Max {
     Max::from_fr(&(Fr::from(0u64) - Fr::from(1u64)))
 }
 
-// ---- the subtraction warrants (M23 R3 Class B, notes/taint-lint.org §8) -----
+// ---- the subtraction warrants (Class B, notes/taint-lint.org §8) ------------
 //
 // ZKIR v3 has no `Sub`: `Uint::sub_with` / `BoundedUint::sub_with` lower to
 // `assert(ge(a, b)); let n = neg(b); from_field_unchecked(add(a, n))`
@@ -1025,7 +1025,7 @@ fn field_max() -> Max {
 // concludes nothing about the difference and every such wire fires — the
 // `%add.*` residue of the frozen baseline. These three rules recover the
 // bound in the cases where the stream itself proves the difference
-// non-negative. They cite only IN-CIRCUIT constraints, so unlike `mark_popeq`
+// non-negative. They cite only in-circuit constraints, so unlike `mark_popeq`
 // they do not widen the lint's one external dependency.
 
 /// The instruction shapes the warrants must see through, indexed by output
@@ -1089,9 +1089,9 @@ impl Shapes {
     /// What one `assert` establishes, if its condition is a shape
     /// `predicate::ge` lowers to — optionally under one guard.
     fn ge_fact(&self, cond: &Operand) -> Option<Ge> {
-        // Unconditional first. This also DISAMBIGUATES the two shapes, which
+        // Unconditional first. This also disambiguates the two shapes, which
         // are both a `cond_select` with `b: 1`: `cond_select{a: 0, b: 1,
-        // bit: lt}` is `NOT lt` and belongs here, while the guarded form below
+        // bit: lt}` is `not lt` and belongs here, while the guarded form below
         // carries a wire in `a`.
         if let Some(ge) = self.not_less_than(cond) {
             return Some(ge);
@@ -1151,7 +1151,7 @@ impl Shapes {
     }
 
     /// `cond_select{a: x, b: 0, bit: g}`: the operand is `x` when `g` holds and
-    /// EXACTLY zero otherwise.
+    /// exactly zero otherwise.
     fn zeroed_under(&self, op: &Operand, g: &str) -> bool {
         let Operand::Variable(v) = op else { return false };
         matches!(
@@ -1167,7 +1167,7 @@ fn is_imm(op: &Operand, n: u64) -> bool {
     matches!(op, Operand::Immediate(v) if *v == Fr::from(n))
 }
 
-/// A bound on `add(a, b)` when it is really a SUBTRACTION — one operand the
+/// A bound on `add(a, b)` when it is really a subtraction — one operand the
 /// `neg` of the other's subtrahend — under warrants N1, N2 or N3.
 fn subtraction_max(
     a: &Operand,
@@ -1190,8 +1190,8 @@ fn subtraction_max(
     None
 }
 
-/// WARRANT N1 — `add(C, neg(b))` with `C` an immediate and `b ≤ Mb ≤ C`: the
-/// result is the INTEGER `C − b ∈ [0, C]`. The range constraint on `b` alone
+/// Warrant N1 — `add(C, neg(b))` with `C` an immediate and `b ≤ Mb ≤ C`: the
+/// result is the integer `C − b ∈ [0, C]`. The range constraint on `b` alone
 /// rules out the wrap, so no assert is needed, which makes this the cleanest
 /// of the three. (`erc20_vault_pending`'s `change_nonce`, `255 − mintNonce.hi`
 /// with `constrain_bits 8` on the operand — note `Mb ≤ C` holds exactly there,
@@ -1203,18 +1203,18 @@ fn n1(minuend: &Operand, subtrahend: &Operand, bound: &BTreeMap<String, Max>) ->
     mb.le(&c).then_some(c)
 }
 
-/// WARRANT N2 — `a ≤ Ma`, `b ≤ Mb`, both within the width the comparison was
-/// made at, plus an UNCONDITIONALLY asserted `a ≥ b`: the field difference IS
+/// Warrant N2 — `a ≤ Ma`, `b ≤ Mb`, both within the width the comparison was
+/// made at, plus an unconditionally asserted `a ≥ b`: the field difference is
 /// the integer difference, so it is `≤ Ma`.
 ///
-/// WARRANT N3 — the same, with the assert GUARDED, when both operands are
-/// `cond_select{a: x, b: 0, bit: g}` on the SAME `g`: with `g = 1` N2 applies;
+/// Warrant N3 — the same, with the assert guarded, when both operands are
+/// `cond_select{a: x, b: 0, bit: g}` on the same `g`: with `g = 1` N2 applies;
 /// with `g = 0` both operands are exactly 0 and the difference is 0. Either
 /// way `≤ Ma`.
 ///
 /// Both require `Ma` and `Mb` inside `2^bits − 1`: a `less_than` at a width
 /// narrower than its operands is not the comparison we are reading it as, and
-/// assuming otherwise would be an OVER-marking.
+/// assuming otherwise would be an over-marking.
 fn n2_or_n3(
     minuend: &Operand,
     subtrahend: &Operand,
@@ -1248,7 +1248,7 @@ fn n2_or_n3(
 //
 // Bit-count bounds ("a < 2^n") are too coarse for the one pattern that
 // matters: a packed limb `a + b·2^64` with `a ≤ 2^64−1, b ≤ 2^64−1` is
-// EXACTLY ≤ 2^128−1, but any rule of the form `max(n,m)+1` reports 129 bits
+// exactly ≤ 2^128−1, but any rule of the form `max(n,m)+1` reports 129 bits
 // and falsely fires on a full-width atom. Tracking exact maxima keeps the
 // arithmetic honest in both directions: no false fire on a tight packing,
 // and no false pass from rounding a bound down.
@@ -1573,7 +1573,7 @@ mod tests {
         assert_eq!(findings.len(), 1, "{findings:?}");
         assert!(findings[0].detail.contains("not provably bounded"), "{}", findings[0]);
 
-        // The constraint may come AFTER the hash — SSA makes it global.
+        // The constraint may come after the hash — SSA makes it global.
         let constrained = vec![
             Instruction::PrivateInput {
                 guard: None,
@@ -1656,7 +1656,7 @@ mod tests {
             ),
         ];
         assert_eq!(audit(&stream), vec![]);
-        // But div of an UNBOUNDED value is only ≤ (p−1) >> 8 — 247 bits —
+        // But div of an unbounded value is only ≤ (p−1) >> 8 — 247 bits —
         // and must not pass a narrower atom than that.
         let wide = vec![
             Instruction::PrivateInput {
@@ -1679,7 +1679,7 @@ mod tests {
         // bytes<32> = 1-byte stray (most significant) + one 31-byte limb,
         // in that order — the decoder's consumption order. A wire bounded
         // to 8 bits passes slot 0 but could not pass slot 1's 248-bit...
-        // rather: a 248-bit-bounded wire in slot 0 must FIRE (slot 0 is
+        // rather: a 248-bit-bounded wire in slot 0 must fire (slot 0 is
         // the 1-byte limb).
         let stream = vec![
             Instruction::PrivateInput {
@@ -1722,7 +1722,7 @@ mod tests {
         assert_eq!(audit(&long).len(), 1);
     }
 
-    // ---- the Impact/popeq warrant (M23 R3 ruling) ---------------------------
+    // ---- the Impact/popeq warrant -------------------------------------------
 
     /// A `public_input` gate for `name`, unguarded.
     fn pi(name: &str) -> Instruction {
@@ -1737,7 +1737,7 @@ mod tests {
     /// read shape — under the given guard.
     /// An unconditional `push` (op 0x10) of `wire` — an effect the
     /// observability warrant cannot excuse. Added wherever a test means to pin
-    /// the absence of a BOUND rather than the absence of reachability: without
+    /// the absence of a bound rather than the absence of reachability: without
     /// an observable consumer the digest is dead and the walk discharges the
     /// read, soundly but for the other reason. NB 0x10 is not a popeq, so
     /// `mark_popeq` bounds nothing from it.
@@ -1775,7 +1775,7 @@ mod tests {
             keccak(vec![bytes_atom(8)], vec![var("pi")]),
         ];
         assert_eq!(audit(&cached), vec![]);
-        // And the bound is the LIMB's, not "anything": the same read feeding
+        // And the bound is the limb's, not "anything": the same read feeding
         // a narrower atom still fires.
         let narrower = vec![
             pi("pi"),
@@ -1810,7 +1810,7 @@ mod tests {
 
     #[test]
     fn popeq_limbs_follow_the_fab_rule() {
-        // bytes<32> = stray byte FIRST (8 bits), then the 31-byte limb
+        // bytes<32> = stray byte first (8 bits), then the 31-byte limb
         // (248 bits) — and a multi-atom popeq maps positions exactly.
         // Alignment: [bytes<32>, field, bytes<8>] → limbs
         // [hi (1B), lo (31B), f (field-wide), n (8B)].
@@ -1837,7 +1837,7 @@ mod tests {
                 vec![bytes_atom(32), bytes_atom(8)],
                 vec![var("hi"), var("lo"), var("n")],
             ),
-            // The field-wide limb got NO bound: absorbing it in a byte atom
+            // The field-wide limb got no bound: absorbing it in a byte atom
             // fires.
             keccak(vec![bytes_atom(8)], vec![var("f")]),
         ];
@@ -1869,7 +1869,7 @@ mod tests {
             hash.clone(),
         ];
         assert_eq!(audit(&push).len(), 1);
-        // A wire in the HEADER position is malformed, not a warrant.
+        // A wire in the header position is malformed, not a warrant.
         let header_wire = vec![
             pi("pi"),
             Instruction::Impact {
@@ -1881,20 +1881,20 @@ mod tests {
         assert_eq!(audit(&header_wire).len(), 1);
     }
 
-    /// A GUARDED `public_input` under a guarded popeq — the compat vault's
-    /// `complete_*` shape (M44, notes/taint-lint.org §8) — still fires.
+    /// A guarded `public_input` under a guarded popeq — the compat vault's
+    /// `complete_*` shape (notes/taint-lint.org §8) — still fires.
     ///
-    /// The point is that the `guard` on `PublicInput` is NOT a second
-    /// warrant: in-circuit the arm IGNORES it (`I::PublicInput { guard: _ }`
+    /// The point is that the `guard` on `PublicInput` is not a second
+    /// warrant: in-circuit the arm ignores it (`I::PublicInput { guard: _ }`
     /// resolves the wire straight out of the preprocessed witness memory,
     /// zkir-v3 ir_vm.rs:978-1004), so a guarded read is exactly as free as
     /// an unguarded one. Only the Impact binds anything, and under a
     /// variable guard it pushes `select(guard, x, 0)` (ir_vm.rs:869-882) —
     /// zero when the guard is false, which the transcript comparison
-    /// accepts for ANY `x`. The "a skipped read yields 0, also in range"
-    /// reading is the OFF-circuit `run`/preprocess semantics
+    /// accepts for any `x`. The "a skipped read yields 0, also in range"
+    /// reading is the off-circuit `run`/preprocess semantics
     /// (minocrab-sim/src/vm.rs, the `PublicInput` arm's
-    /// `default_ir_value(val_t)`), i.e. the witness GENERATOR, not a
+    /// `default_ir_value(val_t)`), i.e. the witness generator, not a
     /// constraint a malicious prover is held to.
     #[test]
     fn a_guarded_read_under_a_guarded_popeq_stays_free() {
@@ -1910,7 +1910,7 @@ mod tests {
             publish("digest"),
         ];
         assert_eq!(audit(&stream).len(), 1);
-        // The same read under an UNCONDITIONAL popeq is bounded — so what
+        // The same read under an unconditional popeq is bounded — so what
         // the test above pins is the guard, not the guarded-ness of the
         // `public_input` gate.
         let unconditional = vec![
@@ -1924,13 +1924,9 @@ mod tests {
 
     /// `assert(a ≥ b); add(a, neg(b))` — the lowering of
     /// `Uint::<BITS>::sub_with` (minocrab-std/src/leaves.rs) — is bounded by `Ma`
-    /// under WARRANT N2, which is the first and only place the lint reads an
-    /// `Assert` (M23 R3 Class B, notes/taint-lint.org §8).
-    ///
-    /// This test replaces `a_subtraction_proven_non_negative_still_fires`,
-    /// which pinned the opposite and was the recorded shape of the finding.
-    /// Its second half is kept: the SUM of the same operands is a different
-    /// and correct firing.
+    /// under warrant N2, which is the first and only place the lint reads an
+    /// `Assert` (Class B, notes/taint-lint.org §8). The sum of the same
+    /// operands is a different and correct firing.
     #[test]
     fn a_subtraction_proven_non_negative_is_bounded() {
         let stream = vec![
@@ -1966,7 +1962,7 @@ mod tests {
         ];
         assert_eq!(audit(&selected), vec![]);
 
-        // The SUM of the same two operands is bounded, by the exact interval
+        // The sum of the same two operands is bounded, by the exact interval
         // arithmetic: 2·(2^128−1) needs 129 bits, so it fires on a 16-byte
         // atom for a different and correct reason.
         let summed = vec![
@@ -1978,8 +1974,8 @@ mod tests {
         assert_eq!(audit(&summed), vec![]);
     }
 
-    /// WARRANT N1 — `add(C, neg(b))` with `C` an immediate: bounded by `C`
-    /// when `Mb ≤ C`, and NOT otherwise. `erc20_vault_pending`'s
+    /// Warrant N1 — `add(C, neg(b))` with `C` an immediate: bounded by `C`
+    /// when `Mb ≤ C`, and not otherwise. `erc20_vault_pending`'s
     /// `change_nonce` is `255 − mintNonce.hi` with `constrain_bits 8`, where
     /// `Mb = C = 255` exactly — so the boundary is the case that matters.
     #[test]
@@ -2000,7 +1996,7 @@ mod tests {
         let findings = audit(&subtraction(9));
         assert_eq!(findings.len(), 1, "{findings:?}");
         assert!(findings[0].detail.contains("not provably bounded"));
-        // An UNBOUNDED subtrahend is the same refusal.
+        // An unbounded subtrahend is the same refusal.
         let free = vec![
             Instruction::Neg { a: var("b"), output: id("nb") },
             Instruction::Add { a: imm(255), b: var("nb"), output: id("d") },
@@ -2009,8 +2005,8 @@ mod tests {
         assert_eq!(audit(&free).len(), 1);
     }
 
-    /// WARRANT N3 — a GUARDED `assert(a ≥ b)` bounds the difference only when
-    /// both operands are `cond_select{a: x, b: 0, bit: g}` on the SAME `g`,
+    /// Warrant N3 — a guarded `assert(a ≥ b)` bounds the difference only when
+    /// both operands are `cond_select{a: x, b: 0, bit: g}` on the same `g`,
     /// which is `erc20_vault::complete_swap`'s shape. Three ways it must
     /// refuse: a different guard on one operand, an operand not zeroed at all,
     /// and an unbounded minuend (`manager::execute`, which stays a finding).
@@ -2052,7 +2048,7 @@ mod tests {
         };
         // Both operands zeroed under the assert's own guard: bounded.
         assert_eq!(audit(&guarded("g", "g")), vec![]);
-        // One operand zeroed under a DIFFERENT bit: with `g = 0` the assert
+        // One operand zeroed under a different bit: with `g = 0` the assert
         // says nothing and `sb` is not forced to 0, so the difference may wrap.
         assert_eq!(audit(&guarded("g", "h")).len(), 1);
 
@@ -2070,9 +2066,9 @@ mod tests {
         assert_eq!(audit(&unbounded_minuend).len(), 1);
     }
 
-    /// The warrants read the asserted PAIR, not merely the presence of an
+    /// The warrants read the asserted pair, not merely the presence of an
     /// assert: a `less_than` at a width narrower than its operands is not the
-    /// comparison the rule reads it as, and an assert about OTHER wires
+    /// comparison the rule reads it as, and an assert about other wires
     /// bounds nothing.
     #[test]
     fn the_subtraction_warrants_refuse_a_mismatched_assert() {
@@ -2091,7 +2087,7 @@ mod tests {
         ];
         assert_eq!(audit(&narrow).len(), 1);
 
-        // The assert is about a DIFFERENT pair than the subtraction.
+        // The assert is about a different pair than the subtraction.
         let other_pair = vec![
             Instruction::ConstrainBits { val: var("a"), bits: 64 },
             Instruction::ConstrainBits { val: var("b"), bits: 64 },
@@ -2105,7 +2101,7 @@ mod tests {
         ];
         assert_eq!(audit(&other_pair).len(), 1);
 
-        // The pair asserted in the WRONG ORDER (`b ≥ a`) does not bound
+        // The pair asserted in the wrong order (`b ≥ a`) does not bound
         // `a − b`.
         let reversed = vec![
             Instruction::ConstrainBits { val: var("a"), bits: 64 },
@@ -2120,10 +2116,10 @@ mod tests {
         assert_eq!(audit(&reversed).len(), 1);
     }
 
-    /// OPTION 4, the observability warrant (M23 R3 Class A,
+    /// Option 4, the observability warrant (Class A,
     /// notes/taint-lint.org §8). A guarded ledger read has no bound and none
     /// is invented; it is discharged exactly when every effect a forged value
-    /// could reach is ALREADY inert whenever the read's own guard is false.
+    /// could reach is already inert whenever the read's own guard is false.
     ///
     /// The clean case is `erc20_vault`'s five `complete_*` circuits: the
     /// contract address is read under the arm's guard, absorbed into the
@@ -2149,13 +2145,13 @@ mod tests {
         };
         // The same guard: inert together. Discharged.
         assert_eq!(audit(&pushed_under(var("g"))), vec![]);
-        // UNCONDITIONAL: it publishes the forged digest whatever `g` does.
+        // Unconditional: it publishes the forged digest whatever `g` does.
         assert_eq!(audit(&pushed_under(imm(1))).len(), 1);
-        // An UNRELATED wire: nothing ties it to `g`, so `g = 0` does not make
+        // An unrelated wire: nothing ties it to `g`, so `g = 0` does not make
         // it inert. This is the "single unguarded consumer" §8 names.
         assert_eq!(audit(&pushed_under(var("h"))).len(), 1);
 
-        // A guard NESTED inside `g` — `cond_select{a: _, b: 0, bit: g}`, which
+        // A guard nested inside `g` — `cond_select{a: _, b: 0, bit: g}`, which
         // is zero whenever `g` is. `erc20_vault::complete_deposit` pushes its
         // coin commitment under exactly this. Discharged.
         let mut nested = pushed_under(var("inner"));
@@ -2169,7 +2165,7 @@ mod tests {
             },
         );
         assert_eq!(audit(&nested), vec![]);
-        // The same shape with the ZERO branch replaced by a nonzero one is NOT
+        // The same shape with the zero branch replaced by a nonzero one is not
         // dominated: it can be nonzero while `g` is zero.
         let mut not_nested = pushed_under(var("inner"));
         not_nested.insert(
@@ -2185,7 +2181,7 @@ mod tests {
     }
 
     /// The observability warrant refuses every consumer it cannot account for.
-    /// A CONSTRAINT on the digest makes a forged value matter to
+    /// A constraint on the digest makes a forged value matter to
     /// satisfiability, which may be safe but is a different argument; leaving
     /// the circuit named is an effect; and steering another read's guard moves
     /// the transcript walk. All three keep the finding.
@@ -2227,11 +2223,11 @@ mod tests {
         }
     }
 
-    /// A `cond_select` on an IMMEDIATE bit is its chosen operand exactly, so a
-    /// confined read selected that way is still the confined read (M48 L: the
+    /// A `cond_select` on an immediate bit is its chosen operand exactly, so a
+    /// confined read selected that way is still the confined read (the
     /// erc20 vault's fee mint, whose coin commitment selects the recipient key
-    /// with a constant `is_left`). A select on a WIRE bit is a derivation and
-    /// keeps its finding; so does a constant select that picks the OTHER,
+    /// with a constant `is_left`). A select on a wire bit is a derivation and
+    /// keeps its finding; so does a constant select that picks the other,
     /// unconfined operand.
     #[test]
     fn an_immediate_select_of_a_confined_read_is_the_read() {
@@ -2260,7 +2256,7 @@ mod tests {
 }
 
 // ============================================================================
-// Kani harnesses (M23 R4) — compiled ONLY under `cargo kani -p minocrab-taint`
+// Kani harnesses — compiled only under `cargo kani -p minocrab-taint`
 // ============================================================================
 //
 // The lint's soundness rests on the exact interval arithmetic: a Max that
@@ -2268,7 +2264,7 @@ mod tests {
 // negative the whole instrument exists to prevent. These proofs pin the
 // arithmetic against independent oracles (`u128`, bit arithmetic) at stated
 // widths, and the order relation at full width. Bounds per proof; runtimes
-// in notes/formal-verification-options.org §"As built — M23 R4".
+// in notes/formal-verification-options.org.
 
 #[cfg(kani)]
 mod kani_proofs {
@@ -2283,7 +2279,7 @@ mod kani_proofs {
     }
 
     /// `checked_add` agrees with `u128` addition wherever both are defined.
-    /// BOUND: both operands ≤ 2^127 − 1, so the oracle cannot itself
+    /// Bound: both operands ≤ 2^127 − 1, so the oracle cannot itself
     /// overflow; the 256-bit path has no carry at this width, which is the
     /// carry-chain's base case — `add_carries_across_limbs` covers the rest.
     #[kani::proof]
@@ -2316,7 +2312,7 @@ mod kani_proofs {
         assert!(Max::all_ones(256).checked_add(Max([a, 0, 0, 0])).is_none());
     }
 
-    /// `checked_mul` agrees with `u128` multiplication. BOUND: 16-bit
+    /// `checked_mul` agrees with `u128` multiplication. Bound: 16-bit
     /// operands. Neither 64x64 nor 32x32 closed in 900s — the 4x4 limb
     /// loop embeds sixteen 64-bit partial-product multipliers in the SAT
     /// formula regardless of assumed operand width, and wide
@@ -2344,12 +2340,12 @@ mod kani_proofs {
         assert_eq!(to_u128(&square), Some(u128::MAX - (1 << 65) + 2));
     }
 
-    /// `shr` agrees with `u128` shifting for a SYMBOLIC 64-bit value at
-    /// EVERY concrete shift 0..=64. A fully symbolic shift amount did not
+    /// `shr` agrees with `u128` shifting for a symbolic 64-bit value at
+    /// every concrete shift 0..=64. A fully symbolic shift amount did not
     /// close in 900s at either 64- or 128-bit width (a symbolic barrel
     /// shifter across four limbs); sweeping the shift concretely keeps the
     /// value symbolic where the lint's soundness lives — `div = val >> bits`
-    /// with `bits` a CONCRETE instruction field, so a concrete-shift sweep
+    /// with `bits` a concrete instruction field, so a concrete-shift sweep
     /// is in fact the exact shape the lint evaluates. Limb-boundary
     /// crossings of wider values: `shr_limb_boundaries` below.
     #[kani::proof]
@@ -2380,7 +2376,7 @@ mod kani_proofs {
     }
 
     /// `bits()` is exactly the position of the highest set bit — the fact
-    /// `m.bits() <= 8*w` relies on to mean `m ≤ 2^8w − 1`. BOUND: 128-bit
+    /// `m.bits() <= 8*w` relies on to mean `m ≤ 2^8w − 1`. Bound: 128-bit
     /// values (limb-symmetric; the upper limbs run the same code path).
     #[kani::proof]
     fn bits_matches_leading_zeros() {
@@ -2397,7 +2393,7 @@ mod kani_proofs {
         assert_eq!(Max::all_ones(n).bits(), n);
     }
 
-    /// `le` is a total order and `min`/`max` select within it — at FULL
+    /// `le` is a total order and `min`/`max` select within it — at full
     /// 256-bit width (comparisons are cheap for the solver).
     #[kani::proof]
     fn le_total_order_and_min_max() {

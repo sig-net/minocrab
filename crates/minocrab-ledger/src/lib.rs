@@ -39,9 +39,9 @@
 //! - [`contract_call`] — a cross-contract call, and the labels it discloses
 //!   ([`XcallCommitment`], [`XcallResult`])
 //!
-//! # Stability (M24 tier boundary)
+//! # Stability
 //!
-//! INTERNAL TIER, whole crate: the Impact op layer is the eDSL's
+//! Internal tier, whole crate: the Impact op layer is the eDSL's
 //! implementation detail (reached through `minocrab-std`'s typed ledger
 //! surface) and carries no stability promise. A contract author writing
 //! Impact ops by hand imports them from `minocrab-experimental`'s

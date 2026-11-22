@@ -1,7 +1,7 @@
 //! `#[derive(LedgerRepr)]`: [`#[derive(Value)]`](crate::value) for a record
-//! meant to be STORED, with the check that it is one.
+//! meant to be stored, with the check that it is one.
 //!
-//! EVERY FIELD IS PUBLIC BY CONSTRUCTION: `LedgerRepr` is implemented for
+//! Every field is public by construction: `LedgerRepr` is implemented for
 //! the `Public` leaves only (a stored value is on-chain state), so a struct
 //! with a `B32<Private>` field is not a ledger value, and for a struct
 //! without generic parameters that is an error at this derive — which is

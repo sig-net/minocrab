@@ -1,5 +1,5 @@
-//! The v3 transcript EXECUTOR: a circuit's public transcript produced from
-//! LEDGER STATE rather than from a hand model.
+//! The v3 transcript executor: a circuit's public transcript produced from
+//! ledger state rather than from a hand model.
 //!
 //! [`simulate`](super::simulate) verifies a complete [`ProofPreimage`]: the
 //! values a ledger read witnesses come from `public_transcript_outputs`,
@@ -13,7 +13,7 @@
 //!
 //! # What is Midnight's and what is ours
 //!
-//! REUSED, unchanged:
+//! Reused, unchanged:
 //! - [`ResultModeGather`] and [`GatherEvent`] (onchain-vm `result_mode.rs`) —
 //!   Midnight's own "run this program and tell me what the state actually
 //!   holds" mode. Its `process_read` takes `()` as the expected value and
@@ -29,9 +29,9 @@
 //! - [`super::simulate_with`] — the ZKIR instruction walk, the same one
 //!   [`simulate`](super::simulate) runs, in [`Mode::Gather`].
 //!
-//! WRITTEN HERE, because nothing upstream has it (surveyed 2026-09-06 over
-//! midnight-ledger `04c9c5d9`; notes/executor.org §2 records the search):
-//! - [`decode_program`] — the INVERSE of `Op::field_repr`. Upstream encodes
+//! Written here, because nothing upstream has it (midnight-ledger
+//! `04c9c5d9`; notes/executor.org §2 records the search):
+//! - [`decode_program`] — the inverse of `Op::field_repr`. Upstream encodes
 //!   an op stream into field elements (that is what a circuit's
 //!   `public_transcript_inputs` IS) but never decodes one, because in
 //!   production the ops travel beside the proof rather than inside it. A
@@ -43,7 +43,7 @@
 //!
 //! # Why a fixpoint
 //!
-//! A ledger read compiles to `public_input` gates FIRST and the op stream
+//! A ledger read compiles to `public_input` gates first and the op stream
 //! that justifies them second (the gates are embedded in the closing
 //! `popeq`), and a read's value can decide whether a later block is emitted
 //! at all (an `Impact` under a guard the read produced). So there is no
@@ -57,10 +57,10 @@
 //!    end of the guess reads zeros);
 //! 2. decode the accumulated `Impact` inputs into an op program;
 //! 3. run that program against the live state in `ResultModeGather`;
-//! 4. the gathered read values ARE the next guess.
+//! 4. the gathered read values are the next guess.
 //!
 //! Each round fixes at least the first read the previous guess got wrong
-//! (op emission depends only on EARLIER reads, so every op before the first
+//! (op emission depends only on earlier reads, so every op before the first
 //! wrong answer is already right), which is why step 3 falls back to the
 //! longest prefix that runs when the whole program does not: the reads it
 //! yields are still correct, and the next round gets further. That bounds
@@ -108,7 +108,7 @@ pub enum ExecError {
     /// The ZKIR walk failed for a reason unrelated to the transcript.
     #[error("circuit: {0}")]
     Circuit(#[from] SimError),
-    /// The circuit REJECTS this state: an `Assert` failed on the converged
+    /// The circuit rejects this state: an `Assert` failed on the converged
     /// run. This is the executor's twin of a hand model refusing a case.
     #[error("circuit rejected the state: assertion failed at instruction {at}")]
     Rejected { at: usize },
@@ -118,7 +118,7 @@ pub enum ExecError {
     /// The Impact VM refused the program even as its longest prefix.
     #[error("impact vm: {0}")]
     Vm(String),
-    /// The transcript SETTLED — every read answered, every assert passed —
+    /// The transcript settled — every read answered, every assert passed —
     /// but the ledger will not apply it (a counter already at its maximum,
     /// say). The circuit is satisfied; the state is not.
     #[error("the ledger refuses the settled transcript: {why}")]
@@ -158,7 +158,7 @@ pub struct Call<'a> {
     pub binding_input: Fr,
     /// Randomness for the communications commitment. Required when the
     /// circuit declares one; the commitment itself spans the circuit's
-    /// OUTPUTS, so only the executor can compute it.
+    /// outputs, so only the executor can compute it.
     pub comm_rand: Option<Fr>,
     /// The proving-key name to stamp on the produced preimage.
     pub key_location: KeyLocation,
@@ -242,14 +242,14 @@ pub fn execute(
 
         // A round that could not decode the whole transcript, or could not
         // run the whole program, has not answered every read; only a round
-        // that did both AND changed nothing is a fixpoint. A round that
+        // that did both and changed nothing is a fixpoint. A round that
         // changes nothing while still incomplete is stuck, and the reason
         // it stopped short is the honest error to report.
         if !settled {
             guess = next;
             continue;
         }
-        // A rejection is an ANSWER, and it is the first thing to report:
+        // A rejection is an answer, and it is the first thing to report:
         // the walk failures and the short transcript below are consequences
         // of it, not independent problems.
         if let Some(&at) = run.assert_failures.first() {
@@ -268,7 +268,7 @@ pub fn execute(
         let (program, alignments) = (decoded.ops, decoded.alignments);
 
         // Settled. Every read the circuit declared must have been answered,
-        // and at the shape the circuit declared. (A transcript the LEDGER
+        // and at the shape the circuit declared. (A transcript the ledger
         // will not apply — a counter already at its maximum — still settles
         // here: the circuit is satisfied and its transcript is the right
         // one; `finish` is where the ledger gets to refuse it.)
@@ -401,7 +401,7 @@ fn with_reads(program: Vec<GatherOp>, reads: &[AlignedValue]) -> Vec<VmOp> {
 /// read's real value.
 ///
 /// When the whole program is refused — a provisional guess can ask for a key
-/// that is not there — the LONGEST PREFIX that runs is used instead. Failure
+/// that is not there — the longest prefix that runs is used instead. Failure
 /// is monotone in the prefix length, so that prefix is a binary search, and
 /// the reads it yields are the ones the next round needs (see the module
 /// docs). A program whose very first op is refused yields nothing, which is
@@ -470,7 +470,7 @@ pub fn context(state: StateValue<InMemoryDB>, address: [u8; 32]) -> QueryContext
 /// The exact inverse of `Op::field_repr` (onchain-vm `ops.rs:461`), which is
 /// what `minocrab-ledger`'s `ImpactOp` builders emit. Read results are left
 /// as `()`: their limbs in the element stream are the circuit's own
-/// `public_input` wires, whose values are what a gather pass is FOR. The
+/// `public_input` wires, whose values are what a gather pass is for. The
 /// alignment header in front of them is constant, so the width to skip and
 /// the shape to check are both known here.
 pub fn decode_program(elems: &[Fr]) -> Result<(Vec<GatherOp>, Vec<Alignment>), ExecError> {
@@ -491,14 +491,14 @@ pub struct Decoded {
     pub error: Option<ExecError>,
 }
 
-/// [`decode_program`], keeping the PREFIX that decodes when the rest does
+/// [`decode_program`], keeping the prefix that decodes when the rest does
 /// not.
 ///
 /// A provisional round of the fixpoint runs the circuit against read values
 /// that are still wrong, and a wrong value reaches the op stream — a map key
 /// pushed from a read, say — so the elements after it need not be a
 /// well-formed op at all. The prefix is still correct, because op emission
-/// depends only on EARLIER reads; gathering it is what lets the next round
+/// depends only on earlier reads; gathering it is what lets the next round
 /// get further. [`execute`] only surfaces the error if the guess has stopped
 /// moving.
 pub fn decode_prefix(elems: &[Fr]) -> Decoded {
@@ -713,15 +713,14 @@ impl Decoder<'_> {
         self.at += width;
         alignment
             .parse_field_repr(limbs)
-            // NORMALISE every atom. `parse_field_repr` keeps a zero-valued
+            // Normalise every atom. `parse_field_repr` keeps a zero-valued
             // atom at its alignment width (a `bytes<32>` zero is 32 zero
             // bytes), but the ledger stores and compares atoms in canonical
-            // form, where a zero is the EMPTY atom — and `()` decodes only
+            // form, where a zero is the empty atom — and `()` decodes only
             // from the empty one. Compact encodes an absent union arm (the
             // unused recipient of a shielded send) as exactly such a zero,
-            // so without this the gathered program carried a value the
-            // ledger VM would not accept as unit. Found by the passport
-            // account-custody port (PR #184, its executor fork), 2026-10.
+            // so without this the gathered program would carry a value the
+            // ledger VM does not accept as unit.
             .map(|mut value| {
                 value.value.0 = value.value.0.into_iter().map(|atom| atom.normalize()).collect();
                 value
@@ -785,8 +784,7 @@ impl Decoder<'_> {
 
 #[cfg(test)]
 mod decoder_normalisation {
-    //! The two regressions the passport port's executor fork carried
-    //! (PR #184, `bin/measure/src/executor.rs`), taken with the fix.
+    //! Regression tests for the decoder's atom normalisation.
     use super::*;
 
     #[test]

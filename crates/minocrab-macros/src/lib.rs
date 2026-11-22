@@ -2,8 +2,8 @@
 //!
 //! The crate depends on nothing of ours and emits fully-qualified
 //! `::minocrab_std::…` paths (notes/contract-api.org §macros). Its
-//! expansions are exactly what phase 2 wrote by hand — impls a reader could
-//! have written — and, by the THINNESS RULE, contain no `Circuit` method
+//! expansions are impls a reader could
+//! have written — and, by the thinness rule, contain no `Circuit` method
 //! call at all: everything goes through `CircuitArg` and `ArgPath`.
 //!
 //! # Where this sits
@@ -49,7 +49,7 @@ const OLD_CIRCUIT: &str = "Circuit3";
 const OLD_VIS: &str = "Vis3";
 // rename-v3: end shim
 
-/// Derive the VALUE impls of a struct with named fields: its layout
+/// Derive the value impls of a struct with named fields: its layout
 /// (`CircuitAbi`), its slots at each visibility the fields support
 /// (`Encode` / `Decode`), its declaration as a circuit argument
 /// (`CircuitArg`, and `CircuitArgs` for a whole argument list), and its
@@ -92,7 +92,7 @@ pub fn derive_value(input: TokenStream) -> TokenStream {
         .into()
 }
 
-/// [`macro@Value`], plus the check that the struct IS a circuit argument:
+/// [`macro@Value`], plus the check that the struct is a circuit argument:
 /// for a struct without generic parameters, a field that is not one (a
 /// `Public` leaf, say) is an error here rather than at the circuit that
 /// takes it. Deriving it beside `Value`, `LedgerRepr` or `CircuitBorsh` is a
@@ -109,11 +109,11 @@ pub fn derive_circuit_arg(input: TokenStream) -> TokenStream {
 /// Derive `CircuitBorsh` — canonical Borsh, the fixed-width subset — for a
 /// struct with named fields, together with the `CircuitArg` family.
 ///
-/// **Field order is the wire contract, and it is the BORSH order.** The
+/// **Field order is the wire contract, and it is the Borsh order.** The
 /// fields are serialized, hashed, read and laid out in declaration order, so
 /// reordering the struct changes the format.
 ///
-/// ONE DERIVE, BOTH FAMILIES: the argument impls come from the same code path
+/// One derive, both families: the argument impls come from the same code path
 /// as [`macro@Value`], so a type never has both derives — deriving both is a
 /// conflicting-implementation error, and `#[derive(CircuitBorsh)]` is the one
 /// to keep.
@@ -133,8 +133,8 @@ pub fn derive_circuit_arg(input: TokenStream) -> TokenStream {
 /// visibility parameter (`<V: Vis>`) serializes at every visibility, and is
 /// a circuit argument at `Private` — arguments are witness data.
 ///
-/// Two label namespaces: the ARGUMENT label is `lowerCamelCase` of the field
-/// name (`#[arg(name = "…")]` overrides it), while the LAYOUT path is the
+/// Two label namespaces: the argument label is `lowerCamelCase` of the field
+/// name (`#[arg(name = "…")]` overrides it), while the layout path is the
 /// field name verbatim, because it is compared against borsh's own schema of
 /// the spec type (`#[borsh(name = "…")]` overrides that one).
 ///
@@ -155,7 +155,7 @@ pub fn derive_circuit_borsh(input: TokenStream) -> TokenStream {
         .into()
 }
 
-/// [`macro@Value`], plus the check that the struct IS a ledger value (a
+/// [`macro@Value`], plus the check that the struct is a ledger value (a
 /// `Map` value, a `Cell` type): for a struct without generic parameters,
 /// every field must be `Public` — `LedgerRepr` exists for public leaves
 /// only, so a private field is a type error at the derive, not a leak.
@@ -167,7 +167,7 @@ pub fn derive_ledger_repr(input: TokenStream) -> TokenStream {
         .into()
 }
 
-/// Derive a contract's LEDGER BLOCK from a struct mirroring Compact's
+/// Derive a contract's ledger block from a struct mirroring Compact's
 /// `export ledger` declarations.
 ///
 /// ```ignore
@@ -242,7 +242,7 @@ pub fn derive_ledger(input: TokenStream) -> TokenStream {
 /// log2 of the proving-table rows — is above the number declared here. `k` is
 /// what sets the proving key, the prover's RAM and the wall clock, so a
 /// budget is the guard against a change that is free in rows and expensive in
-/// powers of two. A circuit UNDER budget passes and says by how much.
+/// powers of two. A circuit under budget passes and says by how much.
 ///
 /// `max_k` combines with `output`, in either order:
 /// `#[circuit(output = "event hash", max_k = 9)]`.
@@ -273,7 +273,7 @@ pub fn circuit(attr: TokenStream, item: TokenStream) -> TokenStream {
 /// }
 /// ```
 ///
-/// The circuits are ASSOCIATED FUNCTIONS taking `c: &mut Circuit` — there is
+/// The circuits are associated functions taking `c: &mut Circuit` — there is
 /// no receiver, and a `self` parameter is a compile error with the reason. A
 /// contract's state is a layout rather than a value: a ledger read is a
 /// transcript gate and a write is an Impact op, so there is nothing in `self`
@@ -281,7 +281,7 @@ pub fn circuit(attr: TokenStream, item: TokenStream) -> TokenStream {
 /// either interior mutability or a second calling convention beside the
 /// `&mut Circuit` every gadget below already takes.
 ///
-/// What the block buys is that the LANGUAGE knows the circuit set:
+/// What the block buys is that the language knows the circuit set:
 /// `Vault::CIRCUITS` is `[(name, fn() -> Compiled); N]` in declaration
 /// order, derived from the file. Before it, a contract was a module by
 /// convention and its circuits were a hand-written list in a test-support
@@ -289,7 +289,7 @@ pub fn circuit(attr: TokenStream, item: TokenStream) -> TokenStream {
 ///
 /// Each `#[circuit]` inside expands exactly as it does on a free function —
 /// same argument struct, same labels, same disclosure declaration, same
-/// `max_k` budget — except that its generated tests are emitted BESIDE the
+/// `max_k` budget — except that its generated tests are emitted beside the
 /// `impl`, since a `mod` cannot live inside one.
 ///
 /// # `lowering` — one lowering for every circuit of the contract
@@ -299,7 +299,7 @@ pub fn circuit(attr: TokenStream, item: TokenStream) -> TokenStream {
 /// impl Vault { … }
 /// ```
 ///
-/// takes a PATH to a `fn(&mut Circuit)`, and every `#[circuit]` in the
+/// takes a path to a `fn(&mut Circuit)`, and every `#[circuit]` in the
 /// block calls it on the circuit before its body: after the arguments are
 /// declared and constrained (neither consults the lowering), before anything
 /// the body does. How a circuit is lowered is a property of the contract, so
@@ -334,7 +334,7 @@ pub fn contract(attr: TokenStream, item: TokenStream) -> TokenStream {
 /// let hash = Token::at_field(TOKEN).deposit(c, amount, me);
 /// ```
 ///
-/// The trait is REPLACED by a handle struct with an inherent impl: an
+/// The trait is replaced by a handle struct with an inherent impl: an
 /// `EntryPoint` const per circuit, `at_field(index)` / `at(address)`
 /// constructors, and one typed method per circuit over
 /// `minocrab_ledger::call`.
@@ -356,7 +356,7 @@ pub fn contract(attr: TokenStream, item: TokenStream) -> TokenStream {
 ///
 /// The generated methods take `c: &mut Circuit` before the callee's own
 /// parameters — no guard parameter (notes/edsl-trim.org §B): the call
-/// resolves the AMBIENT scope, so a guarded call is `c.when(g, |c|
+/// resolves the ambient scope, so a guarded call is `c.when(g, |c|
 /// callee.deposit(c, amount, me))`. The expansion needs `minocrab_ledger` and
 /// `minocrab_std` in the using crate's dependencies.
 #[proc_macro_attribute]

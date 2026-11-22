@@ -1,13 +1,9 @@
 //! `#[contract]` — a contract's circuits, declared as an `impl` of its state.
 //!
-//! WHY THE BLOCK AND NOT THE RECEIVER (dmd, 2026-08-16, and
-//! notes/contract-api.org §"The contract block"): the value is that the
-//! LANGUAGE gets to say which circuits belong to which contract. Before this,
-//! a contract was a Rust module by convention and its circuit set was a
-//! hand-written list of 170 entries in a test-support module — the only
-//! statement anywhere of which circuits exist, feeding both snapshots, the
-//! dump instrument and the adversarial suite, with nothing asserting it was
-//! complete. `CIRCUITS` is that list, derived.
+//! Why the block and not the receiver (notes/contract-api.org §"The contract
+//! block"): the language gets to say which circuits belong to which contract.
+//! `CIRCUITS` is the list of a contract's circuits, derived, which feeds the
+//! snapshots, the dump instrument and the adversarial suite.
 //!
 //! The methods take `c: &mut Circuit` and no receiver, deliberately. A
 //! `&mut self` would mean the circuit lived in the state value, which forces
@@ -16,9 +12,9 @@
 //! convention beside the `&mut Circuit` every gadget in `minocrab-ledger`,
 //! `minocrab_std::kernel` and `common` already takes.
 //!
-//! THE TOOLING PROPERTY (M37 rung E, notes/evm-calls.org §6/§12): the
+//! The tooling property (notes/evm-calls.org §6): the
 //! author's items are emitted as parsed; the macro adds siblings only. Every
-//! `impl` member that is NOT a `#[circuit]` (a plain method, a `const`, an
+//! `impl` member that is not a `#[circuit]` (a plain method, a `const`, an
 //! associated type) is pushed through unchanged — `member.to_token_stream()`
 //! re-serialises the parsed `ImplItem`, so its tokens and spans are exactly
 //! the ones in the source, in the same declaration-order slot in the
@@ -27,14 +23,14 @@
 //! module's doc): the author's method is emitted under its own name with
 //! its own signature and body verbatim, and the compiled-builder function,
 //! the `CIRCUITS` const and the generated tests are the only new siblings.
-//! What IS rebuilt is the `impl SelfType { .. }` shell itself (a fresh
+//! What is rebuilt is the `impl SelfType { .. }` shell itself (a fresh
 //! `impl` token from `quote!`, not the original `ItemImpl` reused wholesale)
 //! — but every member's content passes through untouched, so rust-analyzer
 //! sees the same methods, in the same order, at the same spans.
 
 //!
-//! THE LOWERING (M48 rung C, notes/streamline-survey.org §7): how a circuit
-//! is lowered is a property of the CONTRACT, so it is said once, on the
+//! The lowering: how a circuit
+//! is lowered is a property of the contract, so it is said once, on the
 //! block: `#[contract(lowering = minocrab_compat::profile)]`. The macro
 //! knows nothing about the path but its position: it splices a call to it on
 //! the circuit as the first statement of every `#[circuit]`'s entry closure
@@ -80,7 +76,7 @@ impl Parse for ContractAttr {
             input
                 .parse::<syn::Token![=]>()
                 .map_err(|e| syn::Error::new(e.span(), expected))?;
-            // A PATH, not an expression: a closure or a call here would run
+            // A path, not an expression: a closure or a call here would run
             // code the reader cannot see named, and a string would be a name
             // rustc cannot check.
             let path: syn::Path = input
@@ -117,7 +113,7 @@ pub fn expand(attr: ContractAttr, item: ItemImpl) -> syn::Result<TokenStream> {
     let lowering = attr.lowering.as_ref();
     let mut items: Vec<TokenStream> = Vec::new();
     let mut tests: Vec<TokenStream> = Vec::new();
-    // Declaration order IS the order the set is reported in, so a reader sees
+    // Declaration order is the order the set is reported in, so a reader sees
     // the contract's circuits in the order the file writes them.
     let mut circuits: Vec<(String, syn::Ident)> = Vec::new();
 
@@ -219,7 +215,7 @@ mod tests {
         expand(ContractAttr::default(), item).expect("expands").to_string()
     }
 
-    /// THE TOOLING PROPERTY (notes/evm-calls.org §6/§12), for a plain
+    /// The tooling property (notes/evm-calls.org §6/§12), for a plain
     /// (non-`#[circuit]`) member: it passes through `#[contract]`
     /// untouched, at the same declaration-order position — the same tokens
     /// `to_token_stream` would produce for the member as parsed, not a
@@ -315,7 +311,7 @@ mod tests {
         }
     }
 
-    /// `lowering = path` puts ONE call to the path in EVERY circuit's entry
+    /// `lowering = path` puts one call to the path in every circuit's entry
     /// closure, as its first statement, ahead of the author's body: the
     /// arguments are declared and constrained by `entry` before the closure
     /// runs, and the lowering runs before anything in the body.

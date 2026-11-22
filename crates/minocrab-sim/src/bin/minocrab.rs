@@ -1,11 +1,11 @@
 //! `minocrab` — a light, compiler-agnostic gate-count CLI over ZKIR files.
 //!
-//! For people NOT using the Rust API. It reads a `.zkir` file — MinoCrab's or
+//! For people not using the Rust API. It reads a `.zkir` file — MinoCrab's or
 //! compactc's, they share the format — and reports `(k, rows)`: the proving-
 //! table size that drives proving time and RAM. So a Compact user who never
 //! touches MinoCrab still gets the gate-count value.
 //!
-//! Region-attributed profiling is deliberately NOT here: it needs the region-
+//! Region-attributed profiling is deliberately not here: it needs the region-
 //! annotated `Compiled` a Rust build produces, which a parsed `.zkir` does
 //! not carry. Rust users reach for `minocrab_sim::profile()` in a test or
 //! a criterion bench — normal Rust perf tooling, no bespoke wrapper.

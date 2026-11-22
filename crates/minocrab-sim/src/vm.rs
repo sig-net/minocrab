@@ -24,7 +24,7 @@
 //! `ir_value_to_bytes32`, `resolve_bool_list` and the limb count of
 //! `bytes_from_natives_nb_limbs`.
 //!
-//! Like the v2 simulator, this is never trusted alone: `tests/end_to_end.rs`
+//! This simulator is never trusted alone: `tests/end_to_end.rs`
 //! and `tests/zkir31_ops.rs` cross-check runs against upstream
 //! `IrSource::check`, which is `preprocess(..)?.pi_skips` verbatim.
 
@@ -113,19 +113,19 @@ pub struct Run {
     pub consumed_public: usize,
     /// Instruction execution counts by opcode.
     pub op_counts: BTreeMap<&'static str, u32>,
-    /// The `Impact` public inputs the run ACCUMULATED, in order — the
+    /// The `Impact` public inputs the run accumulated, in order — the
     /// preimage's `public_transcript_inputs` as the circuit computes them
     /// (guarded-off blocks contribute nothing). Under [`simulate`] this is
     /// equal to `preimage.public_transcript_inputs` by construction, since
     /// each element is checked as it accumulates; under [`Mode::Gather`] it
-    /// is the run's OUTPUT — the Impact op stream the circuit asks for.
+    /// is the run's output — the Impact op stream the circuit asks for.
     pub public_transcript_inputs: Vec<Fr>,
     /// Instruction indices whose `Assert` failed. Always empty under
     /// [`simulate`], which returns `Err` on the first one; under
     /// [`Mode::Gather`] asserts are recorded rather than fatal, because a
     /// gather pass runs against a provisional transcript.
     pub assert_failures: Vec<usize>,
-    /// Instructions that FAILED outright under [`Mode::Gather`] — a value
+    /// Instructions that failed outright under [`Mode::Gather`] — a value
     /// the fixpoint has not resolved yet is not a valid value of its type.
     /// Always empty under [`simulate`]. A non-empty list means
     /// [`Run::public_transcript_inputs`] is a prefix, not the whole
@@ -140,7 +140,7 @@ pub enum Mode {
     /// exactly, a failed assert aborts. This is [`simulate`].
     Verify,
     /// The executor's pass (`exec`): `public_transcript_outputs` is a
-    /// PROVISIONAL guess — short reads yield zeros, `Impact` inputs are
+    /// provisional guess — short reads yield zeros, `Impact` inputs are
     /// accumulated rather than checked, the two public halves need not be
     /// consumed exactly, and a failed assert is recorded, not fatal. The
     /// private transcript and the arguments are still exact.
@@ -415,9 +415,9 @@ fn take_raw<'t>(
         .ok_or_else(|| fail(at, op, format!("ran out of {what}")))
 }
 
-/// THE DIFFERENTIAL COMPARATOR — call-compatibility of two artifacts on one
+/// The differential comparator — call-compatibility of two artifacts on one
 /// preimage, the criterion every `*differential*` suite gates on
-/// (VERIFICATION.md §3(c), notes/ledger-abi.org §6):
+/// (verification.md §3(c), notes/ledger-abi.org §6):
 ///
 /// 1. the typed interface — input types in order, and the outputs;
 /// 2. the PI stream — identical `pis` and `pi_skips` from this simulator on
@@ -426,11 +426,10 @@ fn take_raw<'t>(
 ///    reports the same `pi_skips` this simulator computed, so a simulator bug
 ///    cannot hide behind the comparison it performs.
 ///
-/// It lives here, once, because the external review (§3.8) found eleven
-/// copies of it across the test crates and one that had drifted weaker (the
-/// opt fork's dropped the schema check and `theirs.check`). One body is what
-/// a third-party pass will call to ship its own proof of preservation (M24
-/// point 3) — the harness as public API starts with this function.
+/// It lives here, once, so that no copy can drift weaker (dropping the
+/// schema check or `theirs.check`). One body is what
+/// a third-party pass will call to ship its own proof of preservation —
+/// the harness as public API starts with this function.
 pub fn assert_call_compatible(ours: &IrSource, theirs: &IrSource, pi: &ProofPreimage) {
     let types = |ir: &IrSource| {
         serde_json::to_value(&ir.inputs)
@@ -520,7 +519,7 @@ fn simulate_with_unchecked(
     // communications commitment.
     let mut pis: Vec<Fr> = vec![preimage.binding_input];
     if ir.do_communications_commitment {
-        // Under `Mode::Gather` the commitment spans the circuit's OUTPUTS,
+        // Under `Mode::Gather` the commitment spans the circuit's outputs,
         // which this pass is still computing; the executor fills it in once
         // they are known, so an absent one is not an error here.
         match preimage.communications_commitment {
@@ -546,8 +545,8 @@ fn simulate_with_unchecked(
         // Under `Mode::Gather` every value in flight may be provisional —
         // a read the fixpoint has not resolved yet — so an instruction can
         // fail on garbage that the next round replaces. Such a failure is
-        // RECORDED and the walk goes on, but nothing further is appended to
-        // the transcript: what has accumulated so far is a correct PREFIX
+        // recorded and the walk goes on, but nothing further is appended to
+        // the transcript: what has accumulated so far is a correct prefix
         // (op emission depends only on earlier reads), and a prefix is
         // exactly what the fixpoint needs to make progress. Under
         // `Mode::Verify` the closure's first `Err` is the function's.
@@ -630,13 +629,13 @@ fn simulate_with_unchecked(
                     if !gather {
                         return Err(fail(at, op, "failed direct assertion"));
                     }
-                    // A circuit that rejects has NO transcript past the
+                    // A circuit that rejects has no transcript past the
                     // rejection: everything after a failed assert is
                     // unconstrained, and emitting it would put values in
                     // the op stream that no state could justify. Recording
                     // the index and truncating leaves a prefix the fixpoint
                     // can still settle on, and a settled run whose first
-                    // failure is an assert is a REJECTION, not an error.
+                    // failure is an assert is a rejection, not an error.
                     assert_failures.push(at);
                     transcript_truncated = true;
                 }
@@ -664,7 +663,7 @@ fn simulate_with_unchecked(
                         // Under `Mode::Gather` the outputs half is the
                         // provisional guess the fixpoint is refining; a
                         // read past its end reads zeros (the value the
-                        // NEXT iteration replaces), rather than failing.
+                        // next iteration replaces), rather than failing.
                         let padded: Vec<Fr>;
                         let raw = if gather
                             && public_transcript_outputs_idx + w
@@ -861,7 +860,7 @@ fn simulate_with_unchecked(
                     }
                     pi_skips.push(Some(count));
                 } else {
-                    // Resolve every input BEFORE publishing any: an op is
+                    // Resolve every input before publishing any: an op is
                     // one Impact instruction, and half an op in the
                     // transcript would not decode. (Verify mode never gets
                     // here with an unresolvable operand.)
@@ -878,7 +877,7 @@ fn simulate_with_unchecked(
                     }
                     pi_skips.push(None);
                     // Under `Mode::Gather` there is nothing to check
-                    // against: the accumulated values ARE the transcript.
+                    // against: the accumulated values are the transcript.
                     for i in 0..if gather { 0 } else { count } {
                         let idx = public_transcript_inputs_idx - count + i;
                         let expected = preimage.public_transcript_inputs.get(idx).copied();
@@ -1338,7 +1337,7 @@ pub fn simulate_compiled(
     Ok((run, report))
 }
 
-/// A failed `assert` that was written with a MESSAGE says what it meant.
+/// A failed `assert` that was written with a message says what it meant.
 ///
 /// ZKIR has nowhere to put Compact's `assert(cond, "message")` second
 /// argument, so the frontend keeps it beside the stream
@@ -1374,11 +1373,11 @@ pub fn cost(ir: &IrSource) -> (u8, usize) {
 /// The body of the test `#[circuit(max_k = N)]` generates: the circuit's
 /// `k` against the budget its author declared.
 ///
-/// A CEILING, not an equality. `k` is `log2` of the proving-table rows, so it
+/// A ceiling, not an equality. `k` is `log2` of the proving-table rows, so it
 /// is what decides the proving key, the prover's RAM and the wall clock —
 /// crossing a power of two is the event a budget exists to catch, and it is
 /// invisible to `row_snapshot` for any circuit not in that table. Coming in
-/// UNDER budget is a win and passes; the message says by how much, so the
+/// under budget is a win and passes; the message says by how much, so the
 /// declaration can be tightened deliberately rather than drifting.
 ///
 /// Lives here rather than in the macro's expansion so that the wording is
@@ -1471,7 +1470,7 @@ pub fn profile(compiled: &minocrab::Compiled) -> crate::Profile {
     }
 }
 
-/// A TEST INSTRUMENT for the simplification pass (M48 F, notes/ir-passes.org
+/// A test instrument for the simplification pass (notes/ir-passes.org
 /// §14): with `MINOCRAB_CHECK_SIMPLIFY=<file>` set, every [`simulate_with`]
 /// call in [`Mode::Verify`] (the reference semantics; the executor's
 /// provisional `Gather` walk is re-verified by one anyway) also simulates `minocrab_ir::passes::simplify`

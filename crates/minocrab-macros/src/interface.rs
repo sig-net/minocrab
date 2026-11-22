@@ -10,7 +10,7 @@
 //! }
 //! ```
 //!
-//! the expansion REPLACES the trait (the `#[circuit]` precedent) with
+//! the expansion replaces the trait (the `#[circuit]` precedent) with
 //!
 //! ```ignore
 //! pub struct Token { callee: Callee }
@@ -26,7 +26,7 @@
 //! ```
 //!
 //! No guard parameter (notes/edsl-trim.org §B): `minocrab_ledger::call`
-//! resolves the AMBIENT scope, so a guarded cross-contract call is
+//! resolves the ambient scope, so a guarded cross-contract call is
 //! `c.when(g, |c| callee.deposit(c, amount, caller))`.
 //!
 //! A trait, rather than a macro over a struct, because a bodyless trait IS
@@ -34,11 +34,11 @@
 //! wrong, and it reads next to the Compact `contract Token { … }` block it
 //! stands for.
 //!
-//! THINNESS RULE, as for every macro here: the expansion contains no
+//! Thinness rule, as for every macro here: the expansion contains no
 //! `Circuit` method call — `c` is threaded to `minocrab_ledger::call` and
 //! nothing else.
 //!
-//! WHAT THE EXPANSION DOES NOT CONTAIN: an address. `at_field` names a
+//! What the expansion does not contain: an address. `at_field` names a
 //! ledger field and `at` takes one at runtime, so an interface crate can be
 //! published without knowing where the callee is deployed.
 
@@ -278,7 +278,7 @@ fn entry_point_name(ident: &Ident, attrs: &[Attribute]) -> syn::Result<(String, 
 
 /// Cross-contract argument and result types are `Public`.
 ///
-/// The check is SYNTACTIC — does the written type mention `Private`, and
+/// The check is syntactic — does the written type mention `Private`, and
 /// does it mention `Public` — because the alternative is a trait-bound error
 /// pointing at the generated call. It fires on the two ways to get it
 /// wrong: an explicit `Private`, and a leaf whose visibility is left to
@@ -378,13 +378,13 @@ fn emit(vis: &Visibility, name: &Ident, attrs: &[Attribute], circuits: &[Circuit
             #( #consts )*
 
             /// The callee's address lives in this ledger field (an
-            /// `export sealed ledger` reference). EVERY call site re-reads
+            /// `export sealed ledger` reference). Every call site re-reads
             /// the cell, uncached, as compactc does.
             pub const fn at_field(index: u8) -> Self {
                 Self { callee: #ledger::Callee::Field(index) }
             }
 
-            /// [`Self::at_field`] by ledger field PATH — the form a block of
+            /// [`Self::at_field`] by ledger field path — the form a block of
             /// sixteen fields or more needs, since compactc segments it and
             /// its fields have no single index.
             pub const fn at_field_path(path: &[u8]) -> Self {
@@ -403,7 +403,7 @@ fn emit(vis: &Visibility, name: &Ident, attrs: &[Attribute], circuits: &[Circuit
                 Self { callee: #ledger::Callee::Pinned(address.limbs()) }
             }
 
-            /// Resolve an [`Self::at_field`] handle's address NOW — for the
+            /// Resolve an [`Self::at_field`] handle's address now — for the
             /// call whose argument expressions emit instructions, where
             /// compactc's receiver-first evaluation order is visible.
             pub fn pin(
@@ -445,7 +445,7 @@ mod tests {
         }
     }
 
-    /// THINNESS RULE: the expansion builds no circuit — `c` is threaded to
+    /// Thinness rule: the expansion builds no circuit — `c` is threaded to
     /// `minocrab_ledger::call` and never called on.
     #[test]
     fn the_expansion_calls_no_circuit_method() {

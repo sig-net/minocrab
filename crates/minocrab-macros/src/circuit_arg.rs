@@ -1,4 +1,4 @@
-//! The ARGUMENT family of a record, shared by `#[derive(Value)]`,
+//! The argument family of a record, shared by `#[derive(Value)]`,
 //! `#[derive(CircuitBorsh)]` and `#[circuit]`'s hidden argument struct.
 //!
 //! For `struct DepositRequest { erc20_address: Bytes<20>, amount: Uint<128> }`
@@ -26,7 +26,7 @@
 //! under a path), delegating its slots and atoms to the `CircuitArg` /
 //! `CircuitAbi` impls so the three cannot disagree. There is no generated
 //! `constrain`: it is `CircuitArg`'s provided body, which runs compactc's
-//! ONE constraint table over `push_prims` and the encoded slots.
+//! one constraint table over `push_prims` and the encoded slots.
 
 use proc_macro2::TokenStream;
 use quote::quote;
@@ -55,7 +55,7 @@ pub(crate) enum ArgBounds {
     /// `#[derive(CircuitBorsh)]` record, both of which only ever are
     /// arguments.
     Plain,
-    /// Every impl holds exactly where every FIELD's impl of the same trait
+    /// Every impl holds exactly where every field's impl of the same trait
     /// holds, so rustc decides which apply. This is how one declaration of a
     /// `Notification<V: Vis>` serves the callee's arguments at `Private`
     /// and a caller's cross-contract call at `Public`, and how a record
@@ -167,7 +167,7 @@ pub(crate) fn impl_arg_traits_for(target: &Target) -> TokenStream {
         .collect();
 
     // Every path the expansion names is fully qualified, and none of them is
-    // a `Circuit` method: `c` is only ever passed along (THINNESS RULE,
+    // a `Circuit` method: `c` is only ever passed along (thinness rule,
     // notes/contract-api.org §macros).
     let skipped = target.skipped_init();
     let root = quote!(::minocrab_std);
@@ -276,7 +276,7 @@ pub(crate) fn impl_arg_traits_for(target: &Target) -> TokenStream {
     }
 }
 
-/// The fields, in declaration order — which IS the wire order.
+/// The fields, in declaration order — which is the wire order.
 pub(crate) fn arg_fields(input: &DeriveInput) -> syn::Result<Vec<ArgField>> {
     let fields = match &input.data {
         Data::Struct(s) => match &s.fields {
@@ -416,7 +416,7 @@ mod tests {
         expand(input).expect("expands").to_string()
     }
 
-    /// THINNESS RULE: the expansion may not build any circuit — `c` is
+    /// Thinness rule: the expansion may not build any circuit — `c` is
     /// passed along and never called on.
     #[test]
     fn the_expansion_calls_no_circuit_method() {

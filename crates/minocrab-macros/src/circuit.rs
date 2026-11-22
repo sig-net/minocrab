@@ -1,4 +1,4 @@
-//! `#[circuit]`: the entry point phase 2 wrote as a struct + `entry` call.
+//! `#[circuit]`: an entry point, without the hand-written struct + `entry` call.
 //!
 //! For
 //!
@@ -29,7 +29,7 @@
 //! parameters the author wrote, so `return`, `?`-free control flow, spans and
 //! type errors all behave as if the attribute were not there.
 //!
-//! THE TOOLING PROPERTY (M37 rung E, notes/evm-calls.org §6/§12): the
+//! The tooling property (notes/evm-calls.org §6): the
 //! author's item is emitted as parsed; the macro adds siblings only. The
 //! nested function above is the author's `fn` verbatim — the same
 //! `Signature` (same parameter patterns and types, same return type) and the
@@ -37,20 +37,20 @@
 //! every token keeps the span it had in the source (the one exception is the
 //! macro's own `#[arg(..)]` helper attribute on a parameter, consumed here
 //! because rustc rejects an attribute it does not recognise). It is declared
-//! under the AUTHOR'S OWN NAME, not a synthesised one: a `fn` declared
+//! under the author's own name, not a synthesised one: a `fn` declared
 //! inside a block shadows an outer item of the same name for the rest of
 //! that block, so the call inside `entry(..)` resolves to this nested
 //! definition while every other caller in the crate still sees the outer,
-//! zero-argument builder — the public API is unchanged. Everything ELSE the
+//! zero-argument builder — the public API is unchanged. Everything else the
 //! macro emits (the `__deposit_Args` struct, its trait impls, the `entry`
-//! call, the disclosure/budget tests) is a genuine SIBLING: a new item the
+//! call, the disclosure/budget tests) is a genuine sibling: a new item the
 //! author did not write, none of which reuses or mutates the author's
 //! tokens. The consequence is that rust-analyzer's goto-definition, hover,
 //! rename and inlay hints work inside a circuit's body exactly as they would
-//! without the attribute, because the tokens rust-analyzer is looking at ARE
+//! without the attribute, because the tokens rust-analyzer is looking at are
 //! the ones in the source file, at the same spans.
 //!
-//! THINNESS RULE: the generated scaffolding contains no `Circuit` call at
+//! Thinness rule: the generated scaffolding contains no `Circuit` call at
 //! all — it declares a struct, calls `entry`/`entry_out`, and passes `c`
 //! along to the body.
 
@@ -116,11 +116,11 @@ impl Parse for CircuitAttr {
     }
 }
 
-/// A circuit's expansion, in the two pieces that land in DIFFERENT places.
+/// A circuit's expansion, in the two pieces that land in different places.
 ///
 /// `entry` is the constructor — a free item today, an associated item inside
 /// `#[contract]`'s `impl`. `tests` is the generated disclosure set-equality
-/// check, which is a `mod` and therefore can NEVER go inside an `impl`; the
+/// check, which is a `mod` and therefore can never go inside an `impl`; the
 /// caller places it beside. That split is the whole reason this function
 /// exists separately from [`expand`].
 pub struct Expansion {
@@ -177,7 +177,7 @@ pub fn expand_in(
     // identifier is deliberate and safe: a `fn` declared inside a block
     // shadows an outer item of the same name for the rest of that block, so
     // the nested definition below and the call in `#call` both resolve to
-    // IT, while every OTHER caller in the crate still sees the outer
+    // It, while every other caller in the crate still sees the outer
     // zero-argument builder — the public API is unchanged. (Verified:
     // `pub fn f() -> u32 { fn f(x: u32) -> u32 { x + 1 } f(41) }` compiles
     // and `f()` from outside still calls the outer, zero-argument one.)
@@ -193,7 +193,7 @@ pub fn expand_in(
     // function and the argument that precedes the closure. A
     // `Discloses<D, R>` return is the R case wearing a declaration: the
     // declaration occupies no output slot, so `Discloses<D>` /
-    // `Discloses<D, ()>` is as labelless as `()` — and MUST be, or a
+    // `Discloses<D, ()>` is as labelless as `()` — and must be, or a
     // disclosure declaration would move the circuit's interface.
     let (entry_fn, label_arg) = match (&attr.output, returns_a_value(&sig.output)) {
         (None, false) => (quote!(#root::entry), quote!()),
@@ -276,10 +276,10 @@ fn discloses_test(
     root: &TokenStream,
     owner: Option<&syn::Type>,
 ) -> Option<TokenStream> {
-    // No declaration is a STATEMENT, not an opt-out: a circuit whose return
+    // No declaration is a statement, not an opt-out: a circuit whose return
     // type is not `Discloses<..>` gets a test asserting it disclosed nothing,
     // so a `c.disclose` in an undeclared circuit is a red test, never
-    // silence (the external review's §3.5).
+    // silence.
     let declared: Option<&syn::Type> = match &sig.output {
         ReturnType::Type(_, ty) if is_discloses(ty) => Some(ty),
         _ => None,
@@ -471,7 +471,7 @@ fn is_circuit_ref(ty: &Type) -> bool {
 }
 
 /// The parameters after `c`: the circuit's arguments, in declaration order —
-/// which IS the wire order.
+/// which is the wire order.
 fn arg_fields(sig: &Signature) -> syn::Result<Vec<ArgField>> {
     sig.inputs
         .iter()
@@ -530,7 +530,7 @@ fn is_unit(ty: &Type) -> bool {
     matches!(ty, Type::Tuple(t) if t.elems.is_empty())
 }
 
-/// For a `Discloses<..>` return type, whether it carries a returned VALUE:
+/// For a `Discloses<..>` return type, whether it carries a returned value:
 /// `Discloses<D>` and `Discloses<D, ()>` do not, `Discloses<D, R>` does.
 /// `None` for anything that is not a `Discloses`.
 fn discloses_value(ty: &Type) -> Option<bool> {
@@ -575,7 +575,7 @@ mod tests {
         expand(attr(quote!()), item).expect_err("rejected").to_string()
     }
 
-    /// THINNESS RULE: the scaffolding builds no circuit — `c` is passed to
+    /// Thinness rule: the scaffolding builds no circuit — `c` is passed to
     /// the body function and never called on. (The body itself is the
     /// author's own code, moved verbatim, so the fixture has none.)
     #[test]
@@ -600,7 +600,7 @@ mod tests {
             "{expanded}"
         );
         assert!(expanded.contains("entry (| __c , __args : __deposit_Args |"), "{expanded}");
-        // The call inside `entry(..)` names the author's OWN function — the
+        // The call inside `entry(..)` names the author's own function — the
         // shadowing nested `fn deposit`, not a synthesised name.
         assert!(expanded.contains("deposit (__c , __args . evm_nonce)"), "{expanded}");
     }
@@ -853,7 +853,7 @@ mod tests {
         assert!(err.contains("unsupported #[circuit] argument"), "{err}");
     }
 
-    /// THE TOOLING PROPERTY (M37 rung E, notes/evm-calls.org §6/§12): the
+    /// The tooling property (notes/evm-calls.org §6): the
     /// author's function is emitted as parsed — the same `Signature` tokens
     /// (bar the macro's own `#[arg(..)]` helper attribute, which rustc would
     /// reject on a plain `fn`'s parameter) and the identical `Block`, never

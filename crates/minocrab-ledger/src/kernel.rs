@@ -12,9 +12,8 @@ const U128_ATOM: AlignmentAtom = AlignmentAtom::Bytes { length: 16 };
 
 // --- the context reads: balances and block time -----------------------------
 //
-// Both read the CONTEXT (stack slot 2) rather than the contract's state, and
-// both are `popeqc`. They are the two shapes of notes/kernel-tokens.org
-// finding (c) that the crate did not already have.
+// Both read the context (stack slot 2) rather than the contract's state, and
+// both are `popeqc` (notes/kernel-tokens.org).
 
 /// Comparison tail of a balance read.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -27,10 +26,10 @@ pub enum BalanceCmp {
     GreaterThan,
 }
 
-/// `kernel.balance*(token_type[, amount])` (midnight-ledger.ss:427-540).
+/// `kernel.balance*(token_type[, amount])` (midnight-ledger.ss:478-572).
 ///
 /// One shape for all three: fetch the context's unshielded-balances map
-/// (context\[5\]), yield `map[token_type]` or ZERO if the key is absent, then
+/// (context\[5\]), yield `map[token_type]` or zero if the key is absent, then
 /// compare or not.
 ///
 /// ```text
@@ -43,7 +42,7 @@ pub enum BalanceCmp {
 ///
 /// The zero default is why `unshieldedBalance` on a token the contract has
 /// never held is `0` rather than a failure. Note the balance is the one at
-/// the START of execution — the effect accumulator's entries do not feed back
+/// the start of execution — the effect accumulator's entries do not feed back
 /// into it, which is the caveat Compact's own stdlib comment carries.
 pub fn kernel_balance(
     c: &mut Circuit,
@@ -59,7 +58,7 @@ pub fn kernel_balance(
     let (wires, value) = mint_read(c, vec![result_atom]);
     label_read(c, &value, "a kernel balance read", &[]);
     let zero = LedgerValue::new(vec![U128_ATOM], vec![ImpactElem::Imm(Fr::from(0u64))]);
-    // `greaterThan` pushes the amount BEFORE the lookup and ends with a bare
+    // `greaterThan` pushes the amount before the lookup and ends with a bare
     // `lt`, which is how compactc turns `<` into `>` without a `gt` opcode —
     // the same trick `blockTimeGreaterThan` uses. Hence the leading push and
     // the `dup 3` in that arm.
@@ -96,7 +95,7 @@ pub fn kernel_balance(
 }
 
 /// `kernel.blockTimeLessThan(t)` / `kernel.blockTimeGreaterThan(t)`
-/// (midnight-ledger.ss:513-540): five instructions, and the two differ ONLY
+/// (midnight-ledger.ss:573-600): five instructions, and the two differ only
 /// in the order the operands reach `lt` — which is how a `<` becomes a `>`.
 ///
 /// ```text
@@ -139,7 +138,7 @@ pub fn kernel_block_time(
     wires[0]
 }
 
-/// `kernel.self()` (midnight-ledger.ss:256-260): `dup 2` to reach the
+/// `kernel.self()` (midnight-ledger.ss:263-267): `dup 2` to reach the
 /// context array, `idxc [0]` (cached, path not remembered), `popeqc` →
 /// the contract's own address as `Bytes<32>` `[hi, lo]` wires.
 pub fn kernel_self(c: &mut Circuit) -> [Wire<FieldT, Public>; 2] {
@@ -156,7 +155,7 @@ pub fn kernel_self(c: &mut Circuit) -> [Wire<FieldT, Public>; 2] {
 
 // --- kernel effects ops -----------------------------------------------------
 //
-// The zswap/kernel update ops operate on the EFFECTS array (not contract
+// The zswap/kernel update ops operate on the effects array (not contract
 // state): each sequence starts `swap 0` to bring effects to the top and
 // ends `swap 0` to restore [context, effects, state]. Sequences are
 // midnight-ledger.ss's Kernel vm-code verbatim; these ops write no popeq,
@@ -170,9 +169,9 @@ fn push_null() -> ImpactOp {
     })
 }
 
-/// `kernel.mintShielded(domain_sep, amount)` (midnight-ledger.ss:216-254):
-/// The EFFECT ACCUMULATOR, shared by five kernel operations
-/// (notes/kernel-tokens.org finding (c)): `effects[slot][key] += amount`,
+/// `kernel.mintShielded(domain_sep, amount)` (midnight-ledger.ss:223-261):
+/// The effect accumulator, shared by five kernel operations
+/// (notes/kernel-tokens.org): `effects[slot][key] += amount`,
 /// where a key not already present starts from zero.
 ///
 /// ```text
@@ -185,7 +184,7 @@ fn push_null() -> ImpactOp {
 ///
 /// The `branch` is resolved on chain and the PI stream is identical on both
 /// paths, so this costs the circuit nothing conditional. The five callers
-/// differ ONLY in the slot, the key's type and the amount's width:
+/// differ only in the slot, the key's type and the amount's width:
 ///
 /// | operation | slot | key |
 /// |---|---|---|
@@ -235,7 +234,7 @@ pub fn kernel_mint_unshielded(domain_sep: &LedgerValue, amount: &LedgerValue) ->
 }
 
 /// `kernel.incUnshieldedInputs(token_type, amount)` — effects\[6\],
-/// `Uint<128>`. Called when RECEIVING an unshielded token.
+/// `Uint<128>`. Called when receiving an unshielded token.
 pub fn kernel_inc_unshielded_inputs(
     token_type: &LedgerValue,
     amount: &LedgerValue,
@@ -244,7 +243,7 @@ pub fn kernel_inc_unshielded_inputs(
 }
 
 /// `kernel.incUnshieldedOutputs(token_type, amount)` — effects\[7\],
-/// `Uint<128>`. Called when SENDING one.
+/// `Uint<128>`. Called when sending one.
 pub fn kernel_inc_unshielded_outputs(
     token_type: &LedgerValue,
     amount: &LedgerValue,
@@ -253,7 +252,7 @@ pub fn kernel_inc_unshielded_outputs(
 }
 
 /// `kernel.claimUnshieldedCoinSpend(token_type, recipient, amount)` —
-/// effects\[8\]. The key is the CONCATENATION of the token type and the
+/// effects\[8\]. The key is the concatenation of the token type and the
 /// recipient, which is why the caller passes one `LedgerValue` of six atoms
 /// rather than two of three.
 pub fn kernel_claim_unshielded_coin_spend(
@@ -297,7 +296,7 @@ pub fn kernel_claim_zswap_coin_spend(note: &LedgerValue) -> Vec<ImpactOp> {
 }
 
 /// `kernel.claimContractCall(addr, entry_point, comm)`
-/// (midnight-ledger.ss:195-215): insert `size(claims) ‖ addr ‖ ep ‖ comm →
+/// (midnight-ledger.ss:202-222): insert `size(claims) ‖ addr ‖ ep ‖ comm →
 /// Null` into the claimed-contract-calls map at effects\[3\]. `addr_ep_comm`
 /// is the single 3-atom `[bytes<32>, bytes<32>, field]` concatenation
 /// (`rt-aligned-concat`); the size prefix (via `dup 0; size; concatc 160`)
@@ -330,8 +329,7 @@ pub fn kernel_claim_contract_call(addr_ep_comm: &LedgerValue) -> Vec<ImpactOp> {
 ///
 /// compactc 0.35.0's lowering, transcribed from the passport account
 /// contract's grant-caller check (`withdraw_unshielded_with_grant_*`,
-/// instructions 102-115 of the artifact; the port in PR #184 carries the
-/// same bytes, verified by its 504 fixtures):
+/// instructions 102-115 of the artifact):
 ///
 /// ```text
 /// dup 2; idxc [6]           -- context[6], the caller slot
@@ -345,7 +343,7 @@ pub fn kernel_claim_contract_call(addr_ep_comm: &LedgerValue) -> Vec<ImpactOp> {
 ///
 /// The ledger authenticates this read at admission (the caller is whoever
 /// actually called), so it is never a private witness — a contract that
-/// wants "only contract X may call me" compares THIS value, not an argument.
+/// wants "only contract X may call me" compares this value, not an argument.
 pub fn kernel_caller(c: &mut Circuit) -> [Wire<FieldT, Public>; 6] {
     let atoms = vec![
         BOOL_ATOM,

@@ -14,20 +14,20 @@
 //! the expansion is the `CircuitBorsh` impl (LEN, push_limbs, push_segments,
 //! constrain_canonical, read, push_layout — every field in declaration order,
 //! **which is the Borsh order**), the same `CircuitArg` + `CircuitArgs` impls
-//! `#[derive(CircuitArg)]` emits (from the SAME code path, so the two derives
+//! `#[derive(CircuitArg)]` emits (from the same code path, so the two derives
 //! cannot drift), and — from `#[borsh(spec = …)]` — a generated `#[test]`
 //! asserting the layout table IS `borsh::schema_container_of::<Spec>()`
 //! walked into rows.
 //!
 //! Two label namespaces, deliberately:
-//! - the ARGUMENT label is `lowerCamelCase` of the field name (Compact's
+//! - the argument label is `lowerCamelCase` of the field name (Compact's
 //!   convention), overridable with `#[arg(name = "…")]`;
-//! - the LAYOUT path segment is the field name VERBATIM, because it is
+//! - the layout path segment is the field name verbatim, because it is
 //!   compared against borsh's own schema of the spec type, whose paths are
 //!   the spec struct's Rust field names. `#[borsh(name = "…")]` overrides it
 //!   where the two structs name a field differently.
 //!
-//! THINNESS RULE, as for every derive here: the expansion contains no
+//! Thinness rule, as for every derive here: the expansion contains no
 //! `Circuit` method call at all — `c` is passed along and nothing else.
 
 use proc_macro2::TokenStream;
@@ -73,7 +73,7 @@ pub fn expand(input: DeriveInput) -> syn::Result<TokenStream> {
     // struct gets that as a where-clause rather than a substitution: the impl
     // is written once and rustc decides where it applies.
     //
-    // The ARGUMENT half is `#[derive(Value)]`'s own code path, so the two
+    // The argument half is `#[derive(Value)]`'s own code path, so the two
     // derives cannot drift and a visibility-generic `CircuitBorsh` record is
     // usable in both directions of a cross-contract call for free.
     let (borsh_generics, borsh_vis, self_ty, private_self_ty, bounds) = match &vis {
@@ -118,7 +118,7 @@ pub fn expand(input: DeriveInput) -> syn::Result<TokenStream> {
 }
 
 /// The `CircuitBorsh` impl: every method walks the fields in declaration
-/// order, which IS the Borsh order.
+/// order, which is the Borsh order.
 fn impl_borsh(
     root: &TokenStream,
     generics: &TokenStream,
@@ -269,8 +269,8 @@ fn reject_variable_width(ty: &Type) -> syn::Result<()> {
             "maps and sets are not in the fixed-width subset: the length prefix \
              makes the layout value-dependent. Use [(K, V); N] plus a count"
         }
-        // M15. The only entry here that is not a std container, and the only
-        // one whose value-dependence is on the LEDGER's side rather than
+        // The only entry here that is not a std container, and the only
+        // one whose value-dependence is on the ledger's side rather than
         // Borsh's: a `compress` atom accepts a value of any length
         // (`AlignmentAtom::fits` is unconditionally true for it), so an opaque
         // has no width to declare and no bytes to declare one over. It is also
@@ -310,7 +310,7 @@ fn spec_attr(attrs: &[Attribute]) -> syn::Result<Option<Path>> {
     Ok(spec)
 }
 
-/// The LAYOUT path segment of each field: its name verbatim (the spec type's
+/// The layout path segment of each field: its name verbatim (the spec type's
 /// own field name), or the `#[borsh(name = "…")]` override.
 fn spec_labels(input: &DeriveInput) -> syn::Result<Vec<String>> {
     let Data::Struct(data) = &input.data else {
@@ -363,7 +363,7 @@ mod tests {
         expand(input).expect("expands").to_string()
     }
 
-    /// THINNESS RULE: the expansion may not build any circuit — `c` is
+    /// Thinness rule: the expansion may not build any circuit — `c` is
     /// passed along and never called on.
     #[test]
     fn the_expansion_calls_no_circuit_method() {
@@ -380,7 +380,7 @@ mod tests {
         );
     }
 
-    /// One derive yields BOTH families: the argument impls (from the same
+    /// One derive yields both families: the argument impls (from the same
     /// code path `#[derive(CircuitArg)]` uses) and the serialization impl.
     #[test]
     fn one_derive_yields_both_families() {
@@ -479,7 +479,7 @@ mod tests {
                 syn::parse_quote! { struct P { table: HashMap<u8, u8> } },
                 "maps and sets are not in the fixed-width subset",
             ),
-            // M15: the one exclusion with NO replacement — an opaque cannot be
+            // The one exclusion with no replacement — an opaque cannot be
             // serialized at all, so the message says so rather than offering a
             // substitute.
             (

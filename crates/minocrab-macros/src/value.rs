@@ -1,6 +1,6 @@
 //! `#[derive(Value)]`: a record of value fields becomes a value — a circuit
 //! argument, a cross-contract argument and result, a ledger value — in
-//! DECLARATION ORDER, which is the wire contract.
+//! declaration order, which is the wire contract.
 //!
 //! The expansion is one impl per trait, each holding exactly where every
 //! field's impl of the same trait holds ([`ArgBounds::PerField`]):
@@ -22,12 +22,12 @@
 //! part of the value: no slot, no atom, no bound, rebuilt with `Default`.
 //!
 //! `#[derive(CircuitArg)]` and `#[derive(LedgerRepr)]` are this derive plus
-//! a check, for a struct without generic parameters, that the record IS a
+//! a check, for a struct without generic parameters, that the record is a
 //! circuit argument (resp. a ledger value): the rejection of a `Public`
 //! field in an argument, or a `Private` field in a stored record, stays at
 //! the definition.
 //!
-//! THINNESS RULE: the expansion calls no `Circuit` method; `c` is threaded
+//! Thinness rule: the expansion calls no `Circuit` method; `c` is threaded
 //! to the fields' own impls.
 
 use proc_macro2::TokenStream;
@@ -207,7 +207,7 @@ mod tests {
         }
     }
 
-    /// A GENERIC record: the struct's own parameters, bounds and where-clause
+    /// A generic record: the struct's own parameters, bounds and where-clause
     /// are carried into every impl, and the generic field is bounded like any
     /// other, so `Owned<E>` is a ledger value exactly where `E` is.
     #[test]

@@ -478,7 +478,7 @@ fn set_insert_coin_matches_field_repr() {
 }
 
 /// `map_insert_coin` against real Op encodings and the fixture's
-/// `mapInsertCoin.zkir`: the KEY push comes before the dance, which is
+/// `mapInsertCoin.zkir`: the key push comes before the dance, which is
 /// why the reach is `dup 5` (0x35) and not the `Set`'s 4.
 #[test]
 fn map_insert_coin_matches_field_repr() {
@@ -511,7 +511,7 @@ fn map_insert_coin_matches_field_repr() {
 
 /// `list_push_front_coin` against real Op encodings and the fixture's
 /// `listPushFrontCoin.zkir`: eight instructions longer than
-/// [`list_push_front`], and the pushed node is BLANK — `[0x11, 0x33,
+/// [`list_push_front`], and the pushed node is blank — `[0x11, 0x33,
 /// 0x00, 0x00, 0x00]`, an `Array[3]` of three `Null`s — with the coin
 /// put at `node[0]` by the `insc 1` that closes the dance.
 #[test]
@@ -594,7 +594,7 @@ fn read_shape_constants_match_corpus_golden() {
     );
 }
 
-// --- M22 stage B1: the general path -------------------------------------
+// --- the general path ---------------------------------------------------
 
 /// A `Bytes<32>` map key as both a real `AlignedValue` (for `Op`) and a
 /// [`LedgerValue`] (for ours), with the same limbs.
@@ -619,7 +619,7 @@ fn b32_key() -> (AlignedValue, LedgerValue) {
     (av, lv)
 }
 
-/// EVERY [`LedgerKey`] variant encodes as upstream's `Key::field_repr`.
+/// Every [`LedgerKey`] variant encodes as upstream's `Key::field_repr`.
 ///
 /// This is the whole soundness claim of `LedgerKey`: the enum splits
 /// `Key::Value(AlignedValue)` into a const-known field index and a
@@ -700,7 +700,7 @@ fn idx_path_matches_field_repr() {
     }
 }
 
-/// THE ADDITIVITY CLAIM, checked rather than asserted: every `u8` builder
+/// The additivity claim, checked rather than asserted: every `u8` builder
 /// is its `_at` twin on the one-element path, byte for byte. This is what
 /// makes the widening free of movement for all 167 pre-existing circuits.
 #[test]
@@ -838,7 +838,7 @@ fn nested_map_insert_matches_compactc() {
     assert_eq!(imms(&ops[4]), vec![Fr::from(0xa2u64)]);
 }
 
-/// A THREE-element path: the opcode nibble and the closing `insc` both
+/// A three-element path: the opcode nibble and the closing `insc` both
 /// track `len(f)`, which is what a `Map<K, Map<K, Map<K, V>>>` write
 /// compiles to (`0x72 … 0xa3`).
 #[test]
@@ -857,10 +857,10 @@ fn three_level_path_tracks_the_depth() {
     assert_eq!(imms(&ops[4]), vec![Fr::from(0xa3u64)]);
 }
 
-/// PATH SUPPRESSION, both halves, at the depth where they come alive.
+/// Path suppression, both halves, at the depth where they come alive.
 ///
 /// `map_reset(0)` is three instructions because `(suppress-null …)` and
-/// `(suppress-zero …)` both fire; `map_reset_at([field, k])` is FIVE —
+/// `(suppress-zero …)` both fire; `map_reset_at([field, k])` is five —
 /// the `idxp [field 0]` and the `insc 1` reappear around the same middle.
 /// Verified against compactc's own `a.lookup(k).resetToDefault()`.
 #[test]
@@ -891,7 +891,7 @@ fn reset_suppression_comes_alive_at_depth_two() {
     assert_eq!(imms(&ops[4]), vec![Fr::from(0xa1u64)]);
 }
 
-/// The two op families whose closing depth is NOT `len(f)`:
+/// The two op families whose closing depth is not `len(f)`:
 /// `List.pushFront` and `MerkleTree.insert` close at `len(f) + 1`, and
 /// `HistoricMerkleTree.resetHistory` at `len(f) + 2`.
 #[test]
@@ -918,12 +918,12 @@ fn the_off_by_one_closings_track_the_depth() {
     assert_eq!(imms(&hist[hist.len() - 1]), vec![Fr::from(0xa4u64)]);
 }
 
-/// A NESTED `Cell` WRITE, which Compact reaches by a route that has
+/// A nested `Cell` write, which Compact reaches by a route that has
 /// nothing to do with `Map` nesting.
 ///
-/// `determine-ledger-paths.ss` BATCHES a contract's ledger fields into
+/// `determine-ledger-paths.ss` batches a contract's ledger fields into
 /// segments of `maximum-ledger-segment-length` = 15 (langs.ss:851), so a
-/// contract with sixteen fields gives every field a TWO-element path and
+/// contract with sixteen fields gives every field a two-element path and
 /// every top-level `Cell` write becomes a nested one. Compiled with the
 /// pinned compactc, a 16-field contract's `f0 = v` is
 ///
@@ -1008,7 +1008,7 @@ fn the_coin_reaches_are_compactcs_formulas() {
     assert_eq!(imms(&ops[2]), vec![Fr::from(0x37u64)]);
 }
 
-/// AN ADT-VALUED `insertDefault` PUSHES THE ADT'S INITIAL VALUE, not a
+/// An adt-valued `insertDefault` pushes the adt's initial value, not a
 /// zero cell — `VMstate-value-ADT` discards the value and expands the
 /// ADT's `(initial-value …)` (reduce-to-zkir.ss:424-433). Against
 /// compactc's `a.insertDefault(k)` on `Map<Field, Map<Field, Uint<64>>>`,
