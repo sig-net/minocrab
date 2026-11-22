@@ -56,9 +56,9 @@
 //! - [`Compiled`] — a finished circuit: the IR plus its disclosure
 //!   record and regions
 //!
-//! # Stability (M24 tier boundary)
+//! # Stability
 //!
-//! STABLE TIER (semver commitment): the v3 eDSL authoring core —
+//! Stable tier (semver commitment): the v3 eDSL authoring core —
 //! [`Circuit`] and its instruction-emitting methods (except the Impact
 //! lowering primitives `impact` / `impact_mixed`, which are `#[doc(hidden)]`
 //! and carry no promise; hand-written Impact lives in `minocrab-experimental`),
@@ -107,7 +107,7 @@ mod sealed {
 /// Type-level visibility of a wire.
 pub trait Visibility: sealed::Sealed + 'static {}
 
-/// A visibility that may GUARD AN ON-CHAIN EFFECT — an Impact op or a
+/// A visibility that may guard an on-chain effect — an Impact op or a
 /// public-transcript read. Only [`Public`].
 ///
 /// Whether a guarded op ran, and whether a guarded transcript read consumed
@@ -115,8 +115,7 @@ pub trait Visibility: sealed::Sealed + 'static {}
 /// it guards. So a private condition guarding one is a disclosure, and the
 /// disclosure type system has to see it — compactc's own rule ("performing
 /// this ledger operation might disclose the boolean value of the witness
-/// value … the conditional branch"), which the external review's §4.1 found
-/// this API let through silently. Disclose the condition first
+/// value … the conditional branch"). Disclose the condition first
 /// (`.disclose_as::<L>(c)`), then branch on the public wire; the manifest
 /// then names it. Sealed: the two visibilities are the only ones.
 #[diagnostic::on_unimplemented(
@@ -180,12 +179,12 @@ impl Meet<Private> for Private {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DisclosureKind {
     /// `disclose_as::<L>()` — a private value became public inside the
-    /// circuit, under a LABEL TYPE the circuit's `Discloses<..>` names.
+    /// circuit, under a label type the circuit's `Discloses<..>` names.
     Disclosed,
     /// `disclose(w, "text")` — the same, under a bare string. It never
     /// satisfies a declaration: a declared label is a type, and a string
     /// that happens to spell it is exactly the shadowing the manifest must
-    /// not accept (external review §4.5). The test names the fix.
+    /// not accept. The test names the fix.
     DisclosedUntyped,
     /// Declared as part of the public statement (public input block).
     Statement,
@@ -199,7 +198,7 @@ pub enum DisclosureKind {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Region {
     pub label: String,
-    /// Instruction index range [start, end) — of the FINISHED stream once
+    /// Instruction index range [start, end) — of the finished stream once
     /// the circuit is finished, which moves it across the instructions the
     /// IR passes delete (a region left with none is empty, `start == end`).
     pub start: usize,

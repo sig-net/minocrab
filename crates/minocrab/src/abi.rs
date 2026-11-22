@@ -1,14 +1,10 @@
 //! compactc's input-constraint table, ported once.
 //!
-//! `reduce-to-zkir.ss:640-667` (`emit-constraints-for`) is ONE function, and
+//! `reduce-to-zkir.ss:640-667` (`emit-constraints-for`) is one function, and
 //! it is the whole story of how a flattened primitive type becomes ZKIR
 //! constraints. compactc runs it in two places — over a circuit's arguments,
 //! and (via `make-witness`) over the values a cross-contract call witnesses
-//! back — so before M12 we had the same table written by hand twice: once as
-//! the leaves' `constrain_input`, once as `contract_call`'s
-//! `&[Option<u32>]` result-bit list. Two hand-written copies of one rule is
-//! exactly the drift hazard the M9 `CircuitArg` work was built to remove, so
-//! here the rule lives once:
+//! back — so the rule lives here once, for both:
 //!
 //! ```text
 //! (topaque …) | (tfield …) | (tpoint …)  →  no constraint
@@ -49,15 +45,15 @@ pub enum Prim {
     /// `Uint<0..1>` (the type holding only zero) and `bits = 1` is
     /// `Boolean` / `Uint<0..2>`; the table treats both specially.
     ///
-    /// Compact's `Uint<0..n>` range end is EXCLUSIVE — compactc rejects
+    /// Compact's `Uint<0..n>` range end is exclusive — compactc rejects
     /// `Uint<0..0>` with "range end for Uint type is 0 but must be at least
     /// 1 (the range end is exclusive)" — so the `nat` here is `n − 1`, and
     /// `n` is what `LimbConstraint::Bounded` compares against
     /// (notes/bounded-integers.org §0).
     Uint { bits: u32 },
-    /// `(tunsigned nat)` for a `nat` that is NOT one less than a power of
+    /// `(tunsigned nat)` for a `nat` that is not one less than a power of
     /// two — Compact's `Uint<0..nat + 1>`, and every `enum` whose variant
-    /// count is not a power of two. Declarable since M14 as
+    /// count is not a power of two. Declarable as
     /// `minocrab_std::BoundedUint<{nat + 1}>`.
     UintMax { maxval: u128 },
 }
@@ -80,7 +76,7 @@ impl Prim {
         }
     }
 
-    /// THE TABLE (`emit-constraints-for`, reduce-to-zkir.ss:640-667).
+    /// The table (`emit-constraints-for`, reduce-to-zkir.ss:640-667).
     pub const fn constraint(self) -> LimbConstraint {
         match self {
             // `[(topaque ,opaque-type) instr*]`, `[(tfield ,ftype) instr*]`,
@@ -106,7 +102,7 @@ impl Prim {
 /// [`Prim::constraint`], and the type `contract_call` takes one of per FAB
 /// limb of the callee's declared return type.
 ///
-/// `Option<u32>` (what `contract_call` took before M12) cannot express
+/// A bit width alone cannot express
 /// `constrain_to_boolean` or `constrain_eq 0`, which is why this is an enum.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LimbConstraint {
@@ -127,12 +123,12 @@ pub enum LimbConstraint {
 
 impl LimbConstraint {
     /// Emit this constraint on `w`, in the shape compactc emits it, and
-    /// return THE CONSTRAINED WIRE — `w` itself, except that a bit or boolean
+    /// return the constrained wire — `w` itself, except that a bit or boolean
     /// constraint inside a [`Circuit::when`] constrains `select(guard, w,
     /// 0)` and returns that (see [`Circuit::assert_bits`]); a checked
     /// constructor carries the returned wire, not `w`.
     ///
-    /// The bounds are INLINE IMMEDIATES ([`Operand`](crate::Operand)), not named constants,
+    /// The bounds are inline immediates ([`Operand`](crate::Operand)), not named constants,
     /// so the instruction stream matches compactc's slot for slot.
     pub fn emit<V: Visibility + Meet<Public, Out = V>>(
         self,
@@ -171,32 +167,26 @@ const fn bounded_bits(maxval: u128) -> u32 {
 }
 
 /// The FAB alignment width of a `(tunsigned maxval)` slot: `⌈bits/8⌉` bytes
-/// of the MAXVAL, `(abytes ceil(bitlen(max)/8))`
+/// of the maxval, `(abytes ceil(bitlen(max)/8))`
 /// (flatten-datatypes.ss:80-124, notes/builtin-lowering.org §1).
 ///
-/// ONE for `maxval = 0` — Compact's `Uint<0..1>` (and a fieldless
-/// single-variant `enum`) gets a one-byte alignment in LEDGER position,
-/// compactc issue #588, fixed 0.33.108
-/// ("[skip-changelog] Fix alignment width for bounded integers with
-/// maxval=0", CHANGELOG.md at compactc-v0.34.0). Compactc 0.33.0-rc.2 (our
-/// prior pin) put alignment 0 there while still writing one (always-zero)
-/// value in the transcript; 0.34.0 corrects the Impact push's alignment
-/// operand from `0x00` to `0x01` for such a value
-/// (notes/version-bump.org "Bump 1" §"Family E"). Argument position is
-/// unaffected — no compiled artifact's `.zkir` moves, ledger position is
+/// One for `maxval = 0` — Compact's `Uint<0..1>` (and a fieldless
+/// single-variant `enum`) gets a one-byte alignment in ledger position
+/// (compactc issue #588, fixed in 0.33.108): the Impact push's alignment
+/// operand is `0x01` for such a value, while the transcript carries one
+/// always-zero value. Argument position is unaffected — ledger position is
 /// the only place the byte is ever read back — but this function has no
-/// way to tell the two apart, and did not need to: nothing downstream
+/// way to tell the two apart, and does not need to: nothing downstream
 /// reads a zero-length atom's bytes when there are none to read.
 ///
 /// Pinned against compactc, not recomputed: see
 /// `crates/minocrab-contracts/tests/fixtures/bounded_ledger/` and
-/// `tests/bounded_ledger_differential.rs`, which fail under the OLD
-/// (zero) value and pass under this one — the instrument
-/// notes/version-bump.org asked for, because `bounded_differential`'s ABI
-/// check reads compactc's `maxval` and recomputes the alignment with this
-/// SAME formula, so it can never disagree with itself.
+/// `tests/bounded_ledger_differential.rs`, which fail under a zero value,
+/// because `bounded_differential`'s ABI check reads compactc's `maxval`
+/// and recomputes the alignment with this same formula, so it can never
+/// disagree with itself.
 ///
-/// One of THREE widths a bounded unsigned type carries, and they differ:
+/// One of three widths a bounded unsigned type carries, and they differ:
 /// this one, [`uint_compare_bits`], and the even-rounded range-constraint
 /// width in [`LimbConstraint::Bounded`] (notes/bounded-integers.org §2).
 pub const fn uint_atom_bytes(maxval: u128) -> u32 {
@@ -208,8 +198,8 @@ pub const fn uint_atom_bytes(maxval: u128) -> u32 {
     }
 }
 
-/// The width an ORDERING comparison of a `(tunsigned maxval)` runs at:
-/// `max(1, integer-length maxval)`, NOT rounded up to even
+/// The width an ordering comparison of a `(tunsigned maxval)` runs at:
+/// `max(1, integer-length maxval)`, not rounded up to even
 /// (infer-types.ss:753-771 — "note: *not* rounded up to even here",
 /// notes/builtin-lowering.org §9).
 ///
@@ -235,7 +225,7 @@ fn fr_from_u128(v: u128) -> Fr {
 // ---- CircuitAbi -------------------------------------------------------------
 
 /// The ABI of a Compact type: how many native slots it occupies, the FAB
-/// atoms of those slots, and the flattened PRIMITIVE type of each one.
+/// atoms of those slots, and the flattened primitive type of each one.
 ///
 /// This is the visibility-INDEPENDENT half of a value type — a schema says
 /// nothing about who may see the value — so it is implemented for every
@@ -245,10 +235,10 @@ fn fr_from_u128(v: u128) -> Fr {
 /// type therefore describes both sides of a call and cannot describe them
 /// differently.
 ///
-/// It lives HERE rather than beside the leaves because
+/// It lives here rather than beside the leaves because
 /// `minocrab_ledger::call` — which is below the stdlib — has to name it.
 ///
-/// `SLOTS` counts NATIVE SLOTS, which is not the atom count: a
+/// `SLOTS` counts native slots, which is not the atom count: a
 /// `Bytes<32>` is one atom (`bytes 32`) across two slots (`hi`, `lo`).
 /// [`Self::prims`] is the per-slot list, so `prims().len() == SLOTS`.
 pub trait CircuitAbi {
@@ -286,15 +276,15 @@ pub trait CircuitAbi {
 //
 // A value's layout is [`CircuitAbi`]; [`Encode`] and [`Decode`] are its
 // slots, out and back in. Both are parameterised by the visibility of the
-// slots, and a leaf implements them at its OWN visibility only
+// slots, and a leaf implements them at its own visibility only
 // (`impl<V> Encode<V> for Uint<BITS, V>`), so `Encode<Public>` holds exactly
 // for public values. That is the soundness statement of the call side:
 // everything that crosses the contract boundary enters the communications
 // commitment the ledger matches publicly, so passing a value cross-contract
-// DISCLOSES it. A private value has to go through `Circuit::disclose`
+// discloses it. A private value has to go through `Circuit::disclose`
 // first, and forgetting is a compile error rather than a leak.
 
-/// A value's NATIVE FIELD SLOTS at visibility `V`, in slot order: what a
+/// A value's native field slots at visibility `V`, in slot order: what a
 /// cross-contract argument, a ledger write, a hash preimage and a circuit
 /// argument's input constraints are made of.
 ///
@@ -317,12 +307,12 @@ pub trait Encode<V: Visibility>: CircuitAbi {
     fn encode(&self, slots: &mut Vec<Wire<FieldT, V>>);
 }
 
-/// A value REBUILT from its native field slots at visibility `V`, in slot
+/// A value rebuilt from its native field slots at visibility `V`, in slot
 /// order: exactly [`CircuitAbi::SLOTS`] of them. What a cross-contract
 /// call's result and a ledger read are.
 ///
 /// The caller of a cross-contract call witnesses one field element per slot
-/// and constrains each with [`CircuitAbi::prims`] run through the SAME table
+/// and constrains each with [`CircuitAbi::prims`] run through the same table
 /// that constrains the callee's own arguments, so the constraint on a
 /// returned `Uint<128>` is the constraint on a passed one, by construction.
 #[diagnostic::on_unimplemented(
@@ -589,10 +579,9 @@ mod tests {
         assert_eq!(uint_compare_bits(9), 4);
         assert_eq!(uint_atom_bytes(9), 1);
         // `Uint<0..1>` holds only zero: a comparison still needs a width,
-        // so it is 1 (compactc's `max(1, …)`) — and, since compactc
-        // 0.33.108 (issue #588), so is the LEDGER alignment atom: it still
-        // writes one (always-zero) value in the transcript, and the
-        // one-byte alignment is what the Impact op now says so. See
+        // so it is 1 (compactc's `max(1, …)`) — and so is the ledger
+        // alignment atom (compactc issue #588): the transcript carries one
+        // always-zero value, and the Impact op's alignment is one byte. See
         // `uint_atom_bytes`'s doc comment.
         assert_eq!(uint_compare_bits(0), 1);
         assert_eq!(uint_atom_bytes(0), 1);

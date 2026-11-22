@@ -22,10 +22,10 @@
 //!
 //! The enforcement is split, deliberately:
 //!
-//! - rustc checks the SYMBOLS. A label is a type, so a typo or a rename is a
+//! - rustc checks the symbols. A label is a type, so a typo or a rename is a
 //!   compile error at both the declaration and the call site, and the two
 //!   share one definition.
-//! - a GENERATED TEST checks the SET. `#[circuit]` emits a `#[test]` that
+//! - a generated test checks the set. `#[circuit]` emits a `#[test]` that
 //!   builds the circuit and compares the declared labels against the ones it
 //!   actually disclosed, failing with the fix spelled out
 //!   ([`assert_declared_disclosures`]). Full static enforcement would need a
@@ -33,7 +33,7 @@
 //!   baroque; a plain test failure that names the label and the edit is
 //!   worth more than a type error nobody can read.
 //!
-//! A circuit FAMILY parameterized by a Rust value has no attribute to
+//! A circuit family parameterized by a Rust value has no attribute to
 //! generate that test from — `#[circuit]` makes a nullary constructor, so
 //! such a family is built through `entry()` by hand. It declares exactly the
 //! same way (the closure's return type is the declaration; `entry` takes any
@@ -57,12 +57,12 @@
 //! }
 //! ```
 //!
-//! The alias is what makes the entry point and the test the SAME declaration
+//! The alias is what makes the entry point and the test the same declaration
 //! — the attribute gets that for free by copying the return type's tokens.
-//! (An alias is deliberately NOT accepted in a `#[circuit]` signature, where
+//! (An alias is deliberately not accepted in a `#[circuit]` signature, where
 //! the declaration has to be legible where the arguments are.)
 //!
-//! Labels are per LOGICAL VALUE, not per wire: `b32.disclose_as::<L>(c)`
+//! Labels are per logical value, not per wire: `b32.disclose_as::<L>(c)`
 //! discloses both limbs under the single symbol `L`, where the hand-written
 //! circuits wrote `"… (hi)"` and `"… (lo)"`. One record, one label, one
 //! entry in the declaration (see [`Disclosure`](super::Disclosure)).
@@ -79,7 +79,7 @@
 //! frontend concept and every crate that discloses needs the vocabulary —
 //! `minocrab_ledger::contract_call` discloses a cross-contract call's
 //! commitment and results, and those labels have to be nameable in
-//! the CALLER's declaration. minocrab-std adds the [`Disclose`] impls for
+//! the caller's declaration. minocrab-std adds the [`Disclose`] impls for
 //! its own value types.
 
 use std::collections::BTreeSet;
@@ -308,7 +308,7 @@ pub fn disclosed_labels(compiled: &Compiled) -> BTreeSet<&str> {
         .collect()
 }
 
-/// The labels disclosed under a BARE STRING (`c.disclose(w, "…")`), which
+/// The labels disclosed under a bare string (`c.disclose(w, "…")`), which
 /// no declaration accepts — see [`DisclosureKind::DisclosedUntyped`].
 pub fn untyped_labels(compiled: &Compiled) -> BTreeSet<&str> {
     compiled
@@ -319,12 +319,11 @@ pub fn untyped_labels(compiled: &Compiled) -> BTreeSet<&str> {
         .collect()
 }
 
-/// A label names a VALUE TYPE, not a record: one `disclose_as::<Coin>` on a
+/// A label names a value type, not a record: one `disclose_as::<Coin>` on a
 /// qualified coin records its fields and its Merkle index separately, and an
 /// `Either` recipient records both arms, all under the one label. So the
-/// declaration is a SET of labels by design, and "the same label twice" is
+/// declaration is a set of labels by design, and "the same label twice" is
 /// the normal shape of a compound value — not a second value slipping out.
-/// (A first draft rejected duplicates; twelve corpus circuits said otherwise.)
 /// What the set cannot distinguish is a bare `c.disclose(w, "coin")` from the
 /// typed path — that is closed by kind, not by counting: see
 /// [`DisclosureKind`] and the bare-label report in the assertions below.
@@ -464,7 +463,7 @@ mod tests {
         assert_eq!(<(Alpha,)>::labels(), ["alpha"].into());
     }
 
-    /// A value's wires are ONE record, and the identifiers it carries are
+    /// A value's wires are one record, and the identifiers it carries are
     /// the disclosed wires' own — which is what makes the report valued.
     #[test]
     fn a_multi_wire_value_gets_one_record() {
@@ -508,7 +507,7 @@ mod tests {
         let mut c = Circuit::new();
         let w = c.arg::<FieldT>("w");
         for label in labels {
-            // The known labels disclose TYPED; anything else is the bare
+            // The known labels disclose typed; anything else is the bare
             // string, which is exactly what the untyped category is for.
             match *label {
                 "alpha" => drop(w.disclose_as::<Alpha>(&mut c)),
@@ -534,7 +533,7 @@ mod tests {
         assert_eq!(declared_vs::<Discloses<()>>(&[]), "");
     }
 
-    /// dmd's proviso: the failure must not be confusing. It names the
+    /// The failure must not be confusing: it names the
     /// circuit, both differences, and the edit for each.
     #[test]
     fn the_failure_names_the_label_and_the_fix() {

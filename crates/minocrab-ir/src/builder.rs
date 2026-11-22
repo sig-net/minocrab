@@ -1,6 +1,6 @@
 //! L1 for ZKIR v3 — typed circuit builder over the v3 instruction set.
 //!
-//! v3 differs from v2 (see `lib.rs`) in three ways that shape this API:
+//! v3 differs from v2 in three ways that shape this API:
 //! values are *named* (`%label.N` identifiers, matching compactc's
 //! convention) rather than memory indices; values are *typed* ([`IrType`]:
 //! native field, `Bytes<32>`, and the foreign-curve types); and immediates
@@ -152,7 +152,7 @@ pub struct Builder {
     /// Set by [`Builder::output`]; a v3 circuit has at most one Output
     /// terminator, whose operand types are the circuit's output signature.
     outputs: Option<Vec<IrType>>,
-    /// Set by [`Builder::dedup_range_constraints`]; OFF by default, because
+    /// Set by [`Builder::dedup_range_constraints`]; off by default, because
     /// the pass diverges from compactc (notes/ir-passes.org §1).
     dedup_constraints: bool,
     /// Set by [`Builder::simplify`]: `Some` holds the names the frontend
@@ -305,7 +305,7 @@ impl Builder {
         output
     }
 
-    /// The immediate a value NAMES, if it was bound by a `Copy` of one — the
+    /// The immediate a value names, if it was bound by a `Copy` of one — the
     /// question the disclosure layer asks before recording a wire, since the
     /// folding pass will inline such a copy away (`passes`).
     pub fn immediate_of(&self, val: Val) -> Option<Fr> {
@@ -323,7 +323,7 @@ impl Builder {
         self.def(val).defined_at.map(|at| &self.instructions[at])
     }
 
-    /// The public transcript reads `val` DESCENDS FROM: every `public_input`
+    /// The public transcript reads `val` descends from: every `public_input`
     /// output reachable backwards through the operands of the instructions
     /// that built it, not looking behind any value for which `stop` holds.
     /// Dataflow provenance, the question the stale-read backstop asks
@@ -366,7 +366,7 @@ impl Builder {
     /// the path not taken and needs no `cond_select` in front of it. That
     /// is compactc's own shape for a guarded read (the witnesses carry the
     /// branch guard, the bit constraints stay bare — claim.zkir:436-439),
-    /// and the rule is sound only for the SAME guard: a read guarded by an
+    /// and the rule is sound only for the same guard: a read guarded by an
     /// outer scope and checked under an inner one gets the select.
     pub fn is_read_guarded_by(&self, val: Val, guard: Val) -> bool {
         let guard = &self.def(guard).name;
@@ -925,11 +925,10 @@ impl Builder {
 
     /// Run [`passes::dedup_range_constraints`](crate::passes::dedup_range_constraints) in [`Builder::finish`].
     ///
-    /// OFF by default and left off by every shipped circuit: the pass makes
+    /// Off by default and left off by every shipped circuit: the pass makes
     /// us strictly more deduplicated than compactc, which re-emits its own
     /// range constraints, so turning it on costs the instruction-for-
-    /// instruction differentials (notes/ir-passes.org §1 — the opt profile,
-    /// with M10's warrant).
+    /// instruction differentials (notes/ir-passes.org §1).
     ///
     /// What it buys where it is on: a gadget can constrain its own inputs
     /// instead of documenting a precondition, because the constraint a
@@ -945,8 +944,8 @@ impl Builder {
     /// values something outside the stream reads by name (the frontend's
     /// disclosure records); their definitions are kept under their names.
     ///
-    /// OFF by default: compactc emits the instructions it deletes, so a
-    /// circuit with a Compact twin keeps it off
+    /// Off by default: merging and select-folding change the stream compactc
+    /// emits, so a circuit with a Compact twin keeps it off
     /// (`minocrab::Lowering::simplify`).
     pub fn simplify(&mut self, on: bool, observed: Vec<Identifier>) {
         self.simplify = on.then_some(observed);
@@ -964,11 +963,11 @@ impl Builder {
 
     /// Finish into a v3 [`IrSource`].
     ///
-    /// FOLD FIRST, THEN DROP TRUE ASSERTS, THEN (if asked) SIMPLIFY, THEN
-    /// DEDUP, and the order is not
+    /// Fold first, then drop true asserts, then (if asked) simplify, then
+    /// dedup, and the order is not
     /// arbitrary. The fold
     /// substitutes immediates into operand positions, so a constraint on a
-    /// named constant becomes a constraint on an IMMEDIATE — which the dedup
+    /// named constant becomes a constraint on an immediate — which the dedup
     /// pass deliberately leaves alone, having no wire to key on. Running the
     /// fold first means the dedup pass sees the operands the circuit will
     /// actually ship: every decision it makes is about a name that survives.
@@ -976,14 +975,14 @@ impl Builder {
     /// remove, and reach a different (weaker) answer for the same circuit.
     ///
     /// The reverse dependency does not exist: the dedup pass only ever
-    /// DELETES constraints, which bind no names and produce no values, so it
+    /// deletes constraints, which bind no names and produce no values, so it
     /// cannot invalidate anything the fold established.
     ///
     /// [`passes::drop_true_asserts`](crate::passes::drop_true_asserts) sits between them, and its position is
     /// forced by the same argument as the dedup's: `c.assert(c.constant(1))`
     /// is `copy %k = 1; assert %k`, and only the fold turns that into
     /// `assert 1`, which is the shape the rule deletes. Before the fold it
-    /// would see nothing. It is ALWAYS ON, like the fold and unlike the
+    /// would see nothing. It is always on, like the fold and unlike the
     /// dedup: it removes a check that holds on every preimage, so `run` is
     /// preserved exactly (`MinocrabProofs.AssertIr.dropTrueAsserts_preserves_run`).
     /// It fires on the typed EVM-call API's constant-true outcome rule
@@ -997,7 +996,7 @@ impl Builder {
     /// their outputs identical, which only the dedup then removes. It
     /// deletes, and renames a merged value to its twin; nothing else.
     ///
-    /// EVERY PASS HERE IS A FILTER — it deletes instructions, never inserts
+    /// Every pass here is a filter — it deletes instructions, never inserts
     /// or reorders — and builds its map through `passes::retain_kept`, which
     /// is what lets [`Builder::finish_kept`] say where each built
     /// instruction went. A pass added here must be one too.
@@ -1007,7 +1006,7 @@ impl Builder {
 
     /// [`Builder::finish`], and where every built instruction went.
     ///
-    /// The passes above DELETE instructions, so an index taken while
+    /// The passes above delete instructions, so an index taken while
     /// building (`self.len()` at some point) names a different instruction,
     /// or none, in the finished stream. The returned [`passes::Kept`](crate::passes::Kept) maps a
     /// build-time index onto the finished one: `position` for an

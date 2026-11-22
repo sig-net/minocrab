@@ -10,7 +10,7 @@
 use minocrab_zkir::Instruction;
 
 /// Where each instruction of a stream went through a run of passes that only
-/// ever DELETE — the map that carries a BUILD-TIME instruction index (an
+/// ever delete — the map that carries a build-time instruction index (an
 /// `AssertMessage`, a region's `[start, end)`, in `minocrab`) onto the
 /// stream that ships.
 ///
@@ -67,7 +67,7 @@ impl Kept {
         (self.before[index + 1] > self.before[index]).then_some(self.before[index])
     }
 
-    /// Where the BOUNDARY in front of input instruction `index` landed — the
+    /// Where the boundary in front of input instruction `index` landed — the
     /// map for a half-open `[start, end)`: the output span `[boundary(start),
     /// boundary(end))` holds exactly the survivors of the input span, in
     /// order, and is empty when none survived. `index` may be the input's
@@ -167,7 +167,7 @@ mod tests {
         Instruction::ConstrainToBoolean { val: var(name) }
     }
 
-    /// The map's law against an INDEPENDENT expectation: `survivors[i]` is
+    /// The map's law against an independent expectation: `survivors[i]` is
     /// what input `i` must have become in the output (`None`: dropped). Every
     /// survivor lands where `position` says, in order, `position` is `None`
     /// for exactly the dropped ones, and every boundary counts the survivors
@@ -204,7 +204,7 @@ mod tests {
         ];
 
         // The fold: both copies go, and both asserts on them now read the
-        // immediate — two DISTINCT asserts, each checked at its own place.
+        // immediate — two distinct asserts, each checked at its own place.
         let (folded, kept) = fold_immediate_copies_kept(stream.clone());
         assert_eq!(folded, fold_immediate_copies(stream.clone()));
         check(
@@ -230,7 +230,7 @@ mod tests {
         check(&kept, &dropped, &want);
 
         // The dedup: the repeated 64-bit constraint goes; the boolean after
-        // it is TIGHTER than 64 bits, so it stays.
+        // it is tighter than 64 bits, so it stays.
         let (deduped, kept) = dedup_range_constraints_kept(dropped.clone());
         assert_eq!(deduped, dedup_range_constraints(dropped.clone()));
         let mut want: Vec<Option<Instruction>> = dropped.iter().cloned().map(Some).collect();
@@ -332,7 +332,7 @@ mod tests {
     }
 
     /// The dedup's expectation, independently: a bit or boolean constraint
-    /// on a wire is dropped iff an earlier KEPT one on that wire was at
+    /// on a wire is dropped iff an earlier kept one on that wire was at
     /// least as tight (boolean counts as one bit); everything else survives
     /// unchanged.
     fn check_dedup(input: &[Instruction], output: &[Instruction], kept: &Kept) {

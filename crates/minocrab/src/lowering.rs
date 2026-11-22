@@ -1,11 +1,10 @@
-//! The per-circuit LOWERING STATE: the few choices about how a circuit is
+//! The per-circuit lowering state: the few choices about how a circuit is
 //! lowered that no gadget can carry, because shared helpers (the vaults'
 //! mint, burn and receive) reach them through core rather than through a
-//! gadget a port could swap (notes/streamline-survey.org §7, "The one
-//! switch").
+//! gadget a port could swap.
 //!
-//! The defaults are the LEAN choices, for a contract written in MinoCrab
-//! (M48 C step 3): `kernel.self()` is read once per circuit, implied range
+//! The defaults are the lean choices, for a contract written in MinoCrab:
+//! `kernel.self()` is read once per circuit, implied range
 //! constraints are dropped and the simplification pass runs. A circuit ported from Compact, and every circuit
 //! of the deployed signer, states compactc's settings explicitly, as its
 //! first line, through `minocrab_compat::profile`, so none of them moves;
@@ -22,11 +21,11 @@ pub enum SelfAddressReads {
     /// The first read made outside every `when` scope is kept, and later
     /// calls emit nothing. A read inside a scope is guarded (it yields the
     /// default where the guard is false), so it is never the one kept. The
-    /// default (M48 C step 3).
+    /// default.
     OncePerCircuit,
 }
 
-/// The settings. ONE PLACE TO ADD A SETTING: a field here, its default in
+/// The settings. One place to add a setting: a field here, its default in
 /// the `Default` impl, and compactc's value in `minocrab_compat::profile`,
 /// whose struct literal is exhaustive on purpose, so it stops compiling
 /// until it says what compactc does.
@@ -41,9 +40,9 @@ pub struct Lowering {
     /// Whether [`Circuit::finish`] runs the simplification pass
     /// (`minocrab_ir::passes::simplify`, notes/ir-passes.org §14):
     /// pure instructions nothing reads are deleted, and an exact repeat of
-    /// an earlier computation reads the earlier one's result. ON by default
-    /// (M48 C step 3); compactc emits both, so a circuit with a Compact twin
-    /// turns it off through `minocrab_compat::profile`.
+    /// an earlier computation reads the earlier one's result. On by default;
+    /// merging and select-folding change the stream compactc emits, so a
+    /// circuit with a Compact twin turns it off through `minocrab_compat::profile`.
     pub simplify: bool,
 }
 
@@ -78,14 +77,14 @@ impl Circuit {
         self.lowering.chosen
     }
 
-    /// Choose this circuit's lowering. Call it FIRST in the circuit body,
+    /// Choose this circuit's lowering. Call it first in the circuit body,
     /// before any gadget runs (`minocrab_compat::profile` is the one caller
     /// in the tree).
     ///
     /// Refused at build time once a gadget has lowered under the previous
     /// settings ([`Circuit::consult_lowering`]): the circuit would be half
     /// one lowering and half the other. A value-dependent check, so a panic
-    /// (CLAUDE.md, compile errors over panics), recorded for review.
+    /// rather than a compile error.
     #[track_caller]
     pub fn set_lowering(&mut self, settings: Lowering) {
         assert!(

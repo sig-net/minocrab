@@ -1,23 +1,23 @@
 //! IR passes — the ones that buy API, per notes/ir-passes.org.
 //!
-//! The standing criterion (dmd, 2026-08-16) is that a pass earns its place by
-//! letting us write SIMPLER code higher up, not by saving rows: the backend
+//! The criterion is that a pass earns its place by
+//! letting us write simpler code higher up, not by saving rows: the backend
 //! already folds a `Copy` of an immediate to zero rows, measured in
 //! `minocrab-contracts/tests/backend_folding.rs` and again in
 //! `minocrab-sim/examples/opcost.rs` (100 `Copy`s cost 0 rows; 100
 //! `cond_select`s cost 101).
 //!
 //! And the constraint no pass may break: our primary correctness warrant is
-//! DIFFERENTIAL EQUALITY with compactc, instruction for instruction, for the
+//! differential equality with compactc, instruction for instruction, for the
 //! corpus fixtures. A pass that converges on compactc is free; one that
 //! diverges costs us that test and needs the spec harness's warrant instead
 //! (notes/vault-optimization.org §"Binding circuit ≡ spec").
 
-// ASSOCIATION LISTS rather than std maps THROUGHOUT the passes, by design
-// (M23 R4): std's HashMap seeds SipHash from `RandomState`, which a model
+// Association lists rather than std maps in the passes, by design:
+// std's HashMap seeds SipHash from `RandomState`, which a model
 // checker treats as an unconstrained symbol, and BTreeMap's node machinery
 // (arrays of MaybeUninit behind unsafe) defeats symbolic execution outright —
-// measured: even a fully CONCRETE two-instruction harness would not close in
+// measured: even a fully concrete two-instruction harness would not close in
 // 10 minutes through either. A `Vec` of pairs with linear lookup is the
 // statable shape the deferred verification needs, and at the handful of
 // entries a circuit's copies produce, the cost difference is unmeasurable.
@@ -67,7 +67,7 @@ pub use kept::Kept;
 /// Fold every `Copy` of an immediate into its consumers and drop it.
 ///
 /// This is what makes the named-immediate special cases unnecessary: every
-/// place compactc inlines a constant where the eDSL would NAME one (operand
+/// place compactc inlines a constant where the eDSL would name one (operand
 /// positions, the inlined Impact guard, `AnyWire::immediate`, the token
 /// helpers) was a spelling a caller had to know to reach for, bought for
 /// differential fidelity and never for a row. With the fold, `c.constant(x)`
@@ -75,11 +75,11 @@ pub use kept::Kept;
 ///
 /// # The one exception, and it is compactc's
 ///
-/// A constant that a circuit RETURNS stays named. compactc's `Output`
+/// A constant that a circuit returns stays named. compactc's `Output`
 /// terminator lists variables, never immediates — `sendShielded` returns the
 /// zero high limb of an upgraded nonce as `%t.23`, having emitted `copy 0x00`
 /// for it, and uses that same name in the commitment preimage. So the fold is
-/// ALL-OR-NOTHING per copy: if any use is an output slot, the copy stays and
+/// all-or-nothing per copy: if any use is an output slot, the copy stays and
 /// every use keeps the name. Folding it in the other positions only would
 /// diverge from compactc in exactly the circuit that taught us the rule.
 ///
@@ -135,7 +135,7 @@ pub(crate) fn fold_immediate_copies_kept(instructions: Vec<Instruction>) -> (Vec
 /// `debug_assertions`, so every circuit a test builds re-proves that its
 /// assert messages and regions name their own instructions.
 ///
-/// That the map starts at `built` and ends at `finished` is NOT re-checked
+/// That the map starts at `built` and ends at `finished` is not re-checked
 /// here: `Builder::finish_kept` asserts both lengths in every build, release
 /// included, immediately before it calls this.
 pub(crate) fn check_kept(
@@ -194,35 +194,35 @@ pub(crate) fn check_kept(
     }
 }
 
-/// Delete every `Assert` whose condition is the IMMEDIATE 1 — the check that
+/// Delete every `Assert` whose condition is the immediate 1 — the check that
 /// cannot fail, so it should not be shipped.
 ///
 /// # Why it exists, and why it is a pass rather than an API branch
 ///
 /// notes/evm-calls.org §3.2. The typed EVM-call API asserts an outcome
 /// predicate in `complete`; for a call whose predicate is the constant `true`
-/// (`OutcomeRule = Always`) that assert must cost nothing, and dmd's decision
-/// (2026-09-05) was to get the zero from a GENERAL fold rather than a
+/// (`OutcomeRule = Always`) that assert must cost nothing, and the zero comes
+/// from a general fold rather than a
 /// `CAN_FAIL` const branching the API. The effect layer already treats an
-/// immediate-1 GUARD as no guard (`effects.rs`, `effect_guard`); this is the
+/// immediate-1 guard as no guard (`effects.rs`, `effect_guard`); this is the
 /// one residue that survived it, and every constant-true assert in the tree
 /// gets the same treatment for free.
 ///
-/// # Run it AFTER [`fold_immediate_copies`], which is what creates its shape
+/// # Run it after [`fold_immediate_copies`], which is what creates its shape
 ///
 /// A caller writes `c.assert(c.constant(1u64))`, which emits `copy %k = 1`
 /// and `assert %k`. Only once the copy fold has inlined the immediate is the
 /// instruction `assert 1`, so this rule sees nothing on the un-folded stream.
 /// [`Builder::finish`](crate::Builder::finish) runs them in that order.
 ///
-/// # THE ONE THING IT MUST NOT DO, and does not
+/// # The one thing it must not do, and does not
 ///
-/// An `Assert` on an immediate that is NOT 1 is an ALWAYS-FAILING circuit and
+/// An `Assert` on an immediate that is not 1 is an always-failing circuit and
 /// is left exactly as it is. Under the ZKIR semantics `assert` resolves its
 /// operand as a boolean: 0 rejects with "Failed direct assertion", anything
 /// else rejects with "Expected boolean" (`ir_vm.rs`,
 /// `resolve_operand_bool`). Deleting one would turn a circuit that the
-/// verifier REJECTS into one it ACCEPTS — the unsound direction, and the only
+/// verifier rejects into one it accepts — the unsound direction, and the only
 /// direction that matters here. This pass moves in the other one: it removes
 /// a check that already held on every preimage, so the accepted set is
 /// unchanged (`MinocrabProofs.AssertIr.dropTrueAsserts_preserves_run`).
@@ -230,12 +230,12 @@ pub(crate) fn check_kept(
 /// # Instruction indices shift, and the `Kept` map carries them across
 ///
 /// `AssertMessage.instruction` and `Region`'s `[start, end)` are recorded at
-/// BUILD time (`minocrab`), so any pass that removes an instruction moves
+/// build time (`minocrab`), so any pass that removes an instruction moves
 /// the positions after it. Inside `Builder::finish` this rule reports which
 /// ones it removed, and `Builder::finish_kept` composes that with the other
 /// passes' maps so the frontend can move its
 /// indices onto the finished stream (notes/ir-passes.org §13). A message on
-/// a DELETED assert is dropped with it: that assert could never fail, so the
+/// a deleted assert is dropped with it: that assert could never fail, so the
 /// message could never have been printed.
 pub fn drop_true_asserts(instructions: Vec<Instruction>) -> Vec<Instruction> {
     drop_true_asserts_kept(instructions).0
@@ -260,18 +260,18 @@ fn is_true_assert(instruction: &Instruction) -> bool {
 /// Drop every range constraint an earlier, equally tight or tighter one on
 /// the same wire already implies.
 ///
-/// OPT-IN, and it is the only pass here that is: this makes us strictly MORE
+/// Opt-in, and it is the only pass here that is: this makes us strictly more
 /// deduplicated than compactc, which re-emits. See [`crate::Builder::
 /// dedup_range_constraints`] for the flag and notes/ir-passes.org §1 for why
 /// it cannot be on by default.
 ///
 /// # What it drops, and the one direction that is sound
 ///
-/// Per IDENTIFIER, the tightest bound established so far: a
+/// Per identifier, the tightest bound established so far: a
 /// `ConstrainBits { bits: n }` establishes `val < 2^n`, a
 /// `ConstrainToBoolean` establishes `val ∈ {0,1}` — bound 1. A later
 /// constraint whose bound is `m >= n` is implied by the earlier one and is
-/// removed; a later constraint that is TIGHTER (`m < n`) is new information
+/// removed; a later constraint that is tighter (`m < n`) is new information
 /// and is kept, becoming the bound from there on. The first constraint on a
 /// wire is never dropped.
 ///
@@ -280,16 +280,16 @@ fn is_true_assert(instruction: &Instruction) -> bool {
 /// 2^n` implies `val < 2^m` for `m >= n`, never the reverse.
 ///
 /// ZKIR v3 is SSA, and more strongly than a rejecting check: upstream's
-/// synthesis memory is a PUSH-ONLY `Vec` (`ir_vm.rs`, `mem_push` — an
+/// synthesis memory is a push-only `Vec` (`ir_vm.rs`, `mem_push` — an
 /// instruction's output takes index `mem.len()` and no operation overwrites
 /// an index), and our own `Builder` mints a fresh identifier per output. A
 /// rebinding is unrepresentable on both ends, so a bound established at one
 /// point in the stream holds for the whole circuit, and "earlier" is only a
 /// convention for which of two identical constraints survives.
 ///
-/// # THE BOOLEAN FAMILY IS THE `bits = 1` FAMILY, and this was checked
+/// # The boolean family is the `bits = 1` family
 ///
-/// The two instructions are different GADGETS and the same PREDICATE, which
+/// The two instructions are different gadgets and the same predicate, which
 /// is what a pass over a constraint system needs:
 ///
 /// - `ConstrainToBoolean` lowers to `std.convert::<AssignedNative,
@@ -306,7 +306,7 @@ fn is_true_assert(instruction: &Instruction) -> bool {
 /// treats them as one family: a `ConstrainToBoolean` after a
 /// `ConstrainBits(_, 1)` is dropped, and a `ConstrainBits(_, m >= 1)` after a
 /// `ConstrainToBoolean` is dropped. That is not cosmetic — `Bool`'s argument
-/// constraint IS `constrain_to_boolean` and its Borsh segment is one BYTE, so
+/// constraint is `constrain_to_boolean` and its Borsh segment is one byte, so
 /// the checked serializer's `constrain_bits(_, 8)` is dropped only across the
 /// families.
 ///
@@ -381,12 +381,12 @@ fn returned_identifiers(instructions: &[Instruction]) -> AssocMap<()> {
     returned
 }
 
-/// The operand positions through which a value LEAVES the circuit named.
+/// The operand positions through which a value leaves the circuit named.
 ///
 /// Exhaustive by construction, the same way `operands_mut` is, and for a
 /// sharper reason: this list is what stops [`fold_immediate_copies`] folding
 /// a constant compactc keeps named, so an upstream terminator this function
-/// did not know about would make the fold do MORE, not less — the unsound
+/// did not know about would make the fold do more, not less — the unsound
 /// direction (notes/formal-verification-options.org §10). A new
 /// output-carrying variant therefore has to break this match rather than fall
 /// through a wildcard into silence.
@@ -503,20 +503,20 @@ fn operands_mut(instruction: &mut Instruction) -> Vec<&mut Operand> {
         | Instruction::BytesFromNatives { inputs, .. } => inputs.iter_mut().collect(),
         // A constant's encoding is field immediates, not operands.
         Instruction::LoadConstant { .. } => vec![],
-        // NOT folded: see the pass's docs. The terminator's own operands are
+        // Not folded: see the pass's docs. The terminator's own operands are
         // left alone, which is what keeps a returned constant named.
         Instruction::Output { vals: _ } => vec![],
     }
 }
 
 // ============================================================================
-// Read-only dataflow twins — M27 rung 2's Rust side of the Lean gate
+// Read-only dataflow twins — the Rust side of the Lean gate
 // ============================================================================
 //
 // `MinocrabZkir.Dataflow` (crates/minocrab-zkir/lean/) defines `operands`,
 // `returned` and `defines` over the real IR; `tests/lean_dataflow.rs` dumps
 // both sides over every corpus instruction and diffs them. The two reads
-// below go THROUGH `operands_mut` / `returned_operands` on a clone rather
+// below go through `operands_mut` / `returned_operands` on a clone rather
 // than restating the match, so there is exactly one exhaustive list per
 // question on the Rust side and the Lean gate is comparing against it.
 
@@ -544,7 +544,7 @@ pub fn defined_identifiers(instruction: &Instruction) -> Vec<Identifier> {
 }
 
 // ============================================================================
-// Simplification (M48 F): dead pure instructions, common subexpressions
+// Simplification: dead pure instructions, common subexpressions
 // ============================================================================
 //
 // notes/ir-passes.org §14 is the design of record: the purity table with its
@@ -552,13 +552,12 @@ pub fn defined_identifiers(instruction: &Instruction) -> Vec<Identifier> {
 // (the set of satisfying assignments and the public-input vector, not merely
 // the computed values), what was measured and what was left out.
 //
-// OFF by default, per circuit, through `minocrab::Lowering::simplify`:
-// compactc emits the instructions these rules delete, so a circuit with a
-// Compact twin keeps them and stays instruction-comparable.
+// Off by default, per circuit, through `minocrab::Lowering::simplify`:
+// merging and select-folding change the stream compactc emits, so a circuit
+// with a Compact twin keeps it off and stays instruction-comparable.
 //
-// Hash maps rather than the association lists above: the stream-level Kani
-// specimens that motivated those are gone (M48 F), and the rules below only
-// ever LOOK UP, so iteration order cannot reach the output.
+// Hash maps rather than the association lists above: the rules below only
+// ever look up, so iteration order cannot reach the output.
 
 use std::collections::{HashMap, HashSet};
 
@@ -567,7 +566,7 @@ use std::collections::{HashMap, HashSet};
 /// off-circuit `preprocess` walk and the in-circuit synthesis walk).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Effect {
-    /// Constrains nothing beyond defining its outputs: for EVERY value of its
+    /// Constrains nothing beyond defining its outputs: for every value of its
     /// operands (of their types) exactly one value of its outputs satisfies
     /// it, and the off-circuit walk cannot fail on a value. So it may be
     /// deleted when no output is used, and merged into an identical earlier
@@ -575,10 +574,10 @@ pub(crate) enum Effect {
     Pure,
     /// Its outputs are a function of its operands, but it also constrains
     /// the operands (a selector must be a bit, a hash input must fit its
-    /// alignment, an inverse must not be of zero), or it carries a STATIC
+    /// alignment, an inverse must not be of zero), or it carries a static
     /// check (an operand's type, a slice's bounds) on a type this pass does
     /// not track. Merged into an identical earlier instance, which imposes
-    /// the SAME constraint and the SAME check on the SAME operands; never
+    /// the same constraint and the same check on the same operands; never
     /// deleted as dead, which would drop the constraint or let a circuit
     /// that can never be satisfied become one that can.
     Determined,
@@ -589,7 +588,7 @@ pub(crate) enum Effect {
 }
 
 /// One instruction's outputs, its [`Effect`], and whether its outputs are
-/// known to be `Native` — THE ONE EXHAUSTIVE MATCH the simplification reads,
+/// known to be `Native` — the one exhaustive match the simplification reads,
 /// and the one [`defined_identifiers`] reads too.
 ///
 /// `native` answers for an operand whether it is known to be a `Native`
@@ -644,13 +643,13 @@ fn definition<'a>(instruction: &'a mut Instruction, native: &dyn Fn(&Operand) ->
         | Instruction::HashToCurve { output, .. }
         | Instruction::FromCoordinates { output, .. } => def(vec![output], Kept, false),
         Instruction::IntoCoordinates { outputs, .. } => def(vec![&mut outputs.0, &mut outputs.1], Kept, false),
-        // A native's 32 bytes: the CANONICAL decomposition (to_bytes.rs:118-120;
+        // A native's 32 bytes: the canonical decomposition (to_bytes.rs:118-120;
         // midnight-circuits native_gadget.rs:908-922), unique and total.
         Instruction::IntoBytes32 { input, output } | Instruction::ToBytes { input, output } => {
             let n = native(input);
             def(vec![output], when(n, Pure), false)
         }
-        // THE BYTE, BOOLEAN AND CONSTANT INSTRUCTIONS constrain nothing
+        // The byte, boolean and constant instructions constrain nothing
         // beyond their outputs, but each carries a static check on a type
         // this pass does not track (an operand must be `Bytes`, `Bool`, of
         // a length; a slice in bounds; an encoding that decodes). Deleting
@@ -674,7 +673,7 @@ fn definition<'a>(instruction: &'a mut Instruction, native: &dyn Fn(&Operand) ->
             let n = native(&inputs.0) && native(&inputs.1);
             def(vec![output], when(n, Determined), false)
         }
-        // The CANONICAL bit decomposition of a native, split and recomposed
+        // The canonical bit decomposition of a native, split and recomposed
         // (ir_vm.rs:1253-1272): unique and total. Its static checks are the
         // operand's type, two outputs, and at most 248 bits (ir_vm.rs:470-476).
         Instruction::DivModPowerOfTwo { val, bits, outputs } => {
@@ -825,11 +824,11 @@ pub fn simplify(instructions: Vec<Instruction>, native_inputs: &[Identifier], ob
     simplify_kept(instructions, native_inputs, observed, Rules::ALL).0
 }
 
-/// The simplification: the MERGES first (an exact repeat of an earlier
+/// The simplification: the merges first (an exact repeat of an earlier
 /// computation, and a select on a constant selector, each read as the value
-/// it equals), then the DEAD-CODE rule on what that leaves — the order in
+/// it equals), then the dead-code rule on what that leaves — the order in
 /// which each finds the most, since a merge can leave a value dead and a
-/// deletion never creates a repeat. Idempotent. A FILTER, like every pass
+/// deletion never creates a repeat. Idempotent. A filter, like every pass
 /// in `Builder::finish`: it deletes instructions and renames a variable
 /// operand to another variable, nothing else.
 ///
@@ -839,7 +838,7 @@ pub fn simplify(instructions: Vec<Instruction>, native_inputs: &[Identifier], ob
 /// records). A value named in `observed` keeps its defining instruction and
 /// its name under every rule.
 ///
-/// THE MERGE. An instruction that repeats an earlier one exactly — same
+/// The merge. An instruction that repeats an earlier one exactly — same
 /// opcode, same attributes, same operands after the renames so far — is
 /// deleted, and its outputs are read as the earlier one's. A
 /// `Pure` instruction always qualifies. A
@@ -852,14 +851,14 @@ pub fn simplify(instructions: Vec<Instruction>, native_inputs: &[Identifier], ob
 /// consumes a position, notes/ir-passes.org §3), a constraint (the dedup's
 /// business), Impact, an assert.
 ///
-/// THE CONSTANT SELECT. `cond_select 1 a b` is `a` and `cond_select 0 a b`
+/// The constant select. `cond_select 1 a b` is `a` and `cond_select 0 a b`
 /// is `b`, on natives: the selector is a fixed cell that is a bit, so its
 /// `convert` constrains nothing that depends on a witness. Only when the
-/// chosen arm is a VARIABLE (so every rename is variable to variable) and
+/// chosen arm is a variable (so every rename is variable to variable) and
 /// only on 0 and 1: on any other immediate the circuit can never be
 /// satisfied, and that is left exactly as it is.
 ///
-/// THE DEAD CODE. A `Pure` instruction none of whose
+/// The dead code. A `Pure` instruction none of whose
 /// outputs is read — by a later instruction, by the `Output` terminator, or
 /// through `observed` — is deleted. One backward sweep is the fixed point:
 /// ZKIR v3 uses a value only after the instruction defining it, so the
@@ -1014,27 +1013,27 @@ fn constant_select<'a>(
 }
 
 // ============================================================================
-// The `Pass` trait — third-party optimisation passes, à la carte (M24)
+// The `Pass` trait — third-party optimisation passes, à la carte
 // ============================================================================
 //
 // notes/library-api.org §3. The two functions above are the reference passes;
 // this trait is the stable-ish surface a third party implements to add their
-// own and compose them, WITHOUT forking. It is ordinary Rust — a pass is a
+// own and compose them, without forking. It is ordinary Rust — a pass is a
 // value, composition is a `Vec`, there is no plugin-loading machinery, which
 // is the payoff of being library-first rather than a compiler binary.
 //
-// THE CONTRACT (notes/ir-passes.org §§1-4). The ACCEPTED class is UNIFORM
-// transforms — guards, constants, range constraints. The REJECTED class —
-// dead-code elimination and common-subexpression elimination — DIVERGES from
+// The contract (notes/ir-passes.org §§1-4). The accepted class is uniform
+// transforms — guards, constants, range constraints. The rejected class —
+// dead-code elimination and common-subexpression elimination — diverges from
 // compactc or is unsound-here, and a third party reaching for either needs a
 // protocol argument this crate cannot make for them (this crate's own, the
 // off-by-default `simplify` above, makes it from a purity table and never
-// touches a transcript read: notes/ir-passes.org §14). Every pass MUST preserve
+// touches a transcript read: notes/ir-passes.org §14). Every pass must preserve
 // the public-input / witness stream (PI-equality is the correctness oracle)
 // and, until the verification hooks land, the author's own range constraints.
 //
-// DESIGNED FOR THE DEFERRED Kani/Lean VERIFICATION (notes/formal-verification-
-// options.org): `transform` is PURE and TOTAL — same input, same output, no
+// Designed for the deferred Kani/Lean verification (notes/formal-verification-
+// options.org): `transform` is pure and total — same input, same output, no
 // panics, no global state — so a machine check of "output PI stream ≡ input PI
 // stream" and "only implied constraints dropped" can target it without any
 // redesign here. That is the whole reason the shape is `IR -> IR` and nothing
@@ -1042,11 +1041,11 @@ fn constant_select<'a>(
 
 /// What a pass did — always produced by [`Pass::run`].
 ///
-/// OPTIONAL to consume but HIGHLY RECOMMENDED to read: people shoot themselves
-/// in the foot, so the runner makes sure they were WARNED first. A VALID
+/// Optional to consume but highly recommended to read: people shoot themselves
+/// in the foot, so the runner makes sure they were warned first. A valid
 /// optimisation can still raise a warning — [`dedup_range_constraints`]
 /// legitimately drops implied range constraints, which trips the
-/// instruction-drop warning below. The warnings are ADVISORY, not a verdict.
+/// instruction-drop warning below. The warnings are advisory, not a verdict.
 #[derive(Debug, Clone)]
 pub struct PassReport {
     /// The pass's name.
@@ -1055,13 +1054,13 @@ pub struct PassReport {
     pub before: usize,
     /// Instruction count after the pass.
     pub after: usize,
-    /// Advisory warnings — the pass's own, plus an auto-warning on any NET
+    /// Advisory warnings — the pass's own, plus an auto-warning on any net
     /// instruction drop, which is the most dangerous signal: dropping an
     /// instruction can move the PI/witness stream, and that is the oracle.
     pub warnings: Vec<String>,
 }
 
-/// A ZKIR optimisation pass — the à-la-carte extension point (M24).
+/// A ZKIR optimisation pass — the à-la-carte extension point.
 ///
 /// Implement [`Pass::transform`] (the pure, total `IR -> IR`, returning any
 /// advisory warnings); [`Pass::run`] is provided and wraps it with the report.
@@ -1075,7 +1074,7 @@ pub struct PassReport {
 /// `Builder::finish` runs are held to more: the eDSL records instruction
 /// indices (assert messages, regions) while it builds, and `finish` carries
 /// them onto the finished stream by one kept-or-dropped bit per input
-/// instruction. So each of those passes is a FILTER — its output is a
+/// instruction. So each of those passes is a filter — its output is a
 /// subsequence of its input, in order, with operands rewritten at most — and
 /// deletes through the module's one `retain_kept` helper, which records the
 /// bit as its keep decision (notes/ir-passes.org §13). A pass that inserts or
@@ -1089,7 +1088,7 @@ pub trait Pass {
     /// warnings the pass wants to raise (empty is fine).
     fn transform(&self, ir: Vec<Instruction>) -> (Vec<Instruction>, Vec<String>);
 
-    /// Run the pass and report. PROVIDED — do not override. The report is
+    /// Run the pass and report. Provided — do not override. The report is
     /// optional to consume but always produced, and it auto-warns on any net
     /// instruction drop even when the pass itself is silent, so a caller
     /// cannot be left un-warned about the one signal that matters.
@@ -1116,7 +1115,7 @@ pub trait Pass {
     }
 }
 
-/// [`fold_immediate_copies`] as a [`Pass`]. A fold is a RENAME — it removes
+/// [`fold_immediate_copies`] as a [`Pass`]. A fold is a rename — it removes
 /// only instructions it can prove are `Copy`s of an immediate — so the
 /// instruction-drop warning it trips is expected and benign.
 pub struct FoldImmediateCopies;
@@ -1133,7 +1132,7 @@ impl Pass for FoldImmediateCopies {
 /// [`drop_true_asserts`] as a [`Pass`]. It removes only instructions it can
 /// prove pass on every preimage — an `assert` on the immediate 1 — so the
 /// instruction-drop warning it trips is expected and benign. It never touches
-/// an assert on any OTHER immediate: those reject unconditionally, and the
+/// an assert on any other immediate: those reject unconditionally, and the
 /// warning says so, because that is the one direction a reader should check.
 pub struct DropTrueAsserts;
 
@@ -1158,7 +1157,7 @@ impl Pass for DropTrueAsserts {
 }
 
 /// [`dedup_range_constraints`] as a [`Pass`]. It drops a range constraint only
-/// where a tighter-or-equal bound was ALREADY proven, so the drop is sound on
+/// where a tighter-or-equal bound was already proven, so the drop is sound on
 /// any stream whose leaves are constrained at entry — the warning names the
 /// one thing to check (an unconstrained source, where a dropped constraint
 /// would be load-bearing). The canonical "valid optimisation that still warns".
@@ -1172,7 +1171,7 @@ impl Pass for DedupRangeConstraints {
         let before = ir.len();
         let out = dedup_range_constraints(ir);
         // Only warn when it actually dropped something — a warning names what
-        // happened, not what could have. On a real drop this rides ALONGSIDE
+        // happened, not what could have. On a real drop this rides alongside
         // the runner's generic "dropped N instructions" warning: generic says
         // the danger, this says why it is usually fine and what to check.
         let warnings = if out.len() < before {
@@ -1205,7 +1204,7 @@ pub fn run_pipeline(
     (ir, reports)
 }
 
-/// The BUILT-IN passes by name — what a CLI or a config names to run one à la
+/// The built-in passes by name — what a CLI or a config names to run one à la
 /// carte. A third party's own passes are their own values; this is only the
 /// reference set. See [`builtin_names`] for the accepted names.
 pub fn by_name(name: &str) -> Option<Box<dyn Pass>> {
@@ -1223,23 +1222,23 @@ pub fn builtin_names() -> &'static [&'static str] {
 }
 
 // ============================================================================
-// The VerifiedPass reflection (M25, notes/lean-port.org §4)
+// The VerifiedPass reflection (notes/lean-port.org §4)
 // ============================================================================
 //
 // The honest boundary first: Rust's type system cannot make "preserves the
 // PI/witness stream" a trait bound — the property is semantic, and its real
-// discharge is the machine-checked Lean development shipped WITH this crate
+// discharge is the machine-checked Lean development shipped with this crate
 // (`lean/MinocrabProofs/`, a lake project; `cd lean && lake build` checks
-// it). What the type system CAN hold is the CLAIM: a [`VerifiedPass`] names
+// it). What the type system can hold is the claim: a [`VerifiedPass`] names
 // the proof file and theorems discharging its obligation, the file is
-// embedded at COMPILE TIME (a deleted proof is a build error — the
+// embedded at compile time (a deleted proof is a build error — the
 // compile-errors-over-panics rule applied to proofs), and a pipeline that
-// REQUIRES verification takes `dyn VerifiedPass`. A pass without a proof
+// requires verification takes `dyn VerifiedPass`. A pass without a proof
 // still runs through [`run_pipeline`]; it cannot claim verification. That is
-// as far as reflection reaches, said so per the FIT shortfall clause.
+// as far as reflection reaches.
 //
 // What a Lean model proof warrants — and does not — is stated in each proof
-// file's header: it warrants the ALGORITHM as transcribed; the claim that
+// file's header: it warrants the algorithm as transcribed; the claim that
 // the Rust implements that algorithm rests on review plus the Rust-side
 // instruments (the unit tests in tests/passes.rs and passes/kept.rs).
 
@@ -1247,7 +1246,7 @@ pub fn builtin_names() -> &'static [&'static str] {
 /// pass's preserve-meaning obligation, embedded at compile time.
 ///
 /// Constructed only via [`lean_proof!`](crate::lean_proof), which forces the
-/// file to EXIST at build time. Whether it still DECLARES the claimed
+/// file to exist at build time. Whether it still declares the claimed
 /// theorems is [`ProofRef::missing_theorems`]'s question, asked by
 /// [`run_pipeline_verified`] on every run and by this crate's tests for the
 /// built-in passes — so a renamed theorem is drift a gate catches, not a
@@ -1287,7 +1286,7 @@ impl ProofRef {
         self.contents
     }
 
-    /// Every claimed theorem the embedded file does NOT declare — empty is
+    /// Every claimed theorem the embedded file does not declare — empty is
     /// the healthy state. A non-empty answer means the proof and the claim
     /// have drifted (a theorem renamed or removed); the pass should be
     /// treated as unverified until they agree again.
@@ -1323,7 +1322,7 @@ pub trait VerifiedPass: Pass {
 }
 
 /// Cite a Lean proof file as a [`ProofRef`] — the one supported way to
-/// construct one, because it makes the file's existence a COMPILE-TIME
+/// construct one, because it makes the file's existence a compile-time
 /// fact: the path resolves relative to the calling source file
 /// (`include_str!` semantics, so a third-party pass crate names its own
 /// proof file), and a path that does not resolve is a build error.
@@ -1353,10 +1352,8 @@ macro_rules! lean_proof {
 /// instruction consumes the same resolved operand values, on the SSA shape
 /// `Builder` emits).
 pub static FOLD_PROOF: ProofRef = lean_proof! {
-    // M27 rung 3: the citation moved from the three-constructor model
-    // (`Fold.lean`, kept as the M25 record) to the same four theorems over
-    // the REAL instruction set (`FoldIr.lean`, on `MinocrabZkir.Instr`);
-    // `fold_preserves_observables` there resolves every instruction's
+    // The theorems are over the real instruction set (`FoldIr.lean`, on
+    // `MinocrabZkir.Instr`); `fold_preserves_observables` there resolves every instruction's
     // `operands_mut` positions under the copy environment (38 arms).
     file: "../lean/MinocrabProofs/FoldIr.lean",
     theorems: [
@@ -1372,10 +1369,8 @@ pub static FOLD_PROOF: ProofRef = lean_proof! {
 /// (`dedup_passthrough`), every wire's tightest bound — hence solution set —
 /// unchanged (`dedup_bound`), and idempotence (`dedup_idem`), all unbounded.
 pub static DEDUP_PROOF: ProofRef = lean_proof! {
-    // M27 rung 3: the citation moved from the three-constructor model
-    // (`Passes.lean`, kept as the M25 record) to the same four theorems
-    // over the REAL instruction set (`DedupIr.lean`, stated on
-    // `MinocrabZkir.Instr`, the inductive that round-trips the corpus).
+    // The theorems are stated over the real instruction set (`DedupIr.lean`,
+    // on `MinocrabZkir.Instr`, the inductive that round-trips the corpus).
     file: "../lean/MinocrabProofs/DedupIr.lean",
     theorems: [
         "dedup_sublist",
@@ -1385,16 +1380,16 @@ pub static DEDUP_PROOF: ProofRef = lean_proof! {
     ],
 };
 
-/// The Lean warrant for [`DropTrueAsserts`], and it is the STRONGEST of the
+/// The Lean warrant for [`DropTrueAsserts`], and it is the strongest of the
 /// three: where the other two can only preserve an abstraction of meaning (a
 /// fold that renames wires, a dedup that removes constraints), this rule
-/// preserves `run` ITSELF. `dropTrueAsserts_preserves_run` is an equality of
+/// preserves `run` itself. `dropTrueAsserts_preserves_run` is an equality of
 /// `MinocrabZkir.Eval.run` — memory, `pis`, `piSkips`, `outputs`, and
 /// accept-vs-reject with its message — for every model, every carrier
 /// assignment and every preimage. Beside it: the output is a subsequence
 /// (`dropTrueAsserts_sublist`), everything that is not a true assert survives
-/// with multiplicity (`dropTrueAsserts_passthrough`), an assert on any OTHER
-/// immediate — the always-FAILING circuit — is kept
+/// with multiplicity (`dropTrueAsserts_passthrough`), an assert on any other
+/// immediate — the always-failing circuit — is kept
 /// (`dropTrueAsserts_keeps_failing_asserts`), and the rule is idempotent
 /// (`dropTrueAsserts_idem`).
 pub static DROP_TRUE_ASSERTS_PROOF: ProofRef = lean_proof! {
@@ -1426,7 +1421,7 @@ impl VerifiedPass for DropTrueAsserts {
     }
 }
 
-/// [`run_pipeline`], but every pass must CARRY ITS PROOF — the pipeline a
+/// [`run_pipeline`], but every pass must carry its proof — the pipeline a
 /// caller reaches for when "optimised" must also mean "warranted". Beyond
 /// the threading, it re-asks each pass's [`ProofRef::missing_theorems`] and
 /// turns any drift into a report warning, so a stale claim surfaces on the

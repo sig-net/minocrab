@@ -1,18 +1,12 @@
-//! THE EFFECT CHOKE POINT: the one place the ambient guard is read, and the
+//! The effect choke point: the one place the ambient guard is read, and the
 //! only route to the raw emitters whose meaning depends on it.
 //!
 //! A ZKIR circuit has no control flow. `c.when(g, |c| body)` runs the body
-//! unconditionally and relies on every EFFECT emitted inside it — a witness
+//! unconditionally and relies on every effect emitted inside it — a witness
 //! read, a public-transcript read, an Impact op, a check — consulting the
-//! guard stack. Before this module that consultation was made method by
-//! method: `witness` did, `witness_guarded` did not; `assert` did,
-//! `assert_eq` / `assert_bits` / `assert_boolean` did not;
-//! `public_transcript_input_guarded` was fixed to, one commit after the AA
-//! manager port found it. Each was a cell in a table nothing checked, and
-//! each miss is invisible to a differential on an honest preimage — the
-//! guard only matters on the path that was not taken.
-//!
-//! Now there is one table entry. [`EffectGuard`] is the resolved guard; its
+//! guard stack. A miss is invisible to a differential on an honest
+//! preimage — the guard only matters on the path that was not taken — so
+//! there is one place that consults it. [`EffectGuard`] is the resolved guard; its
 //! field is private to this module, so the only way to obtain one is
 //! [`Circuit::effect_guard`], which is the only reader of the ambient
 //! stack. Every `emit_*` below demands one. The parent module therefore has
@@ -23,25 +17,24 @@
 //!
 //! Semantics per effect, all compactc's own lowering for `if`:
 //!
-//! - READS (`private_input`, `public_input`) carry the guard as the
+//! - Reads (`private_input`, `public_input`) carry the guard as the
 //!   instruction's own operand: false ⇒ the type's default, transcript not
 //!   consumed.
-//! - IMPACT carries it as its guard operand.
-//! - CHECKS have no guard operand in ZKIR, so the guard selects the value
+//! - Impact carries it as its guard operand.
+//! - Checks have no guard operand in ZKIR, so the guard selects the value
 //!   checked: `assert(x)` becomes `assert(select(g, x, 1))`;
 //!   `constrain_bits(w, k)` becomes `constrain_bits(select(g, w, 0), k)`,
 //!   likewise `constrain_to_boolean`; `constrain_eq(a, b)` — which has no
 //!   value to select — becomes `test_eq` + a guarded `assert`, the shape
 //!   compactc emits for `assert(a == b)` inside a branch. Straight-line
-//!   circuits (no ambient guard) emit exactly what they did before: the
-//!   direct instruction, no select.
+//!   circuits (no ambient guard) emit the direct instruction, no select.
 
 use minocrab_ir::{Arg, IrType, Val};
 use minocrab_ir::Fr;
 
 use super::{AssertMessage, Circuit, DeferredImpact, ImpactElem};
 
-/// A guard RESOLVED against the ambient scope — `None` for straight-line
+/// A guard resolved against the ambient scope — `None` for straight-line
 /// code, otherwise the conjunction of the scope and whatever explicit guard
 /// the caller passed.
 ///
@@ -53,13 +46,13 @@ pub(super) struct EffectGuard(Option<Arg>);
 
 impl Circuit {
     /// The effective ambient guard, if any. Private to this module: the
-    /// parent constructs scopes (push/pop) but never READS the stack —
+    /// parent constructs scopes (push/pop) but never reads the stack —
     /// reading it is what an effect does, and effects come through here.
     fn ambient(&self) -> Option<Val> {
         self.guards.last().copied()
     }
 
-    /// Whether any [`Circuit::when`] scope is open — not WHICH guard, only
+    /// Whether any [`Circuit::when`] scope is open — not which guard, only
     /// that there is one. For a gadget that keeps a value across calls
     /// (`kernel.self()` under [`SelfAddressReads::OncePerCircuit`]): a value
     /// read inside a scope is guarded, so it must not be kept for code
@@ -73,15 +66,14 @@ impl Circuit {
     /// Resolve the guard an effect will carry: the ambient scope conjoined
     /// with `explicit`, if the caller passed one.
     ///
-    /// The straight-line immediate `1` YIELDS to the ambient guard, which
+    /// The straight-line immediate `1` yields to the ambient guard, which
     /// is what makes a plain method call inside [`Circuit::when`] pick the
     /// scope up for free. An explicit non-trivial guard inside a scope is
     /// conjoined with it — correct, but it costs a `cond_select` per call,
     /// so the plain form is the one to use inside a scope. Outside any
-    /// scope the explicit guard passes through untouched, so straight-line
-    /// callers are byte-for-byte what they were.
+    /// scope the explicit guard passes through untouched.
     pub(super) fn effect_guard(&mut self, explicit: Option<Arg>) -> EffectGuard {
-        // A NAMED constant 1 (`c.constant(1)`, the `one` every straight-line
+        // A named constant 1 (`c.constant(1)`, the `one` every straight-line
         // port threads the way compactc does) is the immediate 1: it yields
         // to the ambient scope exactly as the literal does, instead of
         // costing a `cond_select(ambient, one, 0)` that conjoins nothing.
@@ -97,7 +89,7 @@ impl Circuit {
             (Some(ambient), Some(Arg::Imm(imm))) if imm == Fr::from(1u64) => {
                 Some(Arg::Val(ambient))
             }
-            // A constant guard OTHER than 1 is either always-off or
+            // A constant guard other than 1 is either always-off or
             // nonsense; `ambient && imm` is still the honest answer.
             (Some(ambient), Some(explicit)) => Some(Arg::Val(self.b.cond_select(
                 ambient,
@@ -107,7 +99,7 @@ impl Circuit {
         })
     }
 
-    /// The value a CHECK sees: `w` itself in straight-line code, else
+    /// The value a check sees: `w` itself in straight-line code, else
     /// `select(guard, w, off)` so the check holds trivially where the guard
     /// is false. `off` is whatever satisfies the check (1 for an assert, 0
     /// for a range or boolean constraint).
@@ -121,9 +113,9 @@ impl Circuit {
 
     // --- scopes ------------------------------------------------------------------------------
 
-    /// Enter a scope: push `cond` conjoined with the current top. NESTING is
+    /// Enter a scope: push `cond` conjoined with the current top. Nesting is
     /// Compact's `&&` — the inner scope's guard is `select(outer, inner, 0)`,
-    /// computed ONCE on entry rather than per operation, which is exactly
+    /// computed once on entry rather than per operation, which is exactly
     /// the shape compactc emits for `if (a && b)`.
     pub(super) fn push_guard(&mut self, cond: Val) {
         let effective = match self.ambient() {
@@ -139,8 +131,8 @@ impl Circuit {
 
     // --- deferred emission: the hooks ------------------------------------------------
 
-    /// Queue `ops` for emission after the body, under the ambient guard AS
-    /// IT IS NOW. The one other reader of the ambient stack besides
+    /// Queue `ops` for emission after the body, under the ambient guard as
+    /// it is now. The one other reader of the ambient stack besides
     /// [`Circuit::effect_guard`], and for the same reason: attachment is
     /// where the hook's guard is decided, and the scope that decides it is
     /// gone by the time the hook is emitted.
@@ -154,7 +146,7 @@ impl Circuit {
     /// Emit every attached program in attachment order, each under the
     /// guard captured when it was attached. Called by [`Circuit::finish`]
     /// (and by `entry`, right after the body, so the disclosure record
-    /// lists the hooks' operands before the outputs). Must run OUTSIDE any
+    /// lists the hooks' operands before the outputs). Must run outside any
     /// scope: the captured guard already carries the scope.
     pub fn flush_deferred(&mut self) {
         assert!(
@@ -173,7 +165,7 @@ impl Circuit {
 
     // --- the raw emitters, one each ------------------------------------------------------
 
-    /// A READ under the constant-true guard is an unguarded read: `guard:
+    /// A read under the constant-true guard is an unguarded read: `guard:
     /// null`, which is what compactc emits for the witnesses of a
     /// straight-line cross-contract call (its ops carry the `0x01`, its
     /// reads carry nothing). Same meaning, and the byte compactc chose.
@@ -189,7 +181,7 @@ impl Circuit {
         self.b.private_input(ty, Self::read_guard(guard))
     }
 
-    /// The one build-time refusal of this module: an ON-CHAIN effect inside
+    /// The one build-time refusal of this module: an on-chain effect inside
     /// [`Circuit::when_private`]. Whether an Impact op or a public read ran
     /// is visible on chain, so the private condition would be disclosed by
     /// it; compactc's own rule, and the last rung of the rejection ladder
@@ -222,9 +214,9 @@ impl Circuit {
     }
 
     /// `assert`, with its optional message recorded at the index of the
-    /// `Assert` itself — AFTER the guard's select is emitted, which is what
+    /// `Assert` itself — after the guard's select is emitted, which is what
     /// lets the simulator find the message by the failing instruction's
-    /// index. Recording it before the select left every message inside a
+    /// index. Recording it before the select would leave every message inside a
     /// scope pointing one instruction early.
     pub(super) fn emit_assert(&mut self, cond: Val, message: Option<&str>, guard: EffectGuard) {
         let cond = self.checked_value(guard, cond, 1);
@@ -248,14 +240,14 @@ impl Circuit {
         }
     }
 
-    /// The value a RANGE check (bits / boolean) sees — [`checked_value`]
+    /// The value a range check (bits / boolean) sees — [`checked_value`]
     /// with `off = 0`, except for one case where no select is needed: `w`
     /// is itself a transcript read carrying this very guard. Such a read is
     /// zero where the guard is off, so the bare constraint is already total;
     /// this is compactc's shape for a guarded read (bare bit constraints
     /// behind a guarded witness — [`Builder::is_read_guarded_by`]), kept
     /// so the port lineage stays instruction-identical to it. Any other
-    /// value — a sum, a decoded limb, a read under a DIFFERENT guard — gets
+    /// value — a sum, a decoded limb, a read under a different guard — gets
     /// the select, because nothing says it is in range on the path not
     /// taken.
     ///
@@ -270,15 +262,14 @@ impl Circuit {
         self.checked_value(guard, w, 0)
     }
 
-    /// Both range emitters RETURN THE WIRE THEY CONSTRAINED. In straight-line
+    /// Both range emitters return the wire they constrained. In straight-line
     /// code that is `w`; inside a scope it is `select(guard, w, 0)` — and
     /// that selected wire is the value the branch computes, in compactc's
     /// own semantics (every value inside `if` is the selected one, and what
     /// the branch does next consumes it). A checked constructor that hands
-    /// the ORIGINAL wire downstream would carry a value the check does not
-    /// cover on the path not taken — which is exactly what the taint lint
-    /// caught when this was first written the other way: the merged coin's
-    /// value fed its commitment hash unbounded off-path.
+    /// the original wire downstream would carry a value the check does not
+    /// cover on the path not taken — which the taint lint catches: the
+    /// merged coin's value would feed its commitment hash unbounded off-path.
     pub(super) fn emit_constrain_bits(&mut self, w: Val, bits: u32, guard: EffectGuard) -> Val {
         let w = self.range_checked_value(guard, w);
         self.b.constrain_bits(w, bits);
@@ -296,7 +287,7 @@ impl Circuit {
 mod tests {
     /// The other half of the choke point: the parent module never calls a
     /// raw effect emitter on the builder. `EffectGuard`'s private field
-    /// makes an emitter unreachable WITHOUT the scope; this makes the raw
+    /// makes an emitter unreachable without the scope; this makes the raw
     /// builder call — which has no guard parameter to forget — unreachable
     /// from the surface at all. Textual, like the repo's escape-hatch greps,
     /// and for the same reason: the builder's emitters are public API one

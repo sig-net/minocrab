@@ -18,7 +18,7 @@ use minocrab_ir::Fr;
 
 use crate::{DisclosureKind, Meet, OnChainGuard, Private, Public, Region, Visibility};
 
-/// The per-circuit lowering settings no gadget can carry (M48 C): see
+/// The per-circuit lowering settings no gadget can carry: see
 /// [`Circuit::set_lowering`].
 pub use crate::lowering::{Lowering, SelfAddressReads};
 
@@ -211,10 +211,10 @@ impl<T: IrTy, V: Visibility> From<Wire<T, V>> for AnyWire<V> {
     }
 }
 
-/// A type-erased hash OPERAND: a wire of any value type, or an INLINE
-/// IMMEDIATE ([`AnyWire::immediate`]).
+/// A type-erased hash operand: a wire of any value type, or an inline
+/// immediate ([`AnyWire::immediate`]).
 ///
-/// The immediate arm is M9 phase 8's rule applied to preimages: compactc puts
+/// The immediate arm is there because compactc puts
 /// a constant preimage element straight into the instruction's operand list
 /// (a domain separator is always one), and naming it with a `copy` first is a
 /// zero-row but visible difference. `AnyWire` therefore carries an [`Arg`]
@@ -228,7 +228,7 @@ impl<V: Visibility> AnyWire<V> {
     /// A constant preimage element, inlined into the instruction rather than
     /// named by a `copy` — the shape compactc emits for a domain separator.
     ///
-    /// The visibility parameter is the LIST's, not the value's: a constant is
+    /// The visibility parameter is the list's, not the value's: a constant is
     /// public, and it takes whatever visibility its neighbours have.
     pub fn immediate(imm: impl Into<Fr>) -> AnyWire<V> {
         AnyWire {
@@ -248,7 +248,7 @@ impl<V: Visibility> AnyWire<V> {
     }
 }
 
-/// A condition usable as a GUARD: a wire, or (in `minocrab-std`) a `Check`
+/// A condition usable as a guard: a wire, or (in `minocrab-std`) a `Check`
 /// from the predicate vocabulary.
 ///
 /// The trait exists so that [`Circuit::when`] and [`Branches`] read the same
@@ -271,8 +271,8 @@ impl<V: Visibility> GuardCond<V> for Wire<FieldT, V> {
 ///
 /// `#[repr(transparent)]` around the value and carrying nothing at run time,
 /// so it costs no instruction and no byte. What it carries is a
-/// `#[must_use]` that TRAVELS: a function-level attribute fires only where
-/// the call is written, but a must-use TYPE fires wherever a value of it is
+/// `#[must_use]` that travels: a function-level attribute fires only where
+/// the call is written, but a must-use type fires wherever a value of it is
 /// dropped — including one step removed, which is where the waste actually
 /// happens:
 ///
@@ -294,9 +294,9 @@ impl<V: Visibility> GuardCond<V> for Wire<FieldT, V> {
 /// where the value is, and [`Selected::into_inner`] to be rid of it. Field
 /// access needs no ceremony — a `Selected<B32>` still has `.hi` and `.lo`.
 ///
-/// THE TENSION, stated because it decides how much the wrapper is worth: the
+/// The tension, stated because it decides how much the wrapper is worth: the
 /// more eagerly it is unwrapped, the less it propagates. Kept in a helper's
-/// SIGNATURE it catches the dropped-result mistake a caller away; unwrapped
+/// signature it catches the dropped-result mistake a caller away; unwrapped
 /// at the first opportunity it degrades to exactly the function-level
 /// `#[must_use]` it replaced. Both are fine — the type also reads as
 /// documentation ("this came from a branch, so every arm was paid for") — but
@@ -344,20 +344,20 @@ impl<V: Visibility, T: Select<V>> Select<V> for Selected<T> {
     }
 }
 
-/// The result of a GUARDED READ: the value the transcript carried if the
-/// guard held, and the type's DEFAULT if it did not.
+/// The result of a guarded read: the value the transcript carried if the
+/// guard held, and the type's default if it did not.
 ///
 /// The default is not this library's choice. A guarded-off `public_input` /
 /// `private_input` gate yields the type's default and does not consume the
 /// transcript — upstream's own VM semantics (`ir_vm.rs:348-366`), and the
 /// whole reason a read can sit inside a branch at all. What this type adds is
-/// that the caller has to SAY which they mean, instead of receiving a value
+/// that the caller has to say which they mean, instead of receiving a value
 /// that is silently zero on a path they were not thinking about.
 ///
-/// It is deliberately NOT [`Deref`](std::ops::Deref), and that is the
-/// difference from [`Selected`]. `Selected` guards against DROPPING a value,
+/// It is deliberately not [`Deref`](std::ops::Deref), and that is the
+/// difference from [`Selected`]. `Selected` guards against dropping a value,
 /// so deref coercion is harmless and saves ceremony. `Guarded` guards against
-/// CONFUSING two values — the read one and the default one — and a coercion
+/// confusing two values — the read one and the default one — and a coercion
 /// that silently produced the value would undo exactly the thing the type is
 /// for.
 ///
@@ -370,7 +370,7 @@ impl<V: Visibility, T: Select<V>> Select<V> for Selected<T> {
 /// | [`assert_read`](Guarded::assert_read) | "the guard must have held" | one `Assert` |
 ///
 /// `or_default` being free is worth stating plainly, because the instinct is
-/// to expect a type-system win to cost rows: the wire already IS the default
+/// to expect a type-system win to cost rows: the wire already is the default
 /// when the guard is off, so naming that fact emits nothing at all.
 #[must_use = "a guarded read is the type's DEFAULT when its guard was off — say which you \
               mean with `.or_default()`, `.or(..)` or `.assert_read(c)`"]
@@ -392,7 +392,7 @@ impl<T, V: Visibility> Guarded<T, V> {
 
     /// Take the value, accepting the type's default where the guard was off.
     ///
-    /// ZERO INSTRUCTIONS. The gate already yielded the default; this only
+    /// Zero instructions. The gate already yielded the default; this only
     /// records that the caller meant it.
     pub fn or_default(self) -> T {
         self.value
@@ -415,7 +415,7 @@ impl<T: Select<V>, V: Visibility> Guarded<T, V> {
 }
 
 impl<T, V: Visibility> Guarded<T, V> {
-    /// Take the value and REQUIRE that the guard held: `assert(guard)`.
+    /// Take the value and require that the guard held: `assert(guard)`.
     ///
     /// One `Assert`. Turns "may not have been read" into "was read", at the
     /// price of making the circuit unsatisfiable on the path where it was
@@ -435,7 +435,7 @@ impl<T: Clone, V: Visibility> Clone for Guarded<T, V> {
 
 impl<T: Copy, V: Visibility> Copy for Guarded<T, V> {}
 
-/// A value that a conditional can SELECT between: one `cond_select` per
+/// A value that a conditional can select between: one `cond_select` per
 /// native slot.
 ///
 /// Implemented in the frontend for a bare wire and in `minocrab-std` for the
@@ -452,7 +452,7 @@ impl<V: Visibility> Select<V> for Wire<FieldT, V> {
     }
 }
 
-/// A PUBLIC condition choosing between PRIVATE values — the shape every
+/// A public condition choosing between private values — the shape every
 /// `when_value` over private data has, now that a scope's condition must be
 /// [`OnChainGuard`]. The result is private (the values are); the selection
 /// itself is the same `cond_select`. The other mixed case — a private bit
@@ -495,7 +495,7 @@ select_tuples! {
     (A 0, B 1, C 2, D 3),
 }
 
-/// An if / else-if / else chain that produces a VALUE — see
+/// An if / else-if / else chain that produces a value — see
 /// [`Circuit::when_value`].
 /// Unfinished, it produces nothing — so leaving off `otherwise` is a warning
 /// rather than a chain that silently emitted its arms and discarded them:
@@ -546,7 +546,7 @@ impl<V: Visibility, T: Select<V>> ValueBranches<'_, V, T> {
     }
 
     /// The fallback, and the only way to get the value out — so a value chain
-    /// is EXHAUSTIVE by construction. Costs one `cond_select` per slot of
+    /// is exhaustive by construction. Costs one `cond_select` per slot of
     /// `T`, plus one to thread the guard.
     ///
     /// Dropping the result is a warning, because it means every arm was
@@ -588,7 +588,7 @@ impl<V: Visibility, T: Select<V>> ValueBranches<'_, V, T> {
 /// An if / else-if / else chain in progress — see [`Circuit::when`].
 ///
 /// Holds the condition of the arm just run and the "nothing had matched"
-/// accumulator from BEFORE it. The new accumulator is computed only when
+/// accumulator from before it. The new accumulator is computed only when
 /// another arm actually arrives, so a bare `c.when(cond, ..)` — a plain `if`
 /// with no `else` — emits nothing beyond the arm itself. (An unused
 /// instruction is a real row; `tests/backend_folding.rs` measures it.)
@@ -648,7 +648,7 @@ impl<V: Visibility> Branches<'_, V, ()> {
         }
     }
 
-    /// The final arm: runs where NO earlier arm matched.
+    /// The final arm: runs where no earlier arm matched.
     pub fn otherwise(self, body: impl FnOnce(&mut Circuit)) {
         let Branches { c, last, prior, private, .. } = self;
         let guard = unmatched_after(c, last, prior);
@@ -657,7 +657,7 @@ impl<V: Visibility> Branches<'_, V, ()> {
 }
 
 /// A value read inside a scope: the body of [`Circuit::when`] /
-/// [`Circuit::when_private`] returned it, and it is the type's DEFAULT
+/// [`Circuit::when_private`] returned it, and it is the type's default
 /// wherever the guard was off (a skipped read's wires hold zero, a skipped
 /// witness yields the default). These are the three ways to take it out,
 /// and the [`Guarded`] they go through says so in its `#[must_use]`.
@@ -667,7 +667,7 @@ impl<V: Visibility, R> Branches<'_, V, R> {
         Guarded::new(self.value, self.last)
     }
 
-    /// The value, accepting the default where the guard was off. ZERO
+    /// The value, accepting the default where the guard was off. Zero
     /// instructions.
     pub fn or_default(self) -> R {
         self.value
@@ -683,7 +683,7 @@ impl<V: Visibility, R> Branches<'_, V, R> {
         R::select(c, last, value, fallback)
     }
 
-    /// The value, and an `assert(guard)`: the read MUST have happened.
+    /// The value, and an `assert(guard)`: the read must have happened.
     pub fn assert_read(self) -> R {
         let Branches { c, last, value, .. } = self;
         c.assert_with(last, Some("guarded read: the guard must hold"));
@@ -701,11 +701,11 @@ pub enum ImpactElem {
 
 // --- operands -------------------------------------------------------------------
 
-/// What an instruction takes: a wire, or an INLINE IMMEDIATE.
+/// What an instruction takes: a wire, or an inline immediate.
 ///
 /// v3 has no `LoadImm` — an immediate is an operand of the instruction that
 /// uses it (`{"op": "less_than", "a": {"immediate": "0"}, …}`), so a native
-/// Rust value in an operand position costs NOTHING. Naming one first
+/// Rust value in an operand position costs nothing. Naming one first
 /// (`let zero = c.constant(0u64); c.less_than(zero, x, 64)`) emits a `Copy`
 /// whose only purpose is the name.
 ///
@@ -742,7 +742,7 @@ impl<T: IrTy, V: Visibility> Operand<T, V> {
     /// either its own visibility or [`Private`], never the other way round.
     ///
     /// It is `Wire::private` generalized to the lattice, and it exists so
-    /// that a MIXED comparison can be assembled: both sides of
+    /// that a mixed comparison can be assembled: both sides of
     /// `less_than(0u64, secret)` become operands at `Public ⊓ Private`
     /// before the instruction is built.
     pub fn meet<W: Visibility>(self) -> Operand<T, <V as Meet<W>>::Out>
@@ -823,7 +823,7 @@ pub struct Disclosure {
 }
 
 /// One wire of a [`Disclosure`] — a name the run's memory can be keyed by,
-/// or the CONSTANT it holds.
+/// or the constant it holds.
 ///
 /// The constant arm is what keeps the valued report whole under the
 /// constant-folding pass (notes/ir-passes.org §2 ii): a `Copy` of an immediate
@@ -844,7 +844,7 @@ pub enum DisclosedWire {
 ///
 /// A boolean wire is the base case. The other implementor is
 /// `minocrab_std::Check`, the deferred predicate — an inert descriptor
-/// that emits its comparison HERE, at the assert, and nothing anywhere else
+/// that emits its comparison here, at the assert, and nothing anywhere else
 /// (an unasserted predicate emits nothing at all, and warns, being
 /// `#[must_use]`).
 pub trait Assertion {
@@ -865,7 +865,7 @@ impl<V: Visibility> Assertion for Wire<FieldT, V> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AssertMessage {
     /// Index of the `Assert` instruction this message belongs to — in the
-    /// FINISHED stream (`Compiled::ir`) once [`Circuit::finish`] has run,
+    /// finished stream (`Compiled::ir`) once [`Circuit::finish`] has run,
     /// which moves it across the instructions the passes delete.
     pub instruction: usize,
     /// What the check means, in the contract author's words.
@@ -880,7 +880,7 @@ pub struct Circuit {
     regions: Vec<Region>,
     queued_outputs: Vec<Val>,
     pub(crate) assert_messages: Vec<AssertMessage>,
-    /// The AMBIENT GUARD stack — see [`Circuit::guarded`]. Each entry is
+    /// The ambient guard stack — see [`Circuit::guarded`]. Each entry is
     /// already the conjunction of itself and everything below it, so the top
     /// is the effective guard and reading it costs nothing.
     pub(crate) guards: Vec<Val>,
@@ -889,11 +889,11 @@ pub struct Circuit {
     pub(crate) private_scopes: u32,
     /// Gadget scratch state — see [`Circuit::ext_insert`].
     ext: std::collections::BTreeMap<std::any::TypeId, Box<dyn std::any::Any>>,
-    /// The DEFERRED Impact programs — see [`Circuit::then`]. Each was
+    /// The deferred Impact programs — see [`Circuit::then`]. Each was
     /// lowered at attachment and is emitted, in this order, when the body
     /// ends, under the guard captured at attachment.
     pub(crate) deferred: Vec<DeferredImpact>,
-    /// Transcript reads the programmer has NAMED AS STALE-ABLE
+    /// Transcript reads the programmer has named as stale-able
     /// (`Assumed::stale`, notes/hooks-design.org): a value descending from
     /// one of these may re-enter the ledger; one descending from any other
     /// read is refused at the ledger boundary — see
@@ -913,7 +913,7 @@ pub(crate) struct DeferredImpact {
     pub(crate) ops: Vec<Vec<ImpactElem>>,
 }
 
-/// A program the circuit EMITS AFTER ITS BODY — the ledger hook of
+/// A program the circuit emits after its body — the ledger hook of
 /// notes/hooks-design.org, at the level this crate sees it: a list of Impact
 /// instructions, lowered once at attachment.
 ///
@@ -993,7 +993,7 @@ impl Circuit {
         }
     }
 
-    /// Mark every transcript read behind `wires` as ACKNOWLEDGED: the
+    /// Mark every transcript read behind `wires` as acknowledged: the
     /// programmer has said, by writing `.stale()`, that the transaction
     /// assumes those values are still current at landing. Values derived
     /// from them may then re-enter the ledger.
@@ -1004,13 +1004,13 @@ impl Circuit {
         }
     }
 
-    /// The BACKSTOP at the ledger boundary (notes/hooks-design.org, "Stale
+    /// The backstop at the ledger boundary (notes/hooks-design.org, "Stale
     /// values must be named"): refuse a value that descends from a
     /// transcript read the programmer has not acknowledged with `.stale()`,
     /// naming the read. The types catch a read result used directly (an
     /// `Assumed<T>` has no ledger representation); this catches what was
-    /// COMPUTED from one, which Rust's types do not carry. A build-time
-    /// error, the last rung of the rejection ladder, recorded for review.
+    /// computed from one, which Rust's types do not carry. A build-time
+    /// error, the last rung of the rejection ladder.
     #[track_caller]
     pub fn refuse_stale(&self, wires: &[Val], what: &str) {
         for &w in wires {
@@ -1041,14 +1041,14 @@ impl Circuit {
     // --- gadget scratch state ---------------------------------------------------
 
     /// Store one value of type `T` on the circuit, replacing any previous
-    /// one — GADGET SCRATCH STATE, keyed by type.
+    /// one — gadget scratch state, keyed by type.
     ///
     /// A gadget that wants per-circuit memoisation (the kernel.self cache
     /// is the in-tree example; a third-party gadget crate has the same
     /// need and no fork to put a field in) parks its state here under its
     /// own private type, so two gadgets can never collide and nothing here
     /// is nameable from outside the module that owns the type. This is
-    /// metadata for CONSTRUCTION only: nothing in the extension map
+    /// metadata for construction only: nothing in the extension map
     /// reaches the lowered [`Compiled`].
     pub fn ext_insert<T: std::any::Any>(&mut self, value: T) {
         self.ext
@@ -1085,8 +1085,8 @@ impl Circuit {
 
     /// Read the next witness value from the private transcript.
     pub fn witness<T: IrTy>(&mut self) -> Wire<T, Private> {
-        // THE AMBIENT GUARD REACHES WITNESSES, and it has to: a guarded
-        // private input yields the default and does NOT consume the private
+        // The ambient guard reaches witnesses, and it has to: a guarded
+        // private input yields the default and does not consume the private
         // transcript when its guard is false, so a witness read unguarded
         // inside a branch would consume a value on the path that was not
         // taken. That is a semantic difference, not a framing one — the
@@ -1100,16 +1100,16 @@ impl Circuit {
     /// Read the next witness value under a guard (false ⇒ default value,
     /// transcript not consumed).
     ///
-    /// The explicit guard RESOLVES AGAINST THE AMBIENT SCOPE, like every
+    /// The explicit guard resolves against the ambient scope, like every
     /// effect's does (`Circuit::effect_guard`): inside a
-    /// [`Circuit::when`], the witness is consumed only where BOTH hold.
-    /// Passed through verbatim, as it once was, a `_guarded` witness under
-    /// a scope consumed the private transcript on the path not taken
+    /// [`Circuit::when`], the witness is consumed only where both hold.
+    /// Passed through verbatim, a `_guarded` witness under
+    /// a scope would consume the private transcript on the path not taken
     /// whenever its own guard was true — shifting every later witness, and
     /// invisible to a differential on an honest preimage.
     /// Contract code should reach for [`Circuit::when`] /
     /// [`Circuit::when_private`] instead — the scope resolves the guard
-    /// automatically, so a plain [`Circuit::witness`] inside one IS this.
+    /// automatically, so a plain [`Circuit::witness`] inside one is this.
     /// This is the primitive the scope lowers to, kept as the twin
     /// `minocrab-std/tests/guard_scope.rs` compares the scoped form
     /// against, byte for byte.
@@ -1132,21 +1132,21 @@ impl Circuit {
 
     /// Guarded public-transcript read.
     ///
-    /// The explicit guard RESOLVES AGAINST THE AMBIENT SCOPE, exactly as an
+    /// The explicit guard resolves against the ambient scope, exactly as an
     /// emitted op's does — without this, a `_guarded` read inside
     /// [`Circuit::when`] would fire its gates on the raw condition while
     /// its op embed (which goes through `Circuit::effect_guard`) stays
     /// correctly skipped, shifting every later read's public inputs by the
-    /// orphaned gates. Found by the AA manager port: `sendUnshielded`'s
+    /// orphaned gates. The case in the tree: `sendUnshielded`'s
     /// auto-receive `kernel.self` read is guarded by `recipient.is_left`,
-    /// and the manager is the first contract to run it inside a branch
+    /// and the AA manager runs it inside a branch
     /// (`custodyDispatch`'s `isWithdrawUnshielded` arm), where a named-swap
     /// call has `is_left` true while the arm is off. Straight-line callers
     /// are untouched — with no ambient guard the operand passes through
     /// unchanged.
     /// Contract code should reach for [`Circuit::when`] instead — the scope
     /// resolves the guard automatically, so a plain
-    /// [`Circuit::public_transcript_input`] inside one IS this. This is the
+    /// [`Circuit::public_transcript_input`] inside one is this. This is the
     /// primitive the scope lowers to, kept as the twin
     /// `minocrab-std/tests/guard_scope.rs` compares the scoped form
     /// against, byte for byte.
@@ -1159,7 +1159,7 @@ impl Circuit {
         Wire::new(self.emit_public_input(T::ir_type(), guard))
     }
 
-    /// A native-field constant, NAMED: `Copy imm` into a reusable wire.
+    /// A native-field constant, named: `Copy imm` into a reusable wire.
     ///
     /// Only worth it when the value is used as a wire — a hash preimage
     /// element, a record limb, an Impact guard. In an operand position, pass
@@ -1172,17 +1172,15 @@ impl Circuit {
 
     /// Name a value that already exists: `Copy val` into a fresh wire.
     ///
-    /// Zero rows — a `Copy` is a rename, which is why M9 phase 7's literals
-    /// work removed 47 of them without moving a single row, and why this
-    /// session's 42 removed the same way (`opcost`: 100 `Copy`s cost 0 rows,
-    /// 100 `cond_select`s cost 101). It is NOT a way to make a value cheaper,
+    /// Zero rows — a `Copy` is a rename (`opcost`: 100 `Copy`s cost 0 rows,
+    /// 100 `cond_select`s cost 101). It is not a way to make a value cheaper,
     /// and there is no reason to reach for it in ordinary circuit code.
     ///
     /// It exists because compactc's own lowering emits it, and a stdlib
-    /// circuit that claims to BE compactc's lowering has to be able to say so:
+    /// circuit that claims to be compactc's lowering has to be able to say so:
     /// an `x as Uint<N>` cast names its range-checked result, and
     /// `degradeToTransient` names the limb it degrades
-    /// (`minocrab_std::kernel`'s shielded compositions, M17).
+    /// (`minocrab_std::kernel`'s shielded compositions).
     pub fn copy<T: IrTy, V: Visibility>(&mut self, val: Wire<T, V>) -> Wire<T, V> {
         Wire::new(self.b.copy(val.val))
     }
@@ -1306,7 +1304,7 @@ impl Circuit {
     ///
     /// The operands are wires or, like [`persistent_hash`](Self::persistent_hash)'s,
     /// [`AnyWire`]s — so a constant element (a domain separator always is one)
-    /// can be INLINED into the instruction rather than named by a `Copy` first,
+    /// can be inlined into the instruction rather than named by a `Copy` first,
     /// which is the shape compactc emits (the nonce evolution's
     /// `"midnight:kernel:nonce_evolve"`).
     pub fn transient_hash<V: Visibility, O: Copy + Into<AnyWire<V>>>(
@@ -1467,7 +1465,7 @@ impl Circuit {
     /// Constrain a condition to be true (constraining private data is the
     /// point of ZK — this discloses nothing).
     ///
-    /// Takes anything [`Assertion`]: a boolean wire, or a deferred PREDICATE
+    /// Takes anything [`Assertion`]: a boolean wire, or a deferred predicate
     /// that lowers itself here (`minocrab_std::Check` —
     /// `c.assert(less_than(0u64, amount))`). A predicate lowers to exactly
     /// the comparison instruction the hand-written form emits, at this call
@@ -1479,7 +1477,7 @@ impl Circuit {
     /// [`Circuit::assert`] with Compact's second `assert(cond, "message")`
     /// argument.
     ///
-    /// The message is METADATA — no instruction, no slot, no row, exactly
+    /// The message is metadata — no instruction, no slot, no row, exactly
     /// like a disclosure record — recorded against the position of the
     /// `Assert` about to be emitted, so a simulator can name the failed
     /// check instead of printing an instruction index. ZKIR has nowhere to
@@ -1514,7 +1512,7 @@ impl Circuit {
     /// guard is off — a range check on a value that is only meaningful in
     /// the branch cannot brick the proof outside it.
     ///
-    /// RETURNS THE WIRE IT CONSTRAINED: `w` in straight-line code, the
+    /// Returns the wire it constrained: `w` in straight-line code, the
     /// selected wire inside a scope. That selected wire is the branch's
     /// value in compactc's semantics, and it is the one a checked
     /// constructor must hand on — `w` itself is not covered by the check on
@@ -1534,11 +1532,10 @@ impl Circuit {
 
     // --- disclosure: the only Private → Public gate --------------------------------------
 
-    /// Explicitly make a private value public — the greppable audit point,
-    /// as in the v2 frontend.
+    /// Explicitly make a private value public — the greppable audit point.
     ///
     /// The typed form is `minocrab_std::Disclose::disclose_as::<L>`,
-    /// which names the disclosure with a label TYPE that the circuit's
+    /// which names the disclosure with a label type that the circuit's
     /// `Discloses<..>` declaration also names, so the two cannot drift; this
     /// is its one-wire, free-string base case.
     pub fn disclose<T: IrTy>(&mut self, w: Wire<T, Private>, label: &str) -> Wire<T, Public> {
@@ -1546,10 +1543,10 @@ impl Circuit {
         out
     }
 
-    /// [`Circuit::disclose`] under a LABEL TYPE — the record every
+    /// [`Circuit::disclose`] under a label type — the record every
     /// `Discloses<..>` declaration is checked against. The bare-string form
     /// records [`DisclosureKind::DisclosedUntyped`], which no declaration
-    /// accepts (external review §4.5: a string that spells a declared label
+    /// accepts (a string that spells a declared label
     /// must not pass for it); this one records [`DisclosureKind::Disclosed`].
     ///
     /// Crate-private: the public spelling for a single wire is
@@ -1559,7 +1556,7 @@ impl Circuit {
     /// around because [`Circuit::disclose_all_as`] and
     /// [`Circuit::disclose_slice_as`] — the multi-wire primitives
     /// `minocrab-std`'s composite `Disclose` impls call directly — need a
-    /// one-wire base case too (notes/edsl-trim.org §D, finding 1).
+    /// one-wire base case too (notes/edsl-trim.org §D).
     pub(crate) fn disclose_as<L: DisclosureLabel, T: IrTy>(
         &mut self,
         w: Wire<T, Private>,
@@ -1590,11 +1587,11 @@ impl Circuit {
         wires.iter().map(|w| Wire::new(w.val)).collect()
     }
 
-    /// Disclose the wires of ONE logical value under ONE label — a
+    /// Disclose the wires of one logical value under one label — a
     /// `Bytes<32>`'s `[hi, lo]` pair becomes a single record rather than a
     /// `"… (hi)"` / `"… (lo)"` pair (see [`Disclosure`]).
     ///
-    /// The BARE-STRING form: its record is [`DisclosureKind::DisclosedUntyped`],
+    /// The bare-string form: its record is [`DisclosureKind::DisclosedUntyped`],
     /// which satisfies no `Discloses<..>` declaration. Call sites that
     /// declare use [`Circuit::disclose_all_as`] (the typed layer,
     /// `minocrab_std::Disclose`, fans out through it); this one is for
@@ -1629,7 +1626,7 @@ impl Circuit {
         }
     }
 
-    /// One `Disclosed` record over `wires` — or NONE, if there are no wires.
+    /// One `Disclosed` record over `wires` — or none, if there are no wires.
     /// A value with no wires discloses nothing (a cross-contract call to a
     /// `[]`-returning circuit has an empty result list), and recording it
     /// anyway would put a label in the disclosed set that no value backs.
@@ -1676,7 +1673,7 @@ impl Circuit {
     /// The lowering primitive the typed ledger slots are built on; an author
     /// writing Impact by hand uses `minocrab-experimental`.
     ///
-    /// NOT STALE-CHECKED: this crate does not know which elements of an op
+    /// Not stale-checked: this crate does not know which elements of an op
     /// are a stored value. The check ([`Circuit::refuse_stale`] on the value
     /// a write stores) is made by `minocrab_ledger::emit`, whose op builders
     /// know; a write handed here directly skips it.
@@ -1685,12 +1682,12 @@ impl Circuit {
     /// immediates (as compactc emits opcode/alignment elements), computed
     /// values as wires.
     ///
-    /// The GUARD is an operand too (M9 phase 8): a wire for a branch
+    /// The guard is an operand too: a wire for a branch
     /// condition, or the native `true`/`1u64` for a straight-line operation,
     /// which inlines as an immediate instead of naming a `Copy`. compactc
     /// always names one (it threads a `1` wire through every op of a
     /// straight-line circuit), so the immediate form is a deliberate
-    /// departure — zero rows, one fewer instruction, and no longer
+    /// departure — zero rows, one fewer instruction, and not
     /// byte-identical to compactc's stream.
     ///
     /// Contract code should reach for [`Circuit::when`] instead — the scope
@@ -1729,7 +1726,7 @@ impl Circuit {
             .collect()
     }
 
-    /// ATTACH a deferred program (a ledger hook): lower it now, capture the
+    /// Attach a deferred program (a ledger hook): lower it now, capture the
     /// ambient guard, and emit it after the body — see [`Deferred`].
     ///
     /// Inside [`Circuit::when`] the hook is emitted under that scope's
@@ -1772,25 +1769,25 @@ impl Circuit {
 
     // --- guard scoping ---------------------------------------------------------------------
 
-    /// THE MECHANISM behind [`Circuit::when`]: run `body` with `cond` as the
-    /// AMBIENT GUARD, so every ledger operation, transcript read and
+    /// The mechanism behind [`Circuit::when`]: run `body` with `cond` as the
+    /// ambient guard, so every ledger operation, transcript read and
     /// assertion inside it is guarded by `cond` without naming it.
     ///
     /// Private on purpose. `when` is the one public spelling of a guard —
-    /// this returned the body's VALUE, which invites the reading that the
+    /// this returned the body's value, which invites the reading that the
     /// value came from a conditional when in fact it was computed
-    /// unconditionally and only its EFFECTS were guarded. A value that
+    /// unconditionally and only its effects were guarded. A value that
     /// depends on a branch has to be selected, which is
     /// [`Circuit::when_value`].
     ///
     /// This is the scoped form of the `_under` / `_guarded` argument every
     /// ledger and kernel method carries, and it exists because that argument
-    /// does not COMPOSE. A helper called under a branch has to thread the
+    /// does not compose. A helper called under a branch has to thread the
     /// guard through its whole call graph by hand, and a helper that performs
     /// a transcript read has to know to reach for the `_guarded` variant —
     /// knowledge that lives in no type and is checked by nothing.
     ///
-    /// THREE THINGS ARE GUARDED, and the third is the one that makes this a
+    /// Three things are guarded, and the third is the one that makes this a
     /// safety feature rather than a convenience:
     ///
     /// 1. Impact instructions ([`Circuit::impact_mixed`]).
@@ -1807,8 +1804,8 @@ impl Circuit {
     ///    guard through one private choke point (`effects.rs`), and a
     ///    test pins that nothing bypasses it.
     ///
-    /// NESTING is Compact's `&&`: the inner scope's guard is `select(outer,
-    /// inner, 0)`, computed ONCE on entry rather than per operation. So
+    /// Nesting is Compact's `&&`: the inner scope's guard is `select(outer,
+    /// inner, 0)`, computed once on entry rather than per operation. So
     ///
     /// ```ignore
     /// c.guarded(a, |c| c.guarded(b, |c| { .. }))
@@ -1828,7 +1825,7 @@ impl Circuit {
         result
     }
 
-    /// Start an if / else-if / else CHAIN — arms are mutually exclusive, and
+    /// Start an if / else-if / else chain — arms are mutually exclusive, and
     /// each one runs where its condition holds and no earlier one matched.
     ///
     /// ```ignore
@@ -1840,7 +1837,7 @@ impl Circuit {
     /// `otherwise` is optional: a chain without it is a plain `if / else if`,
     /// and dropping the builder just ends it.
     ///
-    /// COST is two `cond_select`s per arm after the first — one to and the
+    /// Cost is two `cond_select`s per arm after the first — one to and the
     /// condition with "nothing matched yet", one to update it — and the first
     /// arm and the `otherwise` arm are free, because their guards are already
     /// to hand. A two-arm `when(..).otherwise(..)` is therefore exactly
@@ -1852,10 +1849,10 @@ impl Circuit {
     /// [`Circuit::cond_select`] on the arms' results instead, where the
     /// selection is visible.
     ///
-    /// The body may RETURN what it read: `c.when(g, |c| map.lookup(c, &k))`
+    /// The body may return what it read: `c.when(g, |c| map.lookup(c, &k))`
     /// hands the value back through [`Branches::or_default`] /
     /// [`Branches::or`] / [`Branches::assert_read`] (or [`Branches::guarded`]
-    /// to pass it on), which is the ONE way a conditional read is spelled —
+    /// to pass it on), which is the one way a conditional read is spelled —
     /// there is no per-operation guard parameter. A skipped read already
     /// holds the type's default, so `or_default` costs nothing.
     pub fn when<V: OnChainGuard, R>(
@@ -1874,26 +1871,26 @@ impl Circuit {
         }
     }
 
-    /// A scope on a PRIVATE condition, for bodies with no on-chain effect —
+    /// A scope on a private condition, for bodies with no on-chain effect —
     /// Compact's `if (privateBit) { assert(...) }` without a `disclose`.
     ///
     /// [`Circuit::when`] requires an [`OnChainGuard`]: whether an Impact op
     /// or a public-transcript read ran is visible on chain, so a private
-    /// condition guarding one is a disclosure (the external review's §4.1).
-    /// But a body that only WITNESSES and CHECKS reveals nothing — a guarded
+    /// condition guarding one is a disclosure.
+    /// But a body that only witnesses and checks reveals nothing — a guarded
     /// witness read yields the default and consumes no transcript, a guarded
     /// assert becomes `assert(select(g, x, 1))` — and compactc allows it
     /// without disclosure. This is that scope: the condition may be
     /// `Private`, the body may read witnesses and assert, and the two
-    /// on-chain emitters REFUSE inside it at build time with the
+    /// on-chain emitters refuse inside it at build time with the
     /// disclose-first message. The ladder's last rung, because the scope
     /// stack is dynamic and the type system cannot reach it without a
-    /// type-state `Circuit` (M26).
+    /// type-state `Circuit`.
     ///
     /// Byte-identical to the hand-threaded form (`assert(select(g, x, 1))`,
     /// `witness_guarded(g)`), as `minocrab-std/tests/guard_scope.rs`
     /// pins. Nesting follows [`Circuit::when`]'s rule (a conjunction); a
-    /// public [`Circuit::when`] INSIDE a private scope is still inside it,
+    /// public [`Circuit::when`] inside a private scope is still inside it,
     /// so its on-chain effects are refused too. An `else_when` /
     /// `otherwise` arm of a private chain is a private scope as well.
     ///
@@ -1934,7 +1931,7 @@ impl Circuit {
         result
     }
 
-    /// The chain that produces a VALUE — Compact's `if`-as-an-expression.
+    /// The chain that produces a value — Compact's `if`-as-an-expression.
     ///
     /// ```ignore
     /// let fee = c.when_value(is_premium, |c| tier_a(c))
@@ -1942,7 +1939,7 @@ impl Circuit {
     ///            .otherwise(|c| standard(c));
     /// ```
     ///
-    /// EXHAUSTIVE BY CONSTRUCTION: `otherwise` is the only method that
+    /// Exhaustive by construction: `otherwise` is the only method that
     /// returns the value, so a chain without a fallback does not type-check.
     /// The effectful [`Circuit::when`] needs no such rule — an arm that does
     /// not run simply has its effects guarded off — but a value has to come
@@ -1951,7 +1948,7 @@ impl Circuit {
     /// # What it costs
     ///
     /// **Every arm's instructions are emitted, whatever the conditions turn
-    /// out to be.** A circuit does not branch, so an `if` costs the SUM of
+    /// out to be.** A circuit does not branch, so an `if` costs the sum of
     /// its arms and never the maximum. That is the setting rather than
     /// anything this API chose, and it is the dominant term whenever the arms
     /// do real work.
@@ -1975,7 +1972,7 @@ impl Circuit {
     /// careful author writes anyway
     /// (`a_value_chain_is_the_hand_written_select` pins the equality). What
     /// the chain removes is selecting on the wrong guard, and the temptation
-    /// to skip guarding the arms' EFFECTS because only the value looked
+    /// to skip guarding the arms' effects because only the value looked
     /// conditional.
     ///
     /// # When to reach for something else
@@ -2017,7 +2014,7 @@ impl Circuit {
 
     // --- passes -----------------------------------------------------------------------------
 
-    /// Turn on constraint deduplication for this circuit — THE OPT PROFILE,
+    /// Turn on constraint deduplication for this circuit — the opt profile,
     /// and the one pass that is not free.
     ///
     /// With it on, a later range constraint on a wire that an earlier one
@@ -2025,18 +2022,18 @@ impl Circuit {
     /// (`minocrab_ir::passes::dedup_range_constraints`, which states the
     /// soundness argument). A repeated `constrain_bits` is two rows — the
     /// most expensive redundancy in `tests/backend_folding.rs` — so this is
-    /// what lets a gadget CHECK the preconditions it currently documents:
+    /// what lets a gadget check the preconditions it currently documents:
     /// `Serializer::constrained` and the checked Borsh readers emit the
     /// range constraints their packing needs, and where the caller already
     /// constrained those wires the pass removes exactly what was added.
     ///
-    /// WHY IT IS NOT ON EVERYWHERE. Our primary correctness warrant is
+    /// Why it is not on everywhere. Our primary correctness warrant is
     /// differential equality with compactc, instruction for instruction, and
-    /// compactc RE-EMITS: this pass makes us strictly more deduplicated than
+    /// compactc re-emits: this pass makes us strictly more deduplicated than
     /// the artifact we are checked against. So a circuit that must stay
     /// instruction-comparable to compactc turns it off
-    /// (`minocrab_compat::profile`); it is ON by default, for circuits with
-    /// no Compact twin (M48 C step 3; notes/ir-passes.org §1, §11).
+    /// (`minocrab_compat::profile`); it is on by default, for circuits with
+    /// no Compact twin (notes/ir-passes.org §1).
     ///
     /// The flag is [`Lowering::dedup_range_constraints`], this circuit's
     /// lowering state; [`Circuit::finish`] hands it to the builder.
@@ -2052,7 +2049,7 @@ impl Circuit {
             let vals: Vec<Arg> = self.queued_outputs.iter().map(|&v| Arg::Val(v)).collect();
             self.b.output(&vals);
         }
-        // Regions and assert messages hold BUILD-time indices; the passes in
+        // Regions and assert messages hold build-time indices; the passes in
         // `finish` delete instructions, so move both onto the finished stream
         // (notes/ir-passes.org §13). A message whose assert was deleted goes
         // with it; a region whose instructions were all deleted is empty.
