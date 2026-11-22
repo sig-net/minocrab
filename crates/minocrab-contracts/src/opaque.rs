@@ -240,8 +240,8 @@ impl OpaqueLedger {
     /// { response_key = disclose(p); }`
     ///
     /// compactc publishes this argument as `Opaque<"Secp256k1Point">` under an
-    /// `Alias` of the same name, and our ABI reader used to refuse it — which is
-    /// why the erc20-vault's own `initialize` would not be flattenable.
+    /// `Alias` of the same name; a reader that refused it could not flatten
+    /// the erc20-vault's own `initialize`.
     #[circuit]
     pub fn op_point(c: &mut Circuit, p: Secp256k1Point) -> Discloses<Point> {
         let p = p.disclose_as::<Point>(c);

@@ -1751,7 +1751,7 @@ pub fn bytes_literal_limbs<V: Vis>(c: &mut Circuit, bytes: &[u8]) -> Vec<Wire<Fi
 ///
 /// [`Serializer::constrained`] discharges that obligation instead of stating
 /// it: it emits each segment's own `constrain_bits` at `8·len` before
-/// packing, so the caller can no longer forget. It is the entry point to
+/// packing, so the caller cannot forget. It is the entry point to
 /// reach for; `new` stays because the shipped circuits' segments are
 /// arguments already constrained at entry, and because the constraints only
 /// become free with `Circuit::dedup_range_constraints` on — which no
@@ -2085,7 +2085,7 @@ impl<V: Vis> JubjubPoint<V> {
 /// (`adt_const_params`), so the name has to be carried by a type either way.
 /// That turns out to be the shape worth wanting: [`Opaque<Str>`](Opaque) and
 /// `Opaque<Uint8Array>` are then distinct types that do not unify, so mixing
-/// them is a type error with no lowering consequence — CLAUDE.md's
+/// them is a type error with no lowering consequence — the project's
 /// second-preference rejection mechanism, and Compact's own rule (the pinned
 /// compiler: `expected right-hand side of = to have type Opaque<"string"> but
 /// received Opaque<"Uint8Array">`).

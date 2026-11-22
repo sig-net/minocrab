@@ -70,10 +70,9 @@ pub struct Attestation {
 /// The MPC's V1 answer: what a `Succeeded`/`Failed` ticket
 /// takes.
 ///
-/// Three things the V2 attestation DID not carry. The block height the call
+/// Three things the V2 attestation does not carry. The block height the call
 /// was observed at (the spec's M2 field, which the outbox's last-seen check
-/// consumes, and which the reference contract used to have to smuggle in as
-/// a call's return word); the verdict as its own field
+/// consumes); the verdict as its own field
 /// ([`hashing::v1::output_kind`]) rather than as a response-kind byte glued
 /// to the front of the output; and the attested width, inside the digest, so
 /// an output of the wrong length cannot verify.

@@ -307,11 +307,9 @@ impl Flattened {
 
 /// A Compact type an interface crate cannot express.
 ///
-/// There used to be an `Opaque` variant here, saying that an `Opaque` "has no
-/// in-circuit representation, so it cannot cross a contract boundary". It was
-/// wrong twice over — an opaque is one unconstrained slot and does cross a
-/// boundary, and half the corpus's `Opaque` nodes are curve points. There is
-/// no Compact type spelled `Opaque` that cannot cross a boundary, and a
+/// There is no `Opaque` variant: an opaque is one unconstrained slot and does
+/// cross a boundary, and half the corpus's `Opaque` nodes are curve points.
+/// There is no Compact type spelled `Opaque` that cannot cross a boundary, and a
 /// variant nothing constructs is worse than no variant at all
 /// (notes/opaque-bridging.org §0b).
 #[derive(Debug, Clone, thiserror::Error, PartialEq, Eq)]

@@ -548,7 +548,7 @@ impl Disclosure {
     /// There is NO `account` argument. The id is
     /// [`account_of_caller`] — a commitment to a witnessed caller secret — so
     /// a caller can only ever write the one entry their own secret derives.
-    /// That closes both halves of what §6 used to call one hole: there is no
+    /// That closes both halves of the hole §6 describes: there is no
     /// id to grab first, and no id to seize later.
     ///
     /// A consequence worth stating, because it reads like a bug and is not:

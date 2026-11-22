@@ -857,7 +857,7 @@ impl Vault {
         // proceeds are minted to `own_public_key`, so "anyone may complete"
         // would be "anyone may take the proceeds". The secret is opened
         // against the stored commitment, so this is a checked consumption,
-        // not the hoisted one `complete_withdraw` used to have.
+        // not a hoisted one.
         let sk = common::witness_sk(c);
         outcome
             .env

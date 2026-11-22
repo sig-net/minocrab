@@ -247,7 +247,7 @@ impl Registry {
     /// over `Bytes<32>` generates a newtype, not a `pub type`. A `pub type`
     /// is a newtype with the safety removed, and `Bytes<32>` is the shape
     /// every same-shaped-different-meaning family in this codebase takes — so
-    /// `RequestId = Bytes<32>` used to accept any commitment, nonce or digest,
+    /// `RequestId = Bytes<32>` would accept any commitment, nonce or digest,
     /// including at a cross-contract call. `b32_newtype!` delegates every impl
     /// to `B32` and declares with the caller's `ArgPath` verbatim, so the
     /// generated crate's `artifact/interface-schema.txt` — slots, alignment,
@@ -255,8 +255,8 @@ impl Registry {
     ///
     /// What remains an error, with a reason: a bare `Field` (every MinoCrab
     /// leaf is range-constrained and a `Field` carries no range — note this is
-    /// a different reason from the one `Opaque` used to be refused for, and
-    /// only this one was ever true), a `Contract` handle passed as data, a
+    /// a different reason from "no in-circuit representation", which is
+    /// false of `Opaque`), a `Contract` handle passed as data, a
     /// `Tuple` other than Compact's empty `[]`, or one of the three curve
     /// scalar/base types, which are native ZKIR values with no leaf yet.
     fn rust_type(&mut self, ty: &CompactType) -> Result<String, Unsupported> {
