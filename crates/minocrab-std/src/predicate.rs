@@ -1,33 +1,33 @@
 //! Assertion predicates: `c.assert(less_than(0u64, amount))`.
 //!
-//! A predicate is an INERT DESCRIPTOR of a check. `less_than(a, b)` builds a
+//! A predicate is an inert descriptor of a check. `less_than(a, b)` builds a
 //! value and emits nothing; `c.assert(p)` lowers it — the comparison
 //! instruction and the `assert`, at the assert site. An unasserted predicate
 //! therefore costs nothing at all and warns ([`Check`] is `#[must_use]`),
 //! which is strictly safer than today's unasserted `c.less_than(..)`: that
 //! one emits cost, constrains nothing, and no lint says so.
 //!
-//! WHAT IT BUYS is soundness wearing ergonomics clothing:
+//! What it buys is soundness wearing ergonomics clothing:
 //!
-//! - **the width comes from the operand TYPES.** `c.less_than(a, b, 128)`
+//! - **the width comes from the operand types.** `c.less_than(a, b, 128)`
 //!   takes the width as a hand-typed number — the same genus of bug as the
 //!   hand-written `assert_bits` blocks the typed leaves removed, and just as
 //!   invisible to PI equality on honest preimages. `less_than(a, amount)`
 //!   with `amount: Uint<128>` reads the 128 off the type. Two typed operands
 //!   must agree, and an ordering needs at least one width to run at; both are
-//!   inline-`const` asserts, so both are COMPILE errors at the call site
+//!   inline-`const` asserts, so both are compile errors at the call site
 //!   naming the fix, not a silently wrong range and not a panic when the
 //!   circuit is built (see [`less_than`]'s neighbours below).
-//! - **the constant side is a CHECKED IMMEDIATE.** A literal operand becomes
-//!   a v3 inline immediate (`Operand`, phase 7's literals piece — no `Copy`),
+//! - **the constant side is a checked immediate.** A literal operand becomes
+//!   a v3 inline immediate (`Operand` — no `Copy`),
 //!   and it is checked at build time against the width it is being compared
 //!   at: `less_than(byte, 300u64)` on a `Bytes<1>` panics rather than
-//!   comparing against a value the width cannot hold. THE ONE REMAINING
-//!   PANIC of this module, and it stays one because the magnitude of a
+//!   comparing against a value the width cannot hold. The one remaining
+//!   panic of this module, and it stays one because the magnitude of a
 //!   runtime integer is not in the type system: `300u64` is a value, not a
 //!   type, so nothing const-evaluable knows it.
 //!
-//! SCOPE, deliberately hard (notes/contract-api.org §The design): comparisons
+//! Scope, deliberately hard (notes/contract-api.org §The design): comparisons
 //! (`less_than`/`le`/`greater_than`/`ge`/`eq`/`ne`), the combinators
 //! [`not`]/[`Check::and`]/[`Check::or`], an optional message
 //! ([`Check::message`], Compact's second `assert` argument), the boolean leaf
@@ -36,7 +36,7 @@
 //! [`Circuit::when`](minocrab::Circuit::when): `c.when(g, |c|
 //! c.assert(p))` rather than a `Check` method (notes/edsl-trim.org §B). NO
 //! deferred
-//! ARITHMETIC and no expression templates: `a + b` returning a descriptor
+//! arithmetic and no expression templates: `a + b` returning a descriptor
 //! would hide emission inside an operator, which is the no-hidden-cost rule
 //! this whole layer is built on. And no macros — these are ordinary functions
 //! and methods.
@@ -95,7 +95,7 @@ enum Node<V: Vis> {
     Or(Box<Node<V>>, Box<Node<V>>),
 }
 
-/// One side of a comparison: a typed leaf (which carries the WIDTH), a raw
+/// One side of a comparison: a typed leaf (which carries the width), a raw
 /// wire (which does not), or a native Rust literal (which becomes an inline
 /// immediate, and is range-checked against the width the comparison runs at).
 ///
@@ -103,22 +103,22 @@ enum Node<V: Vis> {
 /// value may be compared against a private one — the result is then private,
 /// which is what [`Meet`] says.
 ///
-/// An ORDERING needs a WIDTH on top of this — see the note below the impls.
+/// An ordering needs a width on top of this — see the note below the impls.
 pub trait CheckOperand {
     /// The visibility this operand contributes.
     type Vis: Vis;
 
-    /// The width this operand's TYPE carries, if any. `None` for a raw wire
+    /// The width this operand's type carries, if any. `None` for a raw wire
     /// and for a literal.
     const BITS: Option<u32>;
 
-    /// The LARGEST VALUE this operand's type admits, if the type says.
+    /// The largest value this operand's type admits, if the type says.
     /// `None` for a raw wire, for a literal, and wherever the answer does
     /// not fit a `u128` (a width that wide constrains nothing a literal
     /// could violate).
     ///
     /// Distinct from [`CheckOperand::BITS`], and the distinction is the
-    /// whole point: a `BoundedUint<300>` is COMPARED at 9 bits, so a literal
+    /// whole point: a `BoundedUint<300>` is compared at 9 bits, so a literal
     /// `500` fits the width and is still a value the operand can never take.
     /// Comparing against it is a constant, and constants written as
     /// comparisons are bugs — see `check_literal_within`.
@@ -156,9 +156,9 @@ impl<const BITS: u32, V: Vis> CheckOperand for Uint<BITS, V> {
     }
 }
 
-/// A bounded value's comparison width is the bit length of its LARGEST
-/// LEGAL VALUE (`max(1, intlen(BOUND − 1))`), which is compactc's own rule
-/// for an ordering (infer-types.ss:753-771) and NOT the even-rounded width
+/// A bounded value's comparison width is the bit length of its largest
+/// legal value (`max(1, intlen(BOUND − 1))`), which is compactc's own rule
+/// for an ordering (infer-types.ss:753-771) and not the even-rounded width
 /// its range constraint runs at: a `Uint<0..70000>` is constrained at 18
 /// bits and compared at 17, in the same compactc artifact
 /// (notes/bounded-integers.org §2).
@@ -167,9 +167,8 @@ impl<const BITS: u32, V: Vis> CheckOperand for Uint<BITS, V> {
 impl<const BOUND: u128, V: Vis> CheckOperand for BoundedUint<BOUND, V> {
     type Vis = V;
     const BITS: Option<u32> = Some(uint_compare_bits(BOUND - 1));
-    /// The bound is EXCLUSIVE (`Uint<0..BOUND>`), so the largest legal value
-    /// is `BOUND - 1` — the correction M14 had to make to three of our own
-    /// records (notes/bounded-integers.org).
+    /// The bound is exclusive (`Uint<0..BOUND>`), so the largest legal value
+    /// is `BOUND - 1` (notes/bounded-integers.org).
     const MAX: Option<u128> = Some(BOUND - 1);
 
     fn operand(self) -> Operand<FieldT, V> {
@@ -235,28 +234,27 @@ impl CheckOperand for Fr {
     }
 }
 
-/// WHERE THE WIDTH COMES FROM, and what happens when it comes from nowhere
-/// (dmd 2026-08-15, decision B — M9 phase 8).
+/// Where the width comes from, and what happens when it comes from nowhere.
 ///
 /// `less_than a b bits` is unsound if either operand exceeds `bits`, so an
-/// ORDERING needs a width: a typed leaf carries one in its type, a literal
+/// ordering needs a width: a typed leaf carries one in its type, a literal
 /// adopts the other side's and is range-checked against it, and a raw `Wire`
-/// carries none. An ordering of TWO widthless operands is therefore rejected
-/// — and rejected at COMPILE time, by the inline-`const` assert in each
+/// carries none. An ordering of two widthless operands is therefore rejected
+/// — and rejected at compile time, by the inline-`const` assert in each
 /// ordering constructor (`error[E0080]`, with the fix in the message), not by
 /// a panic when the circuit is built.
 ///
 /// It is not expressed as a missing `CheckOperand` impl for `Wire`, which
 /// would have been the better error, for two reasons that are the same
-/// reason: the condition is a property of the PAIR, not of one operand. A
-/// raw wire on ONE side of a typed comparison (`amount.gt(zero_wire)`, where
+/// reason: the condition is a property of the pair, not of one operand. A
+/// raw wire on one side of a typed comparison (`amount.gt(zero_wire)`, where
 /// `amount: Uint<128>` supplies the 128) is accepted, as it always has been —
-/// the direct ports rely on it, since a constant they also need as a WIRE
+/// the direct ports rely on it, since a constant they also need as a wire
 /// stays named rather than becoming an immediate — and "at least one of A, B
 /// carries a width" is not something a trait bound can say without
 /// overlapping impls.
 ///
-/// What this layer will NOT do either way is emit the range constraint for
+/// What this layer will not do either way is emit the range constraint for
 /// you: that would be silent cost, and the author is the one who knows
 /// whether the wire is already constrained. The explicit forms are
 /// `Uint::<64>::from_field_unchecked(w)` (plus `constrain_input` if nothing has
@@ -267,7 +265,7 @@ type Joined<A, B> = <<A as CheckOperand>::Vis as Meet<<B as CheckOperand>::Vis>>
 
 /// Do these two operand types agree on a width? (Either may carry none — a
 /// literal never does.) Evaluated in an inline `const`, so a mismatch is a
-/// BUILD ERROR at the call site, not a panic when the circuit is built.
+/// build error at the call site, not a panic when the circuit is built.
 const fn widths_agree(a: Option<u32>, b: Option<u32>) -> bool {
     match (a, b) {
         (Some(a), Some(b)) => a == b,
@@ -342,7 +340,7 @@ comparison! {
 
 /// The shared body of the constructors: resolve the width from the types,
 /// range-check a literal against it, and build the descriptor. `first` and
-/// `second` are the operands in the order the INSTRUCTION takes them, which
+/// `second` are the operands in the order the instruction takes them, which
 /// is why `greater_than` is `less_than` with them swapped.
 #[track_caller]
 fn compare<F: CheckOperand, S: CheckOperand>(
@@ -362,7 +360,7 @@ where
         check_literal_fits(second.literal(), bits);
     }
     // …and the narrower check the width alone cannot make: a literal outside
-    // what the OTHER operand's type can hold makes the comparison a constant.
+    // what the other operand's type can hold makes the comparison a constant.
     check_literal_within(first.literal(), S::MAX, S::BITS);
     check_literal_within(second.literal(), F::MAX, F::BITS);
     Check {
@@ -380,10 +378,10 @@ where
 /// The width a comparison runs at, read off the operand types.
 ///
 /// Both disagreement cases are impossible here — the constructors' inline
-/// `const` asserts reject them at COMPILE time, and an ordering over
+/// `const` asserts reject them at compile time, and an ordering over
 /// widthless operands cannot be spelled at all ([`OrderOperand`]) — so this
-/// is a total function over what can reach it, with `debug_assert`s standing
-/// where the diagnostics used to.
+/// is a total function over what can reach it, with `debug_assert`s as the
+/// backstop.
 fn width(cmp: Cmp, a: Option<u32>, b: Option<u32>) -> Option<u32> {
     match (a, b) {
         (Some(a), Some(b)) => {
@@ -400,21 +398,18 @@ fn width(cmp: Cmp, a: Option<u32>, b: Option<u32>) -> Option<u32> {
 
 
 /// A literal compared against a typed operand has to be a value that operand
-/// can actually TAKE.
+/// can actually take.
 ///
 /// [`check_literal_fits`] above asks whether the literal fits the comparison
-/// WIDTH, which is a weaker question and misses the case bounded integers make
+/// width, which is a weaker question and misses the case bounded integers make
 /// common: a `BoundedUint<300>` compares at 9 bits, so `b.lt(500u64)` fits the
 /// width and is nonetheless always true, because `b` is at most 299. A
 /// comparison whose answer is fixed at build time is a bug in every case we
 /// can construct — the author meant a different constant, or a different type.
 ///
-/// BUILD-TIME PANIC, and recorded as one (per dmd's compile-errors-over-panics
-/// rule, notes/contract-api.org §"Panics"): a literal's MAGNITUDE is not a
-/// type, so there is nothing for an inline `const` assert to look at. dmd
-/// authorised this position explicitly on 2026-08-16 — "definitely catch if
-/// the literal you're using is larger than the bound if you can, you can fail
-/// at compile time or test/IR generation time". Closing it at compile time
+/// Build-time panic, and recorded as one (notes/contract-api.org §"Panics"):
+/// a literal's magnitude is not a type, so there is nothing for an inline
+/// `const` assert to look at. Closing it at compile time
 /// needs the literal as a const generic (`lit::<500>()`), which is the open
 /// API-shape question in the same section and a bigger change than the bug is
 /// worth today.
@@ -482,16 +477,15 @@ fn check_literal_fits(literal: Option<Fr>, bits: u32) {
     );
 }
 
-/// A boolean that is ALREADY a wire, as a predicate leaf (M9 phase 8,
-/// candidate 5) — a map `member` result, an in-branch condition, anything a
+/// A boolean that is already a wire, as a predicate leaf — a map `member`
+/// result, an in-branch condition, anything a
 /// comparison did not produce.
 ///
-/// Costs ZERO: the lowering is the wire itself, so `c.assert(is_true(b))` and
+/// Costs zero: the lowering is the wire itself, so `c.assert(is_true(b))` and
 /// `c.assert(b)` are the same instruction stream. What it buys is that the
 /// rest of the surface applies to such a value: `.message(..)`, `.and`/`.or`,
-/// [`not`], and the [`Circuit::when`](minocrab::Circuit::when) scope —
-/// before this, those sites had to drop out of the predicate vocabulary into
-/// `c.assert_with(cond, Some(msg))`.
+/// [`not`], and the [`Circuit::when`](minocrab::Circuit::when) scope, without
+/// dropping out of the predicate vocabulary into `c.assert_with(cond, Some(msg))`.
 pub fn is_true<V: Vis>(b: impl Into<Bool<V>>) -> Check<V> {
     let b: Bool<V> = b.into();
     Check {
@@ -526,7 +520,7 @@ impl<V: Vis> Check<V> {
         }
     }
 
-    /// `self || other` — ONE `cond_select` (five rows) when either operand
+    /// `self || other` — one `cond_select` (five rows) when either operand
     /// is a bit by construction (a comparison, a negation, another `or`):
     /// `cond_select(x, 1, y)` with `y` that operand and `x` the other, which
     /// the select itself constrains to be a bit. Otherwise (two
@@ -545,7 +539,7 @@ impl<V: Vis> Check<V> {
         }
     }
 
-    /// `self → other` (`!self || other`) — ONE `cond_select` over the two
+    /// `self → other` (`!self || other`) — one `cond_select` over the two
     /// lowered booleans: where the premise holds the conclusion decides,
     /// otherwise true. The shape of every scope rule ("a spend grant must
     /// have a positive cap"); written as `not(a).or(b)` it is a `not` and a
@@ -565,7 +559,7 @@ impl<V: Vis> Check<V> {
     }
 }
 
-/// A predicate is what `Circuit::assert` takes: it lowers HERE, at the
+/// A predicate is what `Circuit::assert` takes: it lowers here, at the
 /// assert, and the message rides along as metadata.
 impl<V: Vis> Assertion for Check<V> {
     fn assert_in(self, c: &mut Circuit) {
@@ -590,7 +584,7 @@ impl<V: Vis> Assertion for crate::Assumed<Bool<V>> {
 }
 
 impl<V: Vis> Check<V> {
-    /// Lower this predicate to its wire, for use as a GUARD rather than as
+    /// Lower this predicate to its wire, for use as a guard rather than as
     /// an assertion — see [`Guarded`](crate::Guarded).
     pub fn into_wire(self, c: &mut Circuit) -> Wire<FieldT, V> {
         lower(c, self.node)
@@ -604,7 +598,7 @@ impl<V: Vis> Check<V> {
 /// construction (`from_field_checked`, a comparison's output, a constrained
 /// argument), which is what an Impact guard and a `cond_select` bit require:
 /// the reference circuit converts either to an assigned bit under an
-/// equality constraint, so a non-boolean guard is UNSATISFIABLE, never
+/// equality constraint, so a non-boolean guard is unsatisfiable, never
 /// silently wrong.
 impl<V: Vis> minocrab::GuardCond<V> for crate::Bool<V> {
     fn into_guard(self, _c: &mut Circuit) -> Wire<FieldT, V> {
@@ -618,7 +612,7 @@ impl<V: Vis> minocrab::GuardCond<V> for Check<V> {
     }
 }
 
-/// THE LOWERING, and the whole claim of this module: every node emits
+/// The lowering, and the whole claim of this module: every node emits
 /// exactly the instructions the hand-written form emits, in the same order.
 fn lower<V: Vis>(c: &mut Circuit, node: Node<V>) -> Wire<FieldT, V> {
     match node {

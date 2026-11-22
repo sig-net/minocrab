@@ -2,7 +2,7 @@
 //! [`CircuitBorsh::layout`] produces — the drift alarm between the two
 //! declarations of one format.
 //!
-//! A circuit type and its SPEC type are deliberately two statements of the
+//! A circuit type and its spec type are deliberately two statements of the
 //! same layout: the spec type is a plain Rust struct carrying borsh's own
 //! derives, so the oracle cannot be a re-derivation of our layout logic. This
 //! module is what makes the pair checkable — it walks
@@ -10,15 +10,14 @@
 //! rows, which is exactly the shape of a [`FieldSpec`], and
 //! [`assert_matches_schema`] compares them.
 //!
-//! Feature-gated on `borsh-schema`, which is OFF by default: `borsh` is a
+//! Feature-gated on `borsh-schema`, which is off by default: `borsh` is a
 //! dev-dependency posture, and this module is the only thing in the crate
 //! that would link it. Enable it from a `[dev-dependencies]` entry (as
 //! minocrab-contracts does), so test builds have it and shipping builds
 //! never do.
 //!
-//! The walk itself came from the M11 stage-0 conformance suite
-//! (`minocrab-contracts/tests/serialization/oracle.rs`), which now delegates
-//! here rather than keeping a second copy.
+//! The conformance suite (`minocrab-contracts/tests/serialization/oracle.rs`)
+//! delegates here rather than keeping a second copy of the walk.
 
 use borsh::schema::{BorshSchemaContainer, Declaration, Definition, Fields};
 use borsh::BorshSchema;
@@ -39,7 +38,7 @@ pub struct Row {
 
 /// Walk a schema container into `(path, kind, offset, width)` leaf rows.
 ///
-/// PANICS on anything outside the fixed-width subset — a length-tagged
+/// Panics on anything outside the fixed-width subset — a length-tagged
 /// sequence (`Vec`, `String`), a tagged union (`Option`, any data-carrying
 /// enum) or a variable-length range. That panic is a feature: it is the
 /// subset check at the schema level, complementing the byte-level ones.

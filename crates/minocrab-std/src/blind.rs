@@ -1,7 +1,7 @@
-//! BLIND ACCUMULATORS (M40, notes/stream-design.org): the steps the ledger
-//! applies ITSELF, with no `popeq` and therefore nothing that can go stale.
-//! Since M42 (notes/hooks-design.org) they are spelled on a [`Hook`]: a
-//! [`Primitive`] APPENDS its combine and its snapshot to a hook, and the
+//! Blind accumulators (notes/stream-design.org): the steps the ledger
+//! applies itself, with no `popeq` and therefore nothing that can go stale.
+//! They are spelled on a [`Hook`] (notes/hooks-design.org): a
+//! [`Primitive`] appends its combine and its snapshot to a hook, and the
 //! hook is attached with `c.then` to run after the body; nothing blind is
 //! offered inline.
 //!
@@ -24,7 +24,7 @@
 //! | [`First`] | any | (none) | `dup 0; idx flag; branch k; write value; write flag` |
 //!
 //! Tuples of primitives are primitives ([`Primitive`] for `(A, B)` up to
-//! four components), laid out as ONE CELL PER COMPONENT and one snapshot
+//! four components), laid out as one cell per component and one snapshot
 //! map per component: Impact addresses whole cell values, not fields of a
 //! struct in a cell, so a tuple state cannot share a cell. A component that
 //! is not a primitive is a missing impl:
@@ -39,9 +39,9 @@
 //! ```
 //!
 //! Two traits, because two of the seven are not monoids. [`Primitive`] is
-//! the LEDGER side: the accumulator's layout, the blind combine, the blind
+//! the ledger side: the accumulator's layout, the blind combine, the blind
 //! snapshot into a per-key map, and reading the snapshot back. [`Monoid`]
-//! adds the CIRCUIT side — an identity and a combine on wires — which
+//! adds the circuit side — an identity and a combine on wires — which
 //! `Last` and `First` cannot have (their "identity" is the empty slot, and
 //! on the ledger `First` needs a flag cell to say so).
 //!
@@ -63,7 +63,7 @@ use super::hook::{Hook, Lowered};
 use super::ledger::{LedgerCell, LedgerMap, LedgerRepr, LedgerStore};
 use super::{Bool, Uint};
 
-/// A step the LEDGER executes: an accumulator laid out as one or more cells,
+/// A step the ledger executes: an accumulator laid out as one or more cells,
 /// combined with a public delta and copied into a per-key snapshot map
 /// without the circuit ever reading it.
 ///
@@ -86,7 +86,7 @@ pub trait Primitive<S>: Sized {
     /// The snapshot maps' handles, likewise.
     fn snapshot_at_block<K>(total: usize, start: usize) -> Self::Snapshot<K>;
 
-    /// `acc ⊕= delta` appended to `hook` (M42: the blind ops live on
+    /// `acc ⊕= delta` appended to `hook` (the blind ops live on
     /// [`Hook`] and nowhere inline): no public input, nothing to go stale.
     /// `c` lowers the delta's limbs; nothing is emitted until the hook is
     /// attached with `c.then`.
@@ -100,7 +100,7 @@ pub trait Primitive<S>: Sized {
         snapshot: &Self::Snapshot<K>,
         key: &K,
     ) -> Hook;
-    /// `snapshot[key]`, a STABLE read: the entry is written once, at the
+    /// `snapshot[key]`, a stable read: the entry is written once, at the
     /// snapshot, and never changes, so its `popeq` cannot go stale.
     fn lookup<K: LedgerStore>(c: &mut Circuit, snapshot: &Self::Snapshot<K>, key: &K) -> Assumed<S>;
     /// Remove `snapshot[key]` in every component.
@@ -113,13 +113,13 @@ pub trait Primitive<S>: Sized {
     }
 }
 
-/// The CIRCUIT side of a primitive that is a monoid: an identity and a
+/// The circuit side of a primitive that is a monoid: an identity and a
 /// combine on wires, agreeing with the ledger's. What a batch of deltas
 /// folds under in-circuit, and what a tuple step is componentwise.
 pub trait Monoid<S>: Primitive<S> {
     /// The identity: `combine(identity, x) == x`.
     fn identity(c: &mut Circuit) -> S;
-    /// `a ⊕ b` on wires. UNCHECKED where the ledger's is checked: `Add`
+    /// `a ⊕ b` on wires. Unchecked where the ledger's is checked: `Add`
     /// emits one `add` and no range check, as compactc's `+` does not, so a
     /// sum that would overflow the width is the caller's to bound; the
     /// ledger's blind `add` fails the transaction instead.

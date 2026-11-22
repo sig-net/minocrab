@@ -1,4 +1,4 @@
-//! The leaves' SLOTS: [`Encode`] and [`Decode`] for every value type of this
+//! The leaves' slots: [`Encode`] and [`Decode`] for every value type of this
 //! crate, written once each.
 //!
 //! A leaf that exists at both visibilities encodes at its own, generically
@@ -14,7 +14,7 @@
 //! is `disclose`.
 //!
 //! The exceptions, each with its reason at the impl: the curve points and
-//! the scalar encode at `Private` only, with NO slot (their wire is not a
+//! the scalar encode at `Private` only, with no slot (their wire is not a
 //! field element); the coins encode and decode at `Public` only (nothing
 //! takes a coin as a bare circuit argument); the bounded vectors and `Tag`
 //! encode at `Private` beside their `CircuitArg` (see there).
@@ -162,7 +162,7 @@ impl<T: Decode<Public>> Decode<Public> for Maybe<T, Public> {
     }
 }
 
-/// Compact's `Either<A, B>`: the tag, then BOTH arms.
+/// Compact's `Either<A, B>`: the tag, then both arms.
 impl<A: Encode<V>, B: Encode<V>, V: Vis> Encode<V> for Either<A, B, V> {
     fn encode(&self, slots: &mut Vec<Wire<FieldT, V>>) {
         self.is_left.encode(slots);
@@ -182,7 +182,7 @@ impl<A: Decode<Public>, B: Decode<Public>> Decode<Public> for Either<A, B, Publi
     }
 }
 
-/// The points and the scalar, as ARGUMENTS: one slot whose wire is not a
+/// The points and the scalar, as arguments: one slot whose wire is not a
 /// field element, so no native slot and no constraint (`(tpoint …) → no
 /// constraint`). Not at `Public`: a point is not a cross-contract argument,
 /// and its ledger form is computed by `encode` (see `LedgerStore`).
@@ -216,7 +216,7 @@ impl Decode<Public> for ShieldedCoinInfo<Public> {
     }
 }
 
-/// A QUALIFIED coin: [`ShieldedCoinInfo`]'s slots then the `Uint<64>` tree
+/// A qualified coin: [`ShieldedCoinInfo`]'s slots then the `Uint<64>` tree
 /// index. The AA manager's `pools` (`Map<Bytes<32>,
 /// QualifiedShieldedCoinInfo>`) looks the pooled coin back up.
 impl Encode<Public> for QualifiedShieldedCoinInfo<Public> {

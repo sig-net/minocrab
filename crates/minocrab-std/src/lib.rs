@@ -40,9 +40,9 @@
 //! - [`macro@circuit`] and [`macro@Value`] — the decorators
 //!   (default `macros` feature)
 //!
-//! # Stability (M24 tier boundary)
+//! # Stability
 //!
-//! STABLE TIER (semver commitment): the typed v3 leaves — `Uint`, `Bool`,
+//! Stable tier (semver commitment): the typed v3 leaves — `Uint`, `Bool`,
 //! `Bytes<N>`, `B32`, the curve leaves — per notes/library-api.org §1's
 //! minimal set. The wider contract-authoring surface (ledger declarations,
 //! kernel, Borsh, disclosure vocabulary) is not yet under a stability
@@ -55,7 +55,7 @@ mod disclose;
 mod entry;
 mod ledger;
 
-/// Blind accumulators (M40): the steps the ledger applies itself — `Add`,
+/// Blind accumulators: the steps the ledger applies itself — `Add`,
 /// `Max`, `Min`, `And`, `Or`, `Last`, `First` and tuples of them — with a
 /// blind snapshot into a per-key map. Written module-qualified
 /// (`blind::Max`) except for the two traits.
@@ -65,9 +65,9 @@ mod hook;
 mod stream;
 mod vector;
 
-/// Compact's `kernel` ADT and the token stdlib built on it (M17) — always
+/// Compact's `kernel` ADT and the token stdlib built on it — always
 /// written module-qualified (`kernel::balance(c, &t)`), because a kernel
-/// operation is an EFFECT on the transaction and the call site should say so.
+/// operation is an effect on the transaction and the call site should say so.
 pub mod kernel;
 mod predicate;
 
@@ -77,12 +77,12 @@ mod predicate;
 pub mod event;
 
 /// Canonical Borsh, restricted to the fixed-width subset a circuit can emit
-/// — the serialization layer (M11, notes/borsh-format.org). Read its module
+/// — the serialization layer (notes/borsh-format.org). Read its module
 /// docs first: **this is Borsh, not a format of ours**, and the subset exists
 /// because a circuit cannot have data-dependent layout.
 pub mod borsh;
 
-/// The two hash FLAVORS — `persistent_hash`/`transient_hash` over a value's
+/// The two hash flavors — `persistent_hash`/`transient_hash` over a value's
 /// Borsh encoding (the default) and the `_compact` pair over Compact's FAB
 /// representation (Compact-interop digest agreement only). Always written
 /// module-qualified (`hash::persistent_hash(c, &v)`), never re-exported bare:

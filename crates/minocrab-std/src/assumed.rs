@@ -1,14 +1,14 @@
-//! ASSUMED VALUES (M42 B, notes/hooks-design.org, "Stale values must be
+//! Assumed values (notes/hooks-design.org, "Stale values must be
 //! named"): what an inline ledger read returns.
 //!
 //! An inline read is a `popeq`: the prover supplies the value as a public
 //! input, and the ledger checks at landing that the slot still holds it. So
-//! the value is an ASSUMPTION the transaction makes about the state at
+//! the value is an assumption the transaction makes about the state at
 //! landing, and a landed transaction that changed the slot makes it stale.
-//! [`Assumed<T>`] is that assumption as a type. The PROOF may consume it
+//! [`Assumed<T>`] is that assumption as a type. The proof may consume it
 //! freely — it derefs to `T`, compares, selects, asserts, and its fields are
 //! reachable — because the proof's use of the value is exactly what the
-//! `popeq` validates. The LEDGER may not take it back: an `Assumed<T>` has no
+//! `popeq` validates. The ledger may not take it back: an `Assumed<T>` has no
 //! [`LedgerRepr`](super::LedgerRepr), is not [`Fresh`](super::Fresh) (the
 //! bound on every inline write's value) and is not a
 //! [`HookValue`](super::HookValue), so writing it to a cell, inserting it
@@ -30,18 +30,18 @@
 //! M.write(&mut c, &n);
 //! ```
 //!
-//! The types track DIRECT read results. A value computed from one — `*n`
+//! The types track direct read results. A value computed from one — `*n`
 //! through the deref, `n.field()`, a hash of it — is a bare wire, and Rust's
 //! types do not carry where it came from. The circuit builder does
 //! (`Circuit::refuse_stale`): at the ledger boundary — a hook argument, an
 //! inline write's value — it walks the value's provenance and refuses one
 //! that descends from a read not acknowledged by `stale`, naming the read.
-//! A build-time error, the last rung of the rejection ladder, recorded for
-//! dmd's review. Map KEYS are exempt: a key derived from a read (a request
+//! A build-time error, the last rung of the rejection ladder. Map keys are
+//! exempt: a key derived from a read (a request
 //! id from a nonce) adds no assumption the read's own `popeq` does not
 //! already make.
 //!
-//! What is NOT wrapped: [`kernel::self_address`](super::kernel::self_address)
+//! What is not wrapped: [`kernel::self_address`](super::kernel::self_address)
 //! — the contract's own address is a read, but of a value no transaction
 //! can change.
 
@@ -88,7 +88,7 @@ impl<T: ProofWires> ProofWires for Assumed<T> {
     }
 }
 
-/// A value an inline ledger read returned: what the transaction ASSUMES
+/// A value an inline ledger read returned: what the transaction assumes
 /// the slot holds at landing. See the module docs.
 #[derive(Clone, Copy, Debug)]
 pub struct Assumed<T>(T);
@@ -101,7 +101,7 @@ impl<T> Assumed<T> {
         Assumed(value)
     }
 
-    /// The value, with the assumption NAMED: the transaction relies on the
+    /// The value, with the assumption named: the transaction relies on the
     /// slot still holding what was read, and a landed transaction that
     /// changed it fails this one. Every read behind the value is recorded
     /// as acknowledged, so what is computed from it may re-enter the

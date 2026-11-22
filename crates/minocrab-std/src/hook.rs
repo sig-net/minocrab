@@ -1,10 +1,10 @@
-//! LEDGER HOOKS (M42, notes/hooks-design.org): the write program as a typed
+//! Ledger hooks (notes/hooks-design.org): the write program as a typed
 //! value.
 //!
 //! Inline is the read set; the hook is the write program. Everything a
 //! circuit does to the ledger inline is a `popeq` read (an assumption the
 //! landing validates, which can go stale) or a plain write of circuit
-//! values. Everything BLIND — a read-modify-write the ledger performs
+//! values. Everything blind — a read-modify-write the ledger performs
 //! itself, a copy from one slot to another, a branch on what a slot holds
 //! — lives here, on [`Hook`], and nowhere inline: a hook runs after the
 //! whole body on whatever the ledger holds at landing, cannot go stale,
@@ -16,7 +16,7 @@
 //! several hooks run in attachment order; a hook attached inside
 //! [`Circuit::when`] captures that guard at attachment and is absent from
 //! the transcript where the guard is off. The builder has no `popeq`
-//! method, so a hook is BLIND by construction.
+//! method, so a hook is blind by construction.
 //!
 //! ```ignore
 //! fn stamp(k: Handle<Public>) -> Hook {
@@ -37,7 +37,7 @@
 //!
 //! # What the types enforce
 //!
-//! - Hook arguments are PUBLIC: a value enters a hook through
+//! - Hook arguments are public: a value enters a hook through
 //!   [`HookValue`], which every [`LedgerRepr`] type is, and `LedgerRepr` is
 //!   implemented for `Public` leaves only. A private wire has no way in —
 //!   disclose it first:
@@ -82,7 +82,7 @@
 //!   leaves the stack as it found it, and the skip count is the arm's
 //!   length, computed at lowering — never hand-counted.
 //!
-//! What is NOT a type: the paths' lengths. A declared field path is one to
+//! What is not a type: the paths' lengths. A declared field path is one to
 //! three elements at runtime, so the stack shapes under each method are
 //! checked by the ledger crate's op builders (an `insc` or `dup` operand
 //! past its nibble is a build-time assert there), not by a type-level
@@ -114,7 +114,7 @@ use super::{Bool, Uint};
 /// Every [`LedgerRepr`] type is one (they are all `Public`). `u64` stands
 /// for any `Uint<BITS, Public>` cell value and `bool` for a `Bool<Public>`,
 /// so `.add(&B.nonce, 1u64)` needs no wire. Nothing else is: a private wire
-/// is not a `LedgerRepr`, and an `Assumed` read (M42 B) is not either until
+/// is not a `LedgerRepr`, and an `Assumed` read is not either until
 /// `.stale()` names the assumption.
 pub trait HookValue<T> {
     /// The value as the ledger takes it.
@@ -296,7 +296,7 @@ impl Hook {
 
     // ---- slot to slot ---------------------------------------------------------------------
 
-    /// `map[key] = cell` — THE SNAPSHOT: the value goes from the cell to the
+    /// `map[key] = cell` — the snapshot: the value goes from the cell to the
     /// entry with the circuit never learning it (`idxp m; push key; dup
     /// 2·len(m)+1; idx cell; ins 1; insc len(m)`).
     pub fn copy<T: LedgerStore, K: LedgerStore, P: Reachable>(
@@ -337,7 +337,7 @@ impl Hook {
     // ---- the branches ----------------------------------------------------------------------
 
     /// A `branch` over `arm`: `<test>; branch len(arm); <arm>`, the test
-    /// leaving TRUE on the stack when the arm is to be SKIPPED.
+    /// leaving true on the stack when the arm is to be skipped.
     fn branch_over(
         self,
         test: impl FnOnce(&mut Circuit) -> Vec<ImpactOp> + 'static,

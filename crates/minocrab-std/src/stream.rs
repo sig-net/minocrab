@@ -1,19 +1,19 @@
-//! THE STREAM (M41, notes/stream-design.org, DECIDED "option one"): insert
+//! The stream (notes/stream-design.org): insert
 //! out of order under your own key, sequence a chosen subset through one
 //! shared accumulator, take one element at a time.
 //!
 //! A [`StreamSpec`] names the key, the body (what only `take` sees), the
-//! head (what the step may look at), the state, and the STEP. The step is
+//! head (what the step may look at), the state, and the step. The step is
 //! either
 //!
-//! - a PRIMITIVE ([`super::blind::Primitive`]: `Add`, `Max`, `Min`, `And`,
+//! - a primitive ([`super::blind::Primitive`]: `Add`, `Max`, `Min`, `And`,
 //!   `Or`, `Last`, `First`, or a tuple of them): the stream is
-//!   [`ContentionFree`] — `insert` sequences ITSELF (blind combine, then
+//!   [`ContentionFree`] — `insert` sequences itself (blind combine, then
 //!   blind snapshot, so the stored state is the post-step value), `take`
 //!   reads two stable entries, `combine` is blind, and there is NO
 //!   `sequence` circuit; or
 //! - [`Serial<F, REST>`] over a [`Fold`] of real code: `insert` is a pure
-//!   insert, `sequence(c, keys)` reads the accumulator ONCE (the one
+//!   insert, `sequence(c, keys)` reads the accumulator once (the one
 //!   `popeq`, the one contention point: a landed flush stales every other
 //!   flush proven against the old state, one step per block worst case),
 //!   folds the step under the fold's guard over one to `REST + 1` keys,
@@ -72,7 +72,7 @@
 //! }
 //! ```
 //!
-//! The stream is a NESTED LEDGER STRUCT: `#[derive(Ledger)]` places it by
+//! The stream is a nested ledger struct: `#[derive(Ledger)]` places it by
 //! [`LedgerWidth`] and [`Stream::at_block`], as it places `Pending` and the
 //! other multi-field slots. The handles are built from the block position
 //! when a method runs, because the layout is chosen by the step's trait and
@@ -173,21 +173,21 @@ impl<P: StreamSpec> Stream<P> {
         LedgerMap::at_block(self.total, self.start)
     }
 
-    /// INSERT under `key`: asserts the key is not present, stores the
+    /// Insert under `key`: asserts the key is not present, stores the
     /// body, and on a primitive stream sequences the element at once.
     pub fn insert(&self, c: &mut Circuit, key: &P::Key, body: &P::Body) {
         P::Step::insert(self, c, key, body)
     }
 
-    /// TAKE `key`'s element: the body and the state it was sequenced with,
+    /// Take `key`'s element: the body and the state it was sequenced with,
     /// removing everything read. Asserts the key is present.
     pub fn take(&self, c: &mut Circuit, key: &P::Key) -> (Assumed<P::Body>, Assumed<P::State>) {
         P::Step::take(self, c, key)
     }
 
-    /// COMBINE a delta with no element (a response raising last-seen).
+    /// Combine a delta with no element (a response raising last-seen).
     /// Blind on a primitive stream; on a serial stream it is a `popeq`
-    /// read, the step, and a write — CONTENDED, like `sequence`.
+    /// read, the step, and a write — contended, like `sequence`.
     pub fn combine(&self, c: &mut Circuit, delta: <P::Step as Step<P>>::Delta) {
         P::Step::combine(self, c, delta)
     }
@@ -201,11 +201,11 @@ impl<P: StreamSpec> ContentionFree for Stream<P> where P::Step: Primitive<P::Sta
 
 // ---- the primitive layout: bodies, then the step's cells and maps ---------------
 //
-// One impl per primitive TYPE rather than a blanket over `T: Primitive`:
+// One impl per primitive type rather than a blanket over `T: Primitive`:
 // a blanket would overlap the `Serial` impl below (coherence cannot rule
 // out a downstream `impl Primitive<TheirState> for Serial<…>`, since the
 // state is a parameter of the trait). Each impl is bound to the specs
-// whose step IS this type (`P: StreamSpec<Step = Self>`), which is also
+// whose step is this type (`P: StreamSpec<Step = Self>`), which is also
 // what lets `P::delta`'s result type normalize to the state.
 
 macro_rules! primitive_steps {
@@ -220,7 +220,7 @@ macro_rules! primitive_steps {
                 + <$ty as Primitive<P::State>>::SNAPSHOT_FIELDS;
             const CONTENTION_FREE: bool = true;
 
-            /// Assert not member; `bodies[k] = body` inline; then, as ONE
+            /// Assert not member; `bodies[k] = body` inline; then, as one
             /// attached hook, per component: blind `acc ⊕= delta(head(body))`,
             /// then blind `snapshot[k] = acc` — the stored state is the
             /// post-step value.
@@ -236,7 +236,7 @@ macro_rules! primitive_steps {
                     s.total,
                     s.start + 1 + <$ty as Primitive<P::State>>::ACC_FIELDS,
                 );
-                // The blind half is a hook (M42): it runs after the body,
+                // The blind half is a hook: it runs after the body,
                 // on whatever the accumulator holds at landing.
                 let hook = <$ty as Primitive<P::State>>::combine(c, Hook::new(), &acc, &delta);
                 let hook = <$ty as Primitive<P::State>>::snapshot(c, hook, &acc, &snapshot, key);
@@ -308,7 +308,7 @@ where
         (body, state)
     }
 
-    /// `popeq acc; step; write` — CONTENDED, and the write says so:
+    /// `popeq acc; step; write` — contended, and the write says so:
     /// `.stale(c)` names the read the write assumes current.
     fn combine(s: &Stream<P>, c: &mut Circuit, delta: F::Delta) {
         let acc = s.acc();
@@ -330,7 +330,7 @@ where
         LedgerMap::at_block(self.total, self.start + 1)
     }
 
-    /// THE shared cell. Field `start + 2`.
+    /// The shared cell. Field `start + 2`.
     fn acc(&self) -> LedgerCell<P::State> {
         LedgerCell::at_block(self.total, self.start + 2)
     }
@@ -340,8 +340,8 @@ where
         LedgerMap::at_block(self.total, self.start + 3)
     }
 
-    /// SEQUENCE: the flusher's choice of subset AND order, one to `REST + 1`
-    /// keys. Reads `acc` ONCE; per live key: asserts queued, looks up and
+    /// Sequence: the flusher's choice of subset and order, one to `REST + 1`
+    /// keys. Reads `acc` once; per live key: asserts queued, looks up and
     /// removes the head, steps, stages the post-step state; writes `acc`
     /// once. The one `popeq` is the one contention point — a flush that
     /// lands stales every other flush proven against the old accumulator,

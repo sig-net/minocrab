@@ -107,7 +107,7 @@ impl std::fmt::Display for ArgPath {
 
 // ---- CircuitArg -------------------------------------------------------------
 
-/// A type usable as (part of) a circuit argument: how it is DECLARED, on top
+/// A type usable as (part of) a circuit argument: how it is declared, on top
 /// of its layout ([`CircuitAbi`]) and its slots ([`Encode<Private>`]), so a
 /// schema and its materialization cannot drift apart (the `CandidType`
 /// lesson, notes/contract-api.org §Survey). Declaration is not a decode:
@@ -135,11 +135,10 @@ pub trait CircuitArg: Encode<Private> + Sized {
 
     /// Emit compactc's input constraints for this type, in slot order.
     ///
-    /// NEVER OVERRIDDEN: the body is the ABI table applied to this type's
+    /// Never overridden: the body is the ABI table applied to this type's
     /// own slots, so there is one statement of the rule in the whole
     /// system (see the module docs). An impl that overrode it would be
-    /// re-introducing exactly the hand-written parallel copy M12 stage 1
-    /// deleted.
+    /// a hand-written parallel copy of the table.
     fn constrain(&self, c: &mut Circuit) {
         let mut slots = Vec::with_capacity(Self::SLOTS);
         self.encode(&mut slots);
@@ -185,11 +184,11 @@ impl<const BITS: u32> CircuitArg for Uint<BITS, Private> {
 
 /// Compact's `Uint<0..BOUND>`: one slot, whose primitive type is the bound
 /// itself run through [`Prim::unsigned`] — so which of the four constraints
-/// it gets is the TABLE's decision, not this impl's (a `BoundedUint<256>`
+/// it gets is the table's decision, not this impl's (a `BoundedUint<256>`
 /// lands on `constrain_bits 8`, a `BoundedUint<70000>` on `less_than`).
 ///
-/// The FAB atom is `⌈bitlen(BOUND − 1)/8⌉` bytes, which is NOT the width the
-/// constraint runs at and NOT the width a comparison runs at — the three
+/// The FAB atom is `⌈bitlen(BOUND − 1)/8⌉` bytes, which is not the width the
+/// constraint runs at and not the width a comparison runs at — the three
 /// differ for a bounded type and coincide for a sized one
 /// (notes/bounded-integers.org §2).
 impl<const BOUND: u128, V: Vis> CircuitAbi for BoundedUint<BOUND, V> {
@@ -290,7 +289,7 @@ impl CircuitArg for B32<Private> {
     }
 }
 
-/// Compact's `Secp256k1Point`: ONE slot that is not a field element — see
+/// Compact's `Secp256k1Point`: one slot that is not a field element — see
 /// [`Secp256k1Point`] for why it has no constraint and no native slot, and
 /// notes/ledger-abi.org §3 for the five-atom alignment.
 impl<V: Vis> CircuitAbi for Secp256k1Point<V> {
@@ -315,7 +314,7 @@ impl CircuitArg for Secp256k1Point<Private> {
     }
 }
 
-/// Compact's `Secp256k1Scalar`: ONE slot that is not a field element, the
+/// Compact's `Secp256k1Scalar`: one slot that is not a field element, the
 /// same story as [`Secp256k1Point`] one type over — no constraint, no native
 /// slot. The FAB atoms are `b24 + b8` (reduce-to-zkir.ss:34-91,
 /// notes/ledger-abi.org §3). `Prim::Point` is the marker for "a slot the
@@ -361,13 +360,13 @@ impl CircuitArg for JubjubPoint<Private> {
     }
 }
 
-/// Compact's `Opaque<'ts-type'>`: ONE native slot carrying the value's
-/// `compress` commitment, and NO constraint — `Prim::Opaque` is compactc's
+/// Compact's `Opaque<'ts-type'>`: one native slot carrying the value's
+/// `compress` commitment, and no constraint — `Prim::Opaque` is compactc's
 /// `[(topaque ,opaque-type) instr*]` line, so the table emits nothing and this
 /// impl says nothing about it.
 ///
-/// Unlike [`Secp256k1Point`], the slot IS a field wire, so it encodes in the
-/// ordinary way; what makes it constraint-free is the PRIM, which is
+/// Unlike [`Secp256k1Point`], the slot is a field wire, so it encodes in the
+/// ordinary way; what makes it constraint-free is the prim, which is
 /// where that decision belongs.
 impl<T: TsType, V: Vis> CircuitAbi for Opaque<T, V> {
     const SLOTS: usize = 1;
@@ -387,7 +386,7 @@ impl<T: TsType> CircuitArg for Opaque<T, Private> {
     }
 }
 
-/// Compact's `MerkleTreeDigest`: ONE native slot under a `field` atom, and NO
+/// Compact's `MerkleTreeDigest`: one native slot under a `field` atom, and no
 /// constraint — `Prim::Field` is compactc's `[(tfield …) instr*]` line, which
 /// like `Prim::Opaque` emits nothing (`mtCheckRoot`'s `%r.0` carries no
 /// `constrain_bits`).
@@ -483,7 +482,7 @@ impl<const N: usize> CircuitArg for BytesN<Private, N> {
 impl<T: CircuitArg, const N: usize> CircuitArg for [T; N] {
     fn declare(c: &mut Circuit, path: &ArgPath) -> Self {
         // Built through a Vec rather than `array::from_fn`, whose call order
-        // is not part of its contract: here the order IS the wire layout.
+        // is not part of its contract: here the order is the wire layout.
         let mut elements = Vec::with_capacity(N);
         for i in 0..N {
             elements.push(T::declare(c, &path.index(i)));
@@ -554,7 +553,7 @@ impl<A: CircuitArg, B: CircuitArg> CircuitArg for Either<A, B, Private> {
     }
 }
 
-/// Compact's `[]` value (Rust's `()`) as an argument leaf: a ZERO-SLOT
+/// Compact's `[]` value (Rust's `()`) as an argument leaf: a zero-slot
 /// argument — the attested value of a call that returns nothing.
 ///
 /// `()` already has a [`CircuitAbi`] (`SLOTS = 0`, no atoms, no prims); this
@@ -574,14 +573,13 @@ impl CircuitArg for () {
 /// A circuit's whole argument list: the per-circuit struct whose fields are
 /// the Compact parameters, in declaration order.
 ///
-/// Field order IS the wire contract — it feeds the input schema, the
+/// Field order is the wire contract — it feeds the input schema, the
 /// communications commitment and the preimage layout — so an impl declares
 /// and constrains its fields in exactly the order the Compact signature
 /// lists them (the rule is precedented in `signet.rs`'s record layouts, and
 /// backstopped by the interface snapshot and PI equality).
 ///
-/// Written by hand for now; phase 3's `#[derive(CircuitArg)]` /
-/// `#[circuit]` generate exactly these impls.
+/// `#[derive(CircuitArg)]` / `#[circuit]` generate these impls.
 pub trait CircuitArgs: Sized {
     /// Total argument slots — the sum of the fields' [`CircuitAbi::SLOTS`].
     const SLOTS: usize;
@@ -622,8 +620,8 @@ impl CircuitArgs for () {
 /// `"(lo)"`). Output labels live only in the disclosure record — ZKIR's
 /// output signature is types only.
 ///
-/// It stayed a string through phase 6: a `Discloses<..>` declaration is
-/// about values crossing the private→public gate, and a RETURN already
+/// It is a string, not a label type: a `Discloses<..>` declaration is
+/// about values crossing the private→public gate, and a return already
 /// cannot leak (this trait is implemented for public values only), so the
 /// declared set is the `Disclosed` records and an output label has nothing
 /// to agree with.
@@ -647,7 +645,7 @@ pub trait CircuitOut {
 }
 
 /// `[]` — a circuit that returns nothing.
-/// A read may be a circuit's OUTPUT as it is: the proof discloses what it
+/// A read may be a circuit's output as it is: the proof discloses what it
 /// assumed, which is exactly what the `popeq` validates.
 impl<T: CircuitOut> CircuitOut for super::Assumed<T> {
     const SLOTS: usize = T::SLOTS;
@@ -672,8 +670,7 @@ impl<const BITS: u32> CircuitOut for Uint<BITS, Public> {
 }
 
 /// Returning a `Uint<0..BOUND>`: one output slot, the same wire a bounded
-/// argument declares (M31, the bounded-ledger fixture — the first circuit
-/// in this crate to return one).
+/// argument declares (the bounded-ledger fixture returns one).
 impl<const BOUND: u128> CircuitOut for BoundedUint<BOUND, Public> {
     const SLOTS: usize = 1;
 
@@ -698,7 +695,7 @@ impl<const N: usize> CircuitOut for Bytes<N, Public> {
     }
 }
 
-/// Returning an `Opaque` hands the caller back the COMMITMENT it already had —
+/// Returning an `Opaque` hands the caller back the commitment it already had —
 /// which is what compactc's `outputs: ["Scalar<BLS12-381>"]` for an
 /// `Opaque`-returning circuit is (the fixture's `opRet`). There is nothing
 /// else to hand back, and the value never left the caller's side to begin with.
@@ -720,7 +717,7 @@ impl CircuitOut for B32<Public> {
 }
 
 /// Returning a coin: its three fields' slots in declaration order, the same
-/// layout [`CircuitAbi`] declares for it. `mergeCoin` is what needs it (M17).
+/// layout [`CircuitAbi`] declares for it. `mergeCoin` is what needs it.
 impl CircuitOut for ShieldedCoinInfo<Public> {
     const SLOTS: usize = <B32<Public> as CircuitOut>::SLOTS * 2 + 1;
 
@@ -732,7 +729,7 @@ impl CircuitOut for ShieldedCoinInfo<Public> {
 }
 
 /// Returning a `ShieldedSendResult`: the change `Maybe` then the coin sent —
-/// `sendShielded`'s return value (M17).
+/// `sendShielded`'s return value.
 impl CircuitOut for ShieldedSendResult<Public> {
     const SLOTS: usize = <Maybe<ShieldedCoinInfo<Public>, Public> as CircuitOut>::SLOTS
         + <ShieldedCoinInfo<Public> as CircuitOut>::SLOTS;
@@ -745,7 +742,7 @@ impl CircuitOut for ShieldedSendResult<Public> {
 
 /// Returning a `Maybe<T>`: the tag's slot then the payload's, whichever way
 /// the tag points — the same layout the ABI declares, and the same one a
-/// `Maybe` argument occupies. `List.head` is what needs it (M16).
+/// `Maybe` argument occupies. `List.head` is what needs it.
 impl<T: CircuitOut> CircuitOut for Maybe<T, Public> {
     const SLOTS: usize = <Bool<Public> as CircuitOut>::SLOTS + T::SLOTS;
 
@@ -795,7 +792,7 @@ pub fn entry<A: CircuitArgs, O: CircuitOut>(
 /// value in the disclosure record (see [`CircuitOut`]).
 ///
 /// Both this and [`entry`] are `#[track_caller]`: their three law checks are
-/// properties of a BUILT circuit rather than of a type, so they stayed panics
+/// properties of a built circuit rather than of a type, so they stayed panics
 /// (notes/contract-api.org §Panics) and the location that matters is the
 /// `#[circuit]` whose argument list broke the law, not this function.
 #[track_caller]

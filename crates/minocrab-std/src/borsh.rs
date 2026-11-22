@@ -1,6 +1,6 @@
-//! Borsh — the FIXED-WIDTH SUBSET — in circuit.
+//! Borsh — the fixed-width subset — in circuit.
 //!
-//! **THIS IS BORSH, RESTRICTED — NOT A SEPARATE FORMAT.** Every byte the
+//! **this is Borsh, restricted — not a separate format.** Every byte the
 //! encoders here emit is valid canonical Borsh for the declared types: any
 //! Borsh implementation (borsh-rs, borsh-js, borsh-go, the Rust MPC) parses
 //! it from the same declarations, and `borsh::to_vec` of the matching plain
@@ -15,20 +15,20 @@
 //! | excluded | why | replacement |
 //! |---|---|---|
 //! | `Vec<T>`, `String`, maps | `u32` length prefix ⇒ value-dependent offsets | `[T; K]` plus a separate count field |
-//! | `Option<T>` | Borsh omits the payload on `None` | [`Flagged<T>`](crate::borsh::Flagged) — a `bool` tag and an ALWAYS-PRESENT payload, which is an ordinary Borsh struct (and is what Compact's `Maybe` already compiles to) |
+//! | `Option<T>` | Borsh omits the payload on `None` | [`Flagged<T>`](crate::borsh::Flagged) — a `bool` tag and an always-present payload, which is an ordinary Borsh struct (and is what Compact's `Maybe` already compiles to) |
 //! | data-carrying enums | payload width follows the tag | one record type per kind, or `{tag, widest payload}` |
 //! | `Uint<BITS>` off a Borsh width | `u24` is not a Borsh primitive | the next width up plus a range constraint ([`CircuitBorsh`](crate::borsh::CircuitBorsh) is implemented only at 8/16/32/64/128) |
 //!
-//! Fieldless enums are `Tag<K>` here — ONE byte, range-checked `< K`, which
-//! is exactly Borsh's own 1-byte discriminant. The SPEC-side declaration of
+//! Fieldless enums are `Tag<K>` here — one byte, range-checked `< K`, which
+//! is exactly Borsh's own 1-byte discriminant. The spec-side declaration of
 //! such a field is a plain `u8` (notes/borsh-format.org §"Two corrections":
 //! a Rust `enum` leaves the dual-oracle subset, because bincode-fixint writes
 //! a 4-byte variant index where Borsh writes one).
 //!
 //! Trailing zero padding — what a fixed envelope like the signet signer's
-//! `Bytes<256>` `Misc` payload needs — is NOT Borsh and is not claimed to be:
+//! `Bytes<256>` `Misc` payload needs — is not Borsh and is not claimed to be:
 //! the rule the spec states is "bytes `0..LEN` are the Borsh encoding, bytes
-//! `LEN..N` MUST be zero". [`to_bytes`](crate::borsh::to_bytes) writes exactly that (the pad is
+//! `LEN..N` must be zero". [`to_bytes`](crate::borsh::to_bytes) writes exactly that (the pad is
 //! constant zero limbs), and a decoder is required to check it.
 //!
 //! # What the layer buys
@@ -39,25 +39,25 @@
 //! constraints and its offset table, so those cannot drift apart. Two
 //! encoders, because the two consumers are different:
 //!
-//! - [`CircuitBorsh::push_limbs`](crate::borsh::CircuitBorsh::push_limbs) feeds the ALIGNMENT-AWARE hash instructions
+//! - [`CircuitBorsh::push_limbs`](crate::borsh::CircuitBorsh::push_limbs) feeds the alignment-aware hash instructions
 //!   ([`Limbs::keccak256`](crate::borsh::Limbs::keccak256) / [`Limbs::persistent_hash`](crate::borsh::Limbs::persistent_hash)). The chips do the
-//!   byte packing in-chip, so this path costs ZERO extra rows — choosing the
+//!   byte packing in-chip, so this path costs zero extra rows — choosing the
 //!   atom widths to be the Borsh widths gets the Borsh encoding for free
-//!   (notes/borsh-format.org, finding #2).
+//!   (notes/borsh-format.org).
 //! - [`CircuitBorsh::push_segments`](crate::borsh::CircuitBorsh::push_segments) feeds the packed [`Serializer`], for the
 //!   places that need the bytes as a value (log payloads, `Bytes<N>` fields).
-//!   This one costs the M7 segment packing, which is what it already cost.
+//!   This one costs the segment packing.
 //!
 //! And one decoder, in two modes ([`BorshReader`](crate::borsh::BorshReader), [`Split`](crate::borsh::Split),
 //! [`WitnessCheck`](crate::borsh::WitnessCheck)) — deliberately off the critical path: no vault circuit
-//! uses it, because an attested output arrives as typed circuit ARGUMENTS and
+//! uses it, because an attested output arrives as typed circuit arguments and
 //! running the serializer forwards over declared fields is already a complete
 //! sound deserialization. The reader is for packed state and future formats.
 //!
 //! # The laws every impl must satisfy
 //!
 //! 1. `LEN` is the type's Borsh width — `borsh::object_length(v) == LEN` for
-//!    EVERY value of the corresponding spec type, not just some.
+//!    every value of the corresponding spec type, not just some.
 //! 2. `push_limbs` and `push_segments` describe the same `LEN` bytes in the
 //!    same order (the declaration order of the spec type), and that order is
 //!    Borsh's.
@@ -68,7 +68,7 @@
 //!    which adds the bound compactc does not emit (`constrain_canonical_is_
 //!    the_argument_constraint` in `tests/borsh.rs` pins both halves).
 //! 4. `push_layout` walks the same fields in the same order with the same
-//!    widths, and the SPEC-side path/kind names — dot-joined field names and
+//!    widths, and the spec-side path/kind names — dot-joined field names and
 //!    `[i]` indices, `u64` / `bool` / `[u8; 32]` kinds — because that table is
 //!    cross-checked against `borsh::schema_container_of` walked the same way
 //!    (stage 0's `layout_rows`), and published as the offset table the TS and
@@ -87,16 +87,16 @@
 use minocrab::{AnyWire, Bytes32T, Circuit, FieldT, Prim, Wire};
 use minocrab::{Alignment, AlignmentAtom, AlignmentSegment, Private, Public};
 
-/// Borsh's own schema of the SPEC type, walked into the same offset table
+/// Borsh's own schema of the spec type, walked into the same offset table
 /// [`CircuitBorsh::layout`] produces — the cross-check
 /// `#[borsh(spec = …)]` generates. Behind the off-by-default `borsh-schema`
 /// feature, since it is the only thing here that links borsh.
 #[cfg(feature = "borsh-schema")]
 pub mod schema;
 
-/// `#[derive(CircuitBorsh)]` — the [`CircuitBorsh`] impl AND the
+/// `#[derive(CircuitBorsh)]` — the [`CircuitBorsh`] impl and the
 /// [`CircuitArg`] family, generated from one struct's fields (field order is
-/// the wire contract, and it is the BORSH order). Named the same as the trait
+/// the wire contract, and it is the Borsh order). Named the same as the trait
 /// it implements, the way `serde::Serialize` is.
 #[cfg(feature = "macros")]
 pub use minocrab_macros::CircuitBorsh;
@@ -134,14 +134,14 @@ pub trait CircuitBorsh<V: Vis>: Sized {
     /// Read this value out of packed Borsh bytes, leaf by leaf, in
     /// declaration order.
     ///
-    /// Extraction ONLY: it emits no constraint, so on its own it is not a
+    /// Extraction only: it emits no constraint, so on its own it is not a
     /// sound deserialization in either mode. Use [`read_canonical`] (or the
     /// whole-buffer [`read_split`] / [`read_witness_checked`]), which follow
     /// it with [`CircuitBorsh::constrain_canonical`].
     fn read<R: BorshReader<V>>(c: &mut Circuit, r: &mut R) -> Self;
 
     /// Push this value's hash-preimage limbs: one alignment atom per Borsh
-    /// leaf, with the wires that carry it. Emits NO instructions.
+    /// leaf, with the wires that carry it. Emits no instructions.
     fn push_limbs(&self, limbs: &mut Limbs<V>);
 
     /// Push this value's bytes as [`Serializer`] segments, in Borsh order.
@@ -190,15 +190,15 @@ impl<T: CircuitArg + CircuitBorsh<Private>> CircuitBorshArg for T {}
 /// A hash preimage under construction: the FAB alignment and the wires that
 /// carry it, in Borsh byte order.
 ///
-/// This is the ZERO-COST encoder. `Keccak256`/`PersistentHash` take an
+/// This is the zero-cost encoder. `Keccak256`/`PersistentHash` take an
 /// alignment and pack the bytes in-chip, and their per-limb byte
 /// decomposition is what makes the packing injective — so when the atom
-/// widths ARE the Borsh widths, the circuit hashes the canonical Borsh
+/// widths are the Borsh widths, the circuit hashes the canonical Borsh
 /// encoding without emitting a single packing instruction.
 ///
 /// A `bytes<n>` atom may span several wires (a `Bytes<32>` is the `[hi, lo]`
 /// slot pair, a `Bytes<N>` its FAB limbs in slot order); that is the deployed
-/// layout, and stage 0 proved the resulting byte string IS the Borsh one.
+/// layout, and stage 0 proved the resulting byte string is the Borsh one.
 pub struct Limbs<V: Vis> {
     atoms: Vec<AlignmentAtom>,
     wires: Vec<AnyWire<V>>,
@@ -275,7 +275,7 @@ impl<V: Vis> Default for Limbs<V> {
 
 // ---- the free functions --------------------------------------------------------
 
-/// The value's hash-preimage limbs. Emits NO instructions: this is pure
+/// The value's hash-preimage limbs. Emits no instructions: this is pure
 /// bookkeeping over wires that already exist.
 pub fn limbs_of<V: Vis, T: CircuitBorsh<V>>(value: &T) -> Limbs<V> {
     let mut limbs = Limbs::new();
@@ -291,7 +291,7 @@ pub fn limbs_of<V: Vis, T: CircuitBorsh<V>>(value: &T) -> Limbs<V> {
 }
 
 /// The FAB alignment of the value's Borsh encoding — the one to hand a hash
-/// instruction. Value-independent (that is what fixed-width MEANS), and free.
+/// instruction. Value-independent (that is what fixed-width means), and free.
 pub fn alignment_of<V: Vis, T: CircuitBorsh<V>>(value: &T) -> Alignment {
     limbs_of(value).alignment()
 }
@@ -303,7 +303,7 @@ pub fn alignment_of<V: Vis, T: CircuitBorsh<V>>(value: &T) -> Alignment {
 /// rule the spec states for fixed containers like the signet signer's 288-byte
 /// `Misc` (and the pad is constant zero limbs, so it costs nothing).
 ///
-/// THIS is the path that costs rows — the M7 segment packing, one `div_mod`
+/// This is the path that costs rows — the segment packing, one `div_mod`
 /// per 31-byte output-limb boundary a field straddles. Where the bytes are
 /// only going to be hashed, use [`limbs_of`] instead and pay nothing.
 ///
@@ -332,7 +332,7 @@ pub fn to_bytes<const N: usize, V: Vis, T: CircuitBorsh<V>>(
     out.finish::<N>(c)
 }
 
-/// [`to_bytes`] through [`Serializer::constrained`]: the packing PROVES the
+/// [`to_bytes`] through [`Serializer::constrained`]: the packing proves the
 /// leaves are in range instead of assuming it.
 ///
 /// Same bytes, same packing, plus one `constrain_bits` per non-literal
@@ -363,16 +363,16 @@ pub fn to_bytes_constrained<const N: usize, V: Vis, T: CircuitBorsh<V>>(
 
 // ---- the deserializer ------------------------------------------------------------
 //
-// DELIBERATELY OFF THE CRITICAL PATH, and a library component: no vault
+// Deliberately off the critical path, and a library component: no vault
 // circuit uses it. The vault does not need a reader at all — an attested
-// output arrives as typed circuit ARGUMENTS and the MPC signs
+// output arrives as typed circuit arguments and the MPC signs
 // keccak(requestId ‖ bytes), so declaring the fields and running the
-// SERIALIZER forwards is already a complete sound deserialization (the
+// serializer forwards is already a complete sound deserialization (the
 // four-line theorem: packing is injective on range-constrained inputs, the
 // MPC signed the digest, the circuit constrains bytes == serialize(fields)
 // with the fields in range, therefore the fields are what the MPC encoded).
 // What the reader is for is packed state and future formats — so it is built,
-// tested and PRICED here, and used by nothing.
+// tested and priced here, and used by nothing.
 
 /// A source of packed Borsh bytes: hands back one little-endian field element
 /// per leaf, in byte order.
@@ -380,27 +380,27 @@ pub fn to_bytes_constrained<const N: usize, V: Vis, T: CircuitBorsh<V>>(
 /// `V` is the visibility of the values it produces. The two implementations
 /// are the two modes of the design of record:
 ///
-/// - [`Split`] — the M7 segment packing run BACKWARDS. One `div_mod` per
+/// - [`Split`] — the segment packing run backwards. One `div_mod` per
 ///   field boundary that falls inside a limb, and the leaves keep the packed
 ///   buffer's own visibility, so a public buffer yields public fields with no
 ///   disclosure.
 /// - [`WitnessCheck`] — witness each leaf, constrain it, re-pack the lot and
 ///   assert limb equality with the buffer. Much cheaper (the packing costs
-///   one `div_mod` per LIMB boundary rather than per FIELD boundary), but the
+///   one `div_mod` per limb boundary rather than per field boundary), but the
 ///   leaves are witnesses, hence `Private`: ledger use needs `disclose`.
 ///
 /// Two types rather than the one enum the design of record sketched, because
-/// the modes differ in the VISIBILITY they produce and that is a type, not a
+/// the modes differ in the visibility they produce and that is a type, not a
 /// value: `Split<V>` reads at `V`, `WitnessCheck` reads at `Private`.
 pub trait BorshReader<V: Vis> {
     /// The next `width` bytes as one little-endian field element.
     ///
-    /// PRECONDITION (both modes): the packed buffer's limbs are already
+    /// Precondition (both modes): the packed buffer's limbs are already
     /// constrained to their byte widths — the same precondition
     /// [`Serializer`] states, and for the same reason (the packing is
     /// injective only on in-range limbs).
     ///
-    /// It is a property of the BUFFER, not of any one `take`, so the seam
+    /// It is a property of the buffer, not of any one `take`, so the seam
     /// that discharges it is the reader's constructor:
     /// [`Split::constrained`] and [`WitnessCheck::constrained`] emit the
     /// buffer's own `constrain_input` before reading a byte. Where the
@@ -416,7 +416,7 @@ pub trait BorshReader<V: Vis> {
 /// is a queue of `(wire, byte length)` in string order, a field takes whole
 /// segments while they fit and splits the one that straddles.
 pub struct Split<V: Vis> {
-    /// `(wire, byte length)` in STRING order — the packed limbs reversed,
+    /// `(wire, byte length)` in string order — the packed limbs reversed,
     /// since limb 0 is the leftover (most significant) chunk.
     segments: std::collections::VecDeque<(Wire<FieldT, V>, usize)>,
 }
@@ -432,7 +432,7 @@ impl<V: Vis> Split<V> {
         Split { segments }
     }
 
-    /// [`Split::new`] with the buffer's range constraints EMITTED rather
+    /// [`Split::new`] with the buffer's range constraints emitted rather
     /// than assumed — the checked construction of a reader.
     ///
     /// The precondition is about the buffer the caller passes, so this is
@@ -450,7 +450,7 @@ impl<V: Vis> Split<V> {
         self.segments.iter().map(|&(_, len)| len).sum()
     }
 
-    /// The padding rule: everything after the value MUST be zero. One
+    /// The padding rule: everything after the value must be zero. One
     /// `assert_eq` per leftover segment (never more than one per limb).
     pub fn assert_pad_zero(self, c: &mut Circuit) {
         if self.segments.is_empty() {
@@ -503,17 +503,17 @@ impl<V: Vis> BorshReader<V> for Split<V> {
     }
 }
 
-/// WitnessCheck mode: witness every leaf, then prove the witnesses ARE the
+/// WitnessCheck mode: witness every leaf, then prove the witnesses are the
 /// buffer by re-packing them and asserting limb equality.
 ///
 /// Sound exactly when the leaves are range-constrained
 /// ([`CircuitBorsh::constrain_canonical`], which [`read_canonical`] emits):
 /// the packing is injective on in-range leaves, so the equality pins each
 /// leaf to the one value the buffer encodes. Cheaper than [`Split`] because
-/// the `div_mod`s move from field boundaries to LIMB boundaries — at most one
+/// the `div_mod`s move from field boundaries to limb boundaries — at most one
 /// per 31 bytes, whatever the field layout.
 ///
-/// The re-pack also enforces the PADDING RULE for free: the [`Serializer`]
+/// The re-pack also enforces the padding rule for free: the [`Serializer`]
 /// zero-fills the tail of the `Bytes<N>`, so the equality asserts that the
 /// buffer's own tail is zero.
 ///
@@ -539,7 +539,7 @@ impl<const N: usize> WitnessCheck<N> {
     }
 
     /// [`WitnessCheck::new`] with the buffer's range constraints emitted —
-    /// the same seam as [`Split::constrained`], and it matters MORE in this
+    /// the same seam as [`Split::constrained`], and it matters more in this
     /// mode: the read is sound because re-packing the witnessed leaves and
     /// asserting limb equality pins them, and that argument needs the
     /// buffer's limbs in range as much as the leaves.
@@ -553,7 +553,7 @@ impl<const N: usize> WitnessCheck<N> {
     }
 
     /// Re-pack the witnessed leaves and assert they are the buffer, limb for
-    /// limb. WITHOUT THIS THE READ PROVES NOTHING.
+    /// limb. Without this the read proves nothing.
     pub fn finish(self, c: &mut Circuit) {
         let packed = self.repack.finish::<N>(c);
         assert_eq!(packed.limbs().len(), self.expected.len());
@@ -588,7 +588,7 @@ pub fn read_canonical<V: Vis, T: CircuitBorsh<V>, R: BorshReader<V>>(
 /// constrain it, and assert the padding is zero. The leaves keep the
 /// buffer's visibility.
 ///
-/// The BUFFER's own range constraints are still [`BorshReader::take`]'s
+/// The buffer's own range constraints are still [`BorshReader::take`]'s
 /// precondition: build the reader with [`Split::constrained`] and call
 /// [`read_canonical`] where they should be emitted here instead.
 pub fn read_split<const N: usize, V: Vis, T: CircuitBorsh<V>>(
@@ -611,7 +611,7 @@ pub fn read_split<const N: usize, V: Vis, T: CircuitBorsh<V>>(
 /// leaves, constrain them, re-pack and assert equality (which also asserts
 /// the padding is zero). The leaves are `Private`.
 ///
-/// As with [`read_split`], the BUFFER's range constraints are the caller's
+/// As with [`read_split`], the buffer's range constraints are the caller's
 /// unless the reader is built with [`WitnessCheck::constrained`].
 pub fn read_witness_checked<const N: usize, W: Vis, T: CircuitBorsh<Private>>(
     c: &mut Circuit,
@@ -639,7 +639,7 @@ pub fn read_witness_checked<const N: usize, W: Vis, T: CircuitBorsh<Private>>(
 /// against `borsh::schema_container_of` is a plain equality.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FieldSpec {
-    /// Dot-joined field path, `[i]` for array elements — the SPEC type's
+    /// Dot-joined field path, `[i]` for array elements — the spec type's
     /// path, not the circuit argument's label.
     pub path: String,
     /// The Borsh declaration of the leaf: `u8`..`u128`, `bool`, `[u8; N]`.
@@ -652,8 +652,8 @@ pub struct FieldSpec {
 
 /// The path to a leaf in the layout table.
 ///
-/// NOT [`ArgPath`]: argument labels are `_`-joined and follow Compact's
-/// naming (`recipient_is_some`), while these paths are the SPEC type's —
+/// Not [`ArgPath`]: argument labels are `_`-joined and follow Compact's
+/// naming (`recipient_is_some`), while these paths are the spec type's —
 /// `tx_params.calldata.value.words[0]` — because they are compared against
 /// borsh's own schema walk and published as the offset table.
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
@@ -714,10 +714,10 @@ fn byte_array_kind(n: usize) -> String {
 
 // ---- leaves: the unsigned integers ------------------------------------------------
 //
-// THE SUBSET'S LEAF TABLE, AS CODE. `Uint<BITS>` is a Borsh integer only at
+// The subset's leaf table, as code. `Uint<BITS>` is a Borsh integer only at
 // the five Borsh widths; `Uint<24>` simply has no impl, so using one is a
 // trait error naming this table rather than a silently narrower field. A
-// tighter RANGE than the width is a range constraint on the next width up —
+// tighter range than the width is a range constraint on the next width up —
 // `Uint<40>` is not a leaf, `Uint<64>` range-checked to 40 bits is.
 
 macro_rules! borsh_uint {
@@ -758,11 +758,11 @@ borsh_uint!(
 
 // ---- leaves: the bounded unsigned integer ------------------------------------------
 //
-// The subset is FIXED-WIDTH and every width has to be a Borsh primitive, so a
-// `Uint<0..70000>` — whose FAB atom is THREE bytes — cannot serialize at its
+// The subset is fixed-width and every width has to be a Borsh primitive, so a
+// `Uint<0..70000>` — whose FAB atom is three bytes — cannot serialize at its
 // FAB width: Borsh has no `u24`. The rule is the one the table above already
-// states for an off-width `Uint<BITS>`, applied to a bound: SERIALIZE AT THE
-// NEXT BORSH WIDTH UP, and keep the tighter range as a range constraint.
+// states for an off-width `Uint<BITS>`, applied to a bound: serialize at the
+// next Borsh width up, and keep the tighter range as a range constraint.
 //
 // Stated as a table (notes/bounded-integers.org §3):
 //
@@ -772,14 +772,14 @@ borsh_uint!(
 //   Uint<0..1000>   FAB 2         Borsh 2 (u16)
 //   Uint<0..70000>  FAB 3         Borsh 4 (u32)
 //
-// So our Borsh encoding of a 3-byte-FAB bounded int is NOT byte-compatible
+// So our Borsh encoding of a 3-byte-FAB bounded int is not byte-compatible
 // with Compact's own `serialize<Uint<0..70000>, 3>` builtin, which packs
 // three. That is the subset's posture, not an oversight: this is Borsh, and
 // Compact's packer is Compact's.
 
 /// The smallest Borsh primitive width holding `maxval`, in bytes.
 ///
-/// Total: `maxval` is at most `u128::MAX`, whose 16 bytes ARE a Borsh width.
+/// Total: `maxval` is at most `u128::MAX`, whose 16 bytes are a Borsh width.
 const fn borsh_width(maxval: u128) -> usize {
     match minocrab::uint_atom_bytes(maxval) {
         0 | 1 => 1,
@@ -797,9 +797,9 @@ fn uint_kind(width: usize) -> String {
 
 /// Compact's `Uint<0..BOUND>` as the next Borsh integer up, range-checked.
 ///
-/// [`CircuitBorsh::constrain_canonical`] is `constrain_input` and NOTHING
-/// ELSE, which makes this the one bounded leaf where Borsh's canonicity
-/// check and compactc's argument constraint are the SAME instructions by
+/// [`CircuitBorsh::constrain_canonical`] is `constrain_input` and nothing
+/// else, which makes this the one bounded leaf where Borsh's canonicity
+/// check and compactc's argument constraint are the same instructions by
 /// construction — unlike [`Tag`], whose `< K` bound no Compact circuit
 /// emits. The bound implies the width (`BOUND - 1 < 2^(8·LEN)`), so a value
 /// that satisfies the range fits the declared integer.
@@ -829,7 +829,7 @@ impl<const BOUND: u128, V: Vis> CircuitBorsh<V> for BoundedUint<BOUND, V> {
 
 // ---- leaves: bool ------------------------------------------------------------------
 
-/// Borsh `bool`: one byte, `0` or `1` AND NOTHING ELSE — which is why
+/// Borsh `bool`: one byte, `0` or `1` and nothing else — which is why
 /// `constrain_canonical` is `assert_boolean` and not a range check. (That
 /// rule is what closes the 0x02 hazard: compactc 0.33 accepts any attested
 /// success byte and refunds everything but `0x01`; compactc 0.36 and the
@@ -932,7 +932,7 @@ impl<const N: usize, V: Vis> CircuitBorsh<V> for BytesN<V, N> {
         self.constrain_input(c);
     }
 
-    /// String order is the FAB limbs BACKWARDS — the full 31-byte limbs
+    /// String order is the FAB limbs backwards — the full 31-byte limbs
     /// first, the leftover (most significant) chunk last.
     fn read<R: BorshReader<V>>(c: &mut Circuit, r: &mut R) -> Self {
         let mut limbs: Vec<Wire<FieldT, V>> = (0..Self::LIMBS)
@@ -953,7 +953,7 @@ impl<const N: usize, V: Vis> CircuitBorsh<V> for BytesN<V, N> {
 /// A fieldless enum of `K` variants: Borsh's own 1-byte discriminant, range
 /// checked `< K`.
 ///
-/// The SPEC-side declaration of a `Tag<K>` field is a plain `u8` — a Rust
+/// The spec-side declaration of a `Tag<K>` field is a plain `u8` — a Rust
 /// `enum` leaves the dual-oracle subset, since bincode-fixint writes a 4-byte
 /// variant index where Borsh writes one (notes/borsh-format.org §"Two
 /// corrections to the design of record"). So the layout kind below is `u8`,
@@ -965,14 +965,14 @@ impl<const N: usize, V: Vis> CircuitBorsh<V> for BytesN<V, N> {
 pub struct Tag<const K: u32, V: Vis = Private>(Wire<FieldT, V>);
 
 impl<const K: u32, V: Vis> Tag<K, V> {
-    /// An ASSERTION, not a check: the caller is CLAIMING `w` already holds a
+    /// An assertion, not a check: the caller is claiming `w` already holds a
     /// discriminant byte, and this emits nothing to verify it
     /// (notes/api-safety-survey.org §A1). Typical justification is a
     /// constrained circuit argument about to receive [`Self::constrain_input`]
     /// (or Borsh's own [`CircuitBorsh::constrain_canonical`], which adds the
     /// `< K` bound this method does not).
     ///
-    /// When the wire is NOT already known to hold a byte, use
+    /// When the wire is not already known to hold a byte, use
     /// [`Self::from_field_checked`] instead — note that gets only the
     /// byte-width constraint, not Borsh's `< K` canonicity bound.
     pub fn from_field_unchecked(w: Wire<FieldT, V>) -> Self {
@@ -986,7 +986,7 @@ impl<const K: u32, V: Vis> Tag<K, V> {
     }
 
     /// [`Self::from_field_unchecked`] immediately followed by
-    /// [`Self::constrain_input`] — the CHECKED twin, for a wire that is not
+    /// [`Self::constrain_input`] — the checked twin, for a wire that is not
     /// already known to hold a byte. This is the byte-width constraint only;
     /// the `< K` variant bound is [`CircuitBorsh::constrain_canonical`]'s.
     ///
@@ -1005,7 +1005,7 @@ impl<const K: u32, V: Vis> Tag<K, V> {
     }
 
     /// The byte-width constraint of the wire, as compactc constrains any
-    /// one-byte argument. The `< K` bound is NOT here: it is Borsh's
+    /// one-byte argument. The `< K` bound is not here: it is Borsh's
     /// canonicity check, emitted by
     /// [`CircuitBorsh::constrain_canonical`].
     pub fn constrain_input(self, c: &mut Circuit) {
@@ -1030,7 +1030,7 @@ impl<const K: u32, V: Vis> CircuitAbi for Tag<K, V> {
     }
 
     /// One byte. The `< K` bound is Borsh canonicity, not compactc's
-    /// argument constraint, so it is NOT part of the primitive type.
+    /// argument constraint, so it is not part of the primitive type.
     fn push_prims(prims: &mut Vec<Prim>) {
         prims.push(Prim::Uint { bits: 8 });
     }
@@ -1082,14 +1082,14 @@ impl<const K: u32, V: Vis> CircuitBorsh<V> for Tag<K, V> {
 
 // ---- leaves: the unit -----------------------------------------------------------------
 
-/// Compact's `[]` value (Rust's `()`): a ZERO-WIDTH Borsh encoding — the
+/// Compact's `[]` value (Rust's `()`): a zero-width Borsh encoding — the
 /// attested value of a call that returns nothing (notes/evm-calls.org §10,
 /// item 3, second paragraph). `borsh::to_vec(&())` is the empty byte string,
 /// so `LEN` is 0 and every method describes zero bytes: nothing to limb,
 /// nothing to pack, nothing to constrain, nothing to read.
 ///
 /// Paired with [`CircuitArg for ()`](super::CircuitArg), this is what lets a
-/// `Pending` over a `Unit`-returning call form a ticket — `()` is now both
+/// `Pending` over a `Unit`-returning call form a ticket — `()` is both
 /// halves [`CircuitBorshArg`] asks for.
 impl<V: Vis> CircuitBorsh<V> for () {
     const LEN: usize = 0;
@@ -1131,7 +1131,7 @@ impl<T: CircuitBorsh<V>, V: Vis, const K: usize> CircuitBorsh<V> for [T; K] {
 
     fn read<R: BorshReader<V>>(c: &mut Circuit, r: &mut R) -> Self {
         // Through a Vec rather than `array::from_fn`, whose call order is
-        // not part of its contract: here the order IS the byte layout.
+        // not part of its contract: here the order is the byte layout.
         let mut elements = Vec::with_capacity(K);
         for _ in 0..K {
             elements.push(T::read(c, r));
@@ -1149,7 +1149,7 @@ impl<T: CircuitBorsh<V>, V: Vis, const K: usize> CircuitBorsh<V> for [T; K] {
     }
 }
 
-/// Optionality in the subset: a `bool` tag and an ALWAYS-PRESENT payload.
+/// Optionality in the subset: a `bool` tag and an always-present payload.
 ///
 /// **Maybe ↦ Flagged, never Option** — the single most important line of the
 /// spec for the TS side. `Option<T>` is excluded not because Borsh cannot
@@ -1158,7 +1158,7 @@ impl<T: CircuitBorsh<V>, V: Vis, const K: usize> CircuitBorsh<V> for [T; K] {
 /// struct whose encoding is `is_some ‖ value` at fixed offsets. It is also
 /// exactly what Compact's `Maybe` already compiles to (the deployed record
 /// carries `calldata.is_some` followed by the full calldata whether or not
-/// the tag is set), which is why this is a type ALIAS of the v3 [`Maybe`]
+/// the tag is set), which is why this is a type alias of the v3 [`Maybe`]
 /// rather than a second type: the circuit type is Compact's, the spec name is
 /// Borsh-side.
 ///

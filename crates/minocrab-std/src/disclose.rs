@@ -6,7 +6,7 @@
 //! lives in `minocrab::disclose`, because a disclosure is a frontend
 //! concept and minocrab-ledger discloses too (see that module's docs). This
 //! file is the half that needs the types: one impl per Compact value shape,
-//! each fanning its wires out under ONE label.
+//! each fanning its wires out under one label.
 
 use minocrab::{Circuit, Disclose, DisclosureLabel, Discloses};
 use minocrab::{Private, Public};
@@ -50,7 +50,7 @@ impl<const N: usize> Disclose for Bytes<N, Private> {
     }
 }
 
-/// Both limbs under ONE label — where the hand-written circuits disclosed
+/// Both limbs under one label — where the hand-written circuits disclosed
 /// `"… (hi)"` and `"… (lo)"` separately.
 impl Disclose for B32<Private> {
     type Public = B32<Public>;
@@ -69,7 +69,7 @@ impl Disclose for ContractAddress<Private> {
     }
 }
 
-/// `Either<A, B>`: the tag and BOTH arms, each under the same label — the
+/// `Either<A, B>`: the tag and both arms, each under the same label — the
 /// disclosure is of the whole value, because both arms occupy their slots
 /// whichever way the tag points.
 impl<A: Disclose, B: Disclose> Disclose for Either<A, B, Private> {
@@ -109,7 +109,7 @@ impl Disclose for JubjubPoint<Private> {
 }
 
 /// One slot, one label — and what the report records is the value's
-/// `compress` COMMITMENT, not the TS-side value, because that is all the
+/// `compress` commitment, not the TS-side value, because that is all the
 /// circuit ever had (see [`Opaque`]'s docs). A disclosure report on an opaque
 /// therefore says "this commitment left the circuit", which is the true and
 /// the useful statement: the value itself was already on the caller's side.

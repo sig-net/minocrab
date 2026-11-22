@@ -7,7 +7,7 @@
 //! Cell(payload)]`, and then the VM `log` op. The payload is the serialized
 //! event value, one `bytes<n>` atom of the declared event size.
 //!
-//! An event is PUBLIC output: everything in it goes into the transcript, so
+//! An event is public output: everything in it goes into the transcript, so
 //! the payload is a [`BytesN`] of [`Public`] wires, as a [`Serializer`]
 //! (`finish::<N>`) or [`borsh::to_bytes`] over public values returns it. A
 //! private payload is a different type and does not compile; disclose the

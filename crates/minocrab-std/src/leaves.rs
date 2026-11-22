@@ -9,20 +9,20 @@
 //!
 //! # The value model
 //!
-//! A value is a fixed list of native field SLOTS, in declaration order, and
+//! A value is a fixed list of native field slots, in declaration order, and
 //! that order is the wire contract (input schema, communications
 //! commitment, ledger layout, preimage). Four traits say what a type does
 //! with them:
 //!
-//! - LAYOUT, [`CircuitAbi`]: how many slots, their FAB atoms, the primitive
+//! - Layout, [`CircuitAbi`]: how many slots, their FAB atoms, the primitive
 //!   type of each (which picks its input constraint). Visibility-independent.
-//! - ENCODE, [`Encode<V>`](Encode): the slots at visibility `V`. A leaf
+//! - Encode, [`Encode<V>`](Encode): the slots at visibility `V`. A leaf
 //!   encodes at its own visibility only, so `Encode<Public>` is exactly the
 //!   values that may cross a contract boundary, and a private one must pass
 //!   `disclose_as` first. Bounds say `Encode<Public>` for a call argument.
-//! - DECODE, [`Decode<V>`](Decode): the value rebuilt from its slots; a call
+//! - Decode, [`Decode<V>`](Decode): the value rebuilt from its slots; a call
 //!   result is `Decode<Public>`.
-//! - DECLARE, [`CircuitArg`]: a circuit argument, on top of
+//! - Declare, [`CircuitArg`]: a circuit argument, on top of
 //!   `Encode<Private>`; it labels each slot from the argument's path and
 //!   its constraints come from the layout, never from the impl.
 //!
@@ -31,7 +31,7 @@
 //! value rebuilt from a read's limbs; lookup, list head, stream reads).
 //! [`ProofWires`] is the wire walk `Assumed::stale` records.
 //!
-//! A RECORD gets all of this from `#[derive(Value)]`: one impl per trait,
+//! A record gets all of this from `#[derive(Value)]`: one impl per trait,
 //! each holding exactly where every field's does, so the record is whatever
 //! its fields allow (a struct of `Public` fields is storable and a call
 //! argument, a struct of `Private` fields an argument, a `Notification<V:
@@ -40,10 +40,10 @@
 //! with a definition-site check that the record is an argument (resp.
 //! storable).
 //!
-//! THE POINTS are the encode-only case: [`Secp256k1Point`] and
+//! The points are the encode-only case: [`Secp256k1Point`] and
 //! [`JubjubPoint`] occupy one slot whose wire is not a field element. As
 //! arguments they encode to no native slot; in the ledger their limbs are
-//! COMPUTED by an `encode` instruction that has no inverse, so they are
+//! computed by an `encode` instruction that has no inverse, so they are
 //! `LedgerStore` and not `LedgerRepr`, and a map of points can be written
 //! and tested but not looked up.
 
@@ -75,7 +75,7 @@ pub use crate::entry::{entry, entry_out, ArgPath, CircuitArg, CircuitArgs, Circu
 /// [`LedgerHistoricMerkleTree`], [`LedgerCell`], [`LedgerCounter`],
 /// [`LedgerField`]) over `minocrab_ledger`'s ops — one Impact operation per
 /// method, `c` and the guard visible at every call site.
-/// Nesting (M22 stage B2) adds [`LedgerMap::at_key`] and the types it needs:
+/// Nesting adds [`LedgerMap::at_key`] and the types it needs:
 /// [`FieldPath`] (a declared slot's const path — one element, or the segment
 /// path a block of sixteen fields or more forces), [`KeyPath`] (the runtime
 /// path an `at_key` chain builds), and the sealed pair [`LedgerSlot`] /
@@ -113,7 +113,7 @@ pub use minocrab::{
 /// The ABI vocabulary, which lives in the frontend (`minocrab::abi` —
 /// the port of `emit-constraints-for` plus the traits `minocrab_ledger::call`
 /// has to name) and is re-exported here because this is where argument types
-/// are WRITTEN: a [`CircuitAbi`] impl names [`Prim`]s, `contract_call` takes
+/// are written: a [`CircuitAbi`] impl names [`Prim`]s, `contract_call` takes
 /// [`LimbConstraint`]s, and [`Encode`] / [`Decode`] are a value's slots at a
 /// visibility (see the value model above).
 pub use minocrab::{CallArgs, CircuitAbi, Decode, Encode, LimbConstraint, Prim};
@@ -122,9 +122,9 @@ pub use minocrab::{CallArgs, CircuitAbi, Decode, Encode, LimbConstraint, Prim};
 /// and the trait that lets its arms be written as wires or as [`Check`]s.
 pub use minocrab::{Branches, GuardCond, Select, Selected, ValueBranches};
 
-/// The result of a guarded read — the value, or the type's DEFAULT where the
+/// The result of a guarded read — the value, or the type's default where the
 /// guard was off. Re-exported here because this is where guarded reads are
-/// WRITTEN: every `_guarded` method on [`LedgerMap`], [`LedgerCell`] and
+/// written: every `_guarded` method on [`LedgerMap`], [`LedgerCell`] and
 /// [`LedgerCounter`] returns one.
 pub use minocrab::Guarded;
 
@@ -152,7 +152,7 @@ pub use minocrab_macros::contract;
 
 /// `#[derive(Ledger)]` — a struct mirroring Compact's `export ledger` block
 /// becomes the contract's ledger handle, each field at its declaration-order
-/// index. Named the same as nothing else here: the slot TYPES are what the
+/// index. Named the same as nothing else here: the slot types are what the
 /// fields are written in.
 #[cfg(feature = "macros")]
 pub use minocrab_macros::Ledger;
@@ -255,7 +255,7 @@ impl Vis for Private {
 // Parameter order is const-first with the visibility defaulted to Private
 // (`Uint<64>`, `Bytes<20>`), deliberately unlike `B32<V>` / `BytesN<V, N>`:
 // these are the types circuit signatures are written in, and reading
-// side-by-side with the Compact source wins (DECIDED, notes/contract-api.org).
+// side-by-side with the Compact source wins (decided, notes/contract-api.org).
 //
 // All three are `#[repr(transparent)]` around one wire, and `.field()`
 // unwraps to it without emitting an instruction.
@@ -265,7 +265,7 @@ impl Vis for Private {
 // guard's comparison width) is machine-checked in `lean/MinocrabStdProofs/
 // Numeric.lean`, shipped with this crate; tests/lean_claims.rs is the
 // drift gate. Model proofs — the transcription gap is stated in the file's
-// header (M25, notes/lean-port.org).
+// header (notes/lean-port.org).
 
 /// Compact's `Uint<0..2^BITS - 1>`: one native slot, `assert_bits(BITS)` on
 /// entry, alignment atom `bytes ceil(BITS/8)`.
@@ -278,7 +278,7 @@ impl Vis for Private {
 pub struct Uint<const BITS: u32, V: Vis = Private>(Wire<FieldT, V>);
 
 impl<const BITS: u32, V: Vis> Uint<BITS, V> {
-    /// An ASSERTION, not a check: the caller is CLAIMING `w` already holds a
+    /// An assertion, not a check: the caller is claiming `w` already holds a
     /// value below `2^BITS`, and this emits nothing to verify it
     /// (notes/api-safety-survey.org §A1). Typical justification is a
     /// constrained circuit argument about to receive [`Self::constrain_input`],
@@ -288,7 +288,7 @@ impl<const BITS: u32, V: Vis> Uint<BITS, V> {
     /// [`Self::widen`]'s soundness argument, and the Borsh packing all rest on
     /// it holding.
     ///
-    /// When the wire is NOT already known to satisfy the bound, use
+    /// When the wire is not already known to satisfy the bound, use
     /// [`Self::from_field_checked`] instead.
     pub fn from_field_unchecked(w: Wire<FieldT, V>) -> Self {
         const {
@@ -302,7 +302,7 @@ impl<const BITS: u32, V: Vis> Uint<BITS, V> {
     }
 
     /// [`Self::from_field_unchecked`] immediately followed by
-    /// [`Self::constrain_input`] — the CHECKED twin, for a wire that is not
+    /// [`Self::constrain_input`] — the checked twin, for a wire that is not
     /// already known to hold a `Uint<BITS>`.
     ///
     /// Cost: exactly `constrain_input`'s constraint (~`BITS`/4 rows, one
@@ -310,7 +310,7 @@ impl<const BITS: u32, V: Vis> Uint<BITS, V> {
     /// `Circuit::dedup_range_constraints` enabled, a redundant call is free —
     /// the pass drops a later constraint no tighter than one already proven.
     pub fn from_field_checked(c: &mut Circuit, w: Wire<FieldT, V>) -> Self {
-        // The CONSTRAINED value comes back, not `w`: inside a `when` the two
+        // The constrained value comes back, not `w`: inside a `when` the two
         // differ (`select(guard, w, 0)` is what was checked, and what the
         // branch computes), and a checked leaf must carry the checked wire.
         Self::from_field_unchecked(w).constrain_input(c)
@@ -322,7 +322,7 @@ impl<const BITS: u32, V: Vis> Uint<BITS, V> {
     }
 
     /// Range-constrain a `Uint<BITS>` entering the circuit, exactly as
-    /// compactc constrains its `Uint<BITS>` arguments — through the ONE
+    /// compactc constrains its `Uint<BITS>` arguments — through the one
     /// table (`Prim::constraint`), so this and `CircuitArg::constrain`
     /// cannot say different things. Note `Uint<1>` is `constrain_to_boolean`
     /// there, as it is in compactc.
@@ -330,10 +330,10 @@ impl<const BITS: u32, V: Vis> Uint<BITS, V> {
         Self(Prim::Uint { bits: BITS }.constraint().emit(c, self.0))
     }
 
-    /// `self - other`, with COMPACT'S UNDERFLOW GUARD — the whole reason this
+    /// `self - other`, with Compact's underflow guard — the whole reason this
     /// method exists rather than leaving callers to `c.add(a, c.neg(b))`.
     ///
-    /// compactc inserts a guard BEFORE every subtraction
+    /// compactc inserts a guard before every subtraction
     /// (`infer-types.ss`, decoded in notes/builtin-lowering.org §9):
     ///
     /// ```text
@@ -345,7 +345,7 @@ impl<const BITS: u32, V: Vis> Uint<BITS, V> {
     /// comparison's `bits` comes from `BITS` through the predicate layer, not
     /// from a number typed here.
     ///
-    /// WHY IT IS NOT OPTIONAL, and why the raw spelling is a footgun
+    /// Why it is not optional, and why the raw spelling is a footgun
     /// (notes/api-safety-survey.org §B1): field arithmetic has no sign. For
     /// `a < b` the raw form yields `a - b + p` — a value near 2^255, not −1.
     /// Downstream that is a coin worth 2^255, or a `Uint<64>` ledger write of
@@ -356,7 +356,7 @@ impl<const BITS: u32, V: Vis> Uint<BITS, V> {
     /// The result keeps `BITS`, which is compactc's rule (result type
     /// `Uint<maxa>`) and is sound because `a - b <= a < 2^BITS`.
     ///
-    /// Cost: identical to compactc's, because it IS compactc's — one
+    /// Cost: identical to compactc's, because it is compactc's — one
     /// `less_than`, one `not` for the negation (verified against the port's
     /// own completeSwap, which mirrors compactc's artifact), one `assert`,
     /// one `neg`, one `add`.
@@ -372,7 +372,7 @@ impl<const BITS: u32, V: Vis> Uint<BITS, V> {
 
     /// [`Uint::sub`] with the caller's own message on the underflow guard.
     ///
-    /// The message is METADATA — no instruction, no row — so this is the SAME
+    /// The message is metadata — no instruction, no row — so this is the same
     /// lowering as [`Uint::sub`], and a contract that already had a
     /// domain-specific message for its hand-written guard keeps it. That is
     /// not a convenience: a good message is what makes a failed proof
@@ -387,19 +387,19 @@ impl<const BITS: u32, V: Vis> Uint<BITS, V> {
         Uint::from_field_unchecked(c.add(self.field(), negated))
     }
 
-    /// `x as Uint<WIDER>` — the LOSSLESS widening, and the explicit escape
-    /// from a mixed-width comparison (dmd 2026-08-15, decision A: no implicit
+    /// `x as Uint<WIDER>` — the lossless widening, and the explicit escape
+    /// from a mixed-width comparison (there is no implicit
     /// widening, Rust-style).
     ///
-    /// FREE, in both senses. No instruction: it is the same wire, retyped.
-    /// And no new CONSTRAINT, which is the part worth arguing: a wire already
+    /// Free, in both senses. No instruction: it is the same wire, retyped.
+    /// And no new constraint, which is the part worth arguing: a wire already
     /// constrained to `BITS` bits holds a value `< 2^BITS ≤ 2^WIDER`, so it
     /// satisfies the wider range by construction — `constrain_bits(WIDER)`
-    /// would be a tautology costing ~WIDER/4 rows. (The soundness of that
+    /// would be a tautology costing ~wider/4 rows. (The soundness of that
     /// argument rests on the leaf's invariant, which is the type's whole
     /// point: a `Uint<BITS>` is a wire something has constrained — an
     /// argument by `CircuitArg::constrain`, a computed value by whoever
-    /// called `from_field_unchecked`. Widening PROPAGATES that obligation, it
+    /// called `from_field_unchecked`. Widening propagates that obligation, it
     /// does not discharge one.)
     ///
     /// Narrowing is not offered and is not an oversight: it needs a real
@@ -437,10 +437,10 @@ impl<const BITS: u32> Uint<BITS, Public> {
     }
 }
 
-/// Compact's `Uint<0..BOUND>` for an ARBITRARY bound: one native slot
-/// holding a value strictly BELOW `BOUND`.
+/// Compact's `Uint<0..BOUND>` for an arbitrary bound: one native slot
+/// holding a value strictly below `BOUND`.
 ///
-/// **`BOUND` IS EXCLUSIVE**, exactly as the Compact spelling is —
+/// **`BOUND` is exclusive**, exactly as the Compact spelling is —
 /// `BoundedUint<70000>` is `Uint<0..70000>`, the digits unchanged, so a port
 /// cannot introduce an off-by-one and a reviewer reading side by side does
 /// not have to do arithmetic. compactc says the same thing in its own words
@@ -450,14 +450,14 @@ impl<const BITS: u32> Uint<BITS, Public> {
 /// publishes and the number [`Prim::unsigned`] takes
 /// (notes/bounded-integers.org §0).
 ///
-/// Why this is a SECOND leaf rather than a generalization of [`Uint`]:
+/// Why this is a second leaf rather than a generalization of [`Uint`]:
 /// `generic_const_exprs` is not available on this toolchain, so neither can
 /// be an alias of the other, and `Uint<128>`'s bound (2^128) does not fit a
 /// `u128` const parameter anyway. They coexist over the same wire, and the
 /// two free conversions ([`BoundedUint::to_uint`], [`BoundedUint::widen`])
 /// bridge them. Nothing in `Uint`'s code path changed to make room.
 ///
-/// The lowering is NOT this type's opinion — [`Self::constrain_input`] hands
+/// The lowering is not this type's opinion — [`Self::constrain_input`] hands
 /// the maxval to compactc's own table, which answers `constrain_eq 0` /
 /// `constrain_to_boolean` / `constrain_bits k` / `less_than + assert`
 /// depending on the bound. `BoundedUint<256>` is therefore exactly
@@ -471,7 +471,7 @@ impl<const BOUND: u128, V: Vis> BoundedUint<BOUND, V> {
     /// The largest legal value: `BOUND - 1`, compactc's `maxval`.
     pub const MAX: u128 = BOUND - 1;
 
-    /// An ASSERTION, not a check: the caller is CLAIMING `w` already holds a
+    /// An assertion, not a check: the caller is claiming `w` already holds a
     /// value below `BOUND`, and this emits nothing to verify it
     /// (notes/api-safety-survey.org §A1). Typical justification is a
     /// constrained circuit argument about to receive [`Self::constrain_input`],
@@ -479,7 +479,7 @@ impl<const BOUND: u128, V: Vis> BoundedUint<BOUND, V> {
     /// (`sub`, `narrow`, [`Uint::widen`]'s bridge). Getting the claim wrong is
     /// silent — everything built on this leaf's invariant rests on it holding.
     ///
-    /// When the wire is NOT already known to satisfy the bound, use
+    /// When the wire is not already known to satisfy the bound, use
     /// [`Self::from_field_checked`] instead.
     pub fn from_field_unchecked(w: Wire<FieldT, V>) -> Self {
         const {
@@ -494,14 +494,14 @@ impl<const BOUND: u128, V: Vis> BoundedUint<BOUND, V> {
     }
 
     /// [`Self::from_field_unchecked`] immediately followed by
-    /// [`Self::constrain_input`] — the CHECKED twin, for a wire that is not
+    /// [`Self::constrain_input`] — the checked twin, for a wire that is not
     /// already known to hold a value below `BOUND`.
     ///
     /// Cost: exactly `constrain_input`'s constraint (whichever of its four
     /// cases the bound lands on). With `Circuit::dedup_range_constraints`
     /// enabled, a redundant call is free.
     pub fn from_field_checked(c: &mut Circuit, w: Wire<FieldT, V>) -> Self {
-        // The CONSTRAINED value comes back, not `w`: inside a `when` the two
+        // The constrained value comes back, not `w`: inside a `when` the two
         // differ (`select(guard, w, 0)` is what was checked, and what the
         // branch computes), and a checked leaf must carry the checked wire.
         Self::from_field_unchecked(w).constrain_input(c)
@@ -513,7 +513,7 @@ impl<const BOUND: u128, V: Vis> BoundedUint<BOUND, V> {
     }
 
     /// Range-constrain a `Uint<0..BOUND>` entering the circuit, exactly as
-    /// compactc constrains its own — through the ONE table
+    /// compactc constrains its own — through the one table
     /// ([`Prim::constraint`]), so this and `CircuitArg::constrain` cannot
     /// say different things.
     ///
@@ -526,7 +526,7 @@ impl<const BOUND: u128, V: Vis> BoundedUint<BOUND, V> {
         Self(Prim::unsigned(Self::MAX).constraint().emit(c, self.0))
     }
 
-    /// `x as Uint<0..BIGGER>` — the LOSSLESS widening, free in both senses
+    /// `x as Uint<0..BIGGER>` — the lossless widening, free in both senses
     /// ([`Uint::widen`]'s argument verbatim: a value below `BOUND` is below
     /// any larger bound by construction, so no instruction and no second
     /// range constraint).
@@ -550,7 +550,7 @@ impl<const BOUND: u128, V: Vis> BoundedUint<BOUND, V> {
     /// Free for the same reason [`Self::widen`] is: a value below `BOUND` is
     /// below `2^BITS` when `2^BITS >= BOUND`, so the wider range is
     /// satisfied by construction and `constrain_bits(BITS)` would be a
-    /// tautology costing ~BITS/4 rows.
+    /// tautology costing ~bits/4 rows.
     pub fn to_uint<const BITS: u32>(self) -> Uint<BITS, V> {
         const {
             assert!(
@@ -563,7 +563,7 @@ impl<const BOUND: u128, V: Vis> BoundedUint<BOUND, V> {
         Uint::from_field_unchecked(self.0)
     }
 
-    /// `self + other`, with COMPACT'S MAX TRACKING — the bound of the result
+    /// `self + other`, with Compact's max tracking — the bound of the result
     /// is a fact about the types, not a promise the author makes
     /// (notes/api-safety-survey.org §B2).
     ///
@@ -571,14 +571,14 @@ impl<const BOUND: u128, V: Vis> BoundedUint<BOUND, V> {
     /// notes/builtin-lowering.org §9) is that `+` is a plain field `add`
     /// whose result type is `Uint<maxa + maxb>`, with **no overflow check at
     /// the op itself** — the check happens later, at the downcast. This is
-    /// exactly that: ONE `add` instruction, no constraint, and the widened
+    /// exactly that: one `add` instruction, no constraint, and the widened
     /// bound in the type where compactc keeps its `maxval`. The downcast is
     /// then [`Self::to_uint`] (free, when the bound fits) or
     /// [`Self::narrow`] (checked, when it does not).
     ///
-    /// `OUT` IS NAMED BY THE CALLER because `generic_const_exprs` is not
+    /// `OUT` is named by the caller because `generic_const_exprs` is not
     /// available on this toolchain — the compiler cannot write
-    /// `BoundedUint<BOUND + BOUND2 - 1>` for us. What it can do is REJECT a
+    /// `BoundedUint<BOUND + BOUND2 - 1>` for us. What it can do is reject a
     /// bound that is too small, which is an inline-`const` assert here and so
     /// an `error[E0080]` at the call site:
     ///
@@ -595,7 +595,7 @@ impl<const BOUND: u128, V: Vis> BoundedUint<BOUND, V> {
     /// `499` is accepted, and is the narrowest bound that is: the largest sum
     /// is `299 + 199 = 498`, and the bound is exclusive.
     ///
-    /// The two bounds may DIFFER — an addition needs no common width, unlike
+    /// The two bounds may differ — an addition needs no common width, unlike
     /// [`Self::sub`], whose guard is a comparison.
     /// Both operands at the same visibility, as [`Uint::sub`]: mixing them is
     /// spelled by moving one with `.private()` first.
@@ -639,7 +639,7 @@ impl<const BOUND: u128, V: Vis> BoundedUint<BOUND, V> {
     ///
     /// (`299 * 199 = 59_501`, so `59_502` is the narrowest legal `OUT`.)
     ///
-    /// A bound computation that OVERFLOWS a `u128` is itself a compile error
+    /// A bound computation that overflows a `u128` is itself a compile error
     /// (`bound_or_overflow`), not a wrap: a wrapped bound would accept an
     /// `OUT` the product cannot fit, which is the max tracking silently
     /// telling a lie. Compact refuses the analogous case in its own units —
@@ -675,10 +675,10 @@ impl<const BOUND: u128, V: Vis> BoundedUint<BOUND, V> {
         BoundedUint::from_field_unchecked(c.mul(self.field(), other.field()))
     }
 
-    /// `self - other`, with COMPACT'S UNDERFLOW GUARD — [`Uint::sub`]'s
+    /// `self - other`, with Compact's underflow guard — [`Uint::sub`]'s
     /// method for a bounded operand, and the same lowering:
     /// `assert(a >= b)`, `neg(b)`, `add(a, neg)`, in that order, with the
-    /// comparison at the BOUND's own width (`max(1, intlen(BOUND - 1))`,
+    /// comparison at the bound's own width (`max(1, intlen(BOUND - 1))`,
     /// which is what the predicate layer reads off the type — not the
     /// even-rounded width the range constraint runs at).
     ///
@@ -687,8 +687,7 @@ impl<const BOUND: u128, V: Vis> BoundedUint<BOUND, V> {
     /// `a - b + p`, a value near 2^255 — the balance-underflow bug, invisible
     /// to any differential on an honest preimage.
     ///
-    /// BOTH BOUNDS ARE THE SAME, deliberately (dmd 2026-08-16, decision A
-    /// reaffirmed): the guard is a COMPARISON, and a comparison needs one
+    /// Both bounds are the same, deliberately: the guard is a comparison, and a comparison needs one
     /// width, so a mixed-bound subtraction is spelled by widening the narrow
     /// side first — `a.sub(c, b.widen::<BOUND>())`, free for a value already
     /// range-constrained.
@@ -704,7 +703,7 @@ impl<const BOUND: u128, V: Vis> BoundedUint<BOUND, V> {
 
     /// [`Self::sub`] with the caller's own message on the underflow guard.
     ///
-    /// The message is METADATA — no instruction, no row — so this is the SAME
+    /// The message is metadata — no instruction, no row — so this is the same
     /// lowering as [`Self::sub`], and a contract with a domain-specific
     /// message for its hand-written guard keeps it ([`Uint::sub_with`]'s
     /// argument verbatim).
@@ -722,28 +721,25 @@ impl<const BOUND: u128, V: Vis> BoundedUint<BOUND, V> {
         BoundedUint::from_field_unchecked(c.add(self.field(), negated))
     }
 
-    /// `x as Uint<BITS>` when the bound does NOT fit — the CHECKED
+    /// `x as Uint<BITS>` when the bound does not fit — the checked
     /// narrowing.
     ///
     /// Emits exactly the range constraint compactc emits for a `Uint<BITS>`
     /// argument (`Prim::Uint { bits }`, so `constrain_bits BITS`, or
-    /// `constrain_to_boolean` at `BITS = 1` — the ONE table, as
+    /// `constrain_to_boolean` at `BITS = 1` — the one table, as
     /// [`Self::constrain_input`] uses), and nothing else. That is the whole
-    /// cost, and it is visible: ~BITS/4 rows.
+    /// cost, and it is visible: ~bits/4 rows.
     ///
-    /// This matches Compact's own downcast, which checks in EVERY position —
+    /// This matches Compact's own downcast, which checks in every position —
     /// `constrain_bits` straight-line, and a guarded
     /// `cond_select`/`less_than`/`assert` chain inside conditional branches
-    /// (probe-verified under the pinned compactc and 0.34.0;
-    /// notes/builtin-lowering.org §9, corrected 2026-08-28 — an earlier
-    /// claim here that compactc omits the check in argument position was a
-    /// mis-read of the artifacts, withdrawn in notes/compact-findings.org
-    /// §1). What Compact's surface language CANNOT spell, and this API can,
+    /// (probe-verified under the pinned compactc;
+    /// notes/builtin-lowering.org §9). What Compact's surface language cannot spell, and this API can,
     /// is the unchecked narrowing (`from_field_unchecked`): the value of
     /// `narrow`/`to_uint` is making the checked/free split an explicit
     /// choice a reviewer can read off the call site.
     ///
-    /// For the FREE direction (`2^BITS >= BOUND`, where every legal value
+    /// For the free direction (`2^BITS >= BOUND`, where every legal value
     /// already fits and a constraint would be a tautology) this is an
     /// `error[E0080]` pointing at [`Self::to_uint`]:
     ///
@@ -774,7 +770,7 @@ impl<const BOUND: u128, V: Vis> BoundedUint<BOUND, V> {
     }
 }
 
-/// The result bound of a tracked operation, or a COMPILE ERROR if it does not
+/// The result bound of a tracked operation, or a compile error if it does not
 /// fit a `u128` const parameter.
 ///
 /// Wrapping would be the worst possible answer: a wrapped bound is a small
@@ -825,8 +821,8 @@ impl<const BOUND: u128> BoundedUint<BOUND, Public> {
     /// A `Uint<0..BOUND>` constant from a native Rust value; panics at
     /// circuit-build time if `v` is not below `BOUND`.
     ///
-    /// A PANIC and not a compile error, for the reason recorded in
-    /// notes/contract-api.org §"Panics that could NOT become compile
+    /// A panic and not a compile error, for the reason recorded in
+    /// notes/contract-api.org §"Panics that could not become compile
     /// errors": the magnitude of a runtime integer is not in the type
     /// system. `#[track_caller]` so it at least names the line that wrote
     /// the literal rather than this function.
@@ -850,28 +846,28 @@ impl<const BOUND: u128> BoundedUint<BOUND, Public> {
 pub struct Bool<V: Vis = Private>(Wire<FieldT, V>);
 
 impl<V: Vis> Bool<V> {
-    /// An ASSERTION, not a check: the caller is CLAIMING `w` already holds 0
+    /// An assertion, not a check: the caller is claiming `w` already holds 0
     /// or 1, and this emits nothing to verify it (notes/api-safety-survey.org
     /// §A1). Typical justification is a constrained circuit argument about to
     /// receive [`Self::constrain_input`], or the result of an operation this
     /// module already produced as boolean (`cond_select` of two booleans, a
     /// comparison's own output). Getting the claim wrong is silent.
     ///
-    /// When the wire is NOT already known to be 0 or 1, use
+    /// When the wire is not already known to be 0 or 1, use
     /// [`Self::from_field_checked`] instead.
     pub fn from_field_unchecked(w: Wire<FieldT, V>) -> Self {
         Bool(w)
     }
 
     /// [`Self::from_field_unchecked`] immediately followed by
-    /// [`Self::constrain_input`] — the CHECKED twin, for a wire that is not
+    /// [`Self::constrain_input`] — the checked twin, for a wire that is not
     /// already known to be boolean.
     ///
     /// Cost: exactly `constrain_input`'s constraint (one `assert_boolean`).
     /// With `Circuit::dedup_range_constraints` enabled, a redundant call is
     /// free.
     pub fn from_field_checked(c: &mut Circuit, w: Wire<FieldT, V>) -> Self {
-        // The CONSTRAINED value comes back, not `w`: inside a `when` the two
+        // The constrained value comes back, not `w`: inside a `when` the two
         // differ (`select(guard, w, 0)` is what was checked, and what the
         // branch computes), and a checked leaf must carry the checked wire.
         Self::from_field_unchecked(w).constrain_input(c)
@@ -905,7 +901,7 @@ impl Bool<Public> {
 pub struct Bytes<const N: usize, V: Vis = Private>(Wire<FieldT, V>);
 
 impl<const N: usize, V: Vis> Bytes<N, V> {
-    /// An ASSERTION, not a check: the caller is CLAIMING `w` already holds
+    /// An assertion, not a check: the caller is claiming `w` already holds
     /// `N` little-endian bytes (`< 2^(8N)`), and this emits nothing to verify
     /// it (notes/api-safety-survey.org §A1). Typical justification is a
     /// constrained circuit argument about to receive
@@ -913,7 +909,7 @@ impl<const N: usize, V: Vis> Bytes<N, V> {
     /// already range-checked. Getting the claim wrong is silent — the Borsh
     /// packing's injectivity rests on it holding.
     ///
-    /// When the wire is NOT already known to satisfy the bound, use
+    /// When the wire is not already known to satisfy the bound, use
     /// [`Self::from_field_checked`] instead.
     pub fn from_field_unchecked(w: Wire<FieldT, V>) -> Self {
         const {
@@ -926,13 +922,13 @@ impl<const N: usize, V: Vis> Bytes<N, V> {
     }
 
     /// [`Self::from_field_unchecked`] immediately followed by
-    /// [`Self::constrain_input`] — the CHECKED twin, for a wire that is not
+    /// [`Self::constrain_input`] — the checked twin, for a wire that is not
     /// already known to hold `N` in-range bytes.
     ///
     /// Cost: exactly `constrain_input`'s constraint (~`8N`/4 rows). With
     /// `Circuit::dedup_range_constraints` enabled, a redundant call is free.
     pub fn from_field_checked(c: &mut Circuit, w: Wire<FieldT, V>) -> Self {
-        // The CONSTRAINED value comes back, not `w`: inside a `when` the two
+        // The constrained value comes back, not `w`: inside a `when` the two
         // differ (`select(guard, w, 0)` is what was checked, and what the
         // branch computes), and a checked leaf must carry the checked wire.
         Self::from_field_unchecked(w).constrain_input(c)
@@ -958,7 +954,7 @@ impl<const N: usize> Bytes<N, Public> {
     }
 }
 
-/// Compact's `Bytes<0>`: a value with NO slots and one zero-length FAB atom.
+/// Compact's `Bytes<0>`: a value with no slots and one zero-length FAB atom.
 ///
 /// It exists because the Signet V1 vocabulary (`@sig-net/midnight` 0.24)
 /// pins a record field to it (`respondSerializationSchema: Bytes<0>`) and a
@@ -1028,7 +1024,7 @@ impl<V: Vis> B32<V> {
 
 impl<V: Vis> B32<V> {
     /// Forget that both limbs are public — [`Wire::private`] for the pair,
-    /// so a `Bytes<32>` crossing INTO a private computation (a hash preimage,
+    /// so a `Bytes<32>` crossing into a private computation (a hash preimage,
     /// a comparison against a witnessed value) need not be taken apart and
     /// rebuilt limb by limb at the call site. Zero instructions.
     pub fn private(self) -> B32<Private> {
@@ -1084,8 +1080,8 @@ impl<V: Vis> B32<V> {
     }
 }
 
-/// Declare a `Bytes<32>`-shaped newtype and its whole impl set — the M23 R2
-/// sweep's machinery (notes/newtype-survey.org).
+/// Declare a `Bytes<32>`-shaped newtype and its whole impl set
+/// (notes/newtype-survey.org).
 ///
 /// The problem it solves is stated there in one line: **every real
 /// cross-assignment hazard in this codebase is a positional argument to an
@@ -1096,7 +1092,7 @@ impl<V: Vis> B32<V> {
 /// today they all type-check for each other.
 ///
 /// **A newtype declared this way is provably zero-instruction and
-/// snapshot-neutral**, because every impl DELEGATES:
+/// snapshot-neutral**, because every impl delegates:
 ///
 /// - [`CircuitArg::declare`] reuses **the caller's [`ArgPath`] verbatim** —
 ///   no extra segment — so the declared labels stay `foo_hi`/`foo_lo` and
@@ -1134,7 +1130,7 @@ macro_rules! b32_newtype {
 
         impl<V: $crate::Vis> $name<V> {
             /// The underlying `Bytes<32>` — the same two slots, no
-            /// instructions. The one way OUT of the newtype, so a `grep`
+            /// instructions. The one way out of the newtype, so a `grep`
             /// for `.bytes()` finds every place the distinction is dropped.
             pub fn bytes(self) -> $crate::B32<V> {
                 self.0
@@ -1182,7 +1178,7 @@ macro_rules! b32_newtype {
             }
 
             /// From the typed `Bytes<32>` value — what a hash result is
-            /// wrapped with, and the point at which a digest becomes THIS
+            /// wrapped with, and the point at which a digest becomes this
             /// protocol value rather than any other 32-byte one.
             pub fn from_typed(
                 c: &mut ::minocrab::Circuit,
@@ -1208,7 +1204,7 @@ macro_rules! b32_newtype {
 
         impl $crate::CircuitArg for $name<::minocrab::Private> {
             fn declare(c: &mut ::minocrab::Circuit, path: &$crate::ArgPath) -> Self {
-                // THE CALLER'S PATH, VERBATIM — see the macro's docs.
+                // The caller's path, verbatim — see the macro's docs.
                 $name(<$crate::B32<::minocrab::Private> as $crate::CircuitArg>::declare(c, path))
             }
         }
@@ -1307,7 +1303,7 @@ macro_rules! b32_newtype {
 /// and a hash are not interchangeable, and the interface layer's whole job
 /// is to stop them being passed for each other.
 ///
-/// Its FAB shape IS the inner `Bytes<32>`'s: Compact structs flatten, so a
+/// Its FAB shape is the inner `Bytes<32>`'s: Compact structs flatten, so a
 /// `ContractAddress` argument is the same two slots a `Bytes<32>` argument
 /// is (which is why the ported circuits' hand-written `B32` reads are
 /// unchanged by its introduction).
@@ -1372,37 +1368,37 @@ impl<V: Vis> UserAddress<V> {
 
 b32_newtype! {
     /// Compact's `ZswapCoinPublicKey` — a struct of one `Bytes<32>`, and the
-    /// SHIELDED half of a coin recipient (`Either<ZswapCoinPublicKey,
+    /// shielded half of a coin recipient (`Either<ZswapCoinPublicKey,
     /// ContractAddress>`, [`CoinRecipient`]).
     ///
     /// The third leaf of this shape after [`ContractAddress`] and
     /// [`UserAddress`], and separate from both for the reason they are
     /// separate from each other: a zswap public key is a user's spending
     /// key, not an address, and an `Either` whose arms were the same type
-    /// would say nothing. Adopted THROUGH the recipient plumbing by
+    /// would say nothing. Adopted through the recipient plumbing by
     /// newtype-survey A8: [`own_public_key`] returns one and
     /// [`CoinRecipient`]'s arms carry their own types, so a recipient built
     /// with a contract address in the key arm — a coin minted to a wallet
-    /// key nobody holds — no longer compiles.
+    /// key nobody holds — does not compile.
     ZswapCoinPublicKey,
 }
 
 /// Compact's `MerkleTreeDigest` — a struct of one `Field`, and the argument
 /// of [`LedgerMerkleTree::check_root`](crate::LedgerMerkleTree::check_root).
 ///
-/// The one type in the stdlib whose ABI is `Prim::Field`: an UNCONSTRAINED
+/// The one type in the stdlib whose ABI is `Prim::Field`: an unconstrained
 /// native slot (the fixture's `mtCheckRoot` takes `%r.0` with no
 /// `constrain_bits`, and pushes it under a `field` atom). `Prim::Field` is in
 /// the ABI table and this is the one typed leaf that reaches it.
 ///
-/// Deliberately a NAMED type rather than a bare `Field` leaf. A digest is the
+/// Deliberately a named type rather than a bare `Field` leaf. A digest is the
 /// only unconstrained-field value a contract has a reason to accept from
 /// outside — a root it is about to compare against the tree's — and naming it
 /// keeps "an unconstrained field argument" from becoming an idiom
 /// (notes/ledger-adts.org §3).
 ///
 /// Compact's `merkleTreePathRoot` family is the proof side of Merkle
-/// membership (a root computed from a path); this is the LEDGER side, which
+/// membership (a root computed from a path); this is the ledger side, which
 /// asks the tree whether a root is one it has had.
 #[repr(transparent)]
 #[derive(Clone, Copy)]
@@ -1413,9 +1409,9 @@ impl<V: Vis> MerkleTreeDigest<V> {
     ///
     /// Named `_unchecked` for the same reason every other leaf's
     /// constructor is (notes/api-safety-survey.org §A1): it is the caller
-    /// CLAIMING the wire holds a digest, not a check. Unlike the other v3
+    /// claiming the wire holds a digest, not a check. Unlike the other v3
     /// leaves there is no `from_field_checked` twin, because there is
-    /// nothing to constrain — this type's whole point is that it is the ONE
+    /// nothing to constrain — this type's whole point is that it is the one
     /// leaf with an unconstrained native slot (see the type's docs,
     /// `Prim::Field`), so `constrain_input` does not exist here to delegate
     /// to.
@@ -1432,7 +1428,7 @@ impl<V: Vis> MerkleTreeDigest<V> {
 /// [`Select`] for the typed leaves, so a value-producing conditional works on
 /// whatever a branch actually returns.
 ///
-/// Each is one `cond_select` per NATIVE SLOT — one for a scalar leaf, two for
+/// Each is one `cond_select` per native slot — one for a scalar leaf, two for
 /// a `Bytes<32>`, and a `Maybe` selects its tag as well as its payload. The
 /// per-slot cost is the honest one: there is no cheaper way to choose between
 /// two values in a circuit that does not branch.
@@ -1459,7 +1455,7 @@ select_via_field! {
     [V: Vis] ContractAddress<V> =>
         |c, bit, a, b| ContractAddress(Select::select(c, bit, a.0, b.0)),
     [V: Vis] UserAddress<V> => |c, bit, a, b| UserAddress(Select::select(c, bit, a.0, b.0)),
-    /// The TAG is selected too — a `Maybe` chosen from two branches takes the
+    /// The tag is selected too — a `Maybe` chosen from two branches takes the
     /// chosen branch's `is_some`, not either one's.
     [T: Select<V>, V: Vis] Maybe<T, V> => |c, bit, a, b| Maybe {
         is_some: Select::select(c, bit, a.is_some, b.is_some),
@@ -1467,7 +1463,7 @@ select_via_field! {
     },
 }
 
-/// [`Select`] with a PUBLIC bit over PRIVATE leaves — what a `when_value`
+/// [`Select`] with a public bit over private leaves — what a `when_value`
 /// over private data is, since a scope's condition must be an
 /// `OnChainGuard`. Each delegates to the leaf's own `Select<Private>` with
 /// the bit demoted, so the instruction is the same `cond_select`; the
@@ -1722,7 +1718,7 @@ impl<V: Vis> BytesNDyn<V> {
 /// The constant limbs of a byte-string literal (byte 0 first in), FAB slot
 /// order out.
 ///
-/// Public because the limbing rule has to live in ONE place and a
+/// Public because the limbing rule has to live in one place and a
 /// `Bytes<N>`-shaped type outside this module needs it: the Signet record's
 /// output-deserialization schema is a byte literal of any width at all
 /// (`signet_v1::SchemaLiteral`), below and above the 31-byte limb.
@@ -1741,19 +1737,19 @@ pub fn bytes_literal_limbs<V: Vis>(c: &mut Circuit, bytes: &[u8]) -> Vec<Wire<Fi
 ///
 /// Fields are kept as `(wire, byte-length)` segments in string order and
 /// re-limbed at [`Serializer::finish`]: a segment straddling an output
-/// 31-byte limb boundary is split with ONE `div_mod` at the boundary,
+/// 31-byte limb boundary is split with one `div_mod` at the boundary,
 /// everything else is constant-weight mul/add packing — instead of the
 /// Compact-stdlib shape (explode every field to bytes, reconstitute every
 /// output limb), which costs ~150 rows per exploded byte.
 ///
-/// PRECONDITION, on [`Serializer::new`]: every pushed wire must already be
+/// Precondition, on [`Serializer::new`]: every pushed wire must already be
 /// constrained to its byte length (circuit arguments via
 /// `constrain_input`/`assert_bits`, typed-conversion limbs by their
 /// instruction, literals by construction) — the limb packing is only
 /// injective for in-range segments, and a packing that is not injective is
 /// a digest that binds nothing.
 ///
-/// [`Serializer::constrained`] DISCHARGES that obligation instead of stating
+/// [`Serializer::constrained`] discharges that obligation instead of stating
 /// it: it emits each segment's own `constrain_bits` at `8·len` before
 /// packing, so the caller can no longer forget. It is the entry point to
 /// reach for; `new` stays because the shipped circuits' segments are
@@ -1774,7 +1770,7 @@ pub struct Serializer<V: Vis> {
 struct Segment<V: Vis> {
     wire: Wire<FieldT, V>,
     len: usize,
-    /// A literal limb is in range BY CONSTRUCTION (it is `Fr::from_le_bytes`
+    /// A literal limb is in range by construction (it is `Fr::from_le_bytes`
     /// of its own `len` bytes), so the constrained mode does not re-prove
     /// it — and must not: after the immediate-copy fold the constraint's
     /// operand is an immediate, which no pass can dedup away again.
@@ -1786,12 +1782,12 @@ impl<V: Vis> Serializer<V> {
         Serializer { segments: Vec::new(), constrained: false }
     }
 
-    /// A [`Serializer`] that PROVES its own precondition: `finish` emits
+    /// A [`Serializer`] that proves its own precondition: `finish` emits
     /// `constrain_bits(wire, 8·len)` for every pushed field before packing
     /// it, so the injectivity of the packing does not rest on the caller.
     ///
     /// It is a mode of the whole serializer rather than a checked twin of
-    /// each `push_*`, for two reasons. The precondition is about EVERY
+    /// each `push_*`, for two reasons. The precondition is about every
     /// segment — a packing with three of four fields constrained is as
     /// non-injective as one with none — so partial checking would discharge
     /// nothing while looking like it did. And the pushes come from
@@ -1799,7 +1795,7 @@ impl<V: Vis> Serializer<V> {
     /// cannot pass a checked spelling through: as a mode, every existing
     /// impl becomes checked without changing a line of it.
     ///
-    /// THE COST IS ZERO WHERE THE WIRES WERE ALREADY CONSTRAINED, and only
+    /// The cost is zero where the wires were already constrained, and only
     /// there: the added constraints are exact duplicates of the caller's, so
     /// `Circuit::dedup_range_constraints` removes precisely them
     /// (`tests/dedup.rs` proves the two circuits are byte-identical
@@ -1863,7 +1859,7 @@ impl<V: Vis> Serializer<V> {
     }
 
     /// Zero-pad to `len` bytes and re-limb, handing back the limbs in FAB
-    /// SLOT ORDER (`limbs[0]` the leftover, most-significant chunk) for ANY
+    /// slot order (`limbs[0]` the leftover, most-significant chunk) for any
     /// `len`: one limb of `len` bytes when `len <= 31` — the `Bytes<N>`
     /// envelope does not exist below 32 (`B32` and a single limb do), so
     /// this is the form a short packed string takes — and
@@ -1950,7 +1946,7 @@ impl<V: Vis> Default for Serializer<V> {
     }
 }
 
-/// Compact's `Secp256k1Point` as a circuit ARGUMENT: one slot, of ZKIR type
+/// Compact's `Secp256k1Point` as a circuit argument: one slot, of ZKIR type
 /// `Point<Secp256k1>` rather than the native field.
 ///
 /// It is the odd one out among the typed leaves in exactly one way, and the
@@ -1964,7 +1960,7 @@ impl<V: Vis> Default for Serializer<V> {
 /// 24+8, then the infinity flag as a field), notes/ledger-abi.org §3: one
 /// slot, five atoms, the same way a `Bytes<32>` is two slots and one atom.
 ///
-/// IN THE LEDGER it is [`LedgerStore`] and not [`LedgerRepr`]: a cell holds
+/// In the ledger it is [`LedgerStore`] and not [`LedgerRepr`]: a cell holds
 /// it, a map stores it and tests membership, but nothing rebuilds it from
 /// limbs (ZKIR's `encode` has no inverse), so a `LedgerMap` lookup or a
 /// `LedgerList` head of points does not compile. Read it from a
@@ -1985,7 +1981,7 @@ impl<V: Vis> Secp256k1Point<V> {
     }
 }
 
-/// Compact's `Secp256k1Scalar`: ONE slot of ZKIR type `Scalar<Secp256k1>`,
+/// Compact's `Secp256k1Scalar`: one slot of ZKIR type `Scalar<Secp256k1>`,
 /// the same non-native-slot story as [`Secp256k1Point`] — no range
 /// constraint (`reduce-to-zkir.ss` has nothing to say about a scalar slot),
 /// no entry in a native slot list, an ordinary argument slot otherwise.
@@ -2028,7 +2024,7 @@ impl<V: Vis> Secp256k1Scalar<V> {
 /// curve point is not an opaque value, it just shares a spelling in one JSON
 /// file.
 ///
-/// IN THE LEDGER it is [`LedgerStore`] and not [`LedgerRepr`]: a cell holds
+/// In the ledger it is [`LedgerStore`] and not [`LedgerRepr`]: a cell holds
 /// it, a map stores it and tests membership, but nothing rebuilds it from
 /// limbs (ZKIR's `encode` has no inverse), so a `LedgerMap` lookup or a
 /// `LedgerList` head of points does not compile. Read it from a
@@ -2082,10 +2078,10 @@ impl<V: Vis> JubjubPoint<V> {
     }
 }
 
-/// The TypeScript type name a Compact `Opaque<'ts-type'>` carries — a MARKER
-/// TYPE, not a const string.
+/// The TypeScript type name a Compact `Opaque<'ts-type'>` carries — a marker
+/// type, not a const string.
 ///
-/// `const TS_NAME: &'static str` cannot be a const-generic ARGUMENT on stable
+/// `const TS_NAME: &'static str` cannot be a const-generic argument on stable
 /// (`adt_const_params`), so the name has to be carried by a type either way.
 /// That turns out to be the shape worth wanting: [`Opaque<Str>`](Opaque) and
 /// `Opaque<Uint8Array>` are then distinct types that do not unify, so mixing
@@ -2138,10 +2134,10 @@ pub mod ts {
 ///
 /// # What the wire actually holds
 ///
-/// One native slot with NO range constraint (compactc's `[(topaque
+/// One native slot with no range constraint (compactc's `[(topaque
 /// ,opaque-type) instr*]`, i.e. [`Prim::Opaque`] → [`LimbConstraint::None`])
 /// under a FAB `compress` atom. The value in that slot is not a handle or an
-/// index — it is a BINDING COMMITMENT to the underlying bytes
+/// index — it is a binding commitment to the underlying bytes
 /// (`transient-crypto/src/fab.rs`, `ValueAtom::field_repr_unchecked`):
 ///
 /// ```text
@@ -2175,7 +2171,7 @@ pub mod ts {
 ///
 /// # The ts-type is part of the type
 ///
-/// Two opaques of different TS types have the same LAYOUT — one `compress`
+/// Two opaques of different TS types have the same layout — one `compress`
 /// atom each — so nothing in the ABI keeps them apart. The Rust type parameter
 /// does, and it is a compile error rather than a lint:
 ///
@@ -2192,7 +2188,7 @@ pub mod ts {
 ///
 /// which is the rejection compactc makes for the same mistake: *"expected
 /// right-hand side of = to have type `Opaque<"string">` but received
-/// `Opaque<"Uint8Array">`"*. Two opaques of the SAME ts-type compare fine:
+/// `Opaque<"Uint8Array">`"*. Two opaques of the same ts-type compare fine:
 ///
 /// ```
 /// use minocrab::Circuit;
@@ -2207,7 +2203,7 @@ pub mod ts {
 pub struct Opaque<T: TsType, V: Vis = Private>(Wire<FieldT, V>, std::marker::PhantomData<T>);
 
 // `Copy` like every other leaf (there is no resource discipline to protect —
-// an opaque is not spendable or consumed), but HAND-WRITTEN: `#[derive(Copy)]`
+// an opaque is not spendable or consumed), but hand-written: `#[derive(Copy)]`
 // on a struct with a `PhantomData<T>` field adds an implicit `T: Copy` bound,
 // and `T` here is an uninhabited marker that has no reason to carry one. The
 // derive would then make `self.field()` fail to compile behind a `&self`.
@@ -2225,7 +2221,7 @@ impl<T: TsType, V: Vis> Opaque<T, V> {
     ///
     /// Named `_unchecked` for the same reason every other leaf's
     /// constructor is (notes/api-safety-survey.org §A1): it is the caller
-    /// CLAIMING the wire holds a commitment, not a check. There is no
+    /// claiming the wire holds a commitment, not a check. There is no
     /// `from_field_checked` twin — `Prim::Opaque` is compactc's own
     /// no-constraint primitive (see the type's docs), so there is no
     /// `constrain_input` here to delegate to.
@@ -2402,7 +2398,7 @@ pub fn own_public_key(c: &mut Circuit) -> ZswapCoinPublicKey<Private> {
     ZswapCoinPublicKey(pk)
 }
 
-/// A `bytes<n>` (n ≤ 31) literal as a single constant limb — always an INLINE
+/// A `bytes<n>` (n ≤ 31) literal as a single constant limb — always an inline
 /// hash operand, since compactc puts a constant preimage element straight into
 /// the instruction (`AnyWire::immediate`), so there is no wire-producing
 /// twin.
@@ -2425,14 +2421,12 @@ pub fn token_type<V: Vis>(
     contract: &B32<V>,
 ) -> CoinColor<V> {
     let domain_sep = domain_sep.bytes();
-    // The domain prefix is CONSTANT, so it is inlined into the hash operand
+    // The domain prefix is constant, so it is inlined into the hash operand
     // list rather than named by two `copy`s — compactc emits
     // `["0x00", "0x6d69646e696768743a6465726976655f746f6b656e", …]` with no
-    // `copy` in sight (the M17 fixture's `sMintUnshieldedToken`). This is
-    // M16's `AnyWire::immediate` applied to the last hash operand in the
-    // stdlib that still named its constants; it removes one `copy` pair from
-    // every `token_type` call site and is zero rows (M9 phase 7 measured that
-    // class).
+    // `copy` in sight (the kernel fixture's `sMintUnshieldedToken`). This is
+    // `AnyWire::immediate` applied to the hash operand; it saves one `copy`
+    // pair at every `token_type` call site and is zero rows.
     let (p_hi, p_lo) = b32_pad_limbs("midnight:derive_token");
     let alignment = Alignment(vec![b32_atom(), b32_atom(), b32_atom()]);
     CoinColor(crate::hash::persistent_hash_compact(
@@ -2471,7 +2465,7 @@ b32_newtype! {
     /// consequential (a swapped nonce/recipient mints a coin to a key
     /// nobody holds and silently destroys the value).
     CoinNonce,
-    /// A token DOMAIN SEPARATOR — the pre-token [`token_type`] derives a
+    /// A token domain separator — the pre-token [`token_type`] derives a
     /// colour from. Distinct from [`CoinColor`] on purpose: a separator
     /// handed where a colour goes (or vice versa) derives a coherent but
     /// wrong token family that every mint and burn would agree on —
@@ -2515,7 +2509,7 @@ impl<V: Vis> CircuitAbi for ShieldedCoinInfo<V> {
 }
 
 /// `struct QualifiedShieldedCoinInfo { nonce: Bytes<32>, color: Bytes<32>,
-/// value: Uint<128>, mt_index: Uint<64> }` — a coin the contract can SPEND,
+/// value: Uint<128>, mt_index: Uint<64> }` — a coin the contract can spend,
 /// which is [`ShieldedCoinInfo`] plus its position in the coin commitment
 /// tree.
 #[derive(Clone, Copy)]
@@ -2576,7 +2570,7 @@ pub struct CoinRecipient<V: Vis> {
 
 // ---- Compact's generic sum shapes -------------------------------------------
 //
-// Both are plain structs in Compact — the tag is a `Boolean` field and BOTH
+// Both are plain structs in Compact — the tag is a `Boolean` field and both
 // arms are always present on the wire, so they flatten like any other struct
 // and a `Maybe`/`Either` argument costs its tag plus every arm (see the
 // `CircuitArg` impls for the slot layout). Parameter order is the argument
@@ -2611,11 +2605,11 @@ pub fn coin_nullifier_contract<V: Vis>(
     coin: &ShieldedCoinInfo<V>,
     addr: &B32<V>,
 ) -> B32<V> {
-    // The domain prefix and the `dataType` byte are CONSTANT, so both are
+    // The domain prefix and the `dataType` byte are constant, so both are
     // inlined into the hash operand list rather than named by a `copy` —
     // compactc emits `["0x6d69…", …, "0x00", %self.hi, %self.lo]` with no
     // `copy` in sight (`kernel.compact`'s `sMergeCoin`). Same rule, same
-    // mechanism and the same zero rows as `token_type`'s (M17).
+    // mechanism and the same zero rows as `token_type`'s.
     crate::hash::persistent_hash_compact(
         c,
         coin_preimage_alignment(),
@@ -2665,9 +2659,9 @@ pub fn coin_commitment<V: Vis>(
 /// to hand — the two things the preimage actually contains.
 ///
 /// It is separate for two reasons, both visible in the artifacts. A recipient
-/// that is a STATIC `right(addr)` has no select to do at all, and compactc
+/// that is a static `right(addr)` has no select to do at all, and compactc
 /// emits none ([`coin_commitment_to_contract`]). And a circuit that commits to
-/// the same coin TWICE — `sendShielded` claims the spend and then, on the
+/// the same coin twice — `sendShielded` claims the spend and then, on the
 /// self-send path, the receive — selects once and hashes twice, which is
 /// exactly what compactc's `sSendShielded` does (the `cond_select` pair is
 /// shared, the `persistent_hash` is not).
@@ -2717,9 +2711,9 @@ pub fn coin_commitment_to_contract<V: Vis>(
 /// characters — the WebAuthn challenge encoding, `clientDataJSON`'s
 /// `"challenge"` member.
 ///
-/// COST, and why it is written this way. Every byte extraction in ZKIR is a
+/// Cost, and why it is written this way. Every byte extraction in ZKIR is a
 /// `div_mod_power_of_two` at ~148 rows whatever the shift, so the cheap plan
-/// is the FEWEST splits: the 31 low bytes once (30 splits, as
+/// is the fewest splits: the 31 low bytes once (30 splits, as
 /// `explode_limb`), then each 3-byte group recombined big-endian into one
 /// 24-bit value and split three times into its four sextets — 62 splits,
 /// ~9.2k rows. The per-bit form (`byte_bits` in the passport WebAuthn

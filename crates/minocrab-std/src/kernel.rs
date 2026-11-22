@@ -1,13 +1,12 @@
-//! Compact's `kernel` ADT, and the token stdlib circuits built on it (M17,
-//! notes/kernel-tokens.org).
+//! Compact's `kernel` ADT, and the token stdlib circuits built on it
+//! (notes/kernel-tokens.org).
 //!
-//! TWO LAYERS wearing one name, and the split is the milestone's main
-//! structural finding:
+//! Two layers wearing one name:
 //!
 //! | layer | what it is | here |
 //! |---|---|---|
-//! | KERNEL PRIMITIVES | `declare-ledger-adt Kernel` functions with vm-code | [`mint_unshielded`](crate::kernel::mint_unshielded) … [`block_time_greater_than`](crate::kernel::block_time_greater_than) |
-//! | STDLIB CIRCUITS | ordinary `export circuit`s written IN COMPACT, composed from those | [`send_unshielded`](crate::kernel::send_unshielded) … [`unshielded_balance_lte`](crate::kernel::unshielded_balance_lte) |
+//! | kernel primitives | `declare-ledger-adt Kernel` functions with vm-code | [`mint_unshielded`](crate::kernel::mint_unshielded) … [`block_time_greater_than`](crate::kernel::block_time_greater_than) |
+//! | stdlib circuits | ordinary `export circuit`s written in Compact, composed from those | [`send_unshielded`](crate::kernel::send_unshielded) … [`unshielded_balance_lte`](crate::kernel::unshielded_balance_lte) |
 //!
 //! The second layer is `standard-library.compact:113-350` transcribed. Each
 //! function below carries the Compact it is a port of, and the bodies are
@@ -15,15 +14,15 @@
 //! *composition* is the specification, and a reader should be able to check
 //! them against the Compact source line by line.
 //!
-//! `kernel.checkpoint()` IS ABSENT. compactc before 0.36 could not compile it
-//! for ZKIR v3 (notes/kernel-tokens.org finding (a)); compactc 0.36.0 lowers
+//! `kernel.checkpoint()` is absent. compactc before 0.36 could not compile it
+//! for ZKIR v3; compactc 0.36.0 lowers
 //! it to one `impact` of `0xff` (corpus `kernel_checkpoint.zkir`), which is
 //! not ported yet.
 //!
-//! THE BALANCE CAVEAT, which is Compact's own and worth repeating: the
-//! balance these functions read is the contract's balance at the START of
+//! The balance caveat, which is Compact's own and worth repeating: the
+//! balance these functions read is the contract's balance at the start of
 //! execution. Unshielded sends, receives and mints inside the same circuit do
-//! NOT feed back into it. `unshieldedBalance` also imposes exact-match
+//! not feed back into it. `unshieldedBalance` also imposes exact-match
 //! semantics at apply time, so the comparison forms are usually what a
 //! contract wants.
 
@@ -53,17 +52,16 @@ pub type TokenType<V = Public> = Either<B32<V>, B32<V>, V>;
 pub type UnshieldedRecipient<V = Public> = Either<ContractAddress<V>, UserAddress<V>, V>;
 
 /// `left<Bytes<32>, Bytes<32>>(color)` — an unshielded token type, which is
-/// the ONLY `TokenType` Compact's own stdlib ever builds.
+/// the only `TokenType` Compact's own stdlib ever builds.
 ///
 /// A distinct type rather than a [`TokenType`], and the reason is the
 /// instruction stream. Four of the five FAB limbs of `left(color)` are
-/// CONSTANT — the `is_left` tag and the unused right arm's two — and compactc
+/// constant — the `is_left` tag and the unused right arm's two — and compactc
 /// inlines all four into the Impact `push`. Routing them through
-/// [`LedgerRepr`] would name each with a `copy`, which is
-/// the named-immediate gap M15 recorded for ledger VALUE positions and left
-/// as dmd's call.
+/// [`LedgerRepr`] would name each with a `copy`, the named-immediate gap
+/// in ledger value positions.
 ///
-/// This closes it where it can be closed WITHOUT that API change: an
+/// This closes it where it can be closed without an API change: an
 /// `UnshieldedToken` knows its own constants, so it builds its `LedgerValue`
 /// with [`ImpactElem::Imm`] directly and never asks the trait for a wire that
 /// does not exist. A `TokenType` whose tag is computed still goes the ordinary
@@ -99,19 +97,18 @@ impl UnshieldedToken<Public> {
 
 // ---- the kernel primitives --------------------------------------------------
 
-/// The cached `kernel.self()` answer — populated ONLY by
+/// The cached `kernel.self()` answer — populated only by
 /// [`cache_self_address`], parked in the circuit's gadget scratch state
 /// under this private type so nothing outside this module can touch it.
 struct CachedSelfAddress(SelfAddress);
 
-/// `kernel.self()` as a PROOF OF SELF — a value only the three
+/// `kernel.self()` as a proof of self — a value only the three
 /// `self_address*` readers produce, because `ContractAddress<Public>` is
 /// Compact's value type and is built from any `B32` (recipients, `Either`
 /// arms, call targets), so it cannot carry that meaning. A helper that
 /// means "mint to / burn from / notify AS this contract" takes a
 /// `SelfAddress`; anything that merely wants an address takes
-/// `.address()`. Zero rows: the same two limbs. (External review §4.5 and
-/// notes/api-safety-survey.org §3 item 5.)
+/// `.address()`. Zero rows: the same two limbs (notes/api-safety-survey.org §3).
 #[derive(Clone, Copy)]
 pub struct SelfAddress(ContractAddress<Public>);
 
@@ -151,7 +148,7 @@ impl Select<Public> for SelfAddress {
 /// under [`SelfAddressReads::OncePerCircuit`]), in which case the kept wires
 /// come back and no read is emitted.
 ///
-/// The kept address is returned INSIDE a `when` scope too, with no read.
+/// The kept address is returned inside a `when` scope too, with no read.
 /// That is sound because the address is constant for the transaction and
 /// every effect in the scope is guarded anyway; but note what it means for a
 /// value taken out of the scope: `c.when(g, self_address).or_default()` is
@@ -181,7 +178,7 @@ pub fn self_address(c: &mut Circuit) -> SelfAddress {
 }
 
 /// The kernel's self read is a `popeq` on a value no transaction can change,
-/// so it is acknowledged at the read and never wears `Assumed` (M42 B).
+/// so it is acknowledged at the read and never wears `Assumed`.
 fn never_stale(c: &mut Circuit, wires: [Wire<FieldT, Public>; 2]) -> [Wire<FieldT, Public>; 2] {
     c.acknowledge_stale(&[wires[0].val(), wires[1].val()]);
     wires
@@ -196,33 +193,33 @@ fn read_and_keep(c: &mut Circuit) -> SelfAddress {
     me
 }
 
-/// Read `kernel.self()` ONCE and make it the ambient answer for every
-/// later [`self_address`] call in this circuit (M18).
+/// Read `kernel.self()` once and make it the ambient answer for every
+/// later [`self_address`] call in this circuit.
 ///
 /// Under the default lowering ([`SelfAddressReads::OncePerCircuit`]) that is
 /// what [`self_address`] does anyway, so this IS `self_address` plus the
 /// refusal below: it states the intent at the call site, and it emits the
 /// circuit's single read if none was kept yet.
 ///
-/// The soundness paragraph is M10 rung i's, unchanged: the address is
-/// constant for the transaction and read count is FRAMING, not protocol —
-/// every read that IS emitted still reconciles through the ledger's
-/// `process_read`. This is the typed CSE notes/ir-passes.org §3 assigns to
+/// Sound because the address is
+/// constant for the transaction and read count is framing, not protocol —
+/// every read that is emitted still reconciles through the ledger's
+/// `process_read`. This is the typed cse notes/ir-passes.org §3 assigns to
 /// a gadget rather than a pass: the caller states the intent once, at the
 /// top of the circuit, instead of threading the address through every
-/// helper (`…_with` twins) — and a circuit whose helpers make their OWN
+/// helper (`…_with` twins) — and a circuit whose helpers make their own
 /// reads today must keep plain [`self_address`], because the cache would
 /// swallow those reads and move the stream (the dump gate enforces this
 /// per circuit).
 ///
-/// INSIDE A SCOPE ([`Circuit::when`] / [`Circuit::when_private`]) this
+/// Inside a scope ([`Circuit::when`] / [`Circuit::when_private`]) this
 /// keeps nothing: a read made there is guarded (it yields zero where the
 /// guard is false), so keeping it would hand that zero to every later read
 /// outside the scope. It returns what [`self_address`] returns there: the
 /// kept address if an earlier unguarded read made one, else a guarded read
 /// that is not kept.
 ///
-/// REFUSED in a circuit that CHOSE [`SelfAddressReads::EveryCall`]
+/// Refused in a circuit that chose [`SelfAddressReads::EveryCall`]
 /// (`minocrab_compat::profile`, compactc's profile): compactc never caches,
 /// so a parity port that called this would swallow reads its Compact twin
 /// makes. A value-dependent check, so a build-time panic, recorded for
@@ -249,7 +246,7 @@ pub fn cache_self_address(c: &mut Circuit) -> SelfAddress {
 /// contract called this one, `Some(Right(user))` when a user's funds did.
 pub type Caller = Maybe<Either<ContractAddress<Public>, UserAddress<Public>, Public>, Public>;
 
-/// `kernel.caller()` — WHO is calling this circuit, as the ledger knows it.
+/// `kernel.caller()` — who is calling this circuit, as the ledger knows it.
 ///
 /// The read is `context[6]`, authenticated by the ledger at admission: a
 /// prover cannot choose it, which is exactly why a "only contract X may
@@ -258,8 +255,7 @@ pub type Caller = Maybe<Either<ContractAddress<Public>, UserAddress<Public>, Pub
 /// acknowledged here and never wears [`Assumed`].
 ///
 /// Six public inputs; the lowering is compactc 0.35.0's, byte for byte
-/// (`minocrab_ledger::kernel_caller`). First wanted by the passport account
-/// custody port (PR #184), which hand-assembled the opcodes for lack of this.
+/// (`minocrab_ledger::kernel_caller`).
 pub fn caller(c: &mut Circuit) -> Caller {
     let w = kernel_caller(c);
     c.acknowledge_stale(&w.iter().map(|x| x.val()).collect::<Vec<_>>());
@@ -287,7 +283,7 @@ pub fn mint_unshielded(c: &mut Circuit, domain_sep: &TokenDomainSeparator<Public
 }
 
 /// `kernel.incUnshieldedInputs(token_type, amount)` — effects\[6\]. Called when
-/// the contract RECEIVES an unshielded token.
+/// the contract receives an unshielded token.
 pub fn inc_unshielded_inputs(
     c: &mut Circuit,
     token: &UnshieldedToken<Public>,
@@ -298,7 +294,7 @@ pub fn inc_unshielded_inputs(
 }
 
 /// `kernel.incUnshieldedOutputs(token_type, amount)` — effects\[7\]. Called when
-/// the contract SENDS one.
+/// the contract sends one.
 pub fn inc_unshielded_outputs(
     c: &mut Circuit,
     token: &UnshieldedToken<Public>,
@@ -310,7 +306,7 @@ pub fn inc_unshielded_outputs(
 
 /// `kernel.claimUnshieldedCoinSpend(token_type, recipient, amount)` —
 /// effects\[8\]. Authorizes a transfer; the key is the token type and the
-/// recipient TOGETHER, so the two travel as one six-atom value.
+/// recipient together, so the two travel as one six-atom value.
 pub fn claim_unshielded_coin_spend(
     c: &mut Circuit,
     token: &UnshieldedToken<Public>,
@@ -333,7 +329,7 @@ fn concat_values(a: LedgerValue, b: LedgerValue) -> LedgerValue {
 }
 
 /// `kernel.balance(token_type)` — the contract's balance of an unshielded
-/// token, or ZERO if it has never held one. See the module docs for what
+/// token, or zero if it has never held one. See the module docs for what
 /// "balance" means here.
 pub fn balance(c: &mut Circuit, token: &UnshieldedToken<Public>) -> Assumed<Uint<128, Public>> {
     let t = token.ledger_value();
@@ -465,7 +461,7 @@ pub fn receive_unshielded(c: &mut Circuit, color: CoinColor<Public>, amount: Uin
 }
 
 /// `recipient.is_left && recipient.left.bytes == kernel.self().bytes` — the
-/// AUTO-RECEIVE guard both [`send_unshielded`] and [`mint_unshielded_token`]
+/// auto-receive guard both [`send_unshielded`] and [`mint_unshielded_token`]
 /// end with, and the reason each of them is more than a pair of effects.
 ///
 /// The address is [`self_address`] under `is_left` (a user recipient never
@@ -473,11 +469,11 @@ pub fn receive_unshielded(c: &mut Circuit, color: CoinColor<Public>, amount: Uin
 /// read guarded by `is_left` that yields zero where `is_left` is off. The
 /// value only matters where `is_left` is 1, and there both are the address.
 ///
-/// LEAN against compactc's (`minocrab_compat::kernel::is_self`, which reads
+/// Lean against compactc's (`minocrab_compat::kernel::is_self`, which reads
 /// under an explicit guard and uses two `cond_select`s): the limb `&&` is a
 /// `mul`, sound because both operands are `test_eq` outputs, bits by
 /// construction, so the selector bit check it drops constrained nothing. The
-/// outer `cond_select(is_left, …)` STAYS: it is the one instruction that
+/// outer `cond_select(is_left, …)` stays: it is the one instruction that
 /// constrains `is_left` to be a bit whether or not a read is emitted.
 fn is_self(c: &mut Circuit, recipient: &UnshieldedRecipient<Public>) -> Wire<FieldT, Public> {
     let is_left = recipient.is_left.field();
@@ -489,7 +485,7 @@ fn is_self(c: &mut Circuit, recipient: &UnshieldedRecipient<Public>) -> Wire<Fie
     c.cond_select(is_left, both, 0u64)
 }
 
-/// Emit `ops` under `guard`, in ONE `when` scope: the guard is conjoined
+/// Emit `ops` under `guard`, in one `when` scope: the guard is conjoined
 /// with the ambient scope once on entry. compactc's
 /// (`minocrab_compat::kernel::emit_guarded`) conjoins it per op, the same
 /// `cond_select(ambient, guard, 0)` repeated, so each Impact op carries the
@@ -557,17 +553,17 @@ pub fn mint_unshielded_token(
     color
 }
 
-// ---- the SHIELDED half ------------------------------------------------------
+// ---- the shielded half ------------------------------------------------------
 //
 // The zswap primitives and the three stdlib circuits built from them. What
 // makes this half longer than the unshielded one is not the kernel — the three
-// claims below are the same accumulator shape as the rest — but the COIN
-// ALGEBRA between them: a nonce is evolved, a commitment is hashed, a value is
+// claims below are the same accumulator shape as the rest — but the coin
+// algebra between them: a nonce is evolved, a commitment is hashed, a value is
 // split into what is sent and what comes back as change.
 //
 // Two shapes recur, and both are compactc's rather than ours:
 //
-//   - A coin paid to THIS contract is `right(kernel.self())`, a literal, so
+//   - A coin paid to this contract is `right(kernel.self())`, a literal, so
 //     its commitment has no recipient select at all
 //     (`coin_commitment_to_contract`).
 //   - `upgradeFromTransient(transientHash([<tag>, degradeToTransient(nonce)]))`
@@ -582,14 +578,14 @@ pub fn claim_zswap_nullifier(c: &mut Circuit, nullifier: &B32<Public>) {
 }
 
 /// `kernel.claimZswapCoinSpend(cm)` — effects\[2\]. Says this contract
-/// AUTHORIZED the output that commitment names.
+/// authorized the output that commitment names.
 pub fn claim_zswap_coin_spend(c: &mut Circuit, commitment: &B32<Public>) {
     let cm = commitment.ledger_value(c);
     emit(c, &kernel_claim_zswap_coin_spend(&cm));
 }
 
 /// `kernel.claimZswapCoinReceive(cm)` — effects\[1\]. Says this contract now
-/// OWNS the coin that commitment names. Separate from the spend claim because
+/// owns the coin that commitment names. Separate from the spend claim because
 /// a contract paying itself makes both.
 pub fn claim_zswap_coin_receive(c: &mut Circuit, commitment: &B32<Public>) {
     let cm = commitment.ledger_value(c);
@@ -597,7 +593,7 @@ pub fn claim_zswap_coin_receive(c: &mut Circuit, commitment: &B32<Public>) {
 }
 
 /// The domain a coin's successor nonce is derived under, and the `/2` variant
-/// `sendShielded` gives its CHANGE coin — two coins come out of one input, so
+/// `sendShielded` gives its change coin — two coins come out of one input, so
 /// they cannot share a nonce.
 const NONCE_EVOLVE: &[u8] = b"midnight:kernel:nonce_evolve";
 const NONCE_EVOLVE_CHANGE: &[u8] = b"midnight:kernel:nonce_evolve/2";
@@ -605,7 +601,7 @@ const NONCE_EVOLVE_CHANGE: &[u8] = b"midnight:kernel:nonce_evolve/2";
 /// `upgradeFromTransient(transientHash<Vector<2, Field>>([<domain> as Field,
 /// degradeToTransient(nonce)]))` — the nonce of a coin derived from another.
 ///
-/// Not the stdlib's `evolveNonce`, which hashes an INDEX as well; this is the
+/// Not the stdlib's `evolveNonce`, which hashes an index as well; this is the
 /// two-element form `sendShielded` and `mergeCoin` write inline.
 fn derived_nonce(c: &mut Circuit, domain: &[u8], nonce: &CoinNonce<Public>) -> CoinNonce<Public> {
     let degraded = hash::degrade_to_transient(c, &nonce.bytes());
@@ -677,7 +673,7 @@ fn as_uint128(c: &mut Circuit, w: Wire<FieldT, Public>) -> Wire<FieldT, Public> 
 ///
 /// `createZswapInput`/`createZswapOutput` are Void witness natives — they tell
 /// the off-circuit builder to put the coin in the transaction's offer and emit
-/// NOTHING here, which is why two coins going in cost only their two
+/// nothing here, which is why two coins going in cost only their two
 /// nullifiers.
 pub fn merge_coin(
     c: &mut Circuit,
@@ -693,7 +689,7 @@ pub fn merge_coin(
 /// }
 /// ```
 ///
-/// `upcastQualifiedCoin` sets `mt_index: 0`, and NOTHING reads it — the index
+/// `upcastQualifiedCoin` sets `mt_index: 0`, and nothing reads it — the index
 /// is the ledger's business, and the merge only ever downcasts back. So this
 /// is [`merge_coin`]'s body against `b` directly rather than a round trip
 /// through a qualified coin with a fabricated index, and compactc's artifacts
@@ -759,16 +755,16 @@ fn merge(
 /// }
 /// ```
 ///
-/// THE `if (change == 0)` IS AN EXPRESSION, and it is written out here rather
+/// The `if (change == 0)` is an expression, and it is written out here rather
 /// than through [`Circuit::when_value`](minocrab::Circuit::when_value)
-/// for one reason worth stating: compactc FOLDS the `Maybe`'s tag into the
+/// for one reason worth stating: compactc folds the `Maybe`'s tag into the
 /// guard it already has. `none` and `some` differ in a tag that is `0` on one
 /// side and `1` on the other, so selecting it yields `cond_select(change == 0,
 /// 0, 1)` — which is the `else` arm's guard, already computed. A chain would
-/// emit that select a second time. So the tag IS the guard here, named once,
+/// emit that select a second time. So the tag is the guard here, named once,
 /// and only the five payload slots are selected.
 ///
-/// `output`'s commitment is hashed ONCE and claimed twice (spend, and the
+/// `output`'s commitment is hashed once and claimed twice (spend, and the
 /// auto-receive). compactc hashes it twice, one per `coinCommitment` call in
 /// the source (`minocrab_compat::kernel::send_shielded`, about 5,640 rows):
 /// the same `persistent_hash` on the same wires, so the same digest.

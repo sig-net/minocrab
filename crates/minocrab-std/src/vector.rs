@@ -1,4 +1,4 @@
-//! BOUNDED AND NON-EMPTY VECTORS (M40 C, notes/stream-design.org): a
+//! Bounded and non-empty vectors (notes/stream-design.org): a
 //! variable-length circuit argument, as a length plus a contiguous prefix.
 //!
 //! Compact's circuits have only the fixed `Vector<N, T>`; variable length is
@@ -7,30 +7,30 @@
 //! runtime assert. Here:
 //!
 //! - [`Bounded<T, MAX>`]: `len: Uint<8>` and `[T; MAX]`, the first `len`
-//!   slots live, no holes. ONE length limb instead of `MAX` tags; the live
+//!   slots live, no holes. One length limb instead of `MAX` tags; the live
 //!   wire for slot `i` is a compare against the constant `i`. The length is
 //!   range-checked against `MAX` in-circuit by the argument constraint
 //!   table (its primitive type is `Uint<0..MAX + 1>`, so the check is
 //!   compactc's own `less_than` + `assert`, or a bit constraint when
 //!   `MAX + 1` is a power of two).
 //! - [`NonEmpty<T, REST>`]: a structural head plus a `Bounded<T, REST>`
-//!   tail, width `REST + 1`. `REST` counts the OPTIONAL slots
+//!   tail, width `REST + 1`. `REST` counts the optional slots
 //!   (`NonEmpty<K, 3>` holds one to four), because an array of length
 //!   `N − 1` is not expressible on stable. The all-empty case is
 //!   unexpressible: there is no constructor without a head.
 //!
-//! ITERATION IS INTERNAL. [`Bounded::fold`] and [`Bounded::for_each`] own
-//! the [`Circuit::when`] guard AND the select on the carried state, so an
+//! Iteration is internal. [`Bounded::fold`] and [`Bounded::for_each`] own
+//! the [`Circuit::when`] guard and the select on the carried state, so an
 //! author never hand-rolls either. A `for` loop cannot do this: it runs its
 //! body between `next` calls, so an iterator could push a `when` scope in
 //! `next` (the ambient guard) but could not insert the select on state
 //! assigned in the body, and a for-loop fold would silently apply dead
-//! steps. [`Bounded::iter`] yields `(live, &T)` for PURE wire computations
+//! steps. [`Bounded::iter`] yields `(live, &T)` for pure wire computations
 //! (hashing every slot, digests) — no ledger ops and no carried state
 //! without the author's own select — and the witness-side `Vec` has
 //! ordinary iteration. The scoped-`next` trick is deliberately not built.
 //!
-//! The step is evaluated on EVERY slot, dead ones included, and applied by
+//! The step is evaluated on every slot, dead ones included, and applied by
 //! select only where live (a circuit does not branch), so it must be total
 //! on the default value: a dead slot's `T` is whatever the witness padded
 //! with, and any ledger op inside the step is skipped on chain by the
@@ -55,7 +55,7 @@ pub struct Bounded<T, const MAX: usize, V: Vis = Private> {
 }
 
 impl<T, const MAX: usize, V: Vis> Bounded<T, MAX, V> {
-    /// Assemble from parts already in hand. UNCHECKED: nothing here
+    /// Assemble from parts already in hand. Unchecked: nothing here
     /// constrains `len <= MAX`, which the argument constraint does for a
     /// declared argument. For a value computed in-circuit the caller owns
     /// that invariant.
@@ -74,7 +74,7 @@ impl<T, const MAX: usize, V: Vis> Bounded<T, MAX, V> {
         &self.slots
     }
 
-    /// Apply `f` to every slot, live or not: a PURE map (no ledger ops
+    /// Apply `f` to every slot, live or not: a pure map (no ledger ops
     /// inside — the guard is not applied here), for reshaping or
     /// disclosing the elements.
     pub fn map<U>(self, c: &mut Circuit, mut f: impl FnMut(&mut Circuit, T) -> U) -> Bounded<U, MAX, V> {
@@ -93,7 +93,7 @@ impl<T, const MAX: usize, V: Vis> Bounded<T, MAX, V> {
 }
 
 impl<T, const MAX: usize> Bounded<T, MAX, Private> {
-    /// Disclose the LENGTH only, keeping the elements private — what a fold
+    /// Disclose the length only, keeping the elements private — what a fold
     /// over private data needs (the guard must be public; whether a slot's
     /// step ran is visible on chain).
     pub fn disclose_len_as<L: DisclosureLabel>(self, c: &mut Circuit) -> Bounded<T, MAX, Public> {
@@ -110,9 +110,9 @@ impl<T, const MAX: usize> Bounded<T, MAX, Public> {
         Bool::from_field_unchecked(c.less_than(i as u64, self.len.field(), 8))
     }
 
-    /// THE FOLD: `step` over the live prefix, in order. Each slot's step
+    /// The fold: `step` over the live prefix, in order. Each slot's step
     /// runs under `c.when(live, …)`, so its ledger ops are skipped on chain
-    /// where the slot is dead, and the carried state is SELECTED — the
+    /// where the slot is dead, and the carried state is selected — the
     /// step's result where live, the previous state where not — so a dead
     /// step never lands in the state either.
     pub fn fold<S: Clone + Select<Public>>(
@@ -139,7 +139,7 @@ impl<T, const MAX: usize> Bounded<T, MAX, Public> {
         }
     }
 
-    /// `(live, &slot)` for every slot, for PURE wire computations only:
+    /// `(live, &slot)` for every slot, for pure wire computations only:
     /// nothing here is guarded, so a ledger op in the loop body would run
     /// on chain for dead slots too, and state carried across iterations
     /// needs the caller's own select. Use [`Bounded::fold`] for either.
@@ -150,7 +150,7 @@ impl<T, const MAX: usize> Bounded<T, MAX, Public> {
 }
 
 impl<X: Clone, const MAX: usize> Bounded<X, MAX, Private> {
-    /// The WITNESS-SIDE constructor's padding: `items` (at most `MAX` of
+    /// The witness-side constructor's padding: `items` (at most `MAX` of
     /// them) followed by `default`, and the length. Refuses more than `MAX`
     /// items here, before any proof. A `MAX` above 255 is a compile error:
     ///
@@ -285,7 +285,7 @@ impl<T, const REST: usize> NonEmpty<T, REST, Private> {
 }
 
 impl<T, const REST: usize> NonEmpty<T, REST, Public> {
-    /// [`Bounded::fold`] with the head folded FIRST and UNGUARDED: it is
+    /// [`Bounded::fold`] with the head folded first and unguarded: it is
     /// structural, so its step always runs and always lands.
     pub fn fold<S: Clone + Select<Public>>(
         &self,
@@ -312,7 +312,7 @@ impl<T, const REST: usize> NonEmpty<T, REST, Public> {
 }
 
 impl<X: Clone, const REST: usize> NonEmpty<X, REST, Private> {
-    /// The WITNESS-SIDE constructor's split: the first item as the head,
+    /// The witness-side constructor's split: the first item as the head,
     /// the rest padded into the tail. Refuses an empty list and more than
     /// `REST + 1` items here, before any proof — the all-empty case has no
     /// circuit-side spelling at all.
