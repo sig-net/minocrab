@@ -1,11 +1,11 @@
-//! THE OUTBOX (M41 B, notes/stream-design.org, "emit restored"): a
+//! The outbox (notes/stream-design.org, "emit restored"): a
 //! contention-free EVM call slot — [`Pending`] plus a primitive
 //! [`Stream`] whose accumulator is `(last nonce, last seen)` stepped by
 //! `(Add, Max)`.
 //!
 //! Three circuits, none of which reads the accumulator:
 //!
-//! - [`Outbox::call`] files the transaction MINUS its nonce under a
+//! - [`Outbox::call`] files the transaction minus its nonce under a
 //!   content-derived [`Handle`] and stores the environment with it. The
 //!   stream's insert is blind: `nonce += 1`, `seen = max(seen, 0)`, then
 //!   both cells are snapshotted into the handle's entries — so the call's
@@ -17,16 +17,13 @@
 //!   `Pending::request` files one, and moves the environment together with
 //!   the snapshotted last-seen into the outstanding set under the request
 //!   id (the spec's C2: last seen travels with the record). Permissionless:
-//!   nothing witness-dependent, nothing to go stale in the stream. SINCE M44
-//!   RUNG D IT READS NOTHING SHARED AT ALL — the Signet request nonce every
-//!   `file_request` used to read and bump is gone with the V1 vocabulary, so
-//!   the audited counter of notes/nonce-admin.org §10.1 is not there to
-//!   audit.
+//!   nothing witness-dependent, nothing to go stale in the stream. It reads
+//!   nothing shared at all: the V1 vocabulary has no Signet request nonce.
 //! - [`Outbox::complete`] / [`Outbox::refund`] are `Pending`'s settle
 //!   bodies over the same two maps, returning the outstanding entry; then
 //!   [`Outbox::raise_seen`] checks the attested height is strictly after
 //!   the entry's last seen (C3) and raises last seen by a blind max (C3
-//!   step 4). The height is the ATTESTATION'S OWN (spec M2, landed in V1's
+//!   step 4). The height is the attestation's own (spec M2: V1's
 //!   `RespondBidirectionalEvent.blockHeight`), so `raise_seen` takes the
 //!   settled outcome and no height argument at all.
 //!
@@ -91,7 +88,7 @@ impl<Env: LedgerRepr, const WORDS: usize> StreamSpec for OutboxSpec<Env, WORDS> 
     }
 }
 
-/// WHAT AN EMITTED REQUEST HOLDS while it is outstanding: the caller's
+/// What an emitted request holds while it is outstanding: the caller's
 /// environment and the last seen its call snapshotted (C2), the value the
 /// response's height must exceed (C3).
 #[derive(Value)]
@@ -102,7 +99,7 @@ pub struct Outstanding<Env> {
     pub seen: Uint<64, Public>,
 }
 
-/// A CONTENTION-FREE EVM CALL SLOT: [`Pending`]'s two maps and the
+/// A contention-free EVM call slot: [`Pending`]'s two maps and the
 /// [`Stream`]'s five fields — bodies, the nonce cell, the last-seen cell,
 /// and one snapshot map for each.
 ///
@@ -163,7 +160,7 @@ impl<F: Filing, Env: LedgerRepr, const WORDS: usize> Outbox<F, Env, WORDS> {
         self.pending.record_path()
     }
 
-    /// THE FEE SEAM: the contract's fixed envelope (notes/nonce-admin.org
+    /// The fee seam: the contract's fixed envelope (notes/nonce-admin.org
     /// §3; an administrator's policy cell would be read here). Never a
     /// caller's argument.
     fn envelope(&self) -> Envelope {
@@ -180,12 +177,12 @@ impl<F: Filing, Env: LedgerRepr + ProofWires, const WORDS: usize> Outbox<F, Env,
 where
     Returned<F>: AbiReturn,
 {
-    /// CALL: encode the arguments, file the pre-record under its handle
+    /// Call: encode the arguments, file the pre-record under its handle
     /// with the environment, and let the stream assign the nonce blind.
     /// Returns the handle, and discloses [`super::Inserted`] plus whatever
     /// `env` discloses.
     ///
-    /// NO NONCE, NO FEE AND NO KEY VERSION ARGUMENT
+    /// No nonce, no fee and no key version argument
     /// (notes/nonce-admin.org §1.1): the nonce is the accumulator's, the
     /// envelope the contract's, the key version the `Signet` block's.
     /// Nothing is hashed but the handle, and nothing is notified — the MPC
@@ -202,7 +199,7 @@ where
         let pre = PreRecord::<WORDS>::file(c, callee.address(), &words);
         let handle = pre.handle(c);
         c.region("outbox: call", |c| {
-            // The environment is built AFTER the handle exists, so a
+            // The environment is built after the handle exists, so a
             // `Commit` in it binds to this request and no other.
             let env = env(c, handle);
             self.stream.insert(c, &handle, &QueueEntry { pre, env });
@@ -210,13 +207,13 @@ where
         handle
     }
 
-    /// EMIT: take the handle's pre-record, environment and snapshot, build
+    /// Emit: take the handle's pre-record, environment and snapshot, build
     /// the transaction at the snapshotted nonce, file the record and notify
     /// the MPC, and move the environment with the snapshotted last-seen to
     /// the outstanding set under the request id. Returns the id and
     /// discloses [`Emitted`].
     ///
-    /// PERMISSIONLESS and per key: the two stream reads are of entries
+    /// Permissionless and per key: the two stream reads are of entries
     /// written once at the call. (The Signet request nonce read inside
     /// `file_request` is the protocol record's, see the module docs.)
     pub fn emit(&self, c: &mut Circuit, handle: Handle) -> RequestId<Public> {
@@ -250,7 +247,7 @@ where
         )
     }
 
-    /// SETTLE A SUCCESS — [`Pending::complete`], unchanged, over this slot's
+    /// Settle a success — [`Pending::complete`], unchanged, over this slot's
     /// own record and outstanding maps. Follow it with [`Self::raise_seen`].
     pub fn complete(
         &self,
@@ -260,7 +257,7 @@ where
         self.pending.complete(c, ticket)
     }
 
-    /// SETTLE A NON-SUCCESS — [`Pending::refund`], unchanged. Follow it with
+    /// Settle a non-success — [`Pending::refund`], unchanged. Follow it with
     /// [`Self::raise_seen`].
     pub fn refund(
         &self,
@@ -270,18 +267,16 @@ where
         self.pending.refund(c, ticket)
     }
 
-    /// C3, THEN C3 STEP 4: the response's height must be strictly after
+    /// C3, then C3 step 4: the response's height must be strictly after
     /// the last seen its call snapshotted (an equal height is dropped, as
     /// the spec's table says), and last seen is raised to it — a blind max
     /// on the accumulator, so a response contends with nothing.
     ///
-    /// THE HEIGHT IS THE ATTESTATION'S OWN (spec M2, landed in V1): it comes
+    /// The height is the attestation's own (spec M2): it comes
     /// off the settled [`Outcome`], which read it from the
     /// `RespondBidirectionalEvent` and disclosed it there — so this takes the
     /// outcome rather than a height argument, and there is no way to raise
-    /// last seen past a height the MPC did not sign. Before V1 the attested
-    /// payload carried no height and the reference contract had to attest one
-    /// as the call's return word (`HeightedTransfer`, now gone).
+    /// last seen past a height the MPC did not sign.
     pub fn raise_seen<R>(&self, c: &mut Circuit, outcome: &Outcome<Outstanding<Env>, R>) {
         let height = outcome.block_height;
         c.assert(
@@ -299,7 +294,7 @@ where
     Returned<F>: AbiReturn,
 {
     /// [`Outbox::call`] with the requester's identity committed into the
-    /// environment, bound to the HANDLE — the outbox twin of
+    /// environment, bound to the handle — the outbox twin of
     /// [`Pending::request_owned`]. `L` labels the commitment (stored, so
     /// public).
     pub fn call_owned<L: DisclosureLabel>(
@@ -317,8 +312,8 @@ where
         })
     }
 
-    /// [`Pending::refund_to_owner`] FOR AN OUTBOX REQUEST: the stored
-    /// commitment is opened against the stored HANDLE, so the requester
+    /// [`Pending::refund_to_owner`] for an outbox request: the stored
+    /// commitment is opened against the stored handle, so the requester
     /// refunds with the value they held before the emit and never had to be
     /// present at it. Returns the outstanding entry too, for
     /// [`Outbox::raise_seen`].

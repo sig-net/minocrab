@@ -1,8 +1,8 @@
 //! Sig Network's Signet protocol for MinoCrab circuits.
 //!
 //! A Midnight contract asks the Sig Network MPC to sign and execute an EVM
-//! transaction in two transactions: a REQUEST circuit files a signing record
-//! and notifies the signet signer; a SETTLE circuit, later, verifies the
+//! transaction in two transactions: a request circuit files a signing record
+//! and notifies the signet signer; a settle circuit, later, verifies the
 //! MPC's attestation over the result and consumes the record. This crate is
 //! that round trip, built on the typed EVM calls of [`minocrab_evm`].
 //!

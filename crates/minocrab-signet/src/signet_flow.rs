@@ -1,49 +1,44 @@
-//! THE SIGNET ROUND TRIP'S SHARED MACHINERY — the block's configuration,
+//! The Signet round trip's shared machinery — the block's configuration,
 //! the record a request files, and the attested output a settle verifies.
 //!
 //! Every Sig Network operation a Midnight contract makes is one future split
-//! across two transactions. A REQUEST circuit files a signing record and
-//! cross-calls the signet signer so the MPC comes to read it; a SETTLE
+//! across two transactions. A request circuit files a signing record and
+//! cross-calls the signet signer so the MPC comes to read it; a settle
 //! circuit, in a later transaction, verifies the MPC's attestation over the
-//! typed response and consumes the record. The ledger map entry IS the
+//! typed response and consumes the record. The ledger map entry is the
 //! suspended continuation; the attestation is the value the future resolves
-//! with. (notes/signet-async.org is the design of record — M35.)
+//! with. (notes/signet-async.org is the design of record.)
 //!
-//! THE VOCABULARY IS V1 SINCE M44 RUNG D — `@sig-net/midnight` 0.24.1, the
+//! The vocabulary is V1 — `@sig-net/midnight` 0.24.1, the
 //! protocol the deployed flush-pattern vault speaks ([`crate::signet_v1`]).
-//! What that changed here, and why each change is a SUBTRACTION from what a
-//! contract author writes:
+//! What that means here, for what a contract author writes:
 //!
-//! - THE REQUEST NONCE IS GONE. The V1 request id hashes a preimage whose
+//! - There is no request nonce. The V1 request id hashes a preimage whose
 //!   transaction enters as a digest, and the transaction's own EVM nonce is
-//!   what makes two otherwise identical requests distinct — so the protocol
-//!   counter that every filing used to read and bump is not in the record at
-//!   all. With it went the one contended read every `Pending` request made
-//!   (notes/nonce-admin.org §10.1's audited counter: there is nothing left
-//!   to audit).
-//! - THE CAIP2 CELL IS GONE. `executionDest` is the constant
+//!   what makes two otherwise identical requests distinct — so no protocol
+//!   counter is in the record, and a `Pending` request makes no contended read.
+//! - There is no CAIP2 cell. `executionDest` is the constant
 //!   [`crate::signet_v1::ethereum_caip2_id`] — the MPC's routing key for
 //!   every Ethereum network it watches, with the transaction's own chain id
 //!   picking the network — so a cell that could be set wrong at deployment
 //!   is a constant in the circuit instead.
-//! - THE KEY VERSION IS A CELL, not an argument. No circuit takes one, so no
+//! - The key version is a cell, not an argument. No circuit takes one, so no
 //!   caller can file a request against a key version the contract did not
 //!   choose.
-//! - THE RESPONSE KIND BYTE IS GONE, from the record and from the
-//!   attestation both. A V1 attestation carries the MPC's VERDICT instead
+//! - There is no response kind byte, in the record or in the
+//!   attestation. A V1 attestation carries the MPC's verdict instead
 //!   ([`crate::signet_v1::output_kind`]: executed, failed, unviable), and a
 //!   slot is bound to its attestations by its own record map and by its
 //!   ticket's type rather than by a byte a deployment allocated by hand.
 //!
 //! # What lives here, and why
 //!
-//! M35 put a `Pending<Env, Resp>` slot here, keyed by a hand-written
-//! `Response` type per kind. M37 rung D replaced it with
-//! [`crate::evm_flow::Pending<Call, Env, WORDS>`], which is keyed by the CALL
+//! The typed slot is
+//! [`crate::evm_flow::Pending<Call, Env, WORDS>`], which is keyed by the call
 //! ([`minocrab_evm::EvmCall`]) and derives the response type, the ABI words,
 //! the selector, the gas envelope, the output schema and the signing path
-//! from it. What is left in this module is what the typed slot is BUILT ON,
-//! and it is here rather than there because it is the WIRE — the MPC's side
+//! from it. What is left in this module is what the typed slot is built on,
+//! and it is here rather than there because it is the wire — the MPC's side
 //! of the protocol, which no contract-facing API gets to reshape:
 //!
 //! - [`Signet`] — the block's one configuration slot (signer address, MPC
@@ -57,27 +52,21 @@
 //!   signet signer with the record map's own path. `evm_flow`'s request methods
 //!   are this function plus a transaction.
 //! - [`EvmTx`], [`Signing`] and [`SignRequest`] — the transaction shape the
-//!   record holds, WHOSE KEY signs it, and the request that files both.
+//!   record holds, whose key signs it, and the request that files both.
 //!   `evm::build_tx` builds the first from a call type; nothing outside this
 //!   crate writes any of them by hand.
 //! - [`Outcome`] — what a settle hands back.
 //! - The three disclosure labels and the [`Requested`] / [`Settled`] label
 //!   sets a request and a settle publish.
 //!
-//! RETIRED IN M37 RUNG D, with the vault that used them: `Pending`, `Fired`,
-//! the `Settle` ticket, the `Response` and `FailureResponse` traits, and
-//! `Commit<T>` (whose domain was a `&str` at both ends —
-//! [`crate::evm_flow::Commit<T, Tag>`] takes it as a type, so a `to` and an
-//! `open` that disagree no longer compiles). RETIRED IN M44 RUNG D:
-//! `Attested<R>` (the kind byte then the value — a V1 attestation's
-//! `serializedOutput` is flat bytes at a width the digest commits to, so
-//! there is no wrapper left to name).
+//! [`crate::evm_flow::Commit<T, Tag>`] takes its domain as a type, so a `to`
+//! and an `open` that disagree do not compile.
 //!
-//! TYPES CONSTRAIN THE AUTHOR, ASSERTS CONSTRAIN THE PROVER: nothing in
+//! Types constrain the author, asserts constrain the prover: nothing in
 //! either module removes an in-circuit check on untrusted input.
 //!
-//! NO TIMEOUT, by decision (dmd, 2026-09-05): a request with no response
-//! stays pending; a refund happens only on an ATTESTED non-success
+//! No timeout, by decision: a request with no response
+//! stays pending; a refund happens only on an attested non-success
 //! ([`crate::evm_flow::Pending::refund`]).
 //!
 //! # What does not compile
@@ -94,7 +83,7 @@
 //! struct Env { amount: Uint<64, Public>, secret: B32<Private> }
 //! ```
 //!
-//! THE SAME CODE WITH THE ONE CHANGE REVERTED compiles:
+//! The same code with the one change reverted compiles:
 //!
 //! ```
 //! use minocrab::Public;
@@ -120,19 +109,18 @@ use crate::signet_v1::{self, EventRecordV1, EvmType2TxParams, OutputSchema};
 
 // ---- the shared configuration slot ------------------------------------------------
 
-/// The block's ONE Signet configuration: four consecutive ledger fields a
+/// The block's one Signet configuration: four consecutive ledger fields a
 /// contract declares once (`signet: Signet` in its `#[derive(Ledger)]`
 /// block) and every typed slot reads through.
 ///
 /// Holding these together is what lets a request take the sender, the chain
-/// id and the key version from CONTEXT and a settle the MPC key — none of
+/// id and the key version from context and a settle the MPC key — none of
 /// them is an argument a circuit can pass wrongly. The `signer` cell is
 /// `sealed` (written at deployment, never by a circuit).
 ///
-/// FOUR, NOT FIVE (M44 rung D): the request nonce and the caip2 id went with
-/// the `fff3421c` vocabulary, and `mpcKeyVersion` arrived as a cell — the
-/// three changes the module header explains. The width is read through
-/// [`LedgerWidth`], so `#[derive(Ledger)]` recomputed every slot's offset
+/// Four fields: there is no request nonce or caip2 id, and `mpcKeyVersion`
+/// is a cell (the module header explains). The width is read through
+/// [`LedgerWidth`], so `#[derive(Ledger)]` computes every slot's offset
 /// from the type without being told.
 pub struct Signet {
     /// `sealed ledger signetSigner: SignetSigner` — the signet signer's address.
@@ -141,7 +129,7 @@ pub struct Signet {
     /// verified under.
     pub mpc_response_key: LedgerCell<Secp256k1Point<Public>>,
     /// `mpcKeyVersion: Uint<8>` — which generation of the MPC's root key
-    /// signs. A CELL, not a circuit argument: the version is in the record
+    /// signs. A cell, not a circuit argument: the version is in the record
     /// and therefore in the request id, so letting a caller choose it would
     /// let a caller file a request no MPC epoch will answer.
     pub mpc_key_version: LedgerCell<Uint<8, Public>>,
@@ -189,7 +177,7 @@ impl Signet {
     }
 }
 
-/// The block's ANCHOR: every `evm_flow` slot (`Pending`, `Fired`, `Outbox`)
+/// The block's anchor: every `evm_flow` slot (`Pending`, `Fired`, `Outbox`)
 /// is built against the block's one `Signet`, so a block has at most one and
 /// needs one if it has any of those.
 impl LedgerWidth for Signet {
@@ -199,7 +187,7 @@ impl LedgerWidth for Signet {
 
 // ---- the request ---------------------------------------------------------------------
 
-/// The EVM transaction a request asks the MPC to sign, WITHOUT its chain
+/// The EVM transaction a request asks the MPC to sign, without its chain
 /// id: that is the block's ([`Signet::evm_chain_id`]), read by
 /// `file_request`, so a request cannot name another chain than the one the
 /// contract is configured for.
@@ -216,14 +204,14 @@ pub struct EvmTx<const WORDS: usize> {
     pub calldata: signet_v1::EvmCalldata<Private, WORDS>,
 }
 
-/// WHOSE KEY SIGNS, and whether the reserved-path assert is emitted.
+/// Whose key signs, and whether the reserved-path assert is emitted.
 ///
 /// `constructSignBidirectionalEventV1` refuses a request whose derivation
 /// path is `pad(32, "midnight response key")` — the path the MPC's own
 /// attestation key lives under, which a contract that could name it could
-/// make the MPC sign arbitrary attestations with. compactc FOLDS that assert
+/// make the MPC sign arbitrary attestations with. compactc folds that assert
 /// away when the path is a constant of the contract (two constants compared),
-/// and must NOT fold it when the path came from an input.
+/// and must not fold it when the path came from an input.
 ///
 /// That distinction is a type here rather than a `bool`, because getting it
 /// wrong in the unsafe direction is the hole above and not a cosmetic
@@ -242,13 +230,13 @@ pub enum Signing {
 }
 
 impl Signing {
-    /// THE CONTRACT'S OWN KEY — `pad(32, "")`, the path
+    /// The contract's own key — `pad(32, "")`, the path
     /// [`SigningPath::contract_path`] names.
     pub fn contract(c: &mut Circuit) -> Self {
         Signing::Constant(SigningPath::contract_path(c).private())
     }
 
-    /// A PATH THIS CIRCUIT DERIVED from its inputs — a per-user commitment,
+    /// A path this circuit derived from its inputs — a per-user commitment,
     /// typically. The reserved-path assert is emitted for it.
     pub fn derived(path: SigningPath<Private>) -> Self {
         Signing::Derived(path)
@@ -256,7 +244,7 @@ impl Signing {
 }
 
 /// What a request circuit supplies: whose key signs and what it signs. The
-/// key VERSION is not here — it is the block's cell, read inside
+/// key version is not here — it is the block's cell, read inside
 /// `file_request`.
 pub struct SignRequest<const WORDS: usize> {
     pub signing: Signing,
@@ -288,13 +276,9 @@ pub type Settled = (RequestIdSettled, BlockHeightSettled);
 
 /// What a settle hands back: the consumed entry, typed.
 ///
-/// WHAT WENT IN M44 RUNG D: the signing record. It was here so a settle
-/// could read a field of the request back — in practice the request nonce,
-/// which V1 does not have. Everything else a settle might have wanted off
-/// the record (the EVM nonce, the signing path) is either the outbox's own
-/// snapshot or a value the environment carried, so the field was read by
-/// nothing and the two type parameters it cost every settle signature are
-/// gone with it.
+/// It does not carry the signing record: what a settle might want off it
+/// (the EVM nonce, the signing path) is either the outbox's own
+/// snapshot or a value the environment carried.
 pub struct Outcome<Env, R> {
     /// The request id, disclosed.
     pub request_id: RequestId<Public>,
@@ -303,7 +287,7 @@ pub struct Outcome<Env, R> {
     /// [`crate::evm_flow::Outbox`]'s last-seen check compares against.
     pub block_height: Uint<64, Public>,
     /// The environment the request filed — an inline read of the entry
-    /// written at the request, so an assumption (M42 B): the proof uses it
+    /// written at the request, so an assumption: the proof uses it
     /// freely; writing it back is `.stale(c)`.
     pub env: Assumed<Env>,
     /// The attested output, decoded — verified, its verdict checked, its

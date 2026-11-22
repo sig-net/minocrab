@@ -1,6 +1,6 @@
-//! The M11 stage-7 request record (`SignBidirectionalEventV2`): the
-//! `fff3421c` record with a FORMAT VERSION byte in front and a one-byte
-//! RESPONSE KIND where the two schema strings were — the record the pending
+//! The stage-7 request record (`SignBidirectionalEventV2`): the
+//! `fff3421c` record with a format version byte in front and a one-byte
+//! response kind where the two schema strings were — the record the pending
 //! vault's `Pending` slots write — together with the `fff3421c` slot layout
 //! ([`layout`]) it is written over and the two pieces both record formats
 //! share ([`record_atoms_through_caip2`], [`request_id_of`]).
@@ -21,7 +21,7 @@ fn bytes(length: u32) -> AlignmentAtom {
 ///
 /// One definition, so the deployed record (`SignBidirectionalEvent`) and the
 /// stage-7 record ([`SignBidirectionalEventV2`]) cannot drift in the middle —
-/// stage 7 changes the two ENDS, and this function is what says so.
+/// stage 7 changes the two ends, and this function is what says so.
 pub fn record_atoms_through_caip2<V: Vis, const WORDS: usize>() -> Vec<AlignmentAtom> {
     let mut a = vec![
         bytes(32), // sender
@@ -114,11 +114,11 @@ pub mod layout {
     }
 }
 
-// ---- SignBidirectionalEventV2 — the M11 stage 7 record -----------------------
+// ---- SignBidirectionalEventV2 — the stage-7 record -----------------------------
 
-/// The record's FORMAT VERSION byte, at offset 0 of every stage-7 record.
+/// The record's format version byte, at offset 0 of every stage-7 record.
 ///
-/// `0x80` — the byte with only the HIGH BIT set (dmd, 2026-08-16). The point
+/// `0x80` — the byte with only the high bit set. The point
 /// is headroom rather than taste: every version number anywhere in the pinned
 /// stack is small (ZKIR envelope 2 and 3, Impact transcript 2.3, Compact
 /// `language_version` 0.12..0.23, compactc 0.33), the largest number in any
@@ -127,16 +127,16 @@ pub mod layout {
 /// available to Compact/Midnight, and a decoder that reads `0x80` where it
 /// expected a Compact version knows immediately which format it is holding.
 ///
-/// It is in the RECORD only — never in an attested output, where the kind tag
-/// suffices and the digest is signed (notes/borsh-format.org §"ANSWERED from
+/// It is in the record only — never in an attested output, where the kind tag
+/// suffices and the digest is signed (notes/borsh-format.org §"answered from
 /// MPC source", Q4). The record is what the MPC reads back out of ledger
-/// STATE, so this byte is what its FAB cursor sees first; the signet signer's
+/// state, so this byte is what its FAB cursor sees first; the signet signer's
 /// notification payload is a different, unchanged shape (Q6), and it is the
 /// notification — not the record — that is logged today.
 pub const RECORD_FORMAT_VERSION: u8 = 0x80;
 
-/// `struct SignBidirectionalEvent` as M11 stage 7 defines it: the same request
-/// record with a FORMAT VERSION byte in front and a 1-byte RESPONSE KIND where
+/// `struct SignBidirectionalEvent` as stage 7 defines it: the same request
+/// record with a format version byte in front and a 1-byte response kind where
 /// the two in-band ABI-JSON schema strings used to be.
 ///
 /// | change | old | new |
@@ -148,20 +148,20 @@ pub const RECORD_FORMAT_VERSION: u8 = 0x80;
 /// same relative order — so every offset is the old one plus the version
 /// byte ([`layout_v2`] is written that way rather than recounted).
 ///
-/// WHAT THE KIND REPLACES: the schemas were the ABI types the MPC decodes the
+/// What the kind replaces: the schemas were the ABI types the MPC decodes the
 /// destination-chain return data with, and the shape it serializes the
 /// response back in — 68 bytes on a `<2>` record and 75 on a `<7>` one, hashed
-/// into the request id on every request. A response KIND says the same thing
+/// into the request id on every request. A response kind says the same thing
 /// through a lookup table on the MPC side (`kind ↦ (ABI types, response
-/// shape)`), in one byte, and it is the SAME enumeration the attested output
-/// carries at its own byte 0 (M11 stage 5) — so the record declares which
-/// response kind will settle it. WHO CHECKS WHAT, precisely: the settle
-/// circuit asserts the ATTESTED OUTPUT's kind against its own compile-time
-/// constant; the RECORD's kind byte is read by the MPC (which derives the
-/// response shape from it) and is NOT yet read by any circuit — the
+/// shape)`), in one byte, and it is the same enumeration the attested output
+/// carries at its own byte 0 — so the record declares which
+/// response kind will settle it. Who checks what, precisely: the settle
+/// circuit asserts the attested output's kind against its own compile-time
+/// constant; the record's kind byte is read by the MPC (which derives the
+/// response shape from it) and is not yet read by any circuit — the
 /// in-circuit bind of `record.kind == output.kind`, and a version-byte
-/// assert beside it, are the queued hardening stage (milestones.org M11
-/// follow-up), each one wire equality. Until it lands, an MPC that signed a
+/// assert beside it, are queued hardening,
+/// each one wire equality. Until then, an MPC that signed a
 /// mismatched kind is caught by the settle circuit's own constant, and a
 /// cross-request replay by the depositor gate.
 ///
@@ -182,7 +182,7 @@ pub struct SignBidirectionalEventV2<V: Vis, const WORDS: usize> {
     pub tx_param_type: Wire<FieldT, V>,
     pub tx_params: EvmType2TxParams<V, WORDS>,
     pub caip2_id: Caip2Id<V>,
-    /// The response KIND this request expects — one Borsh byte, the same
+    /// The response kind this request expects — one Borsh byte, the same
     /// enumeration the attested output carries (the vault's
     /// `erc20_vault_borsh::RESPONSE_KIND_*`). A raw wire rather than a
     /// `Tag<K>`: the value is a contract-fixed constant at every construction
@@ -195,7 +195,7 @@ pub struct SignBidirectionalEventV2<V: Vis, const WORDS: usize> {
 /// the one format-version limb, with the schemas' slots replaced by the kind's.
 ///
 /// Written as `1 + layout::X` rather than recounted, which is the statement
-/// that stage 7 changes the record at its two ENDS and nowhere in between:
+/// that stage 7 changes the record at its two ends and nowhere in between:
 /// there is no offset here that can drift from the deployed record's except by
 /// that one limb.
 pub mod layout_v2 {
@@ -287,7 +287,7 @@ impl<V: Vis, const WORDS: usize> SignBidirectionalEventV2<V, WORDS> {
 }
 
 /// A [`SignBidirectionalEventV2`] read back out of the ledger — the stage-7
-/// twin of `EventRecord`, and a DISTINCT type, so a settle circuit cannot
+/// twin of `EventRecord`, and a distinct type, so a settle circuit cannot
 /// read a stage-7 record with the deployed record's offsets (or the reverse).
 pub struct EventRecordV2<const WORDS: usize>(Vec<Wire<FieldT, Public>>);
 
@@ -411,7 +411,7 @@ pub fn construct_sign_bidirectional_event_v2<V: Vis, const WORDS: usize>(
 
 /// `calculate_request_id` over a stage-7 record: `keccak256` of the whole
 /// record in its FAB alignment, which for these all-`bytes<n>` atoms IS
-/// `keccak256(borsh(record))` (notes/borsh-format.org, finding #1).
+/// `keccak256(borsh(record))` (notes/borsh-format.org).
 pub fn calculate_request_id_v2<V: Vis, const WORDS: usize>(
     c: &mut Circuit,
     request: &SignBidirectionalEventV2<V, WORDS>,
@@ -421,10 +421,10 @@ pub fn calculate_request_id_v2<V: Vis, const WORDS: usize>(
 
 /// The hash half of `calculate_request_id` over a record's FAB limbs —
 /// shared with [`calculate_request_id_v2`] so the two record formats hash
-/// through ONE construction.
+/// through one construction.
 ///
 /// `upgradeFromTransient(transientHash(record))` since signet-midnight
-/// `fff3421c` (2026-09-03, "Move in circuit hashing to transientHash"):
+/// `fff3421c` ("Move in circuit hashing to transientHash"):
 /// Poseidon over the record's field-aligned representation — one field
 /// element per FAB limb, in slot order, which is what the MPC's reader
 /// recomputes off-chain (`value_only_field_repr` of the stored cell) —

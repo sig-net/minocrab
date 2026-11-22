@@ -1,9 +1,9 @@
 //! `insertIndexDefault` on the two Merkle-tree slots, as compactc lowers it.
 //!
-//! WHAT IS COMPACTC'S: the default leaf's digest, `persistentHash` of
-//! `"mdn:lh"` and `T`'s all-zero FAB limbs, is hashed IN CIRCUIT with every
+//! What is compactc's: the default leaf's digest, `persistentHash` of
+//! `"mdn:lh"` and `T`'s all-zero FAB limbs, is hashed in circuit with every
 //! operand an inline constant, because compactc does not fold a
-//! `persistentHash` over constants. THE LEAN FORM folds it to the two-limb
+//! `persistentHash` over constants. The lean form folds it to the two-limb
 //! constant at build time, which saves the hash (one SHA-256 block is about
 //! 1,885 rows, notes/op-costs.org).
 //!
@@ -46,7 +46,7 @@ impl<const DEPTH: u8, T: LedgerRepr, P: LedgerPath> IndexedTree for LedgerHistor
     }
 }
 
-/// `t.insertIndexDefault(at)`: insert the leaf type's DEFAULT value at `at`,
+/// `t.insertIndexDefault(at)`: insert the leaf type's default value at `at`,
 /// which is Compact's way of emulating a removal. The leaf is hashed in
 /// circuit from inline constants (compactc's); the lean form inserts the
 /// folded digest.
@@ -55,7 +55,7 @@ pub fn insert_index_default<S: IndexedTree>(c: &mut Circuit, tree: &S, at: Uint<
     tree.insert_hash_index(c, &hash, at);
 }
 
-/// compactc's `rt-leaf-hash` of `T`'s DEFAULT value: all-zero limbs behind
+/// compactc's `rt-leaf-hash` of `T`'s default value: all-zero limbs behind
 /// the separator, every operand an inline immediate (compactc's
 /// `insertIndexDefault` hashes `["0x6d646e3a6c68", "0x00", "0x00"]` with no
 /// `copy` in sight).

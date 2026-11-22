@@ -1,8 +1,7 @@
-//! THE NON-CONFORMING TOKENS — USDT, BNB and the other pre-final-EIP-20
-//! tokens whose `transfer` returns NOTHING (M38 rung B,
-//! notes/evm-calls.org §3.1).
+//! The non-conforming tokens — USDT, BNB and the other pre-final-EIP-20
+//! tokens whose `transfer` returns nothing (notes/evm-calls.org §3.1).
 //!
-//! [`UsdtLike`] is a SIBLING of [`Erc20`](super::erc20::Erc20), not a
+//! [`UsdtLike`] is a sibling of [`Erc20`](super::erc20::Erc20), not a
 //! subtype, and that is the entire design. It would be easy to make one
 //! `Contract<Erc20>` do for both — the calldata is byte-identical, the
 //! selectors are the same four bytes, the two differ only in what comes
@@ -13,8 +12,8 @@
 //! - The MPC decodes the return data into the declared schema. Empty return
 //!   data is not a `bool`, so the decode is a terminal extraction failure.
 //! - A terminal extraction failure resolves the request as the MPC's
-//!   FAILURE kind — the kind a `refund` accepts.
-//! - So a transfer that MOVED THE TOKENS comes back attested as a failure,
+//!   failure kind — the kind a `refund` accepts.
+//! - So a transfer that moved the tokens comes back attested as a failure,
 //!   the sender is refunded on the Midnight side, and the recipient keeps
 //!   the tokens. Nothing on our side can see it from the attestation.
 //!
@@ -23,7 +22,7 @@
 //! nothing, so nothing is what is decoded, and the outcome is the honest
 //! one — mined is succeeded, reverted is the failure kind.
 //!
-//! WHICH ADDRESS IS WHICH IS A DEPLOYMENT'S CLAIM, exactly as
+//! Which address is which is a deployment's claim, exactly as
 //! [`Erc20`](super::erc20::Erc20) is: a contract that builds a
 //! `Contract<UsdtLike>` from an address is stating that this token does not
 //! return a flag. The types keep the two claims from being confused —
@@ -33,7 +32,7 @@
 //! deployment, which is why the callee allow-list is still the contract's
 //! job.
 //!
-//! THE SELECTORS ARE THE ERC-20 SELECTORS. `transfer(address,uint256)`
+//! The selectors are the ERC-20 selectors. `transfer(address,uint256)`
 //! hashes to `a9059cbb` whatever the token does with its return, so the
 //! calldata a `Contract<UsdtLike>` files is byte-for-byte what a
 //! `Contract<Erc20>` would file. The difference is entirely in the
@@ -46,9 +45,9 @@ use minocrab_std::Check;
 
 use super::{always, Address, EvmCall, Interface, Unit, U128, U256};
 
-/// A TOKEN THAT DOES NOT RETURN A FLAG — the callee marker.
+/// A token that does not return a flag — the callee marker.
 ///
-/// NOT `Extends<Erc20>` and never will be: the whole content of the type is
+/// Not `Extends<Erc20>` and never will be: the whole content of the type is
 /// that these two interfaces' calls must not be interchangeable. USDT is
 /// the largest stablecoin by supply, so this is not a corner case.
 pub struct UsdtLike;
@@ -60,13 +59,13 @@ impl Interface for UsdtLike {}
 /// return shape does not change what a transfer costs.
 pub const CALL_GAS: u64 = super::erc20::CALL_GAS;
 
-/// `transfer(address,uint256)` — selector `a9059cbb`, NO RETURN.
+/// `transfer(address,uint256)` — selector `a9059cbb`, no return.
 ///
 /// The same four selector bytes and the same two words as
 /// [`erc20::Transfer`](super::erc20::Transfer); what differs is
 /// [`Return`](EvmCall::Return) = [`Unit`] and therefore
 /// [`succeeded`](EvmCall::succeeded) = [`always`]. There is no flag, so
-/// mined IS succeeded — and, crucially, the MPC is never asked to decode
+/// mined is succeeded — and, crucially, the MPC is never asked to decode
 /// one, so a transfer that worked cannot be attested as a failure.
 pub struct Transfer;
 
@@ -85,9 +84,9 @@ impl EvmCall for Transfer {
     }
 }
 
-/// `approve(address,uint256)` — selector `095ea7b3`, NO RETURN.
+/// `approve(address,uint256)` — selector `095ea7b3`, no return.
 ///
-/// USDT's `approve` additionally REVERTS when the current allowance is
+/// USDT's `approve` additionally reverts when the current allowance is
 /// non-zero and the new one is too (its own anti-front-running rule), which
 /// is why "approve zero first" is the habit. That reverts on the token, so
 /// it reaches a settle circuit as the MPC's failure kind, like any other
@@ -108,7 +107,7 @@ impl EvmCall for Approve {
 }
 
 /// `transferFrom(address,address,uint256)` — selector `23b872dd`, NO
-/// RETURN. [`Transfer`]'s pull twin.
+/// return. [`Transfer`]'s pull twin.
 pub struct TransferFrom;
 
 impl EvmCall for TransferFrom {

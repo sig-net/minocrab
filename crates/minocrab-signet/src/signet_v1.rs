@@ -1,19 +1,19 @@
 //! The `@sig-net/midnight` Signet module at **0.26.0-rc.15** (`aa91570`,
 //! corpus `signet-midnight-integration-v026`), the version the erc20-vault
-//! v0.7.0-rc.2 pins (M48 L, notes/mainnet-pin.org): the **V1 wire
+//! v0.7.0-rc.2 pins (notes/mainnet-pin.org): the **V1 wire
 //! vocabulary** with the two changes of 0.25 (a 64-byte `executionDest`, and
-//! an attestation that signs the output's width and HASH rather than the
+//! an attestation that signs the output's width and hash rather than the
 //! output) and the identity-key short-circuit of 0.26.
 //!
 //! What V1 is, against the `fff3421c` module the MinoCrab corpus's `signet`
 //! ports: the request record is reordered (`keyVersion` first, `sender`
 //! second, no request nonce, the schemas last with
 //! `respondSerializationSchema` pinned to `Bytes<0>`), the request id is a
-//! hash of a PREIMAGE struct whose transaction enters as a DIGEST over its
+//! hash of a preimage struct whose transaction enters as a digest over its
 //! used entries (`calculateEvmType2TxParamsDigestV1`), every hash is prefixed
 //! with a [`hash_domain`] tag, and the attestation digest commits to the
 //! request, the block height, the MPC's verdict ([`output_kind`]), the
-//! output's WIDTH and the output's hash. Nothing is shared with the
+//! output's width and the output's hash. Nothing is shared with the
 //! `fff3421c` shapes but the transaction-parameter structs
 //! ([`EvmType2TxParams`], [`EvmCalldata`]), the ABI word helpers and the
 //! ECDSA plumbing, which are defined here and which the corpus module
@@ -130,11 +130,11 @@ pub const TX_PARAM_TYPE_EVM_TYPE2: u64 = 0;
 
 /// The two 32-byte limbs an MPC attestation's ECDSA signature enters the
 /// circuit as — `bigR.x` and `s` in `verifyRespondBidirectionalEvent`'s
-/// CIRCUIT-INPUT FORM, LITTLE-endian (the signet signer's event carries them
+/// circuit-input form, little-endian (the signet signer's event carries them
 /// big-endian; the reversal happens off-chain, where it is free — the TS
 /// SDK's `respondBidirectionalEventToCircuitInput`, `signet-sim`'s
 /// `Signature::circuit_input`). A wrong byte order fails verification,
-/// never a false accept. NAMED fields, so the two same-shaped halves cannot
+/// never a false accept. Named fields, so the two same-shaped halves cannot
 /// be transposed positionally (newtype-survey A7's sub-case).
 #[derive(Clone, Copy)]
 pub struct Secp256k1SigLimbs<V: Vis> {
@@ -191,7 +191,7 @@ fn abi_word_to_uint128_with<V: Vis>(
     word: &B32<V>,
 ) -> Wire<FieldT, V> {
     c.region("abi words", |c| {
-        // Reversed, the BE value's bytes land at string positions 0..15
+        // Reversed, the be value's bytes land at string positions 0..15
         // (LSB first) and the zero head at 16..31: the value is the
         // reversal mod 2^128, and the head check is "everything above
         // bit 128 of the reversal is zero".
@@ -249,7 +249,7 @@ pub mod output_kind {
 pub type OutputKind<V> = BoundedUint<{ output_kind::COUNT }, V>;
 
 /// `ethereumCaip2Id()` — `pad(64, "eip155:1")`, the MPC's routing key for
-/// EVERY Ethereum network it watches (the transaction's own `chainId` picks
+/// every Ethereum network it watches (the transaction's own `chainId` picks
 /// the network).
 pub const ETHEREUM_CAIP2_ID: &str = "eip155:1";
 
@@ -267,8 +267,8 @@ pub type ExecutionDest<V> = BytesN<V, EXECUTION_DEST_LEN>;
 // ---- the output schemas -------------------------------------------------------------
 
 /// An output-deserialisation schema as it sits in the record: a `Bytes<N>`
-/// of ANY `N` — one limb at 31 bytes or fewer ([`Bytes`]), FAB-limbed above
-/// that ([`BytesN`]). The record is generic over the schema TYPE so one
+/// of any `N` — one limb at 31 bytes or fewer ([`Bytes`]), FAB-limbed above
+/// that ([`BytesN`]). The record is generic over the schema type so one
 /// definition serves the vault's 2-, 34-, 36- and 38-byte schemas.
 pub trait SchemaBytes<V: Vis>: Clone {
     /// The schema's byte width.
@@ -324,12 +324,12 @@ impl<V: Vis, const N: usize> SchemaBytes<V> for BytesN<V, N> {
     }
 }
 
-/// A SCHEMA LITERAL OF ANY WIDTH — one FAB atom of `N` bytes, `bytes_limbs(N)`
+/// A schema literal of any width — one FAB atom of `N` bytes, `bytes_limbs(N)`
 /// limbs, whatever `N` is.
 ///
 /// The compat port picks [`Bytes`] below 31 bytes and [`BytesN`] above it by
 /// hand, because each of its five records names its own schema once. The
-/// TYPED API cannot: a [`OutputSchema`] is declared from a byte string by a
+/// typed API cannot: a [`OutputSchema`] is declared from a byte string by a
 /// macro, which has no way to branch a type on `BYTES.len()`. So this type
 /// spans both sides of the limb boundary and the branch disappears. The
 /// limbing rule itself is still `minocrab_std`'s one copy
@@ -363,17 +363,17 @@ impl<V: Vis, const N: usize> SchemaBytes<V> for SchemaLiteral<V, N> {
     }
 }
 
-/// THE OUTPUT SCHEMA A SLOT FILES, AS A TYPE — the record's
+/// The output schema a slot files, as a type — the record's
 /// `outputDeserializationSchema`, which is what tells the MPC how to decode
 /// the EVM return before it attests it.
 ///
 /// Two things, together, because a schema is used at both visibilities and
-/// in both places: the BYTES (the record's literal, and the `LEN` the MPC
-/// parses) and the circuit TYPE at a visibility (the record field, private
+/// in both places: the bytes (the record's literal, and the `LEN` the MPC
+/// parses) and the circuit type at a visibility (the record field, private
 /// while the request is assembled and public once it is stored). A generic
 /// associated type is what lets one name serve both — `S::At<Private>` in
 /// the event, `S::At<Public>` in [`EventRecordV1`] — so a filing names its
-/// schema ONCE and cannot name two different ones on the two sides.
+/// schema once and cannot name two different ones on the two sides.
 ///
 /// Declare one with [`output_schema!`](crate::output_schema); the library's
 /// own five are [`schema`].
@@ -386,14 +386,14 @@ pub trait OutputSchema: 'static {
     const BYTES: &'static [u8];
 }
 
-/// DECLARE AN OUTPUT SCHEMA: a marker type, its bytes, and its record field
+/// Declare an output schema: a marker type, its bytes, and its record field
 /// type at both visibilities.
 ///
 /// The width is `BYTES.len()`, so the two cannot disagree; the schema string
 /// is written out in full rather than assembled from the return type's
 /// Solidity spelling and the field's name, because on stable Rust a
 /// `&'static str` cannot be concatenated in a `const` — and because it is
-/// the WIRE, which a deployment should be able to read off its own source.
+/// the wire, which a deployment should be able to read off its own source.
 #[macro_export]
 macro_rules! output_schema {
     ($(
@@ -411,18 +411,18 @@ macro_rules! output_schema {
     )* };
 }
 
-/// THE OUTPUT SCHEMAS THE DEPLOYED LINEAGE FILES — the five strings the
+/// The output schemas the deployed lineage files — the five strings the
 /// flush-pattern vault's `send*` circuits put in their records, as types the
 /// typed API's filings name.
 ///
 /// They are here rather than beside the calls because a schema is a fact
-/// about what the MPC is asked to DECODE, which is the protocol's business:
+/// about what the MPC is asked to decode, which is the protocol's business:
 /// the same `transfer` is filed with the `success` schema by a vault and
 /// could be filed with `[]` by a protocol that does not look at the return.
 pub mod schema {
     crate::output_schema! {
         /// `[]` — a call whose return is not decoded at all: the MPC attests
-        /// an EMPTY `serializedOutput` and the verdict
+        /// an empty `serializedOutput` and the verdict
         /// ([`output_kind`](super::output_kind)) is the whole answer. Two bytes.
         pub struct NoReturn = b"[]";
 
@@ -578,7 +578,7 @@ impl<V: Vis, const WORDS: usize, S: SchemaBytes<V>> SignBidirectionalEventV1<V, 
     }
 }
 
-/// What the LEDGER holds a V1 request as: the limbs of
+/// What the ledger holds a V1 request as: the limbs of
 /// [`SignBidirectionalEventV1`] in slot order, under its atoms. The map that
 /// stores a request and the circuit that reads it back share this one impl.
 pub struct EventRecordV1<const WORDS: usize, S: SchemaBytes<Public>>(Vec<Wire<FieldT, Public>>, std::marker::PhantomData<S>);
@@ -649,7 +649,7 @@ pub fn construct_sign_bidirectional_event_v1<V: Vis, const WORDS: usize, S: Sche
     construct_sign_bidirectional_event_v1_with(c, key_version, sender, path, tx_params, execution_dest, output_schema, true)
 }
 
-/// [`construct_sign_bidirectional_event_v1`] for a path that is a CONSTANT
+/// [`construct_sign_bidirectional_event_v1`] for a path that is a constant
 /// of the contract (its own `pad(32, …)`): the reserved-path assert is over
 /// two constants, which compactc folds away, so it is not emitted here
 /// either — the circuits' leakage surfaces stay twins. A path derived from
@@ -719,16 +719,16 @@ fn construct_sign_bidirectional_event_v1_with<V: Vis, const WORDS: usize, S: Sch
 /// `calculateEvmType2TxParamsDigestV1(txParams)` over an
 /// `EvmType2TxParams<WORDS, 0, 0>`: the head tuple (domain tag, the scalar
 /// fields, the calldata's presence, selector and word count, the access-list
-/// count) as one Poseidon, then each USED word chained on under its own tag,
+/// count) as one Poseidon, then each used word chained on under its own tag,
 /// then `upgradeFromTransient`. The access-list walks are over a zero
 /// capacity, so they contribute nothing and the running hash passes through
 /// them — exactly as the source's folds over an empty `Vector<0, …>` do.
 ///
-/// An ABSENT calldata enters as `is_some = false`, a zero selector and a zero
+/// An absent calldata enters as `is_some = false`, a zero selector and a zero
 /// word count (the source's `calldata.is_some ? … : default`), so the word
 /// slots of a `none<EvmCalldata<n>>` are read and skipped, as in compactc.
 ///
-/// `words_used` is the calldata's word count when the CIRCUIT knows it (a
+/// `words_used` is the calldata's word count when the circuit knows it (a
 /// literal `noWords` in the source, `0` for `none<EvmCalldata>`): compactc
 /// folds the fold's `acc < noWords` against a literal, hashing exactly those
 /// words and no select; `None` is the runtime fold, one `less_than` and one
@@ -788,7 +788,7 @@ pub fn calculate_evm_type2_tx_params_digest_v1<V: Vis, const WORDS: usize>(
     })
 }
 
-/// `struct RequestIdPreimageV1` — the fields of a request that name ONE
+/// `struct RequestIdPreimageV1` — the fields of a request that name one
 /// execution, in the record's order, with the transaction as its digest.
 #[derive(Clone)]
 pub struct RequestIdPreimageV1<V: Vis> {
@@ -859,7 +859,7 @@ pub fn calculate_evm_type2_request_id_v1<V: Vis, const WORDS: usize, S: SchemaBy
 ///
 /// The responder interface crate declares the same struct
 /// (`signet_responder_interface::RespondBidirectionalEventV1`) field for
-/// field; this one types `requestId` as the SIGNER's [`RequestId`], the
+/// field; this one types `requestId` as the signer's [`RequestId`], the
 /// type every record map of a client is keyed by, so a settle can look its
 /// request up with the attested id without a conversion. The two layouts are
 /// held equal by the parity vault's `queueAttestation` differential
@@ -930,7 +930,7 @@ pub fn calculate_attestation_digest_v1<V: Vis>(
 ///
 /// The source short-circuits `mpcResponseKey != default<Secp256k1Point> &&
 /// secp256k1EcdsaVerify(…)` and returns false for the identity key;
-/// [`secp256k1_ecdsa_verify`] ASSERTS the key is not the identity instead.
+/// [`secp256k1_ecdsa_verify`] asserts the key is not the identity instead.
 /// Every caller asserts the result, so both reject the identity key and
 /// accept the same attestations.
 pub fn verify_respond_bidirectional_attestation_v1<V: Vis>(
@@ -970,7 +970,7 @@ pub fn verify_attested_output_v1<V: Vis, const LEN: usize>(
     verify_attested_output_v1_at(c, LEN as u64, output_limbs, attested_output_length, attested_output_hash)
 }
 
-/// [`verify_attested_output_v1`] WITH THE WIDTH AS DATA. The compat port's
+/// [`verify_attested_output_v1`] with the width as data. The compat port's
 /// widths are consts of the circuit; the typed API's is
 /// `<Call::Return as AbiReturn>::LEN`, an associated const, which stable
 /// Rust cannot pass as a const-generic argument. The two forms emit the same
@@ -996,7 +996,7 @@ pub fn verify_attested_output_v1_at<V: Vis>(
 /// `verifyRespondBidirectionalEventV1<LEN>(serializedOutput, event,
 /// mpcResponseKey)` — [`verify_attested_output_v1_at`] and
 /// [`verify_respond_bidirectional_attestation_v1`], both: the attestation is
-/// the MPC's AND `serializedOutput` is the output it attests.
+/// the MPC's and `serializedOutput` is the output it attests.
 pub fn verify_respond_bidirectional_event_v1_at<V: Vis>(
     c: &mut Circuit,
     len: u64,

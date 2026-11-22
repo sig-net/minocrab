@@ -1,6 +1,6 @@
 //! # minocrab-experimental: no compatibility promise
 //!
-//! THIS CRATE IS PUBLISHED WITH NO BACKWARDS-COMPATIBILITY GUARANTEE. Any
+//! This crate is published with no backwards-compatibility guarantee. Any
 //! release, a patch release included, may rename, change or remove any item
 //! in it. It holds what is experimental, or an escape hatch beneath the
 //! typed API of `minocrab-std`. No MinoCrab core crate depends on it, so its

@@ -1,12 +1,12 @@
-//! ERC-721 — the NFT interface, and its three STATIC calls (M38 rung C,
-//! notes/evm-interfaces.org §2.4).
+//! ERC-721 — the NFT interface, and its three static calls
+//! (notes/evm-interfaces.org §2.4).
 //!
-//! [`Erc721`] is a marker of its own — NOT `Extends<Erc20>` and not
+//! [`Erc721`] is a marker of its own — not `Extends<Erc20>` and not
 //! extended by one. The two standards are siblings that happen to share a
 //! vocabulary: an ERC-721 has a `balanceOf`, an `approve` and a
 //! `transferFrom` too, and they mean something else.
 //!
-//! # The shared selectors, and why they are not a problem HERE
+//! # The shared selectors, and why they are not a problem here
 //!
 //! Two of the three calls below hash to ERC-20's selectors, byte for byte:
 //!
@@ -16,37 +16,37 @@
 //! | [`Approve`] `(to, tokenId)` | [`erc20::Approve`] `(spender, amount)` | `095ea7b3` |
 //!
 //! Both pairs spell `(address,address,uint256)` and `(address,uint256)`, so
-//! the calldata a caller files is IDENTICAL and no amount of care about the
-//! signature could separate them. What separates them is the RETURN, and
+//! the calldata a caller files is identical and no amount of care about the
+//! signature could separate them. What separates them is the return, and
 //! that is not on the wire the caller sends:
 //!
 //! - an ERC-20 `transferFrom` returns a `bool` and our type says so, so the
 //!   MPC decodes a flag and [`succeeded`](super::EvmCall::succeeded) is
 //!   `is_true`;
-//! - an ERC-721 `transferFrom` returns NOTHING and reverts on failure, so
+//! - an ERC-721 `transferFrom` returns nothing and reverts on failure, so
 //!   our type is `Return = Unit` and `succeeded` is [`always`].
 //!
 //! Get that backwards in either direction and you get exactly the two
 //! hazards notes/evm-calls.org §3.1 is about. Declaring an NFT transfer as
 //! the ERC-20 one asks the MPC to decode a `bool` out of empty return data:
-//! the decode fails terminally, the request resolves as the FAILURE kind,
+//! the decode fails terminally, the request resolves as the failure kind,
 //! and a settle circuit refunds a transfer that moved the token. Declaring
 //! an ERC-20 transfer as the NFT one throws the flag away: a token that
 //! returned `false` completes as a success.
 //!
-//! THE CALLEE'S INTERFACE IS THE TYPE THAT DISTINGUISHES THEM. A
-//! `Contract<Erc721>` is an address a contract has CLAIMED is an NFT, and
+//! The callee's interface is the type that distinguishes them. A
+//! `Contract<Erc721>` is an address a contract has claimed is an NFT, and
 //! the `Extends` bound on a slot's `request` will not let an
 //! `erc20::TransferFrom` near it — not because the bytes differ but because
 //! the claim does. Both directions are compile errors; the slot is the
 //! Signet layer's, so the two `compile_fail` examples and their positive
 //! twin live with it (`minocrab_signet::evm_flow`, "ERC-721 is not ERC-20").
 //!
-//! # What is NOT here
+//! # What is not here
 //!
 //! `safeTransferFrom` in both its overloads. The three-argument one is
-//! static, but the four-argument one takes a `bytes data` — a DYNAMIC type,
-//! which is rung E — and shipping only half of a pair whose whole point is
+//! static, but the four-argument one takes a `bytes data` — a dynamic type
+//! — and shipping only half of a pair whose whole point is
 //! the receiver hook would be worse than shipping neither. `setApprovalForAll`
 //! is here because it is the approval an operator contract actually needs,
 //! and [`Approve`] because a single-token approval is the narrower grant.
@@ -58,14 +58,14 @@ use minocrab_std::Check;
 use super::erc20;
 use super::{always, Address, Bool, EvmCall, Interface, Unit, U256};
 
-/// AN ERC-721 NON-FUNGIBLE TOKEN — the callee marker.
+/// AN ERC-721 non-fungible token — the callee marker.
 ///
-/// A SIBLING of [`Erc20`](super::erc20::Erc20) and not a subtype, for the
+/// A sibling of [`Erc20`](super::erc20::Erc20) and not a subtype, for the
 /// reason the module docs give at length: the two share two selectors and
 /// mean different things by them. There is no `Extends` impl in either
 /// direction and there will not be one.
 ///
-/// Like every marker here it records the CLAIM a contract made when it
+/// Like every marker here it records the claim a contract made when it
 /// built the address, not a check on the deployment — an ERC-165
 /// `supportsInterface` probe is the on-chain way to check, and it is a
 /// query rather than something a circuit can do (notes/evm-calls.org §3.1
@@ -82,9 +82,9 @@ impl Interface for Erc721 {}
 pub const CALL_GAS: u64 = erc20::CALL_GAS;
 
 /// `transferFrom(address,address,uint256)` — selector `23b872dd`,
-/// `(from, to, tokenId)`, NO RETURN.
+/// `(from, to, tokenId)`, no return.
 ///
-/// THE SAME SELECTOR AS [`erc20::TransferFrom`] AND A DIFFERENT FUNCTION.
+/// The same selector as [`erc20::TransferFrom`] and a different function.
 /// The module docs are the whole argument; the short form is that an
 /// ERC-721 `transferFrom` returns `void` and reverts on failure, so
 /// [`Return`](EvmCall::Return) is [`Unit`] and
@@ -93,14 +93,14 @@ pub const CALL_GAS: u64 = erc20::CALL_GAS;
 /// a decode failure.
 ///
 /// `tokenId` IS A [`U256`] — an already-encoded word, not an amount. NFT
-/// ids are not counters in general: ENS names are ids derived by hashing,
+/// ids are not counters in general: ens names are ids derived by hashing,
 /// and plenty of collections mint from a hash or a packed struct, so the
 /// honest width is the full 256 bits and there is no arithmetic a circuit
 /// does on one. (`erc20::TransferFrom`'s third argument is a [`U128`], the
 /// width a Midnight-side amount has — same `uint256` spelling, same
 /// selector, different claim.)
 ///
-/// UNSAFE IN THE STANDARD'S SENSE: `transferFrom` does not call the
+/// Unsafe in the standard's sense: `transferFrom` does not call the
 /// receiver's `onERC721Received` hook, so sending to a contract that cannot
 /// handle NFTs burns the token. That is `safeTransferFrom`'s job and it
 /// takes a `bytes` argument (see the module docs).
@@ -124,16 +124,16 @@ impl EvmCall for TransferFrom {
 }
 
 /// `approve(address,uint256)` — selector `095ea7b3`, `(to, tokenId)`, NO
-/// RETURN.
+/// return.
 ///
-/// THE SAME SELECTOR AS [`erc20::Approve`] AND A DIFFERENT FUNCTION, for
+/// The same selector as [`erc20::Approve`] and a different function, for
 /// [`TransferFrom`]'s reason and with the same consequence if the two are
 /// confused. It also grants something different: ERC-20's `approve` is an
-/// allowance over an AMOUNT that many spenders may each hold, ERC-721's
-/// names ONE address as the approved operator for ONE token and REPLACES
+/// allowance over an amount that many spenders may each hold, ERC-721's
+/// names one address as the approved operator for one token and replaces
 /// whatever was there.
 ///
-/// NO RETURN: `approve` is `void` here where ERC-20's returns a `bool`.
+/// No return: `approve` is `void` here where ERC-20's returns a `bool`.
 pub struct Approve;
 
 impl EvmCall for Approve {
@@ -150,10 +150,10 @@ impl EvmCall for Approve {
 }
 
 /// `setApprovalForAll(address,bool)` — selector `a22cb465`,
-/// `(operator, approved)`, NO RETURN.
+/// `(operator, approved)`, no return.
 ///
-/// THE BLANKET GRANT, and the one an operator contract — a marketplace, a
-/// vault, ours — actually asks for: `operator` may move EVERY token the
+/// The blanket grant, and the one an operator contract — a marketplace, a
+/// vault, ours — actually asks for: `operator` may move every token the
 /// caller owns in this collection, now and in future, until the same call
 /// revokes it with `approved = false`. There is no per-token bookkeeping
 /// and no amount.
@@ -161,10 +161,10 @@ impl EvmCall for Approve {
 /// It is the ERC-721 call with a selector of its own, so it is the one that
 /// cannot be confused with anything in [`erc20`]. It is also the one whose
 /// argument is a [`Bool`] — the only `bool` any shipped call in this
-/// library passes as an ARGUMENT rather than reads as a return.
+/// library passes as an argument rather than reads as a return.
 ///
-/// NO RETURN, and revoking is the same call with `false`: an operator
-/// approval that mined IS granted, so [`succeeded`](EvmCall::succeeded) is
+/// No return, and revoking is the same call with `false`: an operator
+/// approval that mined is granted, so [`succeeded`](EvmCall::succeeded) is
 /// [`always`].
 pub struct SetApprovalForAll;
 

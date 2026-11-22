@@ -1,11 +1,10 @@
 //! The typed EVM call as a ledger slot: `Pending<Filing, Env, WORDS>`
-//! (M37 rungs B and C, notes/evm-calls.org §§3-4; M38 rung A,
-//! notes/evm-interfaces.org §2).
+//! (notes/evm-calls.org §§3-4, notes/evm-interfaces.org §2).
 //!
-//! [`minocrab_evm`] made the CALL a type — its name, its argument list, its
+//! [`minocrab_evm`] made the call a type — its name, its argument list, its
 //! return, the interface that exposes it, its gas limit and the rule by
-//! which its return says "it worked". This module makes the SLOT a type
-//! over a FILING of that call: the call plus the OUTPUT SCHEMA this
+//! which its return says "it worked". This module makes the slot a type
+//! over a filing of that call: the call plus the output schema this
 //! deployment files it under, which [`Filed`](crate::filing::Filed) supplies in
 //! one line.
 //!
@@ -19,7 +18,7 @@
 //! }
 //! ```
 //!
-//! and everything else follows. What a contract author no longer writes:
+//! and everything else follows. What a contract author does not write:
 //! the selector, the ABI words, the attested width and its narrowing, the
 //! schema literal, the gas envelope, the signing path, the notification
 //! path, the MPC key version, the `&SELF.signet` argument
@@ -27,46 +26,45 @@
 //! `Pending` field) and — with [`Owned`] — the owner commitment's
 //! construction and opening.
 //!
-//! THE VOCABULARY IS V1 SINCE M44 RUNG D (notes/vault-flush.org §6): the
+//! The vocabulary is V1 (notes/vault-flush.org §6): the
 //! records are [`crate::signet_v1::EventRecordV1`], the tickets carry a
-//! `RespondBidirectionalEvent` and a flat serialized output, and the
-//! response KIND BYTE is gone from both — `crate::signet_flow`'s header is
-//! the list of what that subtracted.
+//! `RespondBidirectionalEvent` and a flat serialized output, and neither
+//! carries a response kind byte — see `crate::signet_flow`'s header.
 //!
-//! # The two tickets are SYMMETRIC
+//! # The two tickets are symmetric
 //!
 //! [`Succeeded<F>`] and [`Failed<F>`], and nothing else settles a request
-//! — and `F` is the FILING, so a ticket for one slot's filing cannot settle
+//! — and `F` is the filing, so a ticket for one slot's filing cannot settle
 //! another's, even when the two file the same Solidity function:
 //!
 //! - [`Pending::complete`] takes a `Succeeded`, verifies the attestation at
 //!   the call's attested width, asserts the MPC's verdict is `executed`,
 //!   consumes the entry — and then asserts the call's own
 //!   [`EvmCall::succeeded`] predicate over the decoded output. A mined ERC-20
-//!   `transfer` that returned `false` therefore CANNOT complete, whoever
+//!   `transfer` that returned `false` therefore cannot complete, whoever
 //!   presents it (notes/evm-calls.org §3: the spurious-completion hole the
 //!   deployed vault leaves open by putting a refund branch inside its
 //!   `completeWithdraw`).
-//! - [`Pending::refund`] takes a `Failed`, and accepts EITHER a `failed` /
+//! - [`Pending::refund`] takes a `Failed`, and accepts either a `failed` /
 //!   `unviable` verdict (reverted, never mined, or an undecodable return —
 //!   §3.1) OR `executed` with the success predicate false.
 //!
 //! So the two non-successes are one ticket, the success is the other, and
 //! neither stands in for the other.
 //!
-//! WHAT BINDS AN ATTESTATION TO A SLOT, now that there is no kind byte: the
+//! What binds an attestation to a slot, with no kind byte: the
 //! slot's own record map. `complete` and `refund` consume the entry the
 //! request filed, and the signed digest commits to the id that entry is
 //! keyed by — so an attestation for a request another slot filed finds
 //! nothing to consume in this one (`Pending::consume`).
 //!
-//! # HAZARD, carried forward from §3.1
+//! # Hazard, carried forward from §3.1
 //!
-//! The MPC resolves a request as FAILED when the receipt reverted, when the
-//! transaction never mined, AND when the return data does not decode into
-//! the declared output schema. A non-conforming ERC-20 that returns NOTHING
+//! The MPC resolves a request as failed when the receipt reverted, when the
+//! transaction never mined, and when the return data does not decode into
+//! the declared output schema. A non-conforming ERC-20 that returns nothing
 //! (USDT and friends) therefore produces an attested failure for a transfer
-//! that MOVED the tokens — a spurious refund this API cannot see from the
+//! that moved the tokens — a spurious refund this API cannot see from the
 //! attestation alone. Until the callee's return shape is declared per token
 //! (a `Contract<Erc20NoReturn>` marker) or success is read off the
 //! `Transfer` event, **a contract using this module needs a callee
@@ -75,13 +73,13 @@
 //!
 //! # What `Failed<F>` costs
 //!
-//! The two accepted attestations have DIFFERENT PREIMAGES, and under V1 they
-//! differ in the WIDTH as well as in the limbs: a `failed` or `unviable`
-//! request has no return to decode, so the MPC attests ZERO bytes and the
+//! The two accepted attestations have different preimages, and under V1 they
+//! differ in the width as well as in the limbs: a `failed` or `unviable`
+//! request has no return to decode, so the MPC attests zero bytes and the
 //! digest's `LEN` field is `0`, where an `executed` call's is the return's
 //! own width. Poseidon is not a stream, so one hash cannot cover both:
-//! [`Pending::refund`] hashes the preimage BOTH ways, selects the field
-//! element by the verdict and verifies ONCE. The extra cost is one
+//! [`Pending::refund`] hashes the preimage both ways, selects the field
+//! element by the verdict and verifies once. The extra cost is one
 //! `transient_hash` and one `cond_select` beside the ~37k rows of the ECDSA
 //! verification that follows — measured in
 //! `tests/treasury.rs::the_refund_pays_one_extra_digest`.
@@ -91,8 +89,8 @@
 //! [`erc721::TransferFrom`](minocrab_evm::erc721::TransferFrom) and
 //! [`erc20::TransferFrom`](minocrab_evm::erc20::TransferFrom) hash to the same
 //! selector and differ only in their return (nothing, and a `bool`).
-//! THE CALLEE'S INTERFACE IS THE TYPE THAT DISTINGUISHES THEM. A
-//! `Contract<Erc721>` is an address a contract has CLAIMED is an NFT, and
+//! The callee's interface is the type that distinguishes them. A
+//! `Contract<Erc721>` is an address a contract has claimed is an NFT, and
 //! the `Extends` bound on `request` will not let an `erc20::TransferFrom`
 //! near it — not because the bytes differ but because the claim does. Both
 //! directions are compile errors:
@@ -171,7 +169,7 @@
 //! }
 //! ```
 //!
-//! THE POSITIVE TWIN — the same two slots, each filed against the callee
+//! The positive twin — the same two slots, each filed against the callee
 //! whose interface it names, in one block:
 //!
 //! ```
@@ -218,7 +216,7 @@
 //!
 //! # What does not compile
 //!
-//! A CALL SENT TO AN INTERFACE THAT DOES NOT EXPOSE IT — the first rung of
+//! A call sent to an interface that does not expose it — the first rung of
 //! the ladder (notes/evm-interfaces.org §2.5). `erc20::Transfer::Callee` is
 //! `Erc20`, and a Uniswap router is not one, so there is no `Extends` impl:
 //!
@@ -254,7 +252,7 @@
 //! }
 //! ```
 //!
-//! THE SAME CODE WITH THE ONE CHANGE REVERTED compiles — the callee's
+//! The same code with the one change reverted compiles — the callee's
 //! interface is the only difference, so the rejection is the interface:
 //!
 //! ```
@@ -288,8 +286,8 @@
 //! }
 //! ```
 //!
-//! A ticket for one FILING handed to another's slot — and the two filings
-//! here are the SAME Solidity call at two kinds, which is exactly the pair
+//! A ticket for one filing handed to another's slot — and the two filings
+//! here are the same Solidity call at two kinds, which is exactly the pair
 //! the deployed vault has (`transfer` as a claim and as a withdrawal):
 //!
 //! ```compile_fail,E0308
@@ -318,7 +316,7 @@
 //! }
 //! ```
 //!
-//! THE SAME CODE WITH THE ONE CHANGE REVERTED compiles:
+//! The same code with the one change reverted compiles:
 //!
 //! ```
 //! use minocrab::Circuit;
@@ -368,14 +366,10 @@
 //! const _: usize = BLOCK.transfers.record_path().depth() as usize;
 //! ```
 //!
-//! A RETURN TYPE WHOSE ATTESTED FORM NOBODY HAS WRITTEN DOWN — the rung the
-//! kind-byte doctest used to occupy (two slots of one block at one response
-//! kind was `error[E0080]` from the derive's `assert_distinct_kinds`; V1
-//! records carry no kind, so two slots may now file the same call with the
-//! same schema and the derive has nothing left to check).
-//!
-//! What took its place is a check the `fff3421c` lineage could not make: a
-//! slot's attested output has to have a WIDTH and a NARROWING, and
+//! A return type whose attested form nobody has written down. V1 records
+//! carry no kind, so two slots may file the same call with the same schema;
+//! the check that remains is that a
+//! slot's attested output has to have a width and a narrowing, and
 //! [`AbiReturn`] is where those live. `Address` is an [`AbiType`] with no
 //! `AbiReturn` impl, so a call declaring it as a return cannot be filed:
 //!
@@ -418,7 +412,7 @@
 //! }
 //! ```
 //!
-//! THE SAME CALL WITH A RETURN THAT HAS ONE compiles — `U256` is 32 attested
+//! The same call with a return that has one compiles — `U256` is 32 attested
 //! bytes and the narrowing is written once, in [`AbiReturn`]:
 //!
 //! ```
@@ -480,7 +474,7 @@
 //! }
 //! ```
 //!
-//! TWO `Signet` fields — one contract, one MPC key, one nonce sequence:
+//! Two `Signet` fields — one contract, one MPC key, one nonce sequence:
 //!
 //! ```compile_fail,E0080
 //! use minocrab_evm::erc20;
@@ -502,10 +496,10 @@
 //! }
 //! ```
 //!
-//! ETHER ON A CALL THAT CANNOT TAKE IT — `Pending::request_payable` is
+//! Ether on a call that cannot take it — `Pending::request_payable` is
 //! bounded by [`Payable`], and an ERC-20 `transfer`
 //! has no impl, so an amount cannot be attached to a call that would
-//! ignore it and leave the ether with the contract (M38 rung B):
+//! ignore it and leave the ether with the contract:
 //!
 //! ```compile_fail,E0277
 //! use minocrab::Circuit;
@@ -541,8 +535,8 @@
 //! }
 //! ```
 //!
-//! THE SAME CALL THAT DOES TAKE ETHER compiles — WETH's `deposit()`, whose
-//! ether IS its argument (it has no calldata beyond the selector, so the
+//! The same call that does take ether compiles — WETH's `deposit()`, whose
+//! ether is its argument (it has no calldata beyond the selector, so the
 //! slot's `WORDS` is zero):
 //!
 //! ```
@@ -577,11 +571,11 @@
 //! }
 //! ```
 //!
-//! A CONFORMING TOKEN'S CALL FILED AGAINST A NON-CONFORMING ONE, and the
-//! other direction. `UsdtLike` is a SIBLING of `Erc20`, not a subtype:
+//! A conforming token's call filed against a non-conforming one, and the
+//! other direction. `UsdtLike` is a sibling of `Erc20`, not a subtype:
 //! neither `Extends` the other, so neither address takes the other's calls.
 //! That is what stops a USDT address being handed to a slot that declares a
-//! `bool` return, whose absent return the MPC would resolve as its FAILURE
+//! `bool` return, whose absent return the MPC would resolve as its failure
 //! kind — refunding a transfer that moved the tokens
 //! (notes/evm-calls.org §3.1, the dangerous direction):
 //!
@@ -649,7 +643,7 @@
 //! }
 //! ```
 //!
-//! THE SAME CODE WITH EACH CALLEE MATCHED TO ITS OWN INTERFACE compiles,
+//! The same code with each callee matched to its own interface compiles,
 //! and the two slots are the same two words on the wire — the difference is
 //! entirely in what the MPC is asked to decode:
 //!
@@ -732,37 +726,37 @@ use crate::signet_flow::{
 
 /// The refund commitment's domain pad, `pad(32, "vault:refund:")` — the
 /// seventeen-circuit vault's `refundCommitment` tag, which `Owned` keeps
-/// (the flush-pattern vault has no refund commitment: M44).
+/// (the flush-pattern vault has no refund commitment).
 pub const REFUND_PAD: &str = "vault:refund:";
 
-/// A call's attested return value DECODED, as a circuit wire.
+/// A call's attested return value decoded, as a circuit wire.
 pub type Ret<C> = <<C as EvmCall>::Return as AbiType>::Wire<Private>;
 
-/// The CALL a [`Filing`] files — `F::Call`, spelled once so a slot's
+/// The call a [`Filing`] files — `F::Call`, spelled once so a slot's
 /// signatures read as sentences rather than as projections.
 pub type Called<F> = <F as Filing>::Call;
 
-/// The RETURN TYPE of a filing's call — the leaf whose [`AbiReturn`] says
+/// The return type of a filing's call — the leaf whose [`AbiReturn`] says
 /// how wide the attested output is and how it narrows.
 pub type Returned<F> = <Called<F> as EvmCall>::Return;
 
-/// THE SERIALIZED OUTPUT a filing's attestation carries: the MPC's Borsh of
+/// The serialized output a filing's attestation carries: the MPC's Borsh of
 /// the decoded return at the call's own width (`Bytes0`, `Bytes<1>`, `B32`).
 pub type Serialized<F> = <Returned<F> as AbiReturn>::Serialized;
 
-/// The V1 RECORD a filing's slot stores — the event's limbs under the
+/// The V1 record a filing's slot stores — the event's limbs under the
 /// filing's own output schema.
 pub type Record<F, const WORDS: usize> =
     EventRecordV1<WORDS, <<F as Filing>::Schema as OutputSchema>::At<Public>>;
 
-/// The INTERFACE a filing's call must be sent to: the callee of `F`'s call.
+/// The interface a filing's call must be sent to: the callee of `F`'s call.
 /// A `Contract<I>` reaches it when `I: Extends<Callee<F>>`.
 pub type Callee<F> = <Called<F> as EvmCall>::Callee;
 
 
 // ---- the callee ---------------------------------------------------------------
 
-/// THE ADDRESS OF A CONTRACT THAT CLAIMS INTERFACE `I` — a `Bytes<20>`
+/// The address of a contract that claims interface `I` — a `Bytes<20>`
 /// that knows what it answers.
 ///
 /// Two things it buys, at no wire cost (the shape is a bare `Bytes<20>`,
@@ -774,12 +768,12 @@ pub type Callee<F> = <Called<F> as EvmCall>::Callee;
 /// - A call goes only where its interface does. `request` takes a
 ///   `Contract<I>` with `I: Extends<Callee<F>>`, so an
 ///   [`erc20::Transfer`](minocrab_evm::erc20::Transfer) filed against a
-///   `Contract<UniswapV3Router>` is a MISSING IMPL, and an
+///   `Contract<UniswapV3Router>` is a missing impl, and an
 ///   [`erc20::Approve`](minocrab_evm::erc20::Approve) against a
-///   `Contract<Erc4626>` compiles because an ERC-4626 vault IS an ERC-20.
+///   `Contract<Erc4626>` compiles because an ERC-4626 vault is an ERC-20.
 ///
-/// WHAT IT DOES NOT BUY: any check that the deployed address at the other
-/// end really is that interface. The type records the CLAIM the contract
+/// What it does not buy: any check that the deployed address at the other
+/// end really is that interface. The type records the claim the contract
 /// made when it built the value, which is why the callee-allow-list hazard
 /// (this module's header) is about where the address came from.
 pub struct Contract<I: Interface> {
@@ -844,10 +838,10 @@ impl<I: Interface> CircuitArg for Contract<I> {
 // ---- the tickets --------------------------------------------------------------
 
 /// Both tickets carry `(respond, serializedOutput)` — the two arguments the
-/// deployed `queueAttestation*` circuits take, named for the CALL rather
+/// deployed `queueAttestation*` circuits take, named for the call rather
 /// than for an environment/response pair.
 ///
-/// THE REQUEST ID IS NOT A SEPARATE FIELD any more: V1's
+/// The request ID is not a separate field any more: V1's
 /// `RespondBidirectionalEventV1` carries it, beside the height, the verdict,
 /// the width and the digest, and all of those are inside the signed
 /// preimage — so a ticket cannot name one request and verify another.
@@ -904,9 +898,9 @@ ticket!(
      of the signed preimage."
 );
 
-// ---- what survives privately, with a TYPED domain -----------------------------
+// ---- what survives privately, with a typed domain -----------------------------
 
-/// A commitment's DOMAIN, as a type.
+/// A commitment's domain, as a type.
 ///
 /// `signet_flow::Commit` takes the domain as a `&str` at both ends, so a
 /// `to` and an `open` that disagree is a proof that never verifies — a
@@ -926,13 +920,13 @@ impl CommitTag for OwnerTag {
     const PAD: &'static str = REFUND_PAD;
 }
 
-/// A commitment to a private value, stored in an environment and OPENED on
+/// A commitment to a private value, stored in an environment and opened on
 /// the settle side with a fresh witness — the one way a secret crosses the
 /// suspension.
 ///
 /// `transientHash([pad(32, Tag::PAD), value, requestId])`, split into a
 /// `Bytes<32>`: the construction `signet_flow::Commit` performs, with the
-/// domain moved from an argument to a type parameter. Binding the REQUEST ID
+/// domain moved from an argument to a type parameter. Binding the request ID
 /// in is what keeps two requests by one owner unlinkable.
 ///
 /// # What does not compile
@@ -974,18 +968,18 @@ impl<T, Tag> Clone for Commit<T, Tag> {
 }
 impl<T, Tag> Copy for Commit<T, Tag> {}
 
-/// WHAT A COMMITMENT IS BOUND TO — the value hashed in after the pad and the
+/// What a commitment is bound to — the value hashed in after the pad and the
 /// committed value, so that one owner's two commitments differ.
 ///
 /// [`RequestId`] is the binding a [`Pending`] request has, and the only one
 /// there was until the outbox: the id exists at filing time, so the
 /// commitment can name it. An [`Outbox`] request has no id when it is made
-/// (the record, hence the id, is created at EMIT — notes/stream-design.org),
+/// (the record, hence the id, is created at emit — notes/stream-design.org),
 /// so it binds to its [`Handle`] instead: the content-derived key the
 /// requester keeps.
 ///
 /// The trait exists so that neither binding can be spelled where the other
-/// belongs and still hash the same: each pushes its OWN limbs, and the two
+/// belongs and still hash the same: each pushes its own limbs, and the two
 /// are different types.
 pub trait CommitBinding {
     /// The limbs this binding contributes to the commitment's preimage.
@@ -1034,7 +1028,7 @@ impl<T: CircuitArg, Tag: CommitTag> Commit<T, Tag> {
         }
     }
 
-    /// Assert that `value` (a FRESH witness on the settle side) is what this
+    /// Assert that `value` (a fresh witness on the settle side) is what this
     /// commitment was made to, for this request.
     pub fn open<B: CommitBinding>(
         &self,
@@ -1059,7 +1053,7 @@ impl<T: CircuitArg, Tag: CommitTag> Commit<T, Tag> {
 ///
 /// [`Pending::request_owned`] witnesses the caller's secret key and commits
 /// it bound to the request id; [`Pending::refund_to_owner`] witnesses a
-/// FRESH secret and opens the commitment. [`Pending::complete`] has no
+/// fresh secret and opens the commitment. [`Pending::complete`] has no
 /// method that consumes a secret at all — which is the point: the deployed
 /// vault's Gap 2 (a `completeWithdraw` that hoists a secret witness for a
 /// refund branch it may not take) is not writable on this API.
@@ -1073,19 +1067,19 @@ pub struct Owned<E> {
 
 // ---- the slot -----------------------------------------------------------------
 
-/// A suspended EVM CALL: two ledger fields (the MPC-facing record map and
+/// A suspended EVM call: two ledger fields (the MPC-facing record map and
 /// the caller's environment map) plus the block's [`Signet`] configuration,
 /// typed by the call it makes.
 ///
-/// `F` IS THE FILING, not the call: the call plus the output schema this
+/// `F` is the filing, not the call: the call plus the output schema this
 /// deployment files it under ([`Filed<Call, Schema>`](crate::filing::Filed) for
 /// the one-line case). Two slots of one block may file the same Solidity
-/// function under two schemas — or under the SAME schema — and their tickets
+/// function under two schemas — or under the same schema — and their tickets
 /// still do not unify, because the ticket is typed by the filing.
 ///
 /// `WORDS` is the record's calldata capacity. Stable Rust cannot write
 /// `EventRecordV1<{ <Call::Args as AbiTuple>::WORDS }, _>`
-/// (`generic_const_exprs`), so the number is NAMED and CHECKED — an
+/// (`generic_const_exprs`), so the number is named and checked — an
 /// inline-`const` assert in the constructor makes a mismatch an
 /// `error[E0080]` (notes/evm-calls.org §3).
 ///
@@ -1131,12 +1125,12 @@ impl<F: Filing, Env, const WORDS: usize> Pending<F, Env, WORDS> {
 
 // ---- the fire-and-forget slot -------------------------------------------------
 
-/// A CALL THAT IS NEVER SETTLED — Sig Network's fire-and-forget shape (the
-/// vault's `approveRouter` and `approveStata`): ONE ledger field, the record
+/// A call that is never settled — Sig Network's fire-and-forget shape (the
+/// vault's `approveRouter` and `approveStata`): one ledger field, the record
 /// map, and [`Fired::request_with`] as its only operation.
 ///
 /// No settle method exists, so "nothing settles this slot" is a fact about
-/// the TYPE rather than a convention: there is no `Succeeded<F>` any circuit
+/// the type rather than a convention: there is no `Succeeded<F>` any circuit
 /// of the contract can consume, and the record entry is never removed. An
 /// attestation for one of these requests is a message nobody has a circuit
 /// for, which is the intent.
@@ -1221,21 +1215,20 @@ impl<F: Filing, Env: LedgerRepr, const WORDS: usize> Pending<F, Env, WORDS>
 where
     Returned<F>: AbiReturn,
 {
-    /// FILE THE CALL. Builds `F::Call`'s transaction from the callee and the
+    /// File the call. Builds `F::Call`'s transaction from the callee and the
     /// argument tuple, files the signing record under `F::Schema`, stores the
     /// environment beside it and notifies the signet signer with this slot's own
     /// ledger path. Returns the disclosed request id, and discloses
     /// `signet_flow::Requested` plus whatever `env` discloses.
     ///
-    /// THE CALLEE IS TYPED BY ITS INTERFACE: any `Contract<I>` whose `I`
+    /// The callee is typed by its interface: any `Contract<I>` whose `I`
     /// [`Extends`] the call's own [`EvmCall::Callee`] is accepted, and
     /// nothing else is.
     ///
-    /// `nonce` is still the CALLER'S: the prover picks the EVM nonce, which
+    /// `nonce` is still the caller's: the prover picks the EVM nonce, which
     /// is why [`Outbox`] exists (the nonce it assigns is the ledger's, and
-    /// the circuit never reads it). The MPC key version is no longer an
-    /// argument at all — it is `Signet::mpc_key_version`, the home
-    /// notes/evm-calls.org §7 was looking for.
+    /// the circuit never reads it). The MPC key version is not an
+    /// argument at all — it is `Signet::mpc_key_version` (notes/evm-calls.org §7).
     pub fn request(
         &self,
         c: &mut Circuit,
@@ -1248,16 +1241,16 @@ where
         self.file(c, tx, env)
     }
 
-    /// FILE THE CALL WITH ETHER ATTACHED — [`Self::request`] for a
+    /// File the call with ether attached — [`Self::request`] for a
     /// [`Payable`] call, whose transaction's `value` field is a real amount
     /// rather than the constant zero.
     ///
-    /// `Called<F>: Payable` is the gate, and it is a MISSING TRAIT IMPL for
+    /// `Called<F>: Payable` is the gate, and it is a missing trait impl for
     /// every other call in the library: an amount cannot be handed to an
     /// `erc20::Transfer`, which would ignore it and send the ether nowhere
     /// (notes/evm-interfaces.org §5). WETH's
     /// [`weth::Deposit`](minocrab_evm::weth::Deposit) is the one call that
-    /// has the impl, and the ether IS its argument — `deposit()` has no
+    /// has the impl, and the ether is its argument — `deposit()` has no
     /// calldata beyond the selector.
     ///
     /// Everything else is [`Self::request`]: the same callee bound, the
@@ -1266,7 +1259,7 @@ where
     /// Solidity means by payable — the type does not force an amount, it
     /// forbids one where there is nowhere for it to go.
     ///
-    /// The ether comes from the CONTRACT's derived EVM account — the one the
+    /// The ether comes from the contract's derived EVM account — the one the
     /// MPC signs for — so a contract that files this must have ether there,
     /// which this API can no more check than it can check a token balance.
     #[allow(clippy::too_many_arguments)]
@@ -1303,7 +1296,7 @@ where
             SignRequest { signing, tx },
             <<Called<F> as EvmCall>::Args as AbiTuple>::WORDS,
             |c, request_id| {
-                // The environment is built AFTER the id exists, so a
+                // The environment is built after the id exists, so a
                 // `Commit` in it binds to this request and no other.
                 let env = env(c, request_id);
                 self.envs.insert(c, &request_id, &env);
@@ -1311,20 +1304,20 @@ where
         )
     }
 
-    /// [`Self::request`] WITH THE THREE THINGS A DEPLOYED LINEAGE CANNOT LET
-    /// THE SLOT CHOOSE — the shape the vault's seventeen circuits need, and
+    /// [`Self::request`] with the three things a deployed lineage cannot let
+    /// the slot choose — the shape the vault's seventeen circuits need, and
     /// the one `request` is the convenience wrapper over.
     ///
-    /// - `callee` and `args` are BUILDERS ([`AbiArgs`]), not values, so a
+    /// - `callee` and `args` are builders ([`AbiArgs`]), not values, so a
     ///   ledger read emits exactly where the circuit reads it: `supply` reads
     ///   `vaultEvmAddress` between its two argument words, `approveStata`
     ///   reads its callee after the gas constants. Building them up front
     ///   would move those instructions.
     /// - `envelope` is the fee envelope: [`Envelope::fixed`] for a contract
     ///   that pays its own way, [`Envelope::caller`] for the vault's
-    ///   `deposit`, whose transaction is paid from the DEPOSITOR's EVM
+    ///   `deposit`, whose transaction is paid from the depositor's EVM
     ///   account and whose three gas numbers are therefore circuit arguments.
-    /// - `signer` runs AFTER the transaction and BEFORE the record is filed,
+    /// - `signer` runs after the transaction and before the record is filed,
     ///   and answers "whose key signs this": it returns a [`Signing`] — the
     ///   path, and whether the reserved-path assert is emitted for it — and
     ///   whatever else the environment will need. That is where the vault
@@ -1333,7 +1326,7 @@ where
     ///   `deposit` names the depositor's own commitment as the path instead
     ///   of the contract's.
     ///
-    /// A REQUEST STILL CANNOT NAME AN ARBITRARY PATH FROM ITS INPUTS in any
+    /// A request still cannot name an arbitrary path from its inputs in any
     /// useful sense: the path is built by contract code here, not read off an
     /// argument. `deposit`'s per-user path is a commitment the same circuit
     /// just derived from a witnessed secret.
@@ -1364,7 +1357,7 @@ where
             SignRequest { signing, tx },
             <<Called<F> as EvmCall>::Args as AbiTuple>::WORDS,
             |c, request_id| {
-                // The environment is built AFTER the id exists, so a
+                // The environment is built after the id exists, so a
                 // `Commit` in it binds to this request and no other.
                 let env = env(c, request_id, &carried);
                 self.envs.insert(c, &request_id, &env);
@@ -1372,19 +1365,19 @@ where
         )
     }
 
-    /// SETTLE A SUCCESS. Verifies the MPC's signature over the V1
-    /// attestation digest at the call's attested WIDTH, asserts the verdict
+    /// Settle a success. Verifies the MPC's signature over the V1
+    /// attestation digest at the call's attested width, asserts the verdict
     /// is `executed`, consumes record and environment — and then asserts the
     /// call's [`EvmCall::succeeded`] predicate over the decoded output.
     ///
-    /// FOUR CHECKS, AND EACH ONE REJECTS A DIFFERENT LIE:
+    /// Four checks, and each one rejects a different lie:
     ///
     /// - the signature binds the id, the height, the verdict, the width and
     ///   the output together, so none of them can be swapped;
     /// - `outputKind == executed` rejects an attestation that says the
     ///   transaction reverted or never mined — where the `fff3421c` lineage
-    ///   had a kind BYTE to compare, V1 has the MPC's verdict;
-    /// - the record entry must be in THIS slot's map, which is what binds an
+    ///   had a kind byte to compare, V1 has the MPC's verdict;
+    /// - the record entry must be in this slot's map, which is what binds an
     ///   attestation to the slot that filed the request (the kind byte's old
     ///   job, done by the ledger instead);
     /// - and the call's own predicate rejects a mined `transfer` that
@@ -1392,7 +1385,7 @@ where
     ///   hole the deployed vault leaves open by putting a refund branch
     ///   inside its `completeWithdraw`).
     ///
-    /// ANYONE MAY CALL IT: the attestation is the gate, and no secret is
+    /// Anyone may call it: the attestation is the gate, and no secret is
     /// witnessed. Discloses `signet_flow::Settled`.
     pub fn complete(
         &self,
@@ -1428,27 +1421,27 @@ where
             request_id,
             block_height,
             env,
-            // The projection runs AFTER the assert, so nothing a caller can
+            // The projection runs after the assert, so nothing a caller can
             // read has escaped the check.
             output: <Called<F> as EvmCall>::map(c, decoded),
         }
     }
 
-    /// SETTLE A NON-SUCCESS. Accepts the MPC's `failed` or `unviable`
-    /// verdict — whose attested output is EMPTY — OR `executed` with the
+    /// Settle a non-success. Accepts the MPC's `failed` or `unviable`
+    /// verdict — whose attested output is empty — OR `executed` with the
     /// [`EvmCall::succeeded`] predicate false. Discloses
     /// `signet_flow::Settled`.
     ///
-    /// ONE SIGNATURE, TWO ACCEPTED OUTPUTS. Since `@sig-net/midnight` 0.25
-    /// the signed digest covers the output's WIDTH and HASH, not its bytes,
+    /// One signature, two accepted outputs. Since `@sig-net/midnight` 0.25
+    /// the signed digest covers the output's width and hash, not its bytes,
     /// so the attestation is verified once, from the event alone
     /// ([`signet_v1::verify_respond_bidirectional_attestation_v1`]), and the
     /// output check selects what the event must declare: the call's own
     /// width and the hash of the supplied output on an `executed` verdict,
-    /// width 0 and the hash of the EMPTY output on `failed` or `unviable`
+    /// width 0 and the hash of the empty output on `failed` or `unviable`
     /// (a non-execution attests zero bytes).
     ///
-    /// The output slots are still DECODED in the failure arms, because a
+    /// The output slots are still decoded in the failure arms, because a
     /// circuit has one instruction stream: a prover whose request failed
     /// supplies zeros, which satisfy the narrowing's range checks, and those
     /// bytes are outside the signed digest either way.
@@ -1517,7 +1510,7 @@ where
 
     /// Read and remove the record and the environment.
     ///
-    /// THE MEMBERSHIP CHECK IS THE SLOT BINDING. A V1 record carries neither
+    /// The membership check is the slot binding. A V1 record carries neither
     /// a response kind nor a format version — the two fields the `fff3421c`
     /// lineage re-asserted here — so what ties an attestation to this slot is
     /// that this slot's own record map holds its id, and that the attestation
@@ -1561,7 +1554,7 @@ where
         })
     }
 
-    /// [`Pending::refund`] with the OWNER GATE: a fresh secret is witnessed
+    /// [`Pending::refund`] with the owner gate: a fresh secret is witnessed
     /// and the stored commitment is opened against it, and the caller's own
     /// public key comes back as the recipient.
     ///
@@ -1600,14 +1593,14 @@ label! {
 /// request id yet, so the record and the two cross-call labels are not in it.
 pub type Inserted = (QueuedRecordFiled,);
 
-/// THE OUTBOX KEY, and what the requester keeps: the Poseidon hash of the
+/// The outbox key, and what the requester keeps: the Poseidon hash of the
 /// pre-record (callee, calldata words) — content-derived, so unsquattable
-/// and computed by anyone who knows the request; the request id MINUS the
+/// and computed by anyone who knows the request; the request id minus the
 /// nonce (notes/stream-design.org, "emit restored").
 ///
 /// Two byte-identical requests share a handle, so the second is refused
 /// while the first is between call and emit and accepted after: the
-/// spec's C1 behaviour for identical payloads, one phase earlier. It is NOT
+/// spec's C1 behaviour for identical payloads, one phase earlier. It is not
 /// a request id and does not unify with one: an attestation settles a
 /// `RequestId`, which includes the nonce the emit assigned.
 ///
@@ -1623,7 +1616,7 @@ impl<V: Vis> Handle<V> {
         self.0
     }
 
-    /// A handle from a field element already in hand. UNCHECKED: nothing
+    /// A handle from a field element already in hand. Unchecked: nothing
     /// ties it to a pre-record; [`PreRecord::handle`] is the constructor
     /// that does.
     pub fn from_field_unchecked(w: Wire<FieldT, V>) -> Self {
@@ -1684,29 +1677,28 @@ impl Disclose for Handle<Private> {
     }
 }
 
-/// THE TRANSACTION MINUS ITS NONCE — what a call files and an emit turns
+/// The transaction minus its nonce — what a call files and an emit turns
 /// into a record.
 ///
 /// Two fields, and they are exactly the two an emit cannot derive from the
 /// call type: the callee and the encoded ABI words. Everything else in the
-/// transaction is the CONTRACT'S — the selector, the word count and the gas
+/// transaction is the contract's — the selector, the word count and the gas
 /// limit from [`EvmCall`], the fee envelope from the contract
 /// (notes/nonce-admin.org §1.1: a requester picks neither a nonce nor a fee,
 /// because an unminable transaction is a denial of service on every later
-/// nonce of the path), the chain id and the MPC KEY VERSION from the
+/// nonce of the path), the chain id and the MPC key version from the
 /// [`Signet`] block, and the nonce from the outbox's accumulator,
 /// snapshotted at the call.
 ///
-/// THE KEY VERSION WENT IN M44 RUNG D, with the argument that carried it: it
+/// The key version is not an argument: it
 /// is `Signet::mpc_key_version`, a cell, read at the emit like the chain id.
-/// So a pre-record is one limb shorter and a call one argument shorter.
 pub struct PreRecord<const WORDS: usize>(Vec<Wire<FieldT, Public>>);
 
 impl<const WORDS: usize> PreRecord<WORDS> {
     /// One limb for the callee, two per word.
     pub const LIMBS: usize = 1 + 2 * WORDS;
 
-    /// Assemble and DISCLOSE the pre-record: it is about to be stored, so
+    /// Assemble and disclose the pre-record: it is about to be stored, so
     /// every limb is public, and the label names them in the inventory.
     fn file(c: &mut Circuit, callee: Bytes<20, Private>, words: &[B32<Private>]) -> Self {
         let mut limbs = vec![callee.field()];
@@ -1765,7 +1757,7 @@ impl<const WORDS: usize> LedgerRepr for PreRecord<WORDS> {
     }
 }
 
-/// ONE QUEUE ENTRY: the pre-record and the environment, in one map value.
+/// One queue entry: the pre-record and the environment, in one map value.
 ///
 /// They are stored together because they are inserted together, emitted
 /// together and removed together — one `insert`, one `lookup`, one `remove`
@@ -1780,7 +1772,7 @@ pub struct QueueEntry<Env, const WORDS: usize> {
     pub env: Env,
 }
 
-/// [`Owned`] FOR AN OUTBOX REQUEST: the commitment binds to the HANDLE,
+/// [`Owned`] for an outbox request: the commitment binds to the handle,
 /// because there is no request id when the request is made.
 ///
 /// The handle is stored beside the commitment for one reason: the settle

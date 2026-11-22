@@ -5,12 +5,12 @@
 //! does. The set is what the in-tree contracts write by hand, not the whole
 //! op layer; an op builder joins when a contract needs it.
 //!
-//! WHAT IS NOT CHECKED. Nothing checks that a field index is written with
+//! What is not checked. Nothing checks that a field index is written with
 //! its declared type's layout: the index and the [`LedgerValue`] are
 //! separate arguments. The ports of Compact contracts use this form because
 //! they reproduce compactc's op stream and its reads.
 //!
-//! WHAT STILL APPLIES. [`emit`] runs the stale-read check
+//! What still applies. [`emit`] runs the stale-read check
 //! (`Circuit::refuse_stale`) on the value a [`cell_write`], [`map_insert`]
 //! or [`list_push_front_at`] stores, as a typed slot's write does: a value
 //! computed from an inline ledger read is refused at build time unless the

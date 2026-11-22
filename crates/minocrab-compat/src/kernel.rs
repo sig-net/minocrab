@@ -2,16 +2,16 @@
 //! (`standard-library.compact:113-350`), transcribed as compactc inlines
 //! them.
 //!
-//! WHAT IS COMPACTC'S: `!b` is `cond_select(b, 0, 1)` and `a && b` is
+//! What is compactc's: `!b` is `cond_select(b, 0, 1)` and `a && b` is
 //! `cond_select(a, b, 0)`, never the `not` instruction or a `mul`; a guard
-//! passed in explicitly is resolved against the ambient scope once PER
+//! passed in explicitly is resolved against the ambient scope once per
 //! OP, not once on entering a scope; and `sendShielded` hashes the sent
 //! coin's commitment twice, once per `coinCommitment` call in the Compact
-//! source. THE LEAN FORM is `Circuit::not`, a `mul`, one `when` scope, and
+//! source. The lean form is `Circuit::not`, a `mul`, one `when` scope, and
 //! one commitment reused (each repeated commitment is about 5,640 rows,
 //! notes/vault-optimization.org).
 //!
-//! The kernel PRIMITIVES these compose (`kernel.self()`, the claims, the
+//! The kernel primitives these compose (`kernel.self()`, the claims, the
 //! balance reads) are the ledger's own and stay in
 //! [`minocrab_std::kernel`]; only the compositions live here. Each
 //! function carries the Compact it is a port of, and its body stays as
@@ -148,10 +148,10 @@ pub fn receive_unshielded(c: &mut Circuit, color: CoinColor<Public>, amount: Uin
 }
 
 /// `recipient.is_left && recipient.left.bytes == kernel.self().bytes` — the
-/// AUTO-RECEIVE guard both [`send_unshielded`] and [`mint_unshielded_token`]
+/// auto-receive guard both [`send_unshielded`] and [`mint_unshielded_token`]
 /// end with.
 ///
-/// compactc's: the `kernel.self()` read is guarded by `is_left` ALONE (a
+/// compactc's: the `kernel.self()` read is guarded by `is_left` alone (a
 /// user recipient never needs the address, so its `public_input` gates
 /// yield the default), and both `&&`s are `cond_select`s, where the lean
 /// form is a `mul` for each.
@@ -167,18 +167,18 @@ fn is_self(c: &mut Circuit, recipient: &UnshieldedRecipient<Public>) -> Wire<Fie
 }
 
 /// The kernel's self read is a `popeq` on a value no transaction can change,
-/// so it is acknowledged at the read and never wears `Assumed` (M42 B).
+/// so it is acknowledged at the read and never wears `Assumed`.
 /// The same two lines as `minocrab_std::kernel`'s private helper.
 fn never_stale(c: &mut Circuit, wires: [Wire<FieldT, Public>; 2]) -> [Wire<FieldT, Public>; 2] {
     c.acknowledge_stale(&[wires[0].val(), wires[1].val()]);
     wires
 }
 
-/// [`minocrab_ledger::kernel_self`], guarded by an EXPLICIT wire rather than
+/// [`minocrab_ledger::kernel_self`], guarded by an explicit wire rather than
 /// the ambient scope.
 ///
-/// compactc's: the explicit guard is conjoined with the ambient one PER
-/// EFFECT (once per read and once per Impact op), which is what the corpus
+/// compactc's: the explicit guard is conjoined with the ambient one per
+/// effect (once per read and once per Impact op), which is what the corpus
 /// shows when these circuits are called inside another `when` (e.g.
 /// `manager.compact`'s `execute`). The lean form is
 /// `c.when(is_left, |c| kernel_self(c)).or_default()`, which conjoins once on
@@ -200,8 +200,8 @@ fn guarded_kernel_self(c: &mut Circuit, guard: Wire<FieldT, Public>) -> [Wire<Fi
     [wires[0], wires[1]]
 }
 
-/// Emit `ops` under an EXPLICIT guard, resolved against the ambient scope
-/// PER OP ([`Circuit::impact_mixed`] once per op) — compactc's, for the
+/// Emit `ops` under an explicit guard, resolved against the ambient scope
+/// per OP ([`Circuit::impact_mixed`] once per op) — compactc's, for the
 /// reason [`guarded_kernel_self`] gives; the lean form is one `c.when`.
 fn emit_guarded(c: &mut Circuit, guard: Wire<FieldT, Public>, ops: &[minocrab_ledger::ImpactOp]) {
     for op in ops {
@@ -273,9 +273,9 @@ pub fn mint_unshielded_token(
     color
 }
 
-// ---- the SHIELDED half ------------------------------------------------------
+// ---- the shielded half ------------------------------------------------------
 //
-// Two shapes recur, and both are compactc's: a coin paid to THIS contract is
+// Two shapes recur, and both are compactc's: a coin paid to this contract is
 // `right(kernel.self())`, a literal, so its commitment has no recipient
 // select (`coin_commitment_to_contract`); and
 // `upgradeFromTransient(transientHash([<tag>, degradeToTransient(nonce)]))` is
@@ -283,11 +283,11 @@ pub fn mint_unshielded_token(
 // casts (`hash::degrade_to_transient`).
 
 /// The domain a coin's successor nonce is derived under, and the `/2` variant
-/// `sendShielded` gives its CHANGE coin.
+/// `sendShielded` gives its change coin.
 const NONCE_EVOLVE: &[u8] = b"midnight:kernel:nonce_evolve";
 const NONCE_EVOLVE_CHANGE: &[u8] = b"midnight:kernel:nonce_evolve/2";
 
-/// A `bytes<n>` (n ≤ 31) literal as a single constant limb, the INLINE hash
+/// A `bytes<n>` (n ≤ 31) literal as a single constant limb, the inline hash
 /// operand compactc writes (the same as `minocrab_std`'s private helper).
 fn short_literal_imm(bytes: &[u8]) -> Fr {
     assert!(bytes.len() <= 31);
@@ -428,13 +428,13 @@ fn merge(c: &mut Circuit, a: &ShieldedCoinInfo<Public>, b: &ShieldedCoinInfo<Pub
 /// }
 /// ```
 ///
-/// compactc's: `output`'s commitment is hashed TWICE, once per
+/// compactc's: `output`'s commitment is hashed twice, once per
 /// `coinCommitment` in the source (about 5,640 rows, notes/vault-optimization.org),
 /// where the lean form hashes it once and reuses it; and `!`, `&&` and the
 /// change test are `cond_select`s (`not`, `bytes_eq`, `checked_sub`).
 /// The `if (change == 0)` is written out rather than through
 /// [`Circuit::when_value`] because compactc folds the `Maybe`'s tag into the
-/// guard it already has: the tag IS the guard here, named once, and only the
+/// guard it already has: the tag is the guard here, named once, and only the
 /// five payload slots are selected.
 pub fn send_shielded(
     c: &mut Circuit,

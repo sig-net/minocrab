@@ -1,11 +1,11 @@
 //! `constructSignBidirectionalEventNotificationV1` — the callee's own
 //! constructor for its notification argument.
 //!
-//! HAND-WRITTEN, and the only hand-written module in this crate: a
-//! constructor is Compact SOURCE (`Signet.compact`'s exported circuit), not
+//! Hand-written, and the only hand-written module in this crate: a
+//! constructor is Compact source (`Signet.compact`'s exported circuit), not
 //! something a compiled artifact carries, so the generator cannot produce
 //! it. It lives here rather than in a caller because the layout of the
-//! bytes is the CALLEE's business — the payload's meaning is Signet's, and
+//! bytes is the callee's business — the payload's meaning is Signet's, and
 //! a caller that packed it itself would be reimplementing the callee's
 //! format at every call site.
 

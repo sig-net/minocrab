@@ -1,53 +1,52 @@
 //! Typed EVM calls — the call as a type, the slot infers the rest
-//! (M37 rung A, notes/evm-calls.org §§1-2).
+//! (notes/evm-calls.org §§1-2).
 //!
-//! Today a contract that wants `transfer(to, amount)` on the far side writes
+//! Without this crate, a contract that wants `transfer(to, amount)` on the far side writes
 //! out the four-byte selector, encodes each ABI word by hand, counts the
 //! words, names a gas envelope and picks a response type. Every one of those
-//! is DERIVABLE from one thing: which call it is. This module makes that one
+//! is derivable from one thing: which call it is. This module makes that one
 //! thing a type.
 //!
 //! Three layers:
 //!
 //! 1. [`AbiType`] — one Rust unit type per Solidity leaf ([`Address`],
 //!    [`Bool`], [`Bytes32`], [`U8`], [`U16`], [`U24`], [`U64`], [`U128`],
-//!    [`U160`], [`U256`]), plus [`Unit`] for a callee that returns NOTHING. It
+//!    [`U160`], [`U256`]), plus [`Unit`] for a callee that returns nothing. It
 //!    carries the leaf's spelling in a selector signature
 //!    ([`AbiType::SOLIDITY`]), its spelling in the attested-output schema
-//!    the MPC narrows to ([`AbiType::RESPOND`]) and the CIRCUIT VALUE that
+//!    the MPC narrows to ([`AbiType::RESPOND`]) and the circuit value that
 //!    stands for it ([`AbiType::Wire`]). [`AbiArg`] adds the encoder from
 //!    that value to a canonical 32-byte ABI word ([`AbiArg::word`]) and is
-//!    implemented by every leaf EXCEPT `Unit` — which is how "an argument
-//!    that returns nothing" stops being expressible (M38 rung B).
+//!    implemented by every leaf except `Unit` — which is how "an argument
+//!    that returns nothing" is not expressible.
 //! 2. [`AbiTuple`] — the argument list, for `()` and 1- to 8-tuples of
-//!    `AbiArg`s. It knows the WORD COUNT, the comma-joined signature and
+//!    `AbiArg`s. It knows the word count, the comma-joined signature and
 //!    how to encode a tuple of wires into words, in order.
 //! 3. [`EvmCall`] — the call: a name, an argument tuple, a return type, the
 //!    [`Interface`] that exposes it and a gas limit. [`EvmCall::selector`]
 //!    is the first four bytes of `keccak256("name(argtypes)")`, computed IN
-//!    RUST at circuit-build time and embedded as an immediate. Nothing
-//!    hashes keccak in-circuit; in-circuit hashing stays Poseidon throughout
-//!    (dmd, 2026-09-05: *"Do we actually need a const fn Keccak? Why not
-//!    just run it when we run the eDSL?"* — we do not). The library's calls
+//!    rust at circuit-build time and embedded as an immediate. Nothing
+//!    hashes keccak in-circuit; in-circuit hashing stays Poseidon throughout,
+//!    and no const fn Keccak is needed. The library's calls
 //!    live one module per interface: [`erc20`], [`erc4626`], [`erc721`],
 //!    [`uniswap_v3`], [`aave_v3`], [`weth`] and [`usdt`]. [`Payable`] marks
 //!    the one that carries ether.
 //!
-//! Nothing here knows about Signet: how a deployment FILES a call (the output
+//! Nothing here knows about Signet: how a deployment files a call (the output
 //! schema the MPC decodes its return under, the fee envelope, the transaction
 //! a request files) is the Signet layer's.
 //!
 //! # Zero movement
 //!
-//! The two word encoders ([`address_word`], [`numeric_word`]) are the
-//! bodies the Signet module ports used to carry, moved here unchanged.
+//! The two word encoders ([`address_word`], [`numeric_word`]) are shared
+//! with the Signet module ports.
 //! `tests/evm_abi.rs` asserts a circuit built through either the untyped
 //! encoder or its typed spelling serializes to byte-identical ZKIR.
 //!
 //! # What does not compile
 //!
 //! A call type that does not say whether its return means success. There
-//! is NO DEFAULT for [`EvmCall::succeeded`], on purpose: "executed ⇒
+//! is no default for [`EvmCall::succeeded`], on purpose: "executed ⇒
 //! succeeded" is right for most calls and wrong for an ERC-20 `transfer`,
 //! and a default would make the dangerous case the one nobody types:
 //!
@@ -68,11 +67,10 @@
 //! }
 //! ```
 //!
-//! A [`Unit`] IN AN ARGUMENT TUPLE — "this callee returns nothing" is a
-//! RETURN, and it has no ABI word, so it is an [`AbiType`] and not an
-//! [`AbiArg`] and a tuple containing it is not an [`AbiTuple`] (M38 rung B;
-//! until then this type-checked and reached a build-time panic inside
-//! `Unit::word`, notes/evm-calls.org §10 item 3):
+//! A [`Unit`] in an argument tuple — "this callee returns nothing" is a
+//! return, and it has no ABI word, so it is an [`AbiType`] and not an
+//! [`AbiArg`] and a tuple containing it is not an [`AbiTuple`]
+//! (notes/evm-calls.org §10):
 //!
 //! ```compile_fail,E0277
 //! use minocrab::Circuit;
@@ -120,8 +118,8 @@
 //! }
 //! ```
 //!
-//! THE SAME CODE WITH THE `Unit` LEFT IN THE ONE PLACE IT BELONGS compiles
-//! — as the RETURN, which is what a call to a callee that answers nothing
+//! The same code with the `Unit` left in the one place it belongs compiles
+//! — as the return, which is what a call to a callee that answers nothing
 //! actually has (ERC-2612 `permit`, WETH `deposit`, a USDT `transfer`):
 //!
 //! ```
@@ -170,7 +168,7 @@
 //! }
 //! ```
 //!
-//! THE SAME CODE WITH THE ONE CHANGE REVERTED compiles, so each rejection
+//! The same code with the one change reverted compiles, so each rejection
 //! above is the missing item and the mapping rather than a typo:
 //!
 //! ```
@@ -195,8 +193,8 @@
 //! assert_eq!(Balance::selector(), [0x70, 0xa0, 0x82, 0x31]);
 //! ```
 //!
-//! A `Unit` IN AN ARGUMENT TUPLE. [`Unit`] is the leaf that means "this
-//! callee returns NOTHING"; an argument that is nothing has no 32-byte word
+//! A `Unit` in an argument tuple. [`Unit`] is the leaf that means "this
+//! callee returns nothing"; an argument that is nothing has no 32-byte word
 //! to encode, so it is an [`AbiType`] and not an [`AbiArg`], and
 //! [`AbiTuple`] is over `AbiArg`:
 //!
@@ -244,8 +242,8 @@
 //! }
 //! ```
 //!
-//! THE SAME CODE WITH THE ONE CHANGE REVERTED compiles — and `Unit` in the
-//! position it IS for, the RETURN, compiles beside it. That pair is the
+//! The same code with the one change reverted compiles — and `Unit` in the
+//! position it is for, the return, compiles beside it. That pair is the
 //! whole of the split: one leaf, legal in one position and rejected in the
 //! other, with no runtime check anywhere:
 //!
@@ -321,7 +319,7 @@ pub fn address_word<V: Vis>(c: &mut Circuit, addr: Wire<FieldT, V>) -> B32<V> {
 /// word: the value's little-endian bytes reversed into the tail.
 ///
 /// The untyped-limb encoder, as [`address_word`] is. The typed spellings are [`Bool::word`], [`U24::word`], [`U64::word`] and
-/// [`U128::word`], which differ only in the RANGE their wire type claims:
+/// [`U128::word`], which differ only in the range their wire type claims:
 /// the encoding is the same reversal for all of them, and correct for any
 /// limb below `2^248`.
 pub fn numeric_word<V: Vis>(c: &mut Circuit, value: Wire<FieldT, V>) -> B32<V> {
@@ -359,25 +357,25 @@ pub fn checked_truncation_u128<V: Vis>(c: &mut Circuit, x: &B32<V>) -> Uint<128,
 
 // ---- the ABI type layer ------------------------------------------------------
 
-/// One Solidity leaf: how it is SPELLED and what CIRCUIT VALUE stands for
+/// One Solidity leaf: how it is spelled and what circuit value stands for
 /// it.
 ///
 /// The implementors are unit types ([`Address`], [`Bool`], …), never
 /// instantiated: they exist to be named in an [`EvmCall::Args`] tuple or as
 /// an [`EvmCall::Return`].
 ///
-/// THE WORD IS NOT HERE. Encoding a value into a 32-byte ABI word is
+/// The word is not here. Encoding a value into a 32-byte ABI word is
 /// [`AbiArg`]'s, because the one leaf that is a return and not an argument
 /// — [`Unit`], "this callee returns nothing" — has no word to encode.
 pub trait AbiType {
     /// The spelling inside the selector signature — what
     /// `keccak256("transfer(address,uint256)")` sees. `U64`, `U128` and
     /// `U256` all spell `"uint256"`: the ABI word is always 32 bytes, and
-    /// the Rust type states the RANGE the contract accepts, not the width
+    /// the Rust type states the range the contract accepts, not the width
     /// on the wire.
     const SOLIDITY: &'static str;
 
-    /// The spelling in the ATTESTED-OUTPUT schema — the narrowing the MPC
+    /// The spelling in the attested-output schema — the narrowing the MPC
     /// applies before it signs (`SUPPLY_RESPOND_SCHEMA`'s `"uint64"`
     /// against `SUPPLY_OUTPUT_SCHEMA`'s `"uint256"`). This is where `U64`
     /// and `U256` part company.
@@ -387,18 +385,17 @@ pub trait AbiType {
     type Wire<V: Vis>;
 }
 
-/// A LEAF THAT CAN STAND IN AN ARGUMENT LIST — an [`AbiType`] that HAS an
+/// A leaf that can stand in an argument list — an [`AbiType`] that has an
 /// ABI word, which is every one of them except [`Unit`].
 ///
-/// THE ARGS/RETURN SPLIT (M38 rung B). [`AbiType`] is the RETURN position's
-/// bound: a call may return a `bool`, a number, or NOTHING AT ALL, and
-/// [`Unit`] is that nothing. This trait is the ARGUMENT position's: an
+/// The args/return split. [`AbiType`] is the return position's
+/// bound: a call may return a `bool`, a number, or nothing at all, and
+/// [`Unit`] is that nothing. This trait is the argument position's: an
 /// argument is a value that becomes a 32-byte word, and `Unit` has no word
 /// to become. So [`AbiTuple`] is over `AbiArg` and `Unit` has no impl,
-/// which makes `type Args = (Unit,)` a MISSING TRAIT IMPL —
-/// `error[E0277]`, the first rung of the project's ladder — where until
-/// this rung it type-checked and reached a build-time panic inside
-/// `Unit::word` (notes/evm-calls.org §10 item 3, recorded for dmd).
+/// which makes `type Args = (Unit,)` a missing trait impl —
+/// `error[E0277]`, the first rung of the project's ladder, rather than a
+/// build-time panic inside `Unit::word` (notes/evm-calls.org §10).
 ///
 /// The encoder lives here rather than on [`AbiType`] so that `Unit` does
 /// not implement it at all: there is no unreachable body and no panic to
@@ -438,7 +435,7 @@ impl AbiArg for Bool {
     }
 }
 
-/// Solidity `bytes32` — the word IS the value; encoding it is the identity
+/// Solidity `bytes32` — the word is the value; encoding it is the identity
 /// and emits no instruction.
 pub struct Bytes32;
 
@@ -454,29 +451,26 @@ impl AbiArg for Bytes32 {
     }
 }
 
-/// NO RETURN AT ALL — the shape a non-conforming ERC-20 actually has.
+/// No return at all — the shape a non-conforming ERC-20 actually has.
 ///
 /// USDT, BNB and other pre-EIP-20-final tokens omit the `bool` their
 /// `transfer` is supposed to return. Declaring such a callee's calls with
 /// `Return = Unit` is what stops the MPC being asked to decode a `bool`
 /// from empty return data — a terminal extraction failure, which it
-/// resolves as its FAILURE kind, which would refund a transfer that MOVED
+/// resolves as its failure kind, which would refund a transfer that moved
 /// the tokens (notes/evm-calls.org §3.1, the dangerous direction).
 ///
 /// `Wire<V> = ()`: no slot, no word, no verdict to read. A call returning
 /// it writes [`always`] for its [`EvmCall::succeeded`], because for a call
-/// with nothing to say, executing IS succeeding and there is no flag to be
+/// with nothing to say, executing is succeeding and there is no flag to be
 /// fooled by.
 ///
-/// A RETURN TYPE ONLY, and the type system says so: `Unit` is an
-/// [`AbiType`] and NOT an [`AbiArg`], so it can be named as an
+/// A return type only, and the type system says so: `Unit` is an
+/// [`AbiType`] and not an [`AbiArg`], so it can be named as an
 /// [`EvmCall::Return`] and cannot be named in an [`EvmCall::Args`] tuple.
 ///
 /// `type Args = (Unit,)` is `error[E0277]` — "the trait bound `Unit:
-/// AbiArg` is not satisfied" (the module docs carry the gate). Until M38
-/// rung B it type-checked and put a build-time panic inside `Unit::word`
-/// where the hard rule prefers a compile error — notes/evm-calls.org §10
-/// item 3, recorded for dmd and now closed.
+/// AbiArg` is not satisfied" (the module docs carry the gate).
 pub struct Unit;
 
 impl AbiType for Unit {
@@ -489,7 +483,7 @@ impl AbiType for Unit {
 /// narrowest integer the library passes.
 ///
 /// The encoding is [`numeric_word`], exactly as [`U24`] and [`U64`]: a
-/// 32-byte word is a 32-byte word, and the Rust type states the RANGE the
+/// 32-byte word is a 32-byte word, and the Rust type states the range the
 /// wire claims (`Uint<8>`) rather than a different encoder.
 pub struct U8;
 
@@ -509,7 +503,7 @@ impl AbiArg for U8 {
 /// its Pool functions carries and every caller passes zero for.
 ///
 /// The encoding is [`numeric_word`], exactly as [`U8`] and [`U24`]: the
-/// three differ only in the RANGE the Rust type claims and in the spelling
+/// three differ only in the range the Rust type claims and in the spelling
 /// that goes into the selector — and the spelling is the whole point,
 /// because `supply(address,uint256,address,uint16)` and
 /// `supply(address,uint256,address,uint256)` are different functions.
@@ -545,7 +539,7 @@ impl AbiArg for U24 {
 
 /// Solidity `uint256` carried by a `Uint<64>` — the range a Midnight-side
 /// amount actually occupies (every vault mint is the `Uint<64>` API), and
-/// the width the MPC narrows an attested `uint256` OUTPUT to.
+/// the width the MPC narrows an attested `uint256` output to.
 pub struct U64;
 
 impl AbiType for U64 {
@@ -580,7 +574,7 @@ impl AbiArg for U128 {
     }
 }
 
-/// Solidity `uint160` carried by an ALREADY-ENCODED word.
+/// Solidity `uint160` carried by an already-encoded word.
 ///
 /// The only `uint160` in the corpus is Uniswap's `sqrtPriceLimitX96`, which
 /// the vault passes as a literal zero word — no encoder, no instruction.
@@ -600,7 +594,7 @@ impl AbiArg for U160 {
     }
 }
 
-/// Solidity `uint256` at its full width — an ALREADY-ENCODED word, since no
+/// Solidity `uint256` at its full width — an already-encoded word, since no
 /// single field element holds 256 bits.
 ///
 /// The corpus's one full-width value is the unlimited allowance
@@ -622,18 +616,18 @@ impl AbiArg for U256 {
 
 // ---- the attested return -----------------------------------------------------
 
-/// WHAT THE MPC ATTESTS FOR A RETURN TYPE — `serializedOutput`: its byte
+/// What the MPC attests for a return type — `serializedOutput`: its byte
 /// width, its circuit shape, and how a circuit reads the ABI value back out
-/// of it (M44 rung D).
+/// of it.
 ///
-/// A V1 attestation signs the output as BYTES at a width the digest commits
+/// A V1 attestation signs the output as bytes at a width the digest commits
 /// to (`signet_v1::calculate_attestation_digest_v1`), not as a decoded
 /// value: the MPC decodes the EVM return under the record's
 /// `outputDeserializationSchema`, re-serializes it with Borsh and signs
 /// `[tag, requestId, blockHeight, outputKind, LEN, output]`. So a settle
-/// circuit takes the BYTES and narrows them itself, which is where the
+/// circuit takes the bytes and narrows them itself, which is where the
 /// `Bytes<32> as Uint<128>` hazard lives (bug report 4) — and why the
-/// narrowing is written ONCE, here, rather than per settle circuit:
+/// narrowing is written once, here, rather than per settle circuit:
 ///
 /// - a `bool` is one byte that must be 0 or 1, and "true" is `byte == 1`,
 ///   as compactc 0.36 lowers `deserialize<_, 1>(output).success`;
@@ -643,7 +637,7 @@ impl AbiArg for U256 {
 /// - nothing at all is [`Bytes0`] — no slot, no limb, and the verdict
 ///   (`signet_v1::output_kind`) is the whole answer.
 ///
-/// SEPARATE FROM [`AbiArg`] in both directions. An argument has a word and
+/// Separate from [`AbiArg`] in both directions. An argument has a word and
 /// may have no attested form ([`Address`] is never a return in the
 /// library); a return has an attested form and may have no word
 /// ([`Unit`]). A return type with no impl here cannot be named by a slot at
@@ -682,7 +676,7 @@ impl AbiReturn for Unit {
 ///
 /// compactc 0.36 lowers `deserialize<VaultResponse, 1>(output).success` to
 /// `constrain_to_boolean` on the byte, then `byte == 1`, so a byte of 2 is a
-/// proof failure, not FALSE; this lineage says the same thing.
+/// proof failure, not false; this lineage says the same thing.
 impl AbiReturn for Bool {
     const LEN: usize = 1;
     type Serialized = Bytes<1, Private>;
@@ -699,7 +693,7 @@ impl AbiReturn for Bool {
 }
 
 /// A Borsh `uint256` narrowed to a `Uint<64>` — the width a shielded mint
-/// takes, so the narrowing is TWO checks: byte 31 zero and the low 31 bytes
+/// takes, so the narrowing is two checks: byte 31 zero and the low 31 bytes
 /// under 2^128 ([`checked_truncation_u128`]), then the 64-bit
 /// range check the deployed source's `as Uint<64>` emits.
 impl AbiReturn for U64 {
@@ -731,7 +725,7 @@ impl AbiReturn for U128 {
     }
 }
 
-/// A Borsh `uint256` AT ITS FULL WIDTH — the 32 bytes unnarrowed, for a
+/// A Borsh `uint256` at its full width — the 32 bytes unnarrowed, for a
 /// settle that compares them rather than counting with them. No check is
 /// owed because nothing is cast.
 impl AbiReturn for U256 {
@@ -767,7 +761,7 @@ pub trait AbiTuple {
     type Wires<V: Vis>;
 
     /// The comma-joined [`AbiType::SOLIDITY`] spellings — the inside of the
-    /// selector signature's parentheses. Built at CIRCUIT-BUILD TIME, in
+    /// selector signature's parentheses. Built at circuit-build time, in
     /// Rust, like the keccak that consumes it.
     fn signature() -> String;
 
@@ -817,11 +811,11 @@ abi_tuple!(8; A => 0, B => 1, C => 2, D => 3, E => 4, F => 5, G => 6, H => 7);
 
 // ---- the arguments, built one at a time ---------------------------------------
 
-/// THE ARGUMENTS OF A CALL, BUILT ONE AT A TIME — a tuple of closures, one
+/// The arguments of a call, built one at a time — a tuple of closures, one
 /// per element of [`EvmCall::Args`], each run immediately before its own word
 /// is encoded.
 ///
-/// [`AbiTuple::words`] takes the VALUES, which means every argument exists
+/// [`AbiTuple::words`] takes the values, which means every argument exists
 /// before the first encoder runs. That is the right shape for a caller whose
 /// arguments are already in hand, and the wrong one for a caller whose second
 /// argument comes from a ledger read: the read would emit before the first
@@ -829,7 +823,7 @@ abi_tuple!(8; A => 0, B => 1, C => 2, D => 3, E => 4, F => 5, G => 6, H => 7);
 /// instruction streams have it between (the vault's `supply` reads
 /// `vaultEvmAddress` after encoding `amount`, and `approveStata` builds its
 /// constant allowance word after encoding the spender). So
-/// `evm_flow::Pending::request_with` takes BUILDERS, and the order
+/// `evm_flow::Pending::request_with` takes builders, and the order
 /// they emit in is the order the words come out.
 ///
 /// ```
@@ -891,13 +885,13 @@ abi_args!(
 
 // ---- the callee's interface --------------------------------------------------
 
-/// A CALLEE INTERFACE: a set of functions an EVM contract claims to expose.
+/// A callee interface: a set of functions an EVM contract claims to expose.
 ///
 /// It is what a `Contract<I>` is typed by, and
 /// what [`EvmCall::Callee`] names. The library's own set is
-/// [`erc20::Erc20`], [`erc4626::Erc4626`] and
-/// [`uniswap_v3::UniswapV3Router`] today (`Weth`, `AaveV3Pool`, `Erc721`,
-/// `UsdtLike` in rungs B and C); the trait is OPEN, so a contract calling a
+/// [`erc20::Erc20`], [`erc4626::Erc4626`],
+/// [`uniswap_v3::UniswapV3Router`], `Weth`, `AaveV3Pool`, `Erc721` and
+/// `UsdtLike`; the trait is open, so a contract calling a
 /// deployment of its own declares a marker in one line:
 ///
 /// ```
@@ -913,18 +907,18 @@ abi_args!(
 /// ledger block.
 pub trait Interface: 'static {}
 
-/// INTERFACE INHERITANCE: `I: Extends<Base>` says a `Contract<I>` may be
+/// Interface inheritance: `I: Extends<Base>` says a `Contract<I>` may be
 /// handed a `Base` call.
 ///
 /// Reflexive by the blanket impl below, so an interface always takes its own
-/// calls and the common case needs no impl at all. The one inheritance rung
-/// A carries is the real one: an ERC-4626 vault IS an ERC-20 (its shares are
+/// calls and the common case needs no impl at all. A real inheritance:
+/// an ERC-4626 vault is an ERC-20 (its shares are
 /// a token), so `impl Extends<Erc20> for Erc4626` is what lets the deployed
 /// vault's `approve_stata` file an [`erc20::Approve`] against its
 /// `Contract<Erc4626>` stata-token cell.
 ///
-/// COHERENCE: a downstream crate may write `impl Extends<Erc20> for MyToken`
-/// for its OWN marker, and may not write `impl Extends<Erc20> for Erc4626`
+/// Coherence: a downstream crate may write `impl Extends<Erc20> for MyToken`
+/// for its own marker, and may not write `impl Extends<Erc20> for Erc4626`
 /// (the orphan rule). The library decides its own inheritance, which is
 /// right — inheritance here is a claim about a deployed contract's ABI.
 pub trait Extends<Base: Interface>: Interface {}
@@ -935,20 +929,20 @@ impl<I: Interface> Extends<I> for I {}
 // ---- the call ----------------------------------------------------------------
 
 /// A named EVM function call: what it is called, what it takes, what it
-/// returns, WHICH INTERFACE EXPOSES IT and what it may spend.
+/// returns, which interface exposes it and what it may spend.
 ///
 /// Everything else — the selector, the word count, the response type, the
-/// schema spellings — is DERIVED from these, which is the whole point
+/// schema spellings — is derived from these, which is the whole point
 /// (notes/evm-calls.org §2).
 ///
-/// WHAT IS NOT HERE, since M38 rung A: the OUTPUT SCHEMA the MPC decodes the
+/// What is not here: the output schema the MPC decodes the
 /// return under, and with it the deployed record's name for the attested
 /// value. Neither is a fact about the Solidity function — the same
 /// `transfer` is decoded for its flag by a vault and left undecoded by a
-/// protocol that wants only the verdict — so both live on the SLOT's
+/// protocol that wants only the verdict — so both live on the slot's
 /// `Filing` (notes/evm-interfaces.org §1).
 pub trait EvmCall {
-    /// THE INTERFACE THAT EXPOSES THIS FUNCTION.
+    /// The interface that exposes this function.
     ///
     /// A call may be filed only against a `Contract<I>` whose `I`
     /// [`Extends`] this — so a `transfer` cannot be sent to a
@@ -968,11 +962,11 @@ pub trait EvmCall {
     /// consumes.
     type Return: AbiType;
 
-    /// The gas LIMIT (not a price; the fee envelope is `build_tx`'s).
+    /// The gas limit (not a price; the fee envelope is `build_tx`'s).
     ///
-    /// A PER-FUNCTION DEFAULT — a `transfer` costs what a transfer costs —
+    /// A per-function default — a `transfer` costs what a transfer costs —
     /// which is why it stayed here when the kind left (§2.3). The library's
-    /// values ARE the deployed vault's: [`erc20::CALL_GAS`],
+    /// values are the deployed vault's: [`erc20::CALL_GAS`],
     /// [`erc4626::CALL_GAS`], [`uniswap_v3::SWAP_GAS`]. A deployment that
     /// needs another limit passes `Envelope::caller` today.
     const GAS_LIMIT: u64;
@@ -981,7 +975,7 @@ pub trait EvmCall {
     ///
     /// The default is `NAME(comma-joined argument types)`. It is overridable
     /// for the one shape the flat join cannot spell: a call whose arguments
-    /// are a Solidity STRUCT, which the ABI renders as a nested tuple —
+    /// are a Solidity struct, which the ABI renders as a nested tuple —
     /// `exactOutputSingle((address,address,…))`. See
     /// [`uniswap_v3::ExactOutputSingle`].
     fn signature() -> String {
@@ -990,7 +984,7 @@ pub trait EvmCall {
 
     /// The four-byte selector: `keccak256(signature())[..4]`.
     ///
-    /// Hashed HERE, in Rust, when the circuit is built — a selector is a
+    /// Hashed here, in Rust, when the circuit is built — a selector is a
     /// build-time constant, and the artifact only ever sees the immediate.
     /// No `keccak256` instruction is emitted by anything in this module.
     fn selector() -> [u8; 4] {
@@ -998,7 +992,7 @@ pub trait EvmCall {
         [digest[0], digest[1], digest[2], digest[3]]
     }
 
-    /// WHAT A SETTLE CIRCUIT IS HANDED once success has been asserted —
+    /// What a settle circuit is handed once success has been asserted —
     /// the identity by default ([`FromReturn`]), `()` for a call whose
     /// whole return was the flag [`Self::succeeded`] just checked.
     ///
@@ -1007,17 +1001,17 @@ pub trait EvmCall {
     /// this?" is answered.
     type Success: FromReturn<<Self::Return as AbiType>::Wire<Private>>;
 
-    /// DID IT WORK? — the predicate `evm_flow::Pending::complete`
+    /// DID it work? — the predicate `evm_flow::Pending::complete`
     /// asserts and `evm_flow::Pending::refund` negates, over the
     /// attested return value (notes/evm-calls.org §3.2).
     ///
-    /// NO DEFAULT, deliberately. "Executed ⇒ succeeded" is the answer for
-    /// most calls and the WRONG one for an ERC-20 `transfer`, which mines
+    /// No default, deliberately. "Executed ⇒ succeeded" is the answer for
+    /// most calls and the wrong one for an ERC-20 `transfer`, which mines
     /// happily and returns `false`; a default would make the dangerous case
     /// the one nobody has to type. So every call type answers, and the two
     /// answers already in the vocabulary are [`always`] (a number came back,
     /// so it executed — the constant-true assert folds away) and
-    /// [`is_true`] (the returned flag IS the verdict).
+    /// [`is_true`] (the returned flag is the verdict).
     ///
     /// A call with a business notion of success writes it here — an
     /// ERC-4626 `deposit` that minted zero shares executed perfectly and
@@ -1051,7 +1045,7 @@ pub trait EvmCall {
         output: &<Self::Return as AbiType>::Wire<Private>,
     ) -> Check<Private>;
 
-    /// The projection, applied AFTER [`Self::succeeded`] has been asserted.
+    /// The projection, applied after [`Self::succeeded`] has been asserted.
     /// The default is [`Self::Success`]'s own [`FromReturn`]; override it
     /// for a projection that needs the circuit (a decode, a range check).
     fn map(
@@ -1064,15 +1058,15 @@ pub trait EvmCall {
 
 // ---- ether ---------------------------------------------------------------------
 
-/// A PAYABLE FUNCTION — one that may be called WITH ETHER ATTACHED.
+/// A payable function — one that may be called with ether attached.
 ///
 /// Every other call this library builds fixes the transaction's `value`
 /// field at zero: a token call moves tokens, not ether. WETH's `deposit()`
-/// is the exception — the ether IS the argument, and a `deposit` with
+/// is the exception — the ether is the argument, and a `deposit` with
 /// `value = 0` wraps nothing.
 ///
-/// A MARKER, not a field, because that is the top rung of the project's
-/// ladder (CLAUDE.md: missing impl > distinct types > inline-const assert >
+/// A marker, not a field, because that is the top rung of the project's
+/// ladder (missing impl > distinct types > inline-const assert >
 /// panic). `build_tx_payable` and
 /// `Pending::request_payable`
 /// are the only ways to put a non-zero `value` on the wire and both are
@@ -1081,30 +1075,29 @@ pub trait EvmCall {
 /// — rather than an amount that silently goes nowhere. Nothing about a non-payable call changes: it has
 /// no impl, no extra field and no extra instruction.
 ///
-/// The converse is NOT enforced and is not a mistake: a payable call may be
+/// The converse is not enforced and is not a mistake: a payable call may be
 /// made through the ordinary `build_tx`, which is a call with no ether —
 /// which is what Solidity means by payable.
 pub trait Payable: EvmCall {}
 
 // ---- did it work? ------------------------------------------------------------
 
-/// A `Check` that is CONSTANTLY TRUE — the [`EvmCall::succeeded`] of a call
+/// A `Check` that is constantly true — the [`EvmCall::succeeded`] of a call
 /// whose return carries no failure signal of its own.
 ///
-/// It lowers to `assert` on the IMMEDIATE 1, which
+/// It lowers to `assert` on the immediate 1, which
 /// `minocrab_ir::passes::drop_true_asserts` removes in
 /// `Builder::finish` (notes/ir-passes.org §11). So "executed is succeeded"
-/// costs exactly nothing in the artifact, and it costs it by FOLDING rather
-/// than by a branch in this API that an author could take wrongly (dmd,
-/// 2026-09-05: *"I'm inclined to just use the fold"*).
+/// costs exactly nothing in the artifact, and it costs it by folding rather
+/// than by a branch in this API that an author could take wrongly.
 pub fn always(c: &mut Circuit) -> Check<Private> {
     is_true(BoolWire::from_field_unchecked(c.constant(1u64).private()))
 }
 
-/// THE PROJECTION [`EvmCall::map`] applies to an attested return value —
+/// The projection [`EvmCall::map`] applies to an attested return value —
 /// what a settle circuit is handed once success has been asserted.
 ///
-/// The default is the IDENTITY (the blanket impl below), so a call that
+/// The default is the identity (the blanket impl below), so a call that
 /// wants the number back writes `type Success = Uint<64, Private>` and
 /// nothing else. The one other impl is the interesting one: a `Bool` return
 /// maps to `()`, because a flag [`EvmCall::succeeded`] has already asserted
@@ -1120,7 +1113,7 @@ pub trait FromReturn<W> {
     fn from_return(c: &mut Circuit, w: W) -> Self;
 }
 
-/// THE IDENTITY: hand back exactly what the MPC attested.
+/// The identity: hand back exactly what the MPC attested.
 impl<W> FromReturn<W> for W {
     fn from_return(_c: &mut Circuit, w: W) -> W {
         w
@@ -1137,7 +1130,7 @@ mod tests {
     use super::*;
 
     /// The selector signatures, spelled out. `tests/evm_abi.rs` pins the
-    /// HASHES against the vault's constants (which the differential suite
+    /// hashes against the vault's constants (which the differential suite
     /// pins against compactc's own calldata); this pins the strings that go
     /// into them, where a typo would otherwise only show as four wrong bytes.
     #[test]
@@ -1188,8 +1181,8 @@ mod tests {
         );
     }
 
-    /// THE GAS DEFAULTS ARE THE DEPLOYED VAULT'S, re-homed (§2.3): the
-    /// numbers moved into this library and the vault's own constants are
+    /// The gas defaults are the deployed vault's (§2.3): the
+    /// numbers live in this library and the vault's own constants are
     /// aliases of them, so no request circuit's gas immediate can move.
     #[test]
     fn the_gas_defaults_are_the_vaults() {
@@ -1203,7 +1196,7 @@ mod tests {
     }
 
 
-    /// THE ATTESTED WIDTHS: what the MPC's Borsh of each return type takes,
+    /// The attested widths: what the MPC's Borsh of each return type takes,
     /// which is the `LEN` inside the attestation digest and therefore the
     /// width a settle circuit must verify at.
     #[test]

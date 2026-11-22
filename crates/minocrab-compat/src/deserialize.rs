@@ -1,7 +1,7 @@
 //! `deserialize<T, N>(bytes)`, as compactc 0.36 lowers it, one field at a
 //! time.
 //!
-//! WHAT IS COMPACTC'S: each byte a field occupies is read ON ITS OWN, from the
+//! What is compactc's: each byte a field occupies is read on its own, from the
 //! limb that holds it, by two splits: `div_mod_power_of_two(limb, 8·k)` keeps
 //! the quotient (the limb shifted down to byte `k`), then
 //! `div_mod_power_of_two(_, 8)` keeps the remainder (the byte). That is
@@ -12,7 +12,7 @@
 //! port reads only the fields its circuit uses, through these readers, and
 //! emits nothing for the rest (the padding included).
 //!
-//! THE LEAN FORM splits once per byte, as one chain down the limb
+//! The lean form splits once per byte, as one chain down the limb
 //! (`minocrab_std::explode_limb`), stopped at the last byte read. Splitting
 //! a whole `Bytes<N>` with `BytesN::to_le_bytes` and reading a few of its
 //! bytes is neither: under the compactc profile, which does not delete dead
@@ -41,7 +41,7 @@ impl<'a, V: Vis, const N: usize> Packed<'a, V, N> {
     }
 
     /// `bytes-ref(bytes, at)`: byte `at` of the string, 0 first. Byte `at`
-    /// lives in the limb `at / 31` from the END of the slot order (the last
+    /// lives in the limb `at / 31` from the end of the slot order (the last
     /// limb holds bytes 0..31), `at % 31` bytes up.
     fn byte_at(&self, c: &mut Circuit, at: usize) -> Wire<FieldT, V> {
         let limbs = self.bytes.limbs();

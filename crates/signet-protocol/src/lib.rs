@@ -2,10 +2,10 @@
 //! nothing else.
 //!
 //! Three parties read these facts: the contract (`minocrab-contracts`'
-//! `signet_contract`, which EMITS the events), the artifact pipeline
+//! `signet_contract`, which emits the events), the artifact pipeline
 //! (`signet-artifacts`, which names the circuits on disk and hashes their
 //! verifier keys into `expectedVk.json`), and the publisher
-//! (`minocrab-publisher`, which `sig-net/mpc` links to BUILD the events). Only
+//! (`minocrab-publisher`, which `sig-net/mpc` links to build the events). Only
 //! the last of those has to be publishable, and the first is a test corpus
 //! that never will be — so the facts live here, in a crate with one
 //! dependency, and each reader spells them once from this definition.
@@ -28,9 +28,9 @@
 //!
 //! # What is not here, deliberately
 //!
-//! No circuit code, no ledger types, no key material. The envelope LAYOUTS
+//! No circuit code, no ledger types, no key material. The envelope layouts
 //! (which byte of the 288 carries what) are the publisher's, next to the
-//! functions that fill and read them. The protocol HASHES (request id,
+//! functions that fill and read them. The protocol hashes (request id,
 //! transaction digest, attested output hash, attestation digest) are Poseidon
 //! over the ledger's field representation, so they need the ledger's crates
 //! and live in `signet-hashing`, which reads its domain tags from here.
@@ -91,10 +91,10 @@ pub mod misc {
 
 /// The three signer circuits and their events.
 ///
-/// The circuit names are the COMPACT names — what compactc's own artifacts
+/// The circuit names are the Compact names — what compactc's own artifacts
 /// are called, what `sig-net/mpc`'s `expectedVk` table and `RESPOND_CIRCUITS`
 /// key by, what `signet-artifacts`' managed directory names its files, and
-/// what the captured on-chain transactions carry as entry points. NOT the
+/// what the captured on-chain transactions carry as entry points. Not the
 /// Rust function names.
 ///
 /// The event names are what each circuit pads into the first 32 bytes of its
@@ -151,7 +151,7 @@ pub mod circuits {
 
 /// The Signet module's protocol enums (midnight-integration v0.25.0, unchanged
 /// at v0.26.0-rc.15, `Signet.compact`), each carried on the ledger and in every hash as its
-/// variant INDEX in one byte. The source says of every one of them: append
+/// variant index in one byte. The source says of every one of them: append
 /// variants only.
 ///
 /// Each type converts to its index with `as u8` and back with
@@ -268,7 +268,7 @@ protocol_enum! {
     }
 }
 
-/// EXACTLY `@midnight-ntwrk/compact-js`'s `hashVerifierKey`
+/// Exactly `@midnight-ntwrk/compact-js`'s `hashVerifierKey`
 /// (`ContractKeyLocation.js`: `createHash('sha256').update(bytes).digest
 /// ('hex')`) on the raw file bytes `prover.ts`'s `keyMaterial` reads with
 /// `readFile` — no framing, no prefix. Lowercase hex, 64 characters.
@@ -276,7 +276,7 @@ protocol_enum! {
 /// The one definition in this workspace: `signet-artifacts` writes
 /// `expectedVk.json` with it, `minocrab-publisher` checks a deployment's
 /// verifier keys with it, and `signet-artifacts`' `tests/hash_verifier_key_pin.rs`
-/// pins it against the TypeScript function itself under node (M29 B).
+/// pins it against the TypeScript function itself under node.
 pub fn hash_verifier_key(bytes: &[u8]) -> String {
     use sha2::{Digest, Sha256};
     let digest = Sha256::digest(bytes);

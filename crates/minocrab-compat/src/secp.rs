@@ -1,10 +1,10 @@
 //! `secp256k1EcdsaVerify`, as compactc 0.36 lowers it.
 //!
-//! WHAT IS COMPACTC'S: the identity point the key is refused against is
-//! BUILT in circuit, `ec_mul_generator` of a zero scalar made by two
+//! What is compactc's: the identity point the key is refused against is
+//! built in circuit, `ec_mul_generator` of a zero scalar made by two
 //! conversions (`into_bytes32` then `from_bytes32`), and the recovered
 //! point's x coordinate makes a round trip through `Bytes<32>` (into bytes,
-//! the limb pair and back) before it is compared with `r`. THE LEAN FORM
+//! the limb pair and back) before it is compared with `r`. The lean form
 //! compares against the identity as a constant and converts the coordinate
 //! once.
 

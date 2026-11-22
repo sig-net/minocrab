@@ -1,13 +1,13 @@
 //! # minocrab-compat: compactc's lowerings, for circuits ported from Compact
 //!
-//! WHY THIS CRATE EXISTS. A circuit ported from a Compact contract has to
+//! Why this crate exists. A circuit ported from a Compact contract has to
 //! emit compactc's instruction stream byte for byte. That equality is how a
 //! port is checked against the compiler's own output (the instruction-level
 //! differentials compare the two streams), and it is what keeps an artifact
 //! whose verifier key is already deployed from moving. The items here are
 //! the compactc-shaped lowerings that equality needs.
 //!
-//! NOTHING IN IT IS THE CHEAPEST CORRECT LOWERING. Each module and item says
+//! Nothing in it is the cheapest correct lowering. Each module and item says
 //! what about its shape is compactc's and what the lean form is. A contract
 //! with no Compact twin and no deployed key should not use this crate; it
 //! uses `minocrab_std`, whose gadgets are free to get cheaper.
@@ -36,7 +36,7 @@ use minocrab::{Circuit, Lowering, SelfAddressReads};
 /// Set this circuit's lowering to compactc's, for every circuit ported from
 /// Compact and every circuit of the deployed signer.
 ///
-/// A ported contract says it ONCE, on its block:
+/// A ported contract says it once, on its block:
 /// `#[contract(lowering = minocrab_compat::profile)]`, and `#[contract]`
 /// calls this on each of its circuits before the body. A circuit built by
 /// hand outside a `#[contract]` block (through `entry`, or `Circuit::new()`)
@@ -45,14 +45,15 @@ use minocrab::{Circuit, Lowering, SelfAddressReads};
 /// The settings no gadget can carry, because shared helpers reach them
 /// through core ([`Circuit::set_lowering`]):
 ///
-/// - `kernel.self()` is read at EVERY call ([`SelfAddressReads::EveryCall`]):
+/// - `kernel.self()` is read at every call ([`SelfAddressReads::EveryCall`]):
 ///   compactc never caches it. The lean form reads it once per circuit. With
 ///   the profile set, `kernel::cache_self_address` is refused at build time.
-/// - repeated range constraints are KEPT (`dedup_range_constraints: false`):
+/// - repeated range constraints are kept (`dedup_range_constraints: false`):
 ///   compactc re-emits them. The lean form, the default, drops the implied
 ///   ones (two rows each).
-/// - the simplification pass is OFF (`simplify: false`): compactc emits the
-///   dead and repeated computations it deletes. It is on by default.
+/// - the simplification pass is off (`simplify: false`): its merging and
+///   select-folding change the stream compactc emits (compactc's own
+///   optimiser already removes unread instructions). It is on by default.
 ///
 /// The struct literal is exhaustive on purpose: a setting added to
 /// [`Lowering`] stops this compiling until it says what compactc does.
