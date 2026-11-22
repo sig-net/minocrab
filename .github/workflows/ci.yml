@@ -11,11 +11,11 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
-# A newer push to the same ref supersedes the run in flight.
 # No job writes to the repository; the token is read-only.
 permissions:
   contents: read
 
+# A newer push to the same ref supersedes the run in flight.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
