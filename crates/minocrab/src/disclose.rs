@@ -319,14 +319,6 @@ pub fn untyped_labels(compiled: &Compiled) -> BTreeSet<&str> {
         .collect()
 }
 
-/// A label names a value type, not a record: one `disclose_as::<Coin>` on a
-/// qualified coin records its fields and its Merkle index separately, and an
-/// `Either` recipient records both arms, all under the one label. So the
-/// declaration is a set of labels by design, and "the same label twice" is
-/// the normal shape of a compound value — not a second value slipping out.
-/// What the set cannot distinguish is a bare `c.disclose(w, "coin")` from the
-/// typed path — that is closed by kind, not by counting: see
-/// [`DisclosureKind`] and the bare-label report in the assertions below.
 /// Assert that a circuit with NO `Discloses<..>` declaration disclosed
 /// nothing — the test `#[circuit]` generates for such a circuit, so that a
 /// missing declaration is a statement ("this circuit makes no private value
