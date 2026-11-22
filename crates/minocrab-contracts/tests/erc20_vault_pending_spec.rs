@@ -1,8 +1,8 @@
-//! The `erc20_vault_pending` PROPERTY HARNESS (M35 rung C's spec-harness
+//! The `erc20_vault_pending` property harness (the spec-harness
 //! extension) — spec ≡ circuit ≡ ledger, at scale, for all seventeen
 //! circuits on the `Pending` lineage.
 //!
-//! Four links per generated case, WITHOUT a compactc comparator (this
+//! Four links per generated case, without a compactc comparator (this
 //! lineage has no compactc twin — notes/signet-async.org "Rung C as
 //! built"):
 //!
@@ -10,7 +10,7 @@
 //!    either accepts the witness or does not. They must agree.
 //! 2. **Reference VM.** Every accepted run is re-validated by
 //!    `IrSource::check`.
-//! 3. **PI-equality, re-anchored.** The preimage's transcript IS the
+//! 3. **PI-equality, re-anchored.** The preimage's transcript is the
 //!    reference op stream's `field_repr`, and the PI vector is exactly
 //!    that transcript plus the skipped Impacts' zeros.
 //! 4. **Ledger execution.** The op stream runs through the real Impact VM
@@ -83,7 +83,7 @@ fn check_case(
         return Err("reference VM and simulator disagree on pi_skips".into());
     }
 
-    // --- 3. PI-equality, re-anchored to OUR op stream -------------------
+    // --- 3. PI-equality, re-anchored to our op stream -------------------
     let mut expected = Vec::new();
     for op in ops {
         op.field_repr(&mut expected);

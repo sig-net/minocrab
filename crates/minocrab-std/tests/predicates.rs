@@ -1,12 +1,12 @@
 //! Assertion predicates are lowering, not magic: `c.assert(less_than(a, b))`
-//! must produce the BYTE-IDENTICAL ZKIR of the hand-written
+//! must produce the byte-identical ZKIR of the hand-written
 //! `let p = c.less_than(a, b, BITS); c.assert(p);` — with the width read off
 //! the operand type instead of typed at the call site.
 //!
 //! Everything else this file pins is the scope boundary: a predicate that is
 //! never asserted emits nothing, a message is metadata (no instruction), the
 //! combinators lower to exactly the ops they name, and the checks that make
-//! the width sound reject at BUILD time — two of them as compile errors (see
+//! the width sound reject at build time — two of them as compile errors (see
 //! `_COMPILE_ERRORS_NOT_PANICS`), the third as a panic, because the value of
 //! a runtime integer is not in the type system.
 
@@ -178,7 +178,7 @@ fn the_combinators_lower_to_the_ops_they_name() {
     );
 }
 
-/// `or`'s lowering accepts EXACTLY what the De Morgan form accepted and
+/// `or`'s lowering accepts exactly what the De Morgan form accepted and
 /// computes the same value, for every shape of operand on either side,
 /// including leaves whose wires are not bits (an unchecked `Bool` of 2 or of
 /// p − 1). Run through the executor on every assignment of
@@ -273,7 +273,7 @@ fn eval_is_the_comparison_without_the_assert() {
     );
 }
 
-/// An unasserted predicate emits NOTHING — strictly safer than an unasserted
+/// An unasserted predicate emits nothing — strictly safer than an unasserted
 /// `c.less_than(..)`, which emits cost and constrains nothing.
 #[test]
 fn an_unasserted_predicate_emits_nothing() {
@@ -322,8 +322,8 @@ fn the_method_surface_is_the_free_constructors() {
 }
 
 /// Widths come from the types, so two typed operands must agree — and an
-/// ORDERING needs at least one width to run at. Neither is a test here,
-/// because neither is a runtime failure any more (M9 phase 8): both are
+/// ordering needs at least one width to run at. Neither is a test here,
+/// because neither is a runtime failure any more: both are
 /// inline-`const` asserts in the constructors, so
 ///
 /// ```compile_fail
@@ -347,7 +347,7 @@ fn the_method_surface_is_the_free_constructors() {
 /// c.assert(less_than(a, b));  // error[E0080]: … needs a width …
 /// ```
 ///
-/// are BUILD errors at the call site, not panics when the circuit is built.
+/// are build errors at the call site, not panics when the circuit is built.
 /// (Both messages are checked by hand; there is no trybuild in the lock file,
 /// and `compile_fail` doc-tests do not run for a test target — this block is
 /// the record of the two spellings that must not compile.)
@@ -363,7 +363,7 @@ fn equality_of_raw_wires_is_allowed() {
     assert_eq!(c.instruction_count(), 2);
 }
 
-/// The constant side is a CHECKED immediate.
+/// The constant side is a checked immediate.
 #[test]
 #[should_panic(expected = "does not fit the 8 bits")]
 fn a_literal_wider_than_the_comparison_is_rejected() {
@@ -384,7 +384,7 @@ fn visibility_follows_the_meet() {
     let _mixed: Bool<Private> = less_than(secret, public).eval(&mut c);
 }
 
-/// The boolean LEAF (M9 phase 8, candidate 5) costs nothing: `is_true(b)` and
+/// The boolean leaf (candidate 5) costs nothing: `is_true(b)` and
 /// the bare wire are the same stream, so `.message(..)` and the combinators
 /// reach a computed boolean (a map `member` result) for free.
 #[test]
@@ -428,8 +428,8 @@ fn is_true_composes_with_the_combinators() {
     assert_eq!(build(true), build(false));
 }
 
-/// The in-branch assert (M9 phase 8, candidate 6; notes/edsl-trim.org §B) is
-/// the SCOPE, not a `Check` method: `c.when(g, |c| c.assert(p))` lowers to
+/// The in-branch assert (candidate 6; notes/edsl-trim.org §B) is
+/// the scope, not a `Check` method: `c.when(g, |c| c.assert(p))` lowers to
 /// `assert(select(guard, cond, 1))`, with the `1` inline — the same
 /// instruction `Check::when` used to build by hand.
 #[test]
@@ -459,7 +459,7 @@ fn when_is_the_in_branch_assert() {
     assert_eq!(with.assert_messages.len(), 1);
 }
 
-/// A guard may be PUBLIC over a private check — the common case, a public
+/// A guard may be public over a private check — the common case, a public
 /// branch condition gating a secret comparison.
 #[test]
 fn a_public_guard_gates_a_private_check() {
@@ -498,10 +498,10 @@ fn widen_is_free_and_compares_at_the_wider_width() {
     assert_eq!(c.instruction_count(), before);
 }
 
-// --- a literal outside the operand's BOUND (dmd, 2026-08-16) ---------------
+// --- a literal outside the operand's bound (dmd, 2026-08-16) ---------------
 //
 // The width check above is not enough once bounded integers are in play: a
-// `BoundedUint<300>` COMPARES at 9 bits, so `500` fits the width and is still
+// `BoundedUint<300>` compares at 9 bits, so `500` fits the width and is still
 // a value the operand can never take. The comparison is then a constant, which
 // is a bug in every case we can construct.
 
@@ -515,8 +515,8 @@ fn a_literal_above_the_bound_is_rejected() {
     c.assert(less_than(b, 500u64));
 }
 
-/// The bound is EXCLUSIVE, so the largest legal value is `BOUND - 1` and a
-/// literal AT it is fine: `b < 299` is a real question.
+/// The bound is exclusive, so the largest legal value is `BOUND - 1` and a
+/// literal at it is fine: `b < 299` is a real question.
 #[test]
 fn a_literal_at_the_bound_is_accepted() {
     let mut c = Circuit::new();
@@ -524,7 +524,7 @@ fn a_literal_at_the_bound_is_accepted() {
     c.assert(less_than(b, 299u64));
 }
 
-/// The check reads the OTHER operand's type, so it fires with the literal on
+/// The check reads the other operand's type, so it fires with the literal on
 /// either side.
 #[test]
 #[should_panic(expected = "is larger than the largest value the operand it is compared with can hold (299)")]
@@ -547,7 +547,7 @@ fn a_literal_above_a_plain_width_is_still_rejected() {
 // --- subtraction carries Compact's guard (notes/api-safety-survey.org §B1) --
 //
 // compactc inserts `assert(a >= b, "result of subtraction would be negative")`
-// BEFORE every subtraction and then lowers it as neg + add. `Uint::sub` is
+// before every subtraction and then lowers it as neg + add. `Uint::sub` is
 // that, in that order, at that width — so these tests are the claim, not a
 // smoke check.
 

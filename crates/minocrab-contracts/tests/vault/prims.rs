@@ -2,7 +2,7 @@
 //! encodings, hash constructions and signature helpers that reproduce, in
 //! ordinary Rust, exactly what the circuits compute in-circuit.
 //!
-//! ONE concretization (M44): every vault commitment is Poseidon —
+//! One concretization: every vault commitment is Poseidon —
 //! `upgradeFromTransient(transientHash(…))` — as the flush-pattern source has
 //! it (`userCommitment`, `ownershipCommitment`, `requestIndex`, the per-action
 //! args hashes, `vaultTokenDomainSeparator`), and so is the V1 protocol's
@@ -51,7 +51,7 @@ pub fn corpus_zkir_named(name: &str) -> IrSource {
 }
 
 /// A multi-atom value from its limbs and atom widths.
-/// NORMAL FORM: atoms come back with trailing zero bytes stripped
+/// Normal form: atoms come back with trailing zero bytes stripped
 /// (`ValueAtom::normalize`), the ledger's canonical spelling and the one
 /// the executor decodes a program's values into since the FAB-atom fix of
 /// 2026-10 — `bytes<8>` of 123456 is `[40e201]`, not `[40e2010000000000]`.
@@ -94,7 +94,7 @@ pub fn transient_upgrade(limbs: &[Fr]) -> [u8; 32] {
 }
 
 /// `userCommitment(sk)` — `[sk, pad]` since `375071b`: the MPC's
-/// key-derivation PATH of a deposit, and the deployer's identity.
+/// key-derivation path of a deposit, and the deployer's identity.
 pub fn user_commitment(sk: &[u8; 32]) -> [u8; 32] {
     let (p_hi, p_lo) = b32_slots(&pad32(v::USER_PAD));
     let (sk_hi, sk_lo) = b32_slots(sk);
@@ -130,7 +130,7 @@ pub fn vault_domain_sep(erc20: &[u8; 20]) -> [u8; 32] {
     transient_upgrade(&[p_hi, p_lo, Fr::from(0u64), b20(erc20)])
 }
 
-/// `tokenType(vaultTokenDomainSeparator(erc20), self)` — PINNED: the
+/// `tokenType(vaultTokenDomainSeparator(erc20), self)` — pinned: the
 /// ledger derives the colour (coin-structure/src/contract.rs:58-68).
 pub fn vault_color(erc20: &[u8; 20], self_addr: &[u8; 32]) -> [u8; 32] {
     let (d_hi, d_lo) = b32_slots(&vault_domain_sep(erc20));
@@ -140,7 +140,7 @@ pub fn vault_color(erc20: &[u8; 20], self_addr: &[u8; 32]) -> [u8; 32] {
 }
 
 /// The `fff3421c` request id the Pending lineage's V2 records keep: Poseidon
-/// over the WHOLE record's FAB limbs in slot order, upgraded.
+/// over the whole record's FAB limbs in slot order, upgraded.
 pub fn request_id_of(limbs: &[Fr]) -> [u8; 32] {
     transient_upgrade(limbs)
 }
@@ -355,7 +355,7 @@ pub fn abi_num_word(v: u128) -> [u8; 32] {
 }
 
 /// A schema literal's slot limbs: one limb at 31 bytes or fewer, else the
-/// FAB limbing (the leftover tail bytes 31..n FIRST, then bytes 0..31).
+/// FAB limbing (the leftover tail bytes 31..n first, then bytes 0..31).
 pub fn schema_limbs(schema: &[u8]) -> Vec<Fr> {
     if schema.len() <= 31 {
         vec![Fr::from_le_bytes(schema).unwrap()]

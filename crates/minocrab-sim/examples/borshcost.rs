@@ -1,14 +1,14 @@
-//! Row cost of the two `BorshReader` modes (M11 stage 2,
-//! notes/borsh-format.org §"The deserializer"): what it costs to READ a
+//! Row cost of the two `BorshReader` modes
+//! (notes/borsh-format.org §"The deserializer"): what it costs to read a
 //! fixed-width Borsh value back out of packed bytes, per leaf and per record,
 //! in Split mode (one `div_mod` per field boundary interior to a limb) and in
 //! WitnessCheck mode (witness each leaf, constrain it, re-pack and assert
 //! limb equality).
 //!
 //! Everything is marginal over a per-mode baseline — the `Bytes<N>` argument,
-//! its input constraint, and the mode's fixed cost with ZERO leaves read
+//! its input constraint, and the mode's fixed cost with zero leaves read
 //! (Split's pad assertion, WitnessCheck's empty re-pack and its limb
-//! equalities) — so the numbers are the cost of the READS alone.
+//! equalities) — so the numbers are the cost of the reads alone.
 //!
 //! Run: cargo run --release -p minocrab-sim --example borshcost
 
@@ -93,7 +93,7 @@ fn main() {
     leaf!(Flagged<Uint<32, Private>, Private>, "Flagged<u32>");
 
     // The same leaf read at an offset that makes it straddle a 31-byte limb
-    // boundary — Split's cost is a function of the LAYOUT, not just the type.
+    // boundary — Split's cost is a function of the layout, not just the type.
     println!("\n{:28} {:>10} {:>14}", "u64 at byte offset", "Split", "WitnessCheck");
     for skip in [0usize, 23, 27, 30] {
         let s = split(|c, r| {

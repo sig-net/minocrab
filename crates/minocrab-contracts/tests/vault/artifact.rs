@@ -1,8 +1,8 @@
 //! The vault's twenty-nine circuits, named independently of the module that
 //! builds them, with each one's compactc `.zkir` stem.
 //!
-//! One artifact since M28: the compat port, PI-equal to compactc's (the
-//! flush-pattern vault since M44).
+//! One artifact: the compat port, PI-equal to compactc's (the
+//! flush-pattern vault).
 
 use minocrab::Compiled;
 use minocrab_contracts::erc20_vault;

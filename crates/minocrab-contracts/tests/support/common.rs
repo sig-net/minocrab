@@ -30,10 +30,10 @@ pub fn corpus_zkir(dir: &str, name: &str) -> IrSource {
 /// order of first appearance, so two streams that differ only in naming
 /// compare equal.
 ///
-/// BOTH SIDES are folded first (notes/ir-passes.org §2 ii): our builder
+/// Both sides are folded first (notes/ir-passes.org §2 ii): our builder
 /// inlines a `Copy` of an immediate at `finish`, and compactc names some of
 /// the constants it inlines elsewhere, so the comparison is instruction for
-/// instruction MODULO the naming of constants — a rename with no rows, no
+/// instruction modulo the naming of constants — a rename with no rows, no
 /// public input and no semantics. Everything else still compares exactly.
 pub fn canonical(ir: &IrSource) -> String {
     let ir = &minocrab_compat::normalise::folded(ir);
@@ -71,7 +71,7 @@ pub fn canonicalize(text: &str) -> String {
 
 /// The instructions `[start, start + len)` of a stream in [`canonical`]'s
 /// form: folded, one per line, every `%identifier` renamed in order of
-/// first appearance WITHIN THE WINDOW. Two windows compare equal when they
+/// first appearance within the window. Two windows compare equal when they
 /// are the same instructions over the same operands in the same order, up to
 /// naming: how a port shows that one region of its circuit is compactc's
 /// even where the rest is not. Indices are into the folded stream.

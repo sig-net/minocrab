@@ -1,4 +1,4 @@
-//! WHAT THE ZKIR BACKEND ALREADY FOLDS — the measurements our API design
+//! What the ZKIR backend already folds — the measurements our API design
 //! rests on, pinned so they cannot rot silently.
 //!
 //! Every "optimisation" we might do above ZKIR is either duplicating the
@@ -8,31 +8,31 @@
 //! harness use). This file measures it directly: build a baseline circuit,
 //! build it again with a redundancy added, and price the difference.
 //!
-//! THE TABLE, as measured (rows per redundant instruction):
+//! The table, as measured (rows per redundant instruction):
 //!
 //! | pattern | rows each | backend folds it? |
 //! |---|---|---|
-//! | `copy` of an immediate | **0** | YES |
-//! | linear op with a constant operand (`add x, 0`) | **0** | YES |
+//! | `copy` of an immediate | **0** | yes |
+//! | linear op with a constant operand (`add x, 0`) | **0** | yes |
 //! | unused pure instruction (dead code) | 1 | no |
 //! | duplicated pure instruction (common subexpression) | 1 | no |
 //! | repeated `constrain_bits` on the same wire | **2** | no |
 //!
-//! WHAT THAT DECIDES, and why this file is worth its weight:
+//! What that decides, and why this file is worth its weight:
 //!
-//! - Constant folding above ZKIR buys ZERO rows. Every API contortion we
-//!   have made to avoid emitting a `copy` of an immediate — M9 phase 7's
-//!   operand positions, M9 phase 8's inlined guard, M16's
-//!   `AnyWire::immediate`, M17's `UnshieldedToken` — was bought for
-//!   DIFFERENTIAL FIDELITY with compactc, not for cost. Worth knowing
+//! - Constant folding above ZKIR buys zero rows. Every API contortion we
+//!   have made to avoid emitting a `copy` of an immediate — operand
+//!   positions, the inlined guard, `AnyWire::immediate`,
+//!   `UnshieldedToken` — was bought for
+//!   differential fidelity with compactc, not for cost. Worth knowing
 //!   before paying for a fifth.
-//! - Dead code and common subexpressions are NOT folded, so they are real
+//! - Dead code and common subexpressions are not folded, so they are real
 //!   rows. Whether to remove them above ZKIR is a separate question (dead
 //!   code elimination is unsound over effectful instructions; common
 //!   subexpression elimination over ledger reads changes the transcript —
 //!   notes/ir-passes.org).
 //! - A repeated range constraint is the most expensive redundancy of the
-//!   five, at TWICE a multiply. That is what makes "every gadget asserts
+//!   five, at twice a multiply. That is what makes "every gadget asserts
 //!   its own preconditions" costly today, and it is the strongest argument
 //!   for a deduplicating pass.
 //!
@@ -42,7 +42,7 @@
 use minocrab::{Circuit, FieldT};
 use minocrab_sim::cost;
 
-/// Rows of a circuit built by `build`, with OUR passes off
+/// Rows of a circuit built by `build`, with our passes off
 /// (`minocrab_compat::profile`: no simplification, no range dedup), so what
 /// is measured is the backend alone. The lean defaults (M48 C step 3) delete
 /// the dead and repeated instructions and the repeated range constraint

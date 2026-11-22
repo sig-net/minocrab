@@ -1,28 +1,28 @@
-//! M37 rung A — the typed EVM call layer, against the things that already
+//! The typed EVM call layer, against the things that already
 //! pin the vault.
 //!
-//! Four claims, each answering "how do we know?" with an EXISTING oracle
+//! Four claims, each answering "how do we know?" with an existing oracle
 //! rather than a second reading of the same idea:
 //!
-//! 1. SELECTORS. `EvmCall::selector()` keccaks a signature built from the
+//! 1. Selectors. `EvmCall::selector()` keccaks a signature built from the
 //!    argument tuple's types. The five call types the vault uses must hash
 //!    to the five selector constants in `erc20_vault` — and those are not
 //!    our own arithmetic: `erc20_vault_differential` pins the vault's
 //!    calldata, selector bytes and all, against compactc's own artifact.
-//!    Plus one selector NOT in the vault (`balanceOf(address)` = 70a08231,
+//!    Plus one selector not in the vault (`balanceOf(address)` = 70a08231,
 //!    a value anyone can look up) so the test is not circular.
-//! 2. WORDS. Each `AbiType::word`, simulated on a concrete value, equals
+//! 2. Words. Each `AbiType::word`, simulated on a concrete value, equals
 //!    the host-side oracle in `tests/vault/prims.rs` (`abi_addr_word` /
 //!    `abi_num_word`) — the same equality the vault differential rests on.
-//! 3. ZERO MOVEMENT. The untyped encoders (`evm::address_word`,
-//!    `evm::numeric_word`, the bodies the Signet ports used to carry) and
+//! 3. Zero movement. The untyped encoders (`evm::address_word`,
+//!    `evm::numeric_word`, shared with the Signet ports) and
 //!    their typed spellings (`Address::word`, `U128::word`, `U64::word`)
 //!    serialize to byte-identical ZKIR. (The circuit dump says the same
 //!    thing at scale; this says it in one assertion a reader can hold.)
 //! 4. `build_tx`. `build_tx::<erc20::Transfer, 2>` emits the same stream as
 //!    `erc20_vault_pending::erc20_call` — whose twenty lines are copied in
-//!    here as `reference::erc20_call`, since rung A does not rewire the
-//!    vault and the comparison has to be against what the vault does today.
+//!    here as `reference::erc20_call`, so the comparison is against what
+//!    the vault does.
 
 use std::borrow::Cow;
 
@@ -99,7 +99,7 @@ fn run_word(
 
 // ---- 1. selectors ------------------------------------------------------------
 
-/// The five calls the vault makes, hashed from their argument TYPES, are the
+/// The five calls the vault makes, hashed from their argument types, are the
 /// five selector constants the differential suite pins against compactc's
 /// calldata.
 #[test]
@@ -131,7 +131,7 @@ fn selectors_are_the_vaults() {
     );
 }
 
-/// NOT CIRCULAR: a selector the vault does not contain, against the value
+/// Not circular: a selector the vault does not contain, against the value
 /// every ERC-20 explorer prints for it.
 ///
 /// `balanceOf(address)` is `70a08231`. Nothing in this repository stores
@@ -156,7 +156,7 @@ fn the_hash_is_not_circular() {
     assert_eq!(BalanceOf::selector(), [0x70, 0xa0, 0x82, 0x31]);
 }
 
-/// The struct-tuple wrapping is load-bearing: WITHOUT the extra parentheses
+/// The struct-tuple wrapping is load-bearing: without the extra parentheses
 /// `exactOutputSingle` hashes to something else entirely.
 #[test]
 fn the_struct_wrapping_changes_the_selector() {
@@ -298,7 +298,7 @@ fn the_moved_address_encoder_did_not_move_an_instruction() {
     assert_eq!(old, new);
 }
 
-/// The same for the numeric encoder — and for BOTH typed spellings of it,
+/// The same for the numeric encoder — and for both typed spellings of it,
 /// since `U64` and `U128` differ only in the range they claim.
 #[test]
 fn the_moved_numeric_encoder_did_not_move_an_instruction() {
@@ -393,7 +393,7 @@ mod reference {
 }
 
 /// Publish every wire of an `EvmTx<2>`, so the ZKIR comparison is over the
-/// transaction the two constructions BUILD, not merely over what they
+/// transaction the two constructions build, not merely over what they
 /// happened to emit on the way.
 fn publish_tx(c: &mut Circuit, tx: EvmTx<2>) {
     let fields = [
@@ -509,15 +509,15 @@ fn build_tx_carries_the_declared_envelope() {
     assert_eq!((native(11), native(12)), (hi1, lo1), "word 1 = the amount");
 }
 
-/// A FILING MAY OVERRIDE [`EvmCall::GAS_LIMIT`] (M38 rung H,
-/// notes/evm-interfaces.org §10). `Filing::GAS_LIMIT`'s default is the
-/// call's own — every filing before this rung takes it, so ZERO MOVEMENT
+/// A filing may override [`EvmCall::GAS_LIMIT`]
+/// (notes/evm-interfaces.org §10). `Filing::GAS_LIMIT`'s default is the
+/// call's own — every filing before this rung takes it, so zero movement
 /// holds for them — but a filing that names its own const changes the
 /// immediate `build_tx_filed` bakes in, and `build_tx_filed` is exactly
 /// what `Pending::request` and `Pending::request_payable` call.
 #[test]
 fn build_tx_filed_reads_the_filings_gas_limit_override() {
-    /// `erc20::Transfer` filed at a limit the CALL does not claim — the
+    /// `erc20::Transfer` filed at a limit the call does not claim — the
     /// deployment knows something the per-function default does not.
     struct OverriddenTransfer;
     impl Filing for OverriddenTransfer {
@@ -576,7 +576,7 @@ fn build_tx_filed_reads_the_filings_gas_limit_override() {
 // ---- the outcome predicate ----------------------------------------------------
 
 /// The instructions of a serialized circuit, by op name — enough to say what
-/// was emitted without pinning the identifier NUMBERS, which shift when an
+/// was emitted without pinning the identifier numbers, which shift when an
 /// instruction is folded away (a folded `Copy` still consumed its name).
 fn ops_of(zkir: &str) -> Vec<String> {
     let value: serde_json::Value = serde_json::from_str(zkir).expect("its own output parses");
@@ -588,7 +588,7 @@ fn ops_of(zkir: &str) -> Vec<String> {
         .collect()
 }
 
-/// `always(c)` COSTS NOTHING, and it costs nothing by FOLDING rather than by
+/// `always(c)` costs nothing, and it costs nothing by folding rather than by
 /// a branch in the API (dmd, 2026-09-05; notes/ir-passes.org §11).
 ///
 /// The two circuits below differ by exactly one `c.assert(always(c))`, and
@@ -596,7 +596,7 @@ fn ops_of(zkir: &str) -> Vec<String> {
 /// of the immediate 1, `fold_immediate_copies` rewrites the operand to the
 /// immediate and `drop_true_asserts` deletes the instruction — both inside
 /// `Builder::finish`, so nothing downstream ever sees it. (The identifier
-/// NUMBERS still shift by one: the folded `Copy` consumed its name on the
+/// numbers still shift by one: the folded `Copy` consumed its name on the
 /// way past. Nothing reads those, and the row cost is what the `k` gate
 /// measures.)
 #[test]
@@ -615,7 +615,7 @@ fn always_is_folded_out_of_the_artifact() {
     assert_eq!(ops_of(&with), ops_of(&without), "`always` left an instruction behind");
 }
 
-/// …and `is_true` on a WIRE does not fold: the flag is a real constraint.
+/// …and `is_true` on a wire does not fold: the flag is a real constraint.
 /// The negative control for the test above — without it, "the same
 /// instructions" would also be consistent with `c.assert` emitting nothing
 /// at all.
@@ -634,13 +634,13 @@ fn is_true_on_a_wire_is_not_folded() {
     assert_ne!(ops_of(&with), ops_of(&without));
 }
 
-/// THE FIVE CALL TYPES' VERDICTS, as declared: the two ERC-20 calls read the
+/// The five call TYPES' verdicts, as declared: the two ERC-20 calls read the
 /// returned flag, the three numeric ones treat execution as success. A table
-/// rather than a sentence, because the wrong entry here IS the
+/// rather than a sentence, because the wrong entry here is the
 /// spurious-completion hole (notes/evm-calls.org §3) — an `erc20::Transfer`
 /// whose `succeeded` emitted nothing would let an attested `false` complete.
 ///
-/// The verdict is the CALL's, not the filing's: it is the same predicate
+/// The verdict is the call's, not the filing's: it is the same predicate
 /// whichever kind a deployment files the call under (M38 rung A §2.3).
 #[test]
 fn a_flag_return_is_checked_and_a_number_is_not() {
@@ -678,7 +678,7 @@ fn a_flag_return_is_checked_and_a_number_is_not() {
     }
 }
 
-/// THE MAPPING, and why `()` is the right projection for a flag: a return
+/// The mapping, and why `()` is the right projection for a flag: a return
 /// the verdict already consumed carries nothing a settle circuit could act
 /// on, so there is nothing to misread. The numeric calls keep their value,
 /// and neither projection emits an instruction.
@@ -686,7 +686,7 @@ fn a_flag_return_is_checked_and_a_number_is_not() {
 fn a_checked_flag_maps_to_nothing_and_a_number_maps_to_itself() {
     let mut c = Circuit::new();
     let ok = BoolWire::<Private>::from_field_unchecked(c.arg::<FieldT>("ok"));
-    // The projection of a flag IS `()` — a TYPE equality, which is the
+    // The projection of a flag is `()` — a type equality, which is the
     // whole claim: this line does not compile if `Success` is anything else.
     #[allow(clippy::let_unit_value)]
     let projected: <erc20::Transfer as EvmCall>::Success = <erc20::Transfer as EvmCall>::map(&mut c, ok);
@@ -711,13 +711,13 @@ fn a_checked_flag_maps_to_nothing_and_a_number_maps_to_itself() {
 }
 
 
-// ---- 5. the interface layer (M38 rung A) --------------------------------------
+// ---- 5. the interface layer --------------------------------------
 
-/// EVERY LIBRARY CALL NAMES ITS INTERFACE, and the two markers that are one
+/// Every library call names its interface, and the two markers that are one
 /// interface's calls agree — a `transfer` and an `approve` go to the same
 /// kind of address, a swap does not.
 ///
-/// The claim is a TYPE equality, so this test does not compile if a call's
+/// The claim is a type equality, so this test does not compile if a call's
 /// `Callee` changes; the compile_fail twins in `evm_flow`'s module docs are
 /// the other direction (a call filed against the wrong interface).
 #[test]
@@ -731,14 +731,14 @@ fn each_call_names_the_interface_that_exposes_it() {
     callee_is::<uniswap_v3::ExactOutputSingle, uniswap_v3::UniswapV3Router>();
 }
 
-/// THE POSITIVE INHERITANCE TWIN (notes/evm-interfaces.org §2.5): an
-/// ERC-4626 vault IS an ERC-20, so an `erc20::Approve` may be filed against
+/// The positive inheritance twin (notes/evm-interfaces.org §2.5): an
+/// ERC-4626 vault is an ERC-20, so an `erc20::Approve` may be filed against
 /// a `Contract<Erc4626>` — the shape a deployment approving an allowance ON
 /// a wrapper needs.
 ///
 /// `reaches` is the bound `Pending::request` puts on its callee, isolated:
 /// it compiles exactly when `I: Extends<C::Callee>` holds. The three
-/// NEGATIVE directions are compile_fail doctests, because a test that does
+/// negative directions are compile_fail doctests, because a test that does
 /// not compile is not a test.
 #[test]
 fn an_erc4626_vault_takes_an_erc20_call() {
@@ -749,12 +749,12 @@ fn an_erc4626_vault_takes_an_erc20_call() {
     reaches::<erc4626::Deposit, erc4626::Erc4626>();
     reaches::<uniswap_v3::ExactOutputSingle, uniswap_v3::UniswapV3Router>();
 
-    // INHERITED: the shares of an ERC-4626 vault are an ERC-20.
+    // Inherited: the shares of an ERC-4626 vault are an ERC-20.
     reaches::<erc20::Approve, erc4626::Erc4626>();
     reaches::<erc20::Transfer, erc4626::Erc4626>();
 }
 
-/// …AND IT IS THE SAME CIRCUIT. A callee is twenty bytes whatever it claims,
+/// …and it is the same circuit. A callee is twenty bytes whatever it claims,
 /// so building the transaction through a `Contract<Erc4626>` emits the
 /// instruction stream a `Contract<Erc20>` emits — the marker is a type-level
 /// claim with no wire cost.
@@ -787,13 +787,13 @@ fn the_interface_marker_costs_no_instruction() {
     );
 }
 
-/// THE FILING CARRIES THE DEPLOYMENT'S OUTPUT SCHEMA, and the CALL carries
+/// The filing carries the deployment's output schema, and the call carries
 /// none of it: the same `erc20::Transfer` is filed by the vault twice (a
 /// claim and a withdrawal) and by the treasury a third time, and what each
 /// filing says is the schema the MPC decodes the return under.
 ///
-/// WHAT WENT IN M44 RUNG D: the response KIND byte and `RETURN_FIELD`. The
-/// V1 record has no kind, and the return's NAME is INSIDE the schema string
+/// What went in M44 rung D: the response kind byte and `RETURN_FIELD`. The
+/// V1 record has no kind, and the return's name is inside the schema string
 /// — so `Deposit`'s `success` is these thirty-four bytes, which ride into
 /// the request id, rather than a `&'static str` sitting beside them that
 /// nothing hashed.
@@ -813,7 +813,7 @@ fn one_call_files_under_many_schemas() {
         <F::Schema as OutputSchema>::BYTES
     }
 
-    // The three filings of ONE call all name the ERC-20 flag, by the name
+    // The three filings of one call all name the ERC-20 flag, by the name
     // the deployed records use.
     for bytes in [
         schema_of::<Deposit>(),
@@ -823,7 +823,7 @@ fn one_call_files_under_many_schemas() {
         assert_eq!(bytes, br#"[{"name":"success","type":"bool"}]"#);
     }
 
-    // And the vault's other three filings name three DIFFERENT returns,
+    // And the vault's other three filings name three different returns,
     // which is the half a kind byte never carried.
     assert_eq!(schema_of::<Swap>(), br#"[{"name":"amountIn","type":"uint256"}]"#);
     assert_eq!(schema_of::<Supply>(), br#"[{"name":"shares","type":"uint256"}]"#);
@@ -833,13 +833,13 @@ fn one_call_files_under_many_schemas() {
     assert_eq!(schema_of::<Filed<erc20::Transfer, schema::NoReturn>>(), b"[]");
 }
 
-// ---- 6. the rest of ERC-20, WETH and the non-conforming tokens (M38 B) --------
+// ---- 6. the rest of ERC-20, WETH and the non-conforming tokens --------
 
-/// THE SELECTORS OF THE CALLS RUNG B ADDS, each hashed from its argument
-/// TYPES by the same `EvmCall::selector()` the vault's five go through.
+/// The selectors of the calls rung B adds, each hashed from its argument
+/// types by the same `EvmCall::selector()` the vault's five go through.
 ///
 /// The four ERC-20 ones are values anyone can look up (etherscan prints
-/// them on every token), and NONE of them is stored anywhere in this
+/// them on every token), and none of them is stored anywhere in this
 /// repository — like `balanceOf` above, that is what keeps the assertion
 /// from being circular: if `selector()` were reading a constant rather than
 /// keccaking, these are where it would show.
@@ -876,7 +876,7 @@ fn the_rest_of_erc20_hashes_to_the_known_selectors() {
     assert_eq!(erc20::Permit::selector(), [0xd5, 0x05, 0xac, 0xcf]);
 }
 
-/// AND THE KECCAK IS OURS, not a table: the four selectors above are the
+/// And the Keccak is ours, not a table: the four selectors above are the
 /// first four bytes of `Keccak256(signature())` computed here, in the test,
 /// from the string the call type builds.
 ///
@@ -911,7 +911,7 @@ fn the_selectors_are_the_hash_of_the_signature() {
     }
 }
 
-/// WETH's two calls. `deposit()` takes NO ARGUMENTS — the ether is the
+/// WETH's two calls. `deposit()` takes no arguments — the ether is the
 /// argument — so its signature has empty parentheses and its slot's `WORDS`
 /// is zero.
 #[test]
@@ -925,21 +925,21 @@ fn weth_hashes_to_the_known_selectors() {
     assert_eq!(<<weth::Withdraw as EvmCall>::Args as AbiTuple>::WORDS, 1);
 }
 
-/// `permit` is SEVEN STATIC WORDS, which is what makes it expressible at
+/// `permit` is seven static words, which is what makes it expressible at
 /// all on a fixed-width record: nothing in it is dynamic.
 #[test]
 fn permit_is_seven_static_words() {
     assert_eq!(<<erc20::Permit as EvmCall>::Args as AbiTuple>::WORDS, 7);
 }
 
-/// THE NON-CONFORMING TOKENS FILE THE SAME CALLDATA AND DECLARE A DIFFERENT
-/// RETURN — the whole of the `UsdtLike` design in two assertions.
+/// The non-conforming tokens file the same calldata and declare a different
+/// return — the whole of the `UsdtLike` design in two assertions.
 ///
 /// Same selector, same words: a USDT `transfer` is byte-identical on the
 /// wire to an ERC-20 one. What differs is `Return`, which is what the MPC
 /// is asked to decode: `Bool` against `Unit`. Declaring the `bool` for a
 /// token that returns nothing makes the decode fail, and a decode failure
-/// is the MPC's FAILURE kind — a refund for a transfer that moved the
+/// is the MPC's failure kind — a refund for a transfer that moved the
 /// tokens (notes/evm-calls.org §3.1).
 #[test]
 fn usdt_is_the_same_calldata_and_a_different_return() {
@@ -958,11 +958,11 @@ fn usdt_is_the_same_calldata_and_a_different_return() {
     assert_eq!(<usdt::Transfer as EvmCall>::Return::RESPOND, "");
 }
 
-/// …AND THEY ARE NOT THE SAME INTERFACE. `UsdtLike` neither extends `Erc20`
+/// …and they are not the same interface. `UsdtLike` neither extends `Erc20`
 /// nor is extended by it, so neither address takes the other's calls. The
 /// negative directions are the `compile_fail` twins in `evm_flow`'s module
 /// docs; this is the positive half — each call reaches its own callee, and
-/// `Weth` reaches BOTH its own and the ERC-20 surface.
+/// `Weth` reaches both its own and the ERC-20 surface.
 #[test]
 fn usdt_is_a_sibling_and_weth_is_a_subtype() {
     fn reaches<C: EvmCall, I: Extends<C::Callee>>() {}
@@ -979,7 +979,7 @@ fn usdt_is_a_sibling_and_weth_is_a_subtype() {
 }
 
 /// A `uint8` word is the same reversal every other integer gets — the type
-/// states the RANGE, not a different encoder.
+/// states the range, not a different encoder.
 #[test]
 fn u8_words_match_the_oracle() {
     for v in [0u8, 1, 27, 28, 255] {
@@ -990,7 +990,7 @@ fn u8_words_match_the_oracle() {
     }
 }
 
-/// ETHER ON THE WIRE: `build_tx_payable` puts the caller's amount in the
+/// Ether on the wire: `build_tx_payable` puts the caller's amount in the
 /// transaction's `value` field, where every other call in the library has
 /// the constant zero.
 ///
@@ -1049,10 +1049,10 @@ fn a_payable_call_carries_its_value() {
     }
 }
 
-/// EVERY RUNG-B CALL NAMES THE INTERFACE THAT EXPOSES IT, and the three
-/// non-conforming ones name a marker that is NOT `Erc20`.
+/// Every rung-b call names the interface that exposes it, and the three
+/// non-conforming ones name a marker that is not `Erc20`.
 ///
-/// The claim is a TYPE equality, so this test stops compiling if a
+/// The claim is a type equality, so this test stops compiling if a
 /// `Callee` moves — which is the direction that matters for `usdt`, where
 /// naming `Erc20` would put the calls back on the same address as the
 /// conforming ones.
@@ -1071,7 +1071,7 @@ fn each_rung_b_call_names_the_interface_that_exposes_it() {
     callee_is::<usdt::TransferFrom, usdt::UsdtLike>();
 }
 
-/// THE GAS DEFAULTS OF THE RUNG-B CALLS ARE THE ERC-20 ONE, deliberately:
+/// The gas defaults of the rung-b calls are the ERC-20 one, deliberately:
 /// these are the same functions doing the same work, and inventing a second
 /// number per call would be a measurement nobody made.
 #[test]
@@ -1091,7 +1091,7 @@ fn the_rung_b_gas_defaults_are_the_erc20_one() {
     }
 }
 
-/// THE FIVE OUTPUT SCHEMAS ARE THE DEPLOYED STRINGS, byte for byte, at
+/// The five output schemas are the deployed strings, byte for byte, at
 /// the widths `notes/vault-flush.org` §2 names (2, 34, 36, 38) — the
 /// record's limbing depends on the length, and the length is in the
 /// signed request id.

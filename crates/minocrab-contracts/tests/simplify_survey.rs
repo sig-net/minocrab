@@ -1,5 +1,5 @@
-//! The simplification pass (M48 F, notes/ir-passes.org §14) applied, IN THE
-//! TEST ONLY, to every workspace circuit's finished stream. No contract
+//! The simplification pass (notes/ir-passes.org §14) applied, in the
+//! test only, to every workspace circuit's finished stream. No contract
 //! turns the pass on; this is what it would do if one did.
 //!
 //! `every_circuit_keeps_its_effects_under_the_pass` (routine): on all
@@ -7,7 +7,7 @@
 //! keeps every effect in order, keeps every disclosed name defined, and is
 //! idempotent.
 //!
-//! `simplify_row_table` (IGNORED, an instrument; run under `--release`):
+//! `simplify_row_table` (ignored, an instrument; run under `--release`):
 //! prices every circuit with Midnight's own cost model before and after
 //! each rule and prints the table notes/ir-passes.org §14 records.
 //!
@@ -207,7 +207,7 @@ fn constant_operand_selects_cost_what_this_says() {
         c.assert(acc);
     });
     // Each costs at least a row: the backend does not fold either. The
-    // first is the constant-select rule; the second is NOT a rule, because
+    // first is the constant-select rule; the second is not a rule, because
     // deleting it drops the constraint that `g` is a bit.
     assert!(immediate_selector >= base + N, "{immediate_selector} vs {base}");
     assert!(same_arms >= same_arms_base + N, "{same_arms} vs {same_arms_base}");

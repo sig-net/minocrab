@@ -42,13 +42,13 @@ pub fn gas_limit() -> impl Strategy<Value = u64> {
     prop_oneof![Just(0u64), Just(1u64), Just(u64::MAX), any::<u64>()]
 }
 
-/// A key version an `initialize` may be handed — ZERO INCLUDED, because
+/// A key version an `initialize` may be handed — zero included, because
 /// that is the circuit the `keyVersion must be >= 1` guard lives on.
 pub fn key_version() -> impl Strategy<Value = u8> {
     prop_oneof![Just(0u8), Just(1u8), Just(255u8), any::<u8>()]
 }
 
-/// A key version a REQUEST can see in the cell: at least one, because a
+/// A key version a request can see in the cell: at least one, because a
 /// deployment that got past `initialize` cannot hold zero. Since M44 rung D
 /// no request takes a version, so this is the configuration a request reads
 /// rather than an argument it passes.
@@ -110,7 +110,7 @@ fn env() -> impl Strategy<Value = Env> {
     )
 }
 
-/// An `Env` a SETTLE reads: initialized or not, the rest configured.
+/// An `Env` a settle reads: initialized or not, the rest configured.
 fn settle_env() -> impl Strategy<Value = Env> {
     (initialized(), nonzero20(), nonzero20()).prop_map(|(init, underlying, token)| Env {
         initialized: init,
@@ -322,7 +322,7 @@ fn claimant(requester: [u8; 32], wrong: bool) -> Option<[u8; 32]> {
     }
 }
 
-/// M37 rung D: `success` is now the ACCEPT/REJECT axis, not a branch —
+/// `success` is now the accept/REJECT axis, not a branch —
 /// an attested `false` no longer completes, it refunds.
 pub fn complete_withdraw() -> impl Strategy<Value = CompleteWithdrawScenario> {
     (settled_withdraw(), settle(), any::<bool>()).prop_map(|(w, settle, success)| {

@@ -1,8 +1,8 @@
-//! The reference EXECUTOR: the missing link between MinoCrab's Impact op
+//! The reference executor: the missing link between MinoCrab's Impact op
 //! streams and ledger semantics.
 //!
-//! Until M10 the whole workspace only ever *encoded* ops (`Op::field_repr`
-//! into a `ProofPreimage`) and compared encodings. Nothing ever ran them.
+//! Encoding ops (`Op::field_repr` into a `ProofPreimage`) and comparing
+//! encodings does not run them.
 //! This module runs them, on a real contract state, through Midnight's own
 //! driver — [`QueryContext::query`], which owns the `[context, effects,
 //! state]` stack convention, the nine-map `Effects` encode/decode and the
@@ -12,7 +12,7 @@
 //! What running buys that encoding never could:
 //!
 //! - the op stream is well-formed at all (stack discipline, cache
-//!   discipline, `Idx` paths that exist, `Popeq` results that MATCH the
+//!   discipline, `Idx` paths that exist, `Popeq` results that match the
 //!   real state — `ResultModeVerify::process_read` errors on mismatch);
 //! - the declared `Effects` are the ones the ledger would compute, which
 //!   is exactly the equality `semantics.rs:1441-1447` enforces when a
@@ -191,7 +191,7 @@ impl PreState {
         ]
     }
 
-    /// The SEGMENTED state tree the circuits index into: an array of three
+    /// The segmented state tree the circuits index into: an array of three
     /// arrays, seven fields then fifteen then fifteen (`ops::segment_of`).
     pub fn state(&self) -> StateValue {
         let fields = self.fields();
@@ -245,15 +245,15 @@ pub fn run(pre: &PreState, self_addr: &[u8; 32], ops: &[VmOp]) -> Result<Execute
 
 /// The trap notes/vault-optimization.org flags: `prove.rs:291-327` merges
 /// adjacent `Noop`s (summing their `n`) when a transaction is proved, and
-/// `verify.rs:1889-1894` REJECTS any transcript still holding two adjacent
+/// `verify.rs:1889-1894` rejects any transcript still holding two adjacent
 /// `Noop`s (`MalformedTransaction::NotNormalized`). A reference op stream
 /// that is compared to a circuit's must therefore be normalised the same
 /// way, or the comparison is against a program the ledger would never
 /// accept. The vault's circuits emit no `Noop` at all, so this is a guard
 /// against regression.
-/// THE GUARANTEED-SECTION GATE (Sig's fallibility model 1): the ledger's own
+/// The guaranteed-section gate (Sig's fallibility model 1): the ledger's own
 /// partitioner, run on this call alone under the initial parameters, must
-/// put the WHOLE transcript in the guaranteed section. Otherwise the
+/// put the whole transcript in the guaranteed section. Otherwise the
 /// transaction builder demotes the call to the fallible section with no
 /// error (`partition_transcripts`, ledger/src/construct.rs: "If none pass,
 /// 0 make it into the guaranteed section") and Sig will not sign for it.

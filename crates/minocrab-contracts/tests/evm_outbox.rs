@@ -1,11 +1,11 @@
-//! THE OUTBOX, AS A CONTRACT — `Outbox<Filing, Env, WORDS>` (M41 B/C,
-//! notes/stream-design.org, "emit restored"): the contention-free replacement
-//! of M39's `Queued` batch, and the reference PRIMITIVE stream.
+//! The outbox, as a contract — `Outbox<Filing, Env, WORDS>`
+//! (notes/stream-design.org, "emit restored"): the contention-free EVM call
+//! slot, and the reference primitive stream.
 //!
 //! What this file is the witness for:
 //!
-//! 1. A request that CHOOSES NO NONCE, NO FEE AND NO KEY VERSION, and READS
-//!    NO SHARED STATE. `call` takes the callee and the arguments; the nonce
+//! 1. A request that chooses no nonce, no fee and no key version, and reads
+//!    No shared state. `call` takes the callee and the arguments; the nonce
 //!    is assigned by a blind `add` on the accumulator and snapshotted into
 //!    the handle's entry, never read by the circuit.
 //! 2. `emit`, one request per transaction, permissionless: two stable reads
@@ -13,15 +13,15 @@
 //!    one record, one id, one notification.
 //! 3. The settle side is `Pending`'s, followed by the spec's C3 check and a
 //!    blind max on last seen.
-//! 4. THE CONTENTION AUDIT (the milestone's gate): across the three
+//! 4. The contention audit (the milestone's gate): across the three
 //!    circuits, no `popeq` reads either accumulator cell — checked on the
-//!    emitted Impact stream, not on prose. Since M44 rung D there is no
-//!    shared COUNTER left to admit either: the Signet request nonce
-//!    (notes/nonce-admin.org §10.1) went with the V1 vocabulary, and what
+//!    emitted Impact stream, not on prose. There is no
+//!    shared counter to admit either: the V1 vocabulary has no Signet
+//!    request nonce, and what
 //!    `file_request` reads of the block is two write-once config cells,
 //!    counted here so their presence is a number and not a surprise.
 //!
-//! IT IS A TEST-ONLY CONTRACT, like `tests/evm_no_return.rs`'s: it exercises
+//! IT IS A test-only contract, like `tests/evm_no_return.rs`'s: it exercises
 //! the API without adding circuits to the crate's frozen snapshots.
 
 use minocrab::Circuit;
@@ -44,7 +44,7 @@ mod leakage;
 /// The outbox's one filing: a plain `erc20::Transfer` under the `success`
 /// schema.
 ///
-/// IT USED TO BE A CONTRIVANCE. Before the V1 vocabulary the attested
+/// It used to be a contrivance. Before the V1 vocabulary the attested
 /// payload carried no block height, so this file declared a
 /// `HeightedTransfer` — the same selector and calldata as `erc20::Transfer`,
 /// but decoding the return word as the height the MPC observed — purely so
@@ -76,7 +76,7 @@ const BLOCK: Block = Block::new();
 /// rung D), so the outbox's own two cells are the whole audit.
 const NONCE_CELL: u8 = 7;
 const SEEN_CELL: u8 = 8;
-/// The two Signet CONFIG cells `file_request` reads — written once by
+/// The two Signet config cells `file_request` reads — written once by
 /// `initialize`, never again.
 const KEY_VERSION: u8 = 2;
 const CHAIN_ID: u8 = 3;
@@ -89,7 +89,7 @@ label! {
 
 // ---- the circuits -------------------------------------------------------------
 
-/// CALL: no nonce argument, no fee argument, no shared read. The transaction
+/// Call: no nonce argument, no fee argument, no shared read. The transaction
 /// this files is complete except for the number the ledger assigns blind.
 #[circuit]
 fn call(
@@ -110,16 +110,16 @@ fn call(
     Discloses::of(())
 }
 
-/// EMIT: one request, one record, one notification; anyone may prove it.
+/// Emit: one request, one record, one notification; anyone may prove it.
 #[circuit]
 fn emit(c: &mut Circuit, handle: Handle) -> Discloses<Emitted> {
     BLOCK.calls.emit(c, handle);
     Discloses::of(())
 }
 
-/// SETTLE A SUCCESS, then C3 and the blind max on last seen.
+/// Settle a success, then C3 and the blind max on last seen.
 ///
-/// The height `raise_seen` consumes is the ATTESTATION'S, disclosed by the
+/// The height `raise_seen` consumes is the attestation's, disclosed by the
 /// settle itself (`Settled` carries `BlockHeightSettled`), which is why
 /// neither circuit here declares a height label of its own any more.
 #[circuit]
@@ -130,7 +130,7 @@ fn complete(c: &mut Circuit, ticket: Succeeded<Heighted>) -> Discloses<Settled> 
     Discloses::of(())
 }
 
-/// REFUND TO THE REQUESTER — the commitment opens against the HANDLE the
+/// Refund to the requester — the commitment opens against the handle the
 /// requester kept, not against the request id the emit minted — then C3.
 #[circuit]
 fn refund(c: &mut Circuit, ticket: Failed<Heighted>) -> Discloses<(Settled, Recipient)> {
@@ -179,7 +179,7 @@ fn field_read(field: u8) -> Vec<Option<Fr>> {
         .collect()
 }
 
-/// How many CHECKED reads of `field`: an `idx [field]` immediately followed
+/// How many checked reads of `field`: an `idx [field]` immediately followed
 /// by a `popeq`. A bare `idx [field]` with no `popeq` after it is the blind
 /// snapshot's fetch, which is the point.
 fn reads_of(ir: &minocrab_zkir::IrSource, field: u8) -> usize {
@@ -218,7 +218,7 @@ fn the_block_is_laid_out_by_slot_width() {
     assert_eq!(<Outbox<Heighted, HandleOwned<Amount>, 2> as LedgerWidth>::WIDTH, 7);
 }
 
-/// THE CONTENTION AUDIT. Neither accumulator cell is ever CHECKED-read by
+/// The contention audit. Neither accumulator cell is ever checked-read by
 /// any of the four circuits: no `idx [nonce]; popeq` and no `idx [seen];
 /// popeq`. The blind snapshot does `idx [cell]` — a fetch — and inserts it
 /// without a `popeq`, and the blind combines reach the cells with `idxp`.
@@ -235,15 +235,15 @@ fn no_circuit_reads_the_accumulator() {
     }
 }
 
-/// WHAT IS READ, counted: call = one per-key member check; emit = the two
+/// What is read, counted: call = one per-key member check; emit = the two
 /// stream reads plus `file_request`'s plus the member check on the body; the
 /// settles are `Pending`'s.
 ///
-/// SINCE M44 RUNG D THERE IS NO SHARED COUNTER LEFT in the lineage. The
+/// Since M44 rung D there is no shared counter left in the lineage. The
 /// Signet request nonce — the one read every request used to make, and the
 /// one number this audit had to admit as contention
 /// (notes/nonce-admin.org §10.1) — went with the V1 vocabulary. What
-/// `file_request` still reads of the block are two CONFIG cells,
+/// `file_request` still reads of the block are two config cells,
 /// `mpcKeyVersion` and `evmChainId`, which nothing writes after
 /// `initialize`: two emits in one transaction read the same value and do not
 /// contend. That is the stronger claim, so it is the one asserted here.
@@ -274,7 +274,7 @@ fn the_reads_are_per_key_and_the_config_cells() {
     }
 }
 
-/// ONE EMIT, ONE FILING, ONE NOTIFICATION — and a call files nothing.
+/// One emit, one filing, one notification — and a call files nothing.
 #[test]
 fn an_emit_files_one_record_and_a_call_files_none() {
     let emit = emit();
@@ -289,14 +289,14 @@ fn an_emit_files_one_record_and_a_call_files_none() {
     assert_eq!(disclosures_labelled(&call, "queued pre-record"), 1);
 }
 
-/// THE REFUND OPENS AGAINST THE HANDLE; the completion has no owner gate.
+/// The refund opens against the handle; the completion has no owner gate.
 #[test]
 fn a_refund_opens_the_requesters_commitment() {
     assert_eq!(asserts_saying(&refund(), "Not the owner"), 1);
     assert_eq!(asserts_saying(&complete(), "Not the owner"), 0);
 }
 
-/// THE ROW TABLE, printed for the record (a test-only contract has no
+/// The row table, printed for the record (a test-only contract has no
 /// snapshot).
 #[test]
 fn the_circuits_build_at_a_finite_cost() {
@@ -322,7 +322,7 @@ fn the_circuits_build_at_a_finite_cost() {
 /// and the owner commitment's tag pad. The contract names neither.
 const LITERALS: &[&str] = &["vault", "vault:refund:"];
 
-/// THE LEAKAGE INVENTORY over the four circuits — the emit line is M41's
+/// The leakage inventory over the four circuits — the emit line is M41's
 /// new one. Printed rather than frozen (test-only contract); the gate is
 /// the tables' own: nothing witness-dependent reaches the ledger unlabelled.
 #[test]

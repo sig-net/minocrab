@@ -1,28 +1,28 @@
-//! The API lineage's LEAKAGE INVENTORY (M37 rung D): the same walk as
+//! The API lineage's leakage inventory: the same walk as
 //! `tests/leakage_inventory.rs`, run over `erc20_vault_pending` — the
 //! vault re-expressed on `evm_flow::Pending`, seventeen circuits whose
-//! settles take one typed TICKET each.
+//! settles take one typed ticket each.
 //!
-//! WHY A SECOND TABLE RATHER THAN MORE ROWS IN THE FIRST. The two lineages
+//! Why a second table rather than more rows in the first. The two lineages
 //! are two artifacts of two deployments: the compat port is PI-equal to
 //! compactc's and its inventory is checked against compactc's own artifact
-//! circuit by circuit; this one proves its OWN statement (twenty-two ledger
+//! circuit by circuit; this one proves its own statement (twenty-two ledger
 //! fields, `Pending` slots, the `Succeeded`/`Failed` split) and has no
 //! compactc twin to compare with. Freezing them separately keeps each
 //! table's meaning intact — and the compat table, which is a claim about a
-//! DEPLOYED contract, does not move when this lineage does. The walk
+//! deployed contract, does not move when this lineage does. The walk
 //! itself is shared (`tests/leakage/mod.rs`), so neither table can drift in
 //! method from the other.
 //!
-//! WHAT IS THE SAME: the frozen lines' shape (header, literals, corpus
+//! What is the same: the frozen lines' shape (header, literals, corpus
 //! twin, one `component` per declared disclosure, one `witness` per
 //! `private_input`, one `digest` per hash, one `impact` per Impact op, the
 //! outputs, the unlabelled-leak line), the provenance and label-taint
 //! rules, and the completeness gate.
 //!
-//! WHAT DIFFERS:
-//! - the CORPUS TWIN line says there is none (see above);
-//! - the LITERALS are the LIBRARY's, not the contract's — `pad(32,
+//! What differs:
+//! - the corpus twin line says there is none (see above);
+//! - the literals are the library's, not the contract's — `pad(32,
 //!   "vault")` is `common::SigningPath::contract_path`, which
 //!   `Pending::request` files without asking the caller
 //!   (notes/evm-calls.org §11 finding 3), `pad(32, "vault:user:")` is
@@ -32,22 +32,22 @@
 //!   `approve_router` / `approve_stata` file into a `Fired` slot, which has
 //!   no settle method and therefore no owner commitment, so they carry the
 //!   signing path and no refund pad at all.
-//! - the CIRCUIT LIST is `Vault::CIRCUITS` — derived by `#[contract]` in
+//! - the circuit list is `Vault::CIRCUITS` — derived by `#[contract]` in
 //!   declaration order, like `tests/circuit_closure.rs` reads it, so a
 //!   circuit added to the lineage appears here without anyone editing a
 //!   list.
 //!
-//! THE GATE M37 RUNG D ASKED FOR is `no_settle_consumes_an_unchecked_secret`
+//! The gate is `no_settle_consumes_an_unchecked_secret`
 //! below: for each of the eight `complete_*` / `refund_*` circuits, every
 //! witness line's `checks:` field is a real check, never `unchecked` — and
 //! `complete_withdraw_consumes_no_witness` pins the milestone's dividend,
-//! that the completion anyone may prove reads NOTHING from the private
+//! that the completion anyone may prove reads nothing from the private
 //! transcript (Gap 2's repair: the hoisted secret for a branch that might
 //! not be taken is gone). The other three completions keep an owner gate
-//! and therefore a witness, CHECKED before anything else happens — they
+//! and therefore a witness, checked before anything else happens — they
 //! mint proceeds to `own_public_key` (notes/evm-calls.org §11).
 //!
-//! Regenerate after an INTENTIONAL change to a circuit's leakage surface:
+//! Regenerate after an intentional change to a circuit's leakage surface:
 //! `cargo test -p minocrab-contracts --test leakage_inventory_pending --
 //! --ignored regenerate_leakage_inventory_pending`. The diff names the
 //! moved component.
@@ -59,7 +59,7 @@ mod support;
 use support::{rewrite_generated_region, test_source};
 
 /// The pads this lineage spells as immediates, in the order the `literals`
-/// line reports them. All three come from the LIBRARY, not from the
+/// line reports them. All three come from the library, not from the
 /// contract's own source: the MPC signing path
 /// (`common::SigningPath::contract_path`), the identity-commitment pad
 /// (`common::commitment_transient`) and the owner-commitment tag pad
@@ -98,7 +98,7 @@ fn is_settle(name: &str) -> bool {
 
 /// The frozen inventory, one line per fact, in `Vault::CIRCUITS` order.
 const INVENTORY: &[&str] = &[
-    // GENERATED BEGIN — rewritten by `regenerate_leakage_inventory_pending`
+    // Generated begin — rewritten by `regenerate_leakage_inventory_pending`
     "== initialize | inputs 7 (vaultEvm.0,swapRouter.1,stataUnderlyingAddr.2,stataTokenAddr.3,chainId.4,keyVersion.5,responseKey.6) | witnesses 2 (guarded 0) | public_inputs 3 (guarded 0) | impact 44 (guarded 0) wires 155 | digests transient_hash 1 | outputs 0",
     "literals | \"vault\" x0 \"vault:user:\" x1 \"vault:refund:\" x0",
     "corpus twin | none — this lineage proves its own statement, so there is no compactc artifact to compare its surface with",
@@ -1233,7 +1233,7 @@ const INVENTORY: &[&str] = &[
     "impact #49 | unguarded | wires 1: immediate 1, public-derived 0, labelled 0 | unlabelled witness-dependent 0",
     "impact #50 | unguarded | wires 1: immediate 1, public-derived 0, labelled 0 | unlabelled witness-dependent 0",
     "unlabelled witness-dependent public components | none",
-    // GENERATED END
+    // Generated end
 ];
 
 #[test]
@@ -1258,7 +1258,7 @@ fn the_leakage_inventory_is_frozen() {
     }
 }
 
-/// COMPLETENESS, as a hard gate: every witness-dependent wire that reaches
+/// Completeness, as a hard gate: every witness-dependent wire that reaches
 /// the public statement carries a declared label in its ancestry.
 #[test]
 fn no_unlabelled_witness_dependent_public_component() {
@@ -1270,21 +1270,21 @@ fn no_unlabelled_witness_dependent_public_component() {
     assert!(offenders.is_empty(), "{}", offenders.join("\n"));
 }
 
-/// M37 rung D's exit criterion, read off the inventory: NO SETTLE CIRCUIT
-/// CONSUMES AN UNCHECKED SECRET. Two conditions on each `complete_*` /
+/// M37 rung D's exit criterion, read off the inventory: no settle circuit
+/// consumes an unchecked secret. Two conditions on each `complete_*` /
 /// `refund_*` circuit's witness lines:
 ///
 /// 1. none is `checks: unchecked` — every `private_input` reaches some
 ///    `assert` / `constrain_*`; and
-/// 2. a witness that reaches NO declared label — one the circuit keeps
-///    rather than publishes, i.e. a SECRET — reaches an `assert`, not
+/// 2. a witness that reaches no declared label — one the circuit keeps
+///    rather than publishes, i.e. a secret — reaches an `assert`, not
 ///    merely a `constrain_bits` range check. Without (2) the gate would be
 ///    satisfiable by the bit decomposition every witnessed limb gets for
-///    free, which constrains the value's WIDTH and nothing about the
+///    free, which constrains the value's width and nothing about the
 ///    statement. What (2) demands is the authorization: the secret opens
 ///    the stored owner commitment against the request id.
 ///
-/// A witness that DOES reach a label is a published component
+/// A witness that does reach a label is a published component
 /// (`own_public_key`'s two limbs, disclosed as the mint recipient), and
 /// `no_unlabelled_witness_dependent_public_component` is its gate.
 ///
@@ -1324,7 +1324,7 @@ fn no_settle_consumes_an_unchecked_secret() {
     );
 }
 
-/// `complete_withdraw` reads NOTHING from the private transcript: the
+/// `complete_withdraw` reads nothing from the private transcript: the
 /// completion is anyone's (the tokens have left the vault's EVM account and
 /// there is nothing to mint), so there is no owner gate and no secret to
 /// hoist. This is the one settle whose statement M37 rung D changed most

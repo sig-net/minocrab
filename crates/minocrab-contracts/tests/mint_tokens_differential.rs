@@ -259,7 +259,7 @@ fn mint_with_recipient_own_public_key_matches_corpus() {
 }
 
 /// Criterion 3: a tampered transcript (e.g. a mint of a different amount
-/// than the circuit performs) must be rejected by BOTH artifacts.
+/// than the circuit performs) must be rejected by both artifacts.
 #[test]
 fn mint_rejects_tampered_transcript() {
     let theirs = corpus_zkir("mintWithRecipientArgument");

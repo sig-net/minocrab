@@ -1,11 +1,11 @@
-//! CLOSURE of the circuit list: every `#[circuit]` in this crate's source
+//! Closure of the circuit list: every `#[circuit]` in this crate's source
 //! appears in `support::circuits()`.
 //!
 //! `circuits()` is the only statement of which circuits exist — it feeds both
 //! snapshots, the ZKIR dump, the adversarial suite and the taint lint. Until
 //! now nothing checked it was complete: the snapshots guard the opposite
 //! direction (a listed circuit that moved), so a circuit added and not listed
-//! was covered by nothing. VERIFICATION.md §5 admitted this; the external
+//! was covered by nothing. Verification.md §5 admitted this; the external
 //! review's §7.4 asked for the check. The `#[contract]` migration derives the
 //! set for its adopters; this test closes the gap for everything else, and it
 //! found `xcall::Xcall::call_emit` on its first run.
@@ -109,9 +109,9 @@ fn every_circuit_attribute_is_listed() {
 }
 
 // ---------------------------------------------------------------------------
-// THE COMPACTC LOWERING on every port (M48 rung C). A circuit with a Compact
+// the compactc lowering on every port. A circuit with a Compact
 // twin, and every circuit of the deployed signer, is built under
-// `minocrab_compat::profile`. For a `#[contract]` block that is ONE attribute,
+// `minocrab_compat::profile`. For a `#[contract]` block that is one attribute,
 // `#[contract(lowering = minocrab_compat::profile)]`, which the macro applies
 // to each of its circuits; the few circuits built by hand outside a block
 // call it themselves. Forgetting either is invisible in the ZKIR while the

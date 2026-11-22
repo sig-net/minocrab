@@ -1,15 +1,15 @@
-//! `adts.compact` — the M16 differential: every ledger-ADT operation Compact
+//! `adts.compact` — the differential: every ledger-ADT operation Compact
 //! exposes, against compactc's own artifacts (notes/ledger-adts.org).
 //!
-//! WHY THE FIXTURE IS OURS. The corpus declares 25 `List`, 15 `MerkleTree`, 7
+//! Why the fixture is ours. The corpus declares 25 `List`, 15 `MerkleTree`, 7
 //! `HistoricMerkleTree` and 41 `Set` fields, but our IR is v3 and only the
 //! three sig-net sources carry `--feature-zkir-v3`. Their v3 artifacts between
 //! them exercise three of the thirty-one operations here: `Set.insert`,
-//! `Set.member` and `List.pushFront`. So this is the M14/M15 fallback again —
-//! our source, compiled with the PINNED compactc, the invocation in the
+//! `Set.member` and `List.pushFront`. So this is the fixture fallback —
+//! our source, compiled with the pinned compactc, the invocation in the
 //! fixture's header.
 //!
-//! FOUR CLAIMS:
+//! Four claims:
 //!
 //! 1. `identical_instruction_streams` — for all thirty-one circuits, our
 //!    serialized ZKIR IS compactc's up to identifier renaming. Every opcode,
@@ -114,8 +114,8 @@ fn cases() -> Vec<(&'static str, fn() -> Compiled)> {
     ]
 }
 
-/// CLAIM 1, and the headline: for every ledger-ADT operation Compact has, our
-/// circuit IS compactc's — op for op, immediate for immediate.
+/// Claim 1, and the headline: for every ledger-ADT operation Compact has, our
+/// circuit is compactc's — op for op, immediate for immediate.
 ///
 /// What that pins, and what nothing weaker would: the `Array` positions each
 /// ADT descends through, the `3 | len << 4` / `4 | h << 4` state-value tags in
@@ -156,7 +156,7 @@ fn every_fixture_circuit_is_covered() {
     assert_eq!(compiled, covered);
 }
 
-/// CLAIM 2 — corpus provenance for the one operation the corpus has in a v3
+/// Claim 2 — corpus provenance for the one operation the corpus has in a v3
 /// artifact.
 ///
 /// `test-caller-contract`'s `submitSignatureRequest` ends with
@@ -216,7 +216,7 @@ fn impact_ops(ir: &IrSource) -> Vec<Vec<String>> {
         .collect()
 }
 
-/// CLAIM 3 — compactc's own ABI agrees with the leaves, including the new one.
+/// Claim 3 — compactc's own ABI agrees with the leaves, including the new one.
 ///
 /// `MerkleTreeDigest` is published as a `Struct` of one `Field`, and
 /// `List.head`'s result as a `Struct` named `Maybe` of a `Boolean` and the
@@ -250,7 +250,7 @@ fn compactc_s_abi_agrees_with_the_leaves() {
         }};
     }
 
-    // One entry per circuit that HAS arguments, in declaration order.
+    // One entry per circuit that has arguments, in declaration order.
     let expected: Vec<(&str, (Vec<_>, Vec<_>))> = vec![
         ("setInsert", abi!(B32<Public>)),
         ("setMember", abi!(B32<Public>)),
@@ -280,7 +280,7 @@ fn compactc_s_abi_agrees_with_the_leaves() {
         assert_eq!(flat.prims, prims, "{name}: primitive types differ");
     }
 
-    // `List.head`'s RESULT: compactc's `Maybe` struct against ours.
+    // `List.head`'s result: compactc's `Maybe` struct against ours.
     let head = info.circuit("listHead").expect("listHead is exported");
     let flat = minocrab_abi::info::flatten_all([&head.result_type])
         .expect("compactc's Maybe<Bytes<32>> flattens");
@@ -291,12 +291,12 @@ fn compactc_s_abi_agrees_with_the_leaves() {
     assert_eq!(flat.prims[0], <Bool<Public> as CircuitAbi>::prims()[0]);
 }
 
-/// CLAIM 4 — the tree READS mean what the VM says they mean.
+/// Claim 4 — the tree reads mean what the VM says they mean.
 ///
 /// The three read circuits between them carry every opcode M16 adds that is
 /// not exercised by a write: `lt`+`neg` (`isFull`), `root`+`eq`
 /// (`MerkleTree.checkRoot`) and `member` on the history map
-/// (`HistoricMerkleTree.checkRoot`). A preimage built from the REFERENCE
+/// (`HistoricMerkleTree.checkRoot`). A preimage built from the reference
 /// Impact program — the ops written out by hand here, not read back off either
 /// artifact — has to satisfy both artifacts and upstream's `check()`. That is
 /// the statement stream equality cannot make on its own: it says the transcript
@@ -430,13 +430,13 @@ fn transcript(ops: &[VmOp]) -> Vec<Fr> {
     out
 }
 
-/// The preimage of a circuit that READS: the op stream is
+/// The preimage of a circuit that reads: the op stream is
 /// `public_transcript_inputs`, and what the ledger hands back — every `popeq`
 /// result, value-only, in read order — is `public_transcript_outputs`, which
 /// is what a `public_input` gate consumes (midnight-zkir 3.2.0 `src/ir_vm.rs`, the `PublicInput` arm).
 ///
-/// The communications commitment covers the circuit's INPUTS and its declared
-/// OUTPUTS (`onchain-runtime-wasm/src/primitives.rs`), which for these
+/// The communications commitment covers the circuit's inputs and its declared
+/// outputs (`onchain-runtime-wasm/src/primitives.rs`), which for these
 /// circuits is the Boolean each returns.
 fn preimage_out(
     inputs: Vec<Fr>,

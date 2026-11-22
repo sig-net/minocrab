@@ -1,16 +1,14 @@
-//! ZERO-MOVEMENT INSTRUMENT: dump every workspace circuit's serialized ZKIR,
+//! Zero-movement instrument: dump every workspace circuit's serialized ZKIR,
 //! one file per circuit, for byte-comparison across a change.
 //!
 //! The frozen snapshots are the standing gates — `row_snapshot` freezes
 //! `(k, rows)` and `interface_snapshot` the ordered `(label, type)` of every
-//! input/output/witness — but neither sees an instruction REORDER at equal row
-//! count, and `row_snapshot` is blind to a removed `Copy` (M9 phase 7 learned
-//! that the hard way, and its literals commit is the one item in
-//! notes/review-queue.org whose gate was a hand-review). Several sessions have
+//! input/output/witness — but neither sees an instruction reorder at equal row
+//! count, and `row_snapshot` is blind to a removed `Copy`. Several sessions have
 //! therefore dumped all N circuits' ZKIR by hand and diffed; this is that
 //! procedure, committed, so the next one does not reinvent it.
 //!
-//! IGNORED by default: it writes files, and it is an instrument rather than a
+//! Ignored by default: it writes files, and it is an instrument rather than a
 //! check. To compare a change against a baseline:
 //!
 //! ```text

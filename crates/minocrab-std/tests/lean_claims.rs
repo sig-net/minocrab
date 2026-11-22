@@ -1,6 +1,6 @@
-//! M25's construct-loop reflection for this crate (notes/lean-port.org §3,
+//! The construct-loop reflection for this crate (notes/lean-port.org §3,
 //! rows 1-3): the numeric and visibility Lean warrants under
-//! `lean/MinocrabStdProofs/` are EMBEDDED here at compile time — a deleted
+//! `lean/MinocrabStdProofs/` are embedded here at compile time — a deleted
 //! proof file is a build error — and this test asserts each still declares
 //! every theorem the crate claims, so a renamed theorem is a test failure,
 //! not a silently stale claim (the same instrument as minocrab-ir's
@@ -15,7 +15,7 @@ use minocrab_ir::lean_proof;
 use minocrab_ir::passes::ProofRef;
 
 /// The numeric leaves' warrant: `BoundedUint`'s bound arithmetic (the
-/// `add`/`mul` const asserts sound AND minimal), the subtraction guard
+/// `add`/`mul` const asserts sound and minimal), the subtraction guard
 /// (field-sub equals integer-sub exactly under the guard; the underflow
 /// shape without it), the guard's comparison width, and the free retypes
 /// (`widen`, `to_uint`).

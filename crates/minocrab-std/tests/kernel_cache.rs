@@ -1,4 +1,4 @@
-//! The kernel.self cache (M18): populated only by `cache_self_address`,
+//! The kernel.self cache: populated only by `cache_self_address`,
 //! consulted by `self_address`, invisible to circuits that never cache;
 //! and the `OncePerCircuit` lowering setting that keeps the first read.
 
@@ -118,7 +118,7 @@ fn cache_under_once_per_circuit_is_allowed() {
 // guard, and returns the self addresses it read. It is run through the
 // executor (`minocrab_sim::exec`: the transcript settled against
 // Midnight's on-chain VM), so the facts asserted are the ledger's view: how
-// many `kernel.self()` reads the circuit EMITS, which of them RUN (a guarded
+// many `kernel.self()` reads the circuit emits, which of them run (a guarded
 // one whose guard is off is skipped, its public inputs zero), and the value
 // every use of the address sees.
 
@@ -157,7 +157,7 @@ fn run(compiled: &Compiled, g: u64) -> Executed {
         .unwrap_or_else(|e| panic!("g = {g}: {e}"))
 }
 
-/// One entry per EMITTED self read, in stream order: whether it ran. A self
+/// One entry per emitted self read, in stream order: whether it ran. A self
 /// read is three Impact blocks (`dup`, `idx`, `popeq`) under one guard.
 fn self_reads(e: &Executed) -> Vec<bool> {
     assert_eq!(e.run.pi_skips.len() % 3, 0, "only self reads in these circuits");
@@ -196,8 +196,8 @@ fn cat(a: &[IrValue], b: &[IrValue]) -> Vec<IrValue> {
     a.iter().chain(b).cloned().collect()
 }
 
-/// THE LATENT BUG, fixed: `cache_self_address` inside a `when` used to keep
-/// the GUARDED read, so every later read outside the scope got its value,
+/// The latent bug, fixed: `cache_self_address` inside a `when` used to keep
+/// the guarded read, so every later read outside the scope got its value,
 /// which is zero where the guard was off. Now it keeps nothing there: the
 /// read after the scope is a real one and sees the address.
 #[test]
@@ -253,7 +253,7 @@ fn a_guarded_read_then_unguarded_ones() {
 
 /// A straight-line read first, then a guarded one. Under `EveryCall` the
 /// guarded call is a second, guarded read (zero where `g` is off). Under
-/// `OncePerCircuit` it is the kept address and emits NOTHING, so the value
+/// `OncePerCircuit` it is the kept address and emits nothing, so the value
 /// taken out of the scope is the address even where `g` is off: sound (the
 /// address is constant and every effect in the scope is guarded), and the
 /// one behaviour that differs from the guarded read's zero, documented on

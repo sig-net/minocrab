@@ -1,6 +1,6 @@
 //! The erc20-vault verification harness: the reference model, the
 //! executor and the differential suite's scenarios, on the flush-pattern
-//! vault (M44).
+//! vault.
 //!
 //! Compiled into every test binary that declares `mod vault`, each of which
 //! uses only the part it needs — hence the blanket `dead_code` allowance.

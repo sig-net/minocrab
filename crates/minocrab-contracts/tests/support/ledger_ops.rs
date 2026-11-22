@@ -1,7 +1,7 @@
 //! The reference models' Impact op builders, over a compactc ledger block
 //! of `super::FIELDS` fields.
 //!
-//! ONE body for the three harnesses that used to carry a copy each
+//! One body for the three harnesses that would otherwise carry a copy each
 //! (`tests/vault/ops.rs`, 35 fields; `tests/vault_pending/ops.rs`, 21;
 //! `tests/treasury/ops.rs`, 7). Each of those files sets its block's field
 //! count and declares this file as a submodule by path:
@@ -21,9 +21,9 @@
 //! - compactc batches a ledger block into segments of fifteen
 //!   (`maximum-ledger-segment-length`, langs.ss:851;
 //!   `determine-ledger-paths.ss`). A block within one segment has
-//!   ONE-element paths (the bare declaration index) and no nested write; a
+//!   one-element paths (the bare declaration index) and no nested write; a
 //!   wider block has two-element paths `[segment, offset]` with the
-//!   remainder segment LEADING (`batch`), so 35 fields put the first
+//!   remainder segment leading (`batch`), so 35 fields put the first
 //!   `35 mod 15 = 5` in segment 0 and 21 fields the first 6.
 //! - The closing `insc n` of a map insert, a set insert, a remove and a
 //!   counter increment re-seats the container at every path element
@@ -34,7 +34,7 @@
 //! `Bytes<20>` set element), or a `&[u8; 32]` as a `Bytes<32>` (the Pending
 //! lineage and the treasury key every map that way).
 //!
-//! Independent of `minocrab-ledger` on purpose: this is the ORACLE the
+//! Independent of `minocrab-ledger` on purpose: this is the oracle the
 //! eDSL's `LedgerMap` / `LedgerSet` / `LedgerCell` / `LedgerCounter` /
 //! `Pending` methods are checked against, so it must not be built from
 //! them.
@@ -56,7 +56,7 @@ const SEGMENT: u8 = 15;
 /// and a whole-field write is nested.
 pub const SEGMENTED: bool = FIELDS > SEGMENT;
 
-/// A segmented field's `[segment, offset]`. The remainder segment LEADS
+/// A segmented field's `[segment, offset]`. The remainder segment leads
 /// (`batch` in determine-ledger-paths.ss).
 pub fn segment_of(field: u8) -> (u8, u8) {
     assert!(field < FIELDS, "field {field} is not one of the block's {FIELDS}");
@@ -266,7 +266,7 @@ pub fn counter_inc(field: u8) -> Vec<VmOp> {
     ]
 }
 
-/// `cell = value` — the NESTED whole-field write of a segmented block:
+/// `cell = value` — the nested whole-field write of a segmented block:
 /// `idxp [segment]; push offset; pushs value; ins 1; insc 1`.
 pub fn cell_write(field: u8, value: AlignedValue) -> Vec<VmOp> {
     let (seg, off) = segment_of(field);

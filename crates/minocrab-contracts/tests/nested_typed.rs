@@ -1,38 +1,38 @@
-//! THE TYPED SURFACE, against the raw one it was built over (M22 stage B2,
-//! notes/coin-arms-nested-adts.org "Design of record").
+//! The typed surface, against the raw one it was built over
+//! (notes/coin-arms-nested-adts.org "Design of record").
 //!
-//! Stage B1 proved the nested LOWERING by hand-building `&[LedgerKey]` paths
+//! Stage B1 proved the nested lowering by hand-building `&[LedgerKey]` paths
 //! and comparing all twenty-eight circuits to compactc, instruction for
 //! instruction (`nested_differential.rs`). This file is the other half: the
-//! same twenty-eight circuits SPELLED THROUGH THE TYPED API —
+//! same twenty-eight circuits spelled through the typed API —
 //!
 //! ```ignore
 //! NESTED.mm.at_key(c, &k).insert(c, &k2, &v)
 //! ```
 //!
-//! — asserted BYTE-IDENTICAL to `nested::Nested`'s raw spelling. Chaining
+//! — asserted byte-identical to `nested::Nested`'s raw spelling. Chaining
 //! `at_key` twice covers depth three. Transitively, then, the typed surface
 //! is compactc's, because the raw side already is.
 //!
-//! WHY A TEST AND NOT A SECOND CONTRACT IN `src/`. These circuits are a
-//! DUPLICATE of `nested::Nested`'s by construction — that is the whole
+//! Why a test and not a second contract in `src/`. These circuits are a
+//! duplicate of `nested::Nested`'s by construction — that is the whole
 //! claim — and listing them in `support::circuits()` would double
 //! twenty-eight rows in both frozen snapshots to say a thing this file says
 //! exactly. The contract block lives here so the snapshots stay a statement
 //! about distinct circuits.
 //!
-//! WHAT THE TYPED SPELLING ADDS over the raw one, and it is the whole of
+//! What the typed spelling adds over the raw one, and it is the whole of
 //! stage B2:
 //!
-//! - `at_key` builds the path and emits NOTHING — the `.field()` convention,
+//! - `at_key` builds the path and emits nothing — the `.field()` convention,
 //!   and compactc's own shape (`propagate-ledger-paths.ss` folds an
 //!   intermediate `lookup` into `f` at compile time);
-//! - the leaf method emits the ONE Impact operation Compact names, with the
+//! - the leaf method emits the one Impact operation Compact names, with the
 //!   path re-encoded into it;
-//! - `Map` is the only nestable ADT, and that is a TYPE ERROR here rather
+//! - `Map` is the only nestable ADT, and that is a type error here rather
 //!   than a comment: `LedgerSet<LedgerList<..>>` has no method that would
 //!   accept it, exactly as compactc's kind-checker rejects `Set<List<T>>`;
-//! - `insertDefault` on an ADT-valued map pushes the ADT's INITIAL VALUE,
+//! - `insertDefault` on an ADT-valued map pushes the ADT's initial value,
 //!   chosen by the value type's `LedgerSlot` family rather than by the call
 //!   site (`outer_insert_default` below is the differential for it).
 
@@ -55,7 +55,7 @@ label! {
     Root = "root";
 }
 
-/// The fixture's `export ledger` block, TYPED — one Rust field per Compact
+/// The fixture's `export ledger` block, typed — one Rust field per Compact
 /// declaration, in declaration order, with the nesting in the type.
 ///
 /// `nested.rs` could not write this: at stage B1 the handle types could not
@@ -169,8 +169,8 @@ impl NestedTyped {
         Discloses::of(())
     }
 
-    /// The OUTER map's `insertDefault`, whose value type is an ADT — so the
-    /// pushed constant is the empty map and not a cell of zeros, and NOTHING
+    /// The outer map's `insertDefault`, whose value type is an ADT — so the
+    /// pushed constant is the empty map and not a cell of zeros, and nothing
     /// at this call site says so. The `LedgerSlot` impl for `LedgerMap` does.
     #[circuit]
     pub fn outer_insert_default(c: &mut Circuit, k: B32<Private>) -> Discloses<(Key,)> {
@@ -352,7 +352,7 @@ impl NestedTyped {
         Discloses::of(())
     }
 
-    // ---- three levels: at_key CHAINED ---------------------------------------
+    // ---- three levels: at_key chained ---------------------------------------
 
     #[circuit]
     pub fn deep_insert(
@@ -420,7 +420,7 @@ fn pairs() -> Vec<(&'static str, fn() -> Compiled, fn() -> Compiled)> {
     ]
 }
 
-/// THE HEADLINE: the typed spelling's ZKIR IS the raw spelling's, byte for
+/// The headline: the typed spelling's ZKIR is the raw spelling's, byte for
 /// byte — not modulo renaming, not modulo folding. Both sides are ours, so
 /// there is nothing to canonicalize away.
 #[test]
@@ -434,8 +434,8 @@ fn the_typed_spelling_is_the_raw_one() {
     }
 }
 
-/// EVERY circuit of the raw contract has a typed twin, compared by FUNCTION
-/// POINTER — `nested_differential` makes the same check against compactc's
+/// Every circuit of the raw contract has a typed twin, compared by function
+/// pointer — `nested_differential` makes the same check against compactc's
 /// artifacts, and this one keeps the two sides in step as the fixture grows.
 #[test]
 fn every_raw_circuit_has_a_typed_twin() {
@@ -465,7 +465,7 @@ fn every_typed_circuit_is_compared() {
     assert!(missing.is_empty(), "not compared: {missing:?}");
 }
 
-/// The ledger block's FIELD PATHS are the declaration order, because seven
+/// The ledger block's field paths are the declaration order, because seven
 /// fields fit one segment — the same statement `nested.rs`'s `const MM: u8 =
 /// 0;` made, now made by the derive.
 #[test]

@@ -1,15 +1,15 @@
 //! `BoundedUint<BOUND>` — Compact's `Uint<0..BOUND>` for an arbitrary bound
-//! (M14, notes/bounded-integers.org).
+//! (notes/bounded-integers.org).
 //!
 //! The claims, in the order the note makes them:
 //!
-//! - the LOWERING is compactc's table, not the leaf's — every arm of it,
+//! - the lowering is compactc's table, not the leaf's — every arm of it,
 //!   compared as byte-identical ZKIR against the hand-written form;
-//! - the THREE WIDTHS a bound carries (range constraint, comparison, FAB
+//! - the three widths a bound carries (range constraint, comparison, FAB
 //!   atom) are the three different numbers they should be;
 //! - the two conversions (`widen`, `to_uint`) are free: no instruction, and
 //!   no second range constraint;
-//! - the BORSH width is the next Borsh primitive up, and `constrain_canonical`
+//! - the Borsh width is the next Borsh primitive up, and `constrain_canonical`
 //!   is exactly `constrain_input` — which no other range-checked leaf can say
 //!   (`Tag<K>` adds a bound Compact does not emit).
 //!
@@ -45,7 +45,7 @@ fn instructions(build: impl FnOnce(&mut Circuit)) -> usize {
     c.finish(false).ir.instructions.len()
 }
 
-/// Build and RUN a circuit over `inputs` (the argument slots `c.arg` reads),
+/// Build and run a circuit over `inputs` (the argument slots `c.arg` reads),
 /// returning its native outputs — the arithmetic checked as arithmetic, not
 /// only as an instruction stream.
 fn run(build: impl FnOnce(&mut Circuit), inputs: Vec<Fr>) -> Vec<Fr> {
@@ -78,7 +78,7 @@ fn run_result(build: impl FnOnce(&mut Circuit), inputs: Vec<Fr>) -> Result<Vec<F
         .collect())
 }
 
-/// EVERY ARM of compactc's table, reached through the bound alone. The
+/// Every arm of compactc's table, reached through the bound alone. The
 /// hand-written side spells out what compactc emits for that `Uint<0..n>`
 /// (verified against the pinned compiler's artifacts —
 /// `minocrab-contracts/tests/fixtures/bounded/`); the typed side only names
@@ -101,7 +101,7 @@ fn each_bound_lowers_to_compactc_s_own_constraint() {
         }),
         ir_of(|c| { BoundedUint::<2>::from_field_unchecked(c.arg("x")).constrain_input(c); }),
     );
-    // A bound that IS a power of two is a BIT WIDTH, not a `less_than` —
+    // A bound that is a power of two is a bit width, not a `less_than` —
     // so `BoundedUint<256>` and `Uint<8>` are the same instruction.
     assert_eq!(
         ir_of(|c| {
@@ -115,7 +115,7 @@ fn each_bound_lowers_to_compactc_s_own_constraint() {
         ir_of(|c| { BoundedUint::<256>::from_field_unchecked(c.arg("x")).constrain_input(c); }),
     );
     // Everything else is `less_than v BOUND bits` + `assert`, with
-    // compactc's EVEN-ROUNDED width and the bound as an inline immediate.
+    // compactc's even-rounded width and the bound as an inline immediate.
     for (bound, bits) in [(10u128, 4u32), (255, 8), (300, 10), (1000, 10)] {
         assert_eq!(
             ir_of(|c| {
@@ -134,7 +134,7 @@ fn each_bound_lowers_to_compactc_s_own_constraint() {
     }
 }
 
-/// `CircuitArg::constrain` — the PROVIDED method, which runs the same table
+/// `CircuitArg::constrain` — the provided method, which runs the same table
 /// over `push_prims` — must agree with `constrain_input` for every bound.
 /// That is the whole point of the leaf saying only what its slots are.
 #[test]
@@ -159,7 +159,7 @@ fn the_derived_constraint_is_the_leafs_own() {
     both::<70_000>();
 }
 
-/// `from_field_checked` is DEFINED as `from_field_unchecked` immediately
+/// `from_field_checked` is defined as `from_field_unchecked` immediately
 /// followed by `constrain_input` (notes/api-safety-survey.org §A1's fix), so
 /// the two spellings must lower to byte-identical ZKIR — every arm of the
 /// bound table, same as [`each_bound_lowers_to_compactc_s_own_constraint`].
@@ -185,13 +185,13 @@ fn from_field_checked_matches_unchecked_plus_constrain_input() {
     both::<70_000>();
 }
 
-/// THREE WIDTHS, three different numbers — the table in
+/// Three widths, three different numbers — the table in
 /// notes/bounded-integers.org §2, asserted through the leaf's own surfaces.
 #[test]
 fn the_three_widths_are_three_numbers() {
-    // The FAB atom: `⌈bitlen(maxval)/8⌉` bytes, so ONE (not zero — compactc
+    // The FAB atom: `⌈bitlen(maxval)/8⌉` bytes, so one (not zero — compactc
     // issue #588, `uint_atom_bytes`'s doc comment) for `Uint<0..1>` and
-    // THREE for `Uint<0..70000>` — neither of which is a Borsh width.
+    // three for `Uint<0..70000>` — neither of which is a Borsh width.
     let atom = |atoms: Vec<AlignmentAtom>| match atoms[..] {
         [AlignmentAtom::Bytes { length }] => length,
         _ => panic!("a bounded uint is one bytes atom"),
@@ -200,7 +200,7 @@ fn the_three_widths_are_three_numbers() {
     assert_eq!(atom(BoundedUint::<10, Private>::atoms()), 1);
     assert_eq!(atom(BoundedUint::<300, Private>::atoms()), 2);
     assert_eq!(atom(BoundedUint::<70_000, Private>::atoms()), 3);
-    // The range CONSTRAINT of `Uint<0..70000>` runs at 18 bits (even, as
+    // The range constraint of `Uint<0..70000>` runs at 18 bits (even, as
     // Plonk's gadget wants) …
     assert_eq!(
         BoundedUint::<70_000, Private>::prims(),
@@ -208,7 +208,7 @@ fn the_three_widths_are_three_numbers() {
     );
     assert!(ir_of(|c| { BoundedUint::<70_000>::from_field_unchecked(c.arg("x")).constrain_input(c); })
         .contains("\"bits\":18"));
-    // … while a COMPARISON of two of them runs at 17.
+    // … while a comparison of two of them runs at 17.
     assert!(ir_of(|c| {
         let a = BoundedUint::<70_000>::from_field_unchecked(c.arg("a"));
         let b = BoundedUint::<70_000>::from_field_unchecked(c.arg("b"));
@@ -235,7 +235,7 @@ fn a_comparison_is_the_hand_written_one() {
         }),
     );
     // …and a `BoundedUint<1000>` (10) and a `Uint<10>` (10) agree on a
-    // width, so they compare directly. A pair that does NOT agree is a
+    // width, so they compare directly. A pair that does not agree is a
     // compile error — see `_COMPILE_ERRORS_NOT_PANICS`.
     assert_eq!(
         instructions(|c| {
@@ -247,8 +247,8 @@ fn a_comparison_is_the_hand_written_one() {
     );
 }
 
-/// Both conversions are FREE: no instruction, and no second range
-/// constraint. A widened value's constraint is the SOURCE's, emitted once.
+/// Both conversions are free: no instruction, and no second range
+/// constraint. A widened value's constraint is the source's, emitted once.
 #[test]
 fn widening_and_retyping_cost_nothing() {
     assert_eq!(
@@ -259,7 +259,7 @@ fn widening_and_retyping_cost_nothing() {
         }),
         0
     );
-    // The widened value carries the SOURCE's obligation, so the comparison
+    // The widened value carries the source's obligation, so the comparison
     // it enables costs one instruction and no range check.
     assert_eq!(
         ir_of(|c| {
@@ -276,7 +276,7 @@ fn widening_and_retyping_cost_nothing() {
     );
 }
 
-/// BORSH: the next primitive width up, and a `constrain_canonical` that IS
+/// Borsh: the next primitive width up, and a `constrain_canonical` that is
 /// the argument constraint.
 #[test]
 fn borsh_serializes_at_the_next_primitive_width() {
@@ -285,7 +285,7 @@ fn borsh_serializes_at_the_next_primitive_width() {
     assert_eq!(<BoundedUint<256, Private> as CircuitBorsh<Private>>::LEN, 1);
     assert_eq!(<BoundedUint<300, Private> as CircuitBorsh<Private>>::LEN, 2);
     assert_eq!(<BoundedUint<1000, Private> as CircuitBorsh<Private>>::LEN, 2);
-    // THREE FAB bytes, FOUR Borsh bytes: Borsh has no `u24`.
+    // Three FAB bytes, four Borsh bytes: Borsh has no `u24`.
     assert_eq!(
         <BoundedUint<70_000, Private> as CircuitBorsh<Private>>::LEN,
         4
@@ -298,7 +298,7 @@ fn borsh_serializes_at_the_next_primitive_width() {
     assert_eq!(<BoundedUint<300, Private> as CircuitBorsh<Private>>::layout()[0].kind, "u16");
 
     // Describing the preimage emits nothing, and the hash atom is the
-    // BORSH width (4), not the FAB one (3).
+    // Borsh width (4), not the FAB one (3).
     let mut c = Circuit::new();
     let x = BoundedUint::<70_000, Private>::from_field_unchecked(c.arg("x"));
     let before = c.instruction_count();
@@ -320,16 +320,16 @@ fn borsh_serializes_at_the_next_primitive_width() {
     );
 }
 
-// ---- TRACKED ARITHMETIC (M19 fix 1, notes/api-safety-survey.org §B2) ------------
+// ---- tracked arithmetic (M19 fix 1, notes/api-safety-survey.org §B2) ------------
 //
 // Compact's rule, verbatim (notes/builtin-lowering.org §9): `+` and `*` are a
-// plain field `add` / `mul` with the max carried in the TYPE and no check at
+// plain field `add` / `mul` with the max carried in the type and no check at
 // the op; `-` inserts the underflow guard first. The claims below are all the
 // same claim — the instruction stream is compactc's, byte for byte, and the
 // only thing our const generics add is the bookkeeping compactc does in its
 // inference table.
 
-/// `+` is ONE `add` and nothing else — no range check, exactly as compactc
+/// `+` is one `add` and nothing else — no range check, exactly as compactc
 /// emits none, because the result's bound is in the type.
 #[test]
 fn add_is_one_field_add_and_no_check() {
@@ -359,7 +359,7 @@ fn add_is_one_field_add_and_no_check() {
     );
 }
 
-/// `*` likewise: ONE `mul`, and the bound is `(BOUND-1)·(BOUND2-1) + 1`.
+/// `*` likewise: one `mul`, and the bound is `(BOUND-1)·(BOUND2-1) + 1`.
 #[test]
 fn mul_is_one_field_mul_and_no_check() {
     assert_eq!(
@@ -373,7 +373,7 @@ fn mul_is_one_field_mul_and_no_check() {
         ir_of(|c| {
             let a = BoundedUint::<300>::from_field_unchecked(c.arg("a"));
             let b = BoundedUint::<200>::from_field_unchecked(c.arg("b"));
-            // 299 * 199 = 59_501, so 59_502 is the narrowest legal OUT.
+            // 299 * 199 = 59_501, so 59_502 is the narrowest legal out.
             let product: BoundedUint<59_502, Private> = a.mul::<59_502, 200>(c, b);
             let product = c.disclose(product.field(), "p");
             c.output(product, "p");
@@ -389,8 +389,8 @@ fn mul_is_one_field_mul_and_no_check() {
     );
 }
 
-/// `-` is compactc's GUARDED lowering — `assert(a >= b)`, `neg`, `add`, in
-/// that order — at the BOUND's comparison width (10 for `Uint<0..1000>`,
+/// `-` is compactc's guarded lowering — `assert(a >= b)`, `neg`, `add`, in
+/// that order — at the bound's comparison width (10 for `Uint<0..1000>`,
 /// not the 10-bit-even range-constraint width by coincidence; the point is
 /// that no number is typed at the call site).
 #[test]
@@ -416,7 +416,7 @@ fn sub_is_compactcs_guarded_lowering() {
             c.output(diff, "d");
         }),
     );
-    // The message is metadata: `sub_with` is the SAME lowering.
+    // The message is metadata: `sub_with` is the same lowering.
     assert_eq!(
         ir_of(|c| {
             let a = BoundedUint::<1000>::from_field_unchecked(c.arg("a"));
@@ -441,7 +441,7 @@ fn sub_is_compactcs_guarded_lowering() {
     assert!(!raw.contains("\"assert\""), "the raw spelling has no guard: {raw}");
 }
 
-/// `narrow` emits THE RANGE CHECK COMPACTC OMITS (§B4's correction:
+/// `narrow` emits the range check compactc omits (§B4's correction:
 /// `amount as Uint<64>` in argument position emits nothing at all), and
 /// nothing else — the same instruction `Uint<BITS>`'s own argument
 /// constraint emits, from the same table.
@@ -457,7 +457,7 @@ fn narrow_emits_the_check_compactc_omits() {
             let _: Uint<8, Private> = x.narrow::<8>(c);
         }),
     );
-    // …and it is the SAME instruction `Uint<8>` constrains an argument with.
+    // …and it is the same instruction `Uint<8>` constrains an argument with.
     assert_eq!(
         ir_of(|c| { Uint::<8>::from_field_unchecked(c.arg("x")).constrain_input(c); }),
         ir_of(|c| {
@@ -479,7 +479,7 @@ fn narrow_emits_the_check_compactc_omits() {
     );
 }
 
-/// THE BOUND IS TRACKED, and the value is right: `Uint<0..300> +
+/// The bound is tracked, and the value is right: `Uint<0..300> +
 /// Uint<0..200>` types as `Uint<0..499>` (`299 + 199 = 498`, bound
 /// exclusive), and the arithmetic the type describes is the arithmetic the
 /// simulator performs.
@@ -522,7 +522,7 @@ fn bounds_track_and_the_values_round_trip() {
     assert_eq!(BoundedUint::<59_502, Private>::MAX, 59_501);
 
     // The guarded subtraction: honest preimage passes with the right answer,
-    // and the underflowing one is REJECTED rather than yielding `a - b + p`.
+    // and the underflowing one is rejected rather than yielding `a - b + p`.
     let difference = |a: u64, b: u64| {
         run_result(
             |c| {
@@ -547,7 +547,7 @@ fn bounds_track_and_the_values_round_trip() {
 
 /// A public constant, and the one panic this leaf keeps: the magnitude of a
 /// runtime integer is not in the type system, so `BOUND` cannot check it at
-/// compile time (notes/contract-api.org §"Panics that could NOT become
+/// compile time (notes/contract-api.org §"Panics that could not become
 /// compile errors", item 5).
 #[test]
 #[should_panic(expected = "300 is not a value of Uint<0..300>")]
@@ -563,7 +563,7 @@ fn the_largest_legal_constant_is_fine() {
     assert_eq!(BoundedUint::<300, Public>::MAX, 299);
 }
 
-/// The rejections that are COMPILE errors, not panics (the standing rule).
+/// The rejections that are compile errors, not panics (the standing rule).
 /// Each block is a spelling that must not compile:
 ///
 /// a bound of zero — compactc's own rule, in compactc's own words,
@@ -613,9 +613,9 @@ fn the_largest_legal_constant_is_fine() {
 /// trybuild in the lock file and `compile_fail` doc-tests do not run for a
 /// test target. This block is the record of the four spellings.)
 ///
-/// The TRACKED ARITHMETIC's rejections — a too-small `OUT` on `add` and on
+/// The tracked arithmetic's rejections — a too-small `OUT` on `add` and on
 /// `mul`, an `OUT` whose computation overflows a `u128`, and a `narrow` in
 /// the free direction — are `compile_fail` doc-tests on the methods
-/// themselves in `minocrab-std/src/leaves.rs`, where doc-tests DO run, so those
+/// themselves in `minocrab-std/src/leaves.rs`, where doc-tests do run, so those
 /// four are checked by `cargo test` rather than by hand.
 const _COMPILE_ERRORS_NOT_PANICS: () = ();

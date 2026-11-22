@@ -1,5 +1,5 @@
 //! `#[derive(CircuitBorsh)]` must be exactly the impls stage 1 wrote by
-//! hand — and the gate is not a token comparison but SERIALIZED ZKIR:
+//! hand — and the gate is not a token comparison but serialized ZKIR:
 //! every circuit the derived type can build (the hash preimage, the packed
 //! bytes, the canonicity constraints, both reader modes) is compared
 //! byte-for-byte against the same circuit over a hand-written twin.
@@ -192,8 +192,8 @@ fn ir_of(build: impl FnOnce(&mut Circuit)) -> String {
 }
 
 /// Both encoders, both reader modes and the canonicity constraints, each
-/// built twice and compared as serialized ZKIR — which pins the ARGUMENT
-/// LABELS too, since `Builder` names every value `%label.index`.
+/// built twice and compared as serialized ZKIR — which pins the argument
+/// labels too, since `Builder` names every value `%label.index`.
 #[test]
 fn the_derive_is_the_hand_written_impl() {
     macro_rules! both {
@@ -309,7 +309,7 @@ fn the_derived_constants_and_layout_are_the_hand_written_ones() {
     );
 
     // …and the layout paths are the field names verbatim, dot-joined — the
-    // SPEC type's paths, not the camelCase argument labels.
+    // spec type's paths, not the camelCase argument labels.
     let rows = <Derived<Private> as CircuitBorsh<Private>>::layout();
     let paths: Vec<&str> = rows.iter().map(|r| r.path.as_str()).collect();
     assert_eq!(
@@ -330,7 +330,7 @@ fn the_derived_constants_and_layout_are_the_hand_written_ones() {
     );
 }
 
-/// A derived struct is a circuit argument AND Borsh-serializable — the "one
+/// A derived struct is a circuit argument and Borsh-serializable — the "one
 /// derive yields both" claim, as a compile-time fact.
 #[test]
 fn a_derived_record_is_an_argument_and_borsh() {

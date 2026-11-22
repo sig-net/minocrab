@@ -1,32 +1,31 @@
-//! M35 rung D, THE STATE-DRIVING HALF: request → post → respond, chained on
+//! The state-driving round trip: request → post → respond, chained on
 //! a real `StateValue` through the Impact VM under plain `cargo test`.
 //!
-//! Rung D built the responder (`crates/signet-sim`) but could not chain it,
-//! because nothing produced a circuit's transcript from ledger state. The
-//! executor (`minocrab_sim::exec`) does, so this file closes the loop as
+//! The responder (`crates/signet-sim`) is chained through the
+//! executor (`minocrab_sim::exec`), which produces a circuit's transcript
+//! from ledger state, so this file closes the loop as
 //! far as it goes:
 //!
 //! 1. a request circuit runs against a real pre-state; the executor derives
-//!    its transcript FROM that state and the Impact VM applies it;
-//! 2. the signet signer's notification is built from the slot's OWN declared
+//!    its transcript from that state and the Impact VM applies it;
+//! 2. the signet signer's notification is built from the slot's own declared
 //!    path (`Pending::record_path`, the one the artifact-agreement gate pins
 //!    against the compiled contract-info);
-//! 3. `SigNetSim` — the MPC's own reader, translated — walks the POST state
+//! 3. `SigNetSim` — the MPC's own reader, translated — walks the post state
 //!    by that path, finds the record the circuit filed, recomputes its id
 //!    from the bytes it decoded, and signs. Nothing is handed to it: every
 //!    byte it reads was written by the circuit into a `StateValue`.
 //!
-//! It also chains the pairs THROUGH state: a request circuit's post-state is
+//! It also chains the pairs through state: a request circuit's post-state is
 //! the state its settle circuit reads, with nothing carried between them but
-//! a `StateValue`. That is what M35 D's `cargo test` speed asks for, and it
-//! is the first time a settle in this workspace has read a record it was not
+//! a `StateValue`, at `cargo test` speed: a settle reads a record it was not
 //! handed.
 //!
 //! The adversarial responders live here too, each hitting the reader's own
 //! drop reason by name.
 //!
-//! The last link, `respond → settle`, closed on 2026-09-07 (decisions.org
-//! T1): the typed settle's digest now packs the output the way the MPC's
+//! The last link, `respond → settle`: the typed settle's digest packs the
+//! output the way the MPC's
 //! `compute_response_hash` does — `the_typed_settle_digest_is_the_digest_the_
 //! mpc_signs` pins the agreement, and the chained pairs below settle against
 //! the sim's own attestation. See notes/signet-async.org §10.
@@ -51,7 +50,7 @@ const HEIGHT: u64 = 21_000_000;
 /// The signet signer's `Misc` payload for a request: `version(1) ‖
 /// requestId(32) ‖ callerAddress(32) ‖ pathDepth(1) ‖ path(4) ‖ zeros`.
 ///
-/// Built from the SLOT's declared path, not from a constant — the same
+/// Built from the slot's declared path, not from a constant — the same
 /// bytes `Pending::request` derives, so a layout change moves both.
 fn notification(request_id: &[u8; 32], caller: &[u8; 32], path: &[u8]) -> [u8; MISC_PAYLOAD_LEN] {
     let mut out = [0u8; MISC_PAYLOAD_LEN];
@@ -100,7 +99,7 @@ fn deposits_path() -> Vec<u8> {
 
 // ---- the chain -------------------------------------------------------------
 
-/// THE ROUND TRIP, as far as it goes: the record the MPC signs over was
+/// The round trip, as far as it goes: the record the MPC signs over was
 /// written into the ledger by the circuit, found by the MPC's own path walk,
 /// and its id recomputed from the bytes as filed.
 #[test]
@@ -123,7 +122,7 @@ fn the_mpc_resolves_the_record_the_request_circuit_filed() {
     assert_eq!(attestation.output_kind, signet_sim::hashing::v1::output_kind::EXECUTED);
     assert_eq!(attestation.block_height, HEIGHT, "the height is attested, not inferred");
     // The record the reader decoded is the one the circuit's arguments
-    // describe — the drift gate of signet_flow.rs, now driven by STATE
+    // describe — the drift gate of signet_flow.rs, now driven by state
     // rather than by a hand-built cell.
     assert_eq!(attestation.record.key_version, s.env.key_version);
     assert_eq!(attestation.record.execution_dest, signet_sim::hashing::v1::ethereum_caip2_id());
@@ -134,7 +133,7 @@ fn the_mpc_resolves_the_record_the_request_circuit_filed() {
     );
 }
 
-/// A failed destination-chain call: `OutputKind::failed` and an EMPTY
+/// A failed destination-chain call: `OutputKind::failed` and an empty
 /// output, where the Borsh lineage attested one failure-kind byte.
 #[test]
 fn a_never_executed_call_attests_the_failed_verdict() {
@@ -164,7 +163,7 @@ fn an_unfiled_id_is_refused_by_the_reader() {
     ));
 }
 
-/// The notification points at the ENV map rather than the record map: the
+/// The notification points at the env map rather than the record map: the
 /// walk lands on a map whose values are not records.
 #[test]
 fn a_wrong_path_is_refused_by_the_reader() {
@@ -202,7 +201,7 @@ fn a_malformed_notification_is_refused_by_the_reader() {
     ));
 }
 
-/// A responder with a DIFFERENT root: it resolves the record and signs, but
+/// A responder with a different root: it resolves the record and signs, but
 /// under a key the vault's `mpcResponseKey` is not. The two attestations
 /// differ in the signature and in nothing else, which is the property the
 /// settle circuit's verification rests on.
@@ -228,7 +227,7 @@ fn a_wrong_key_attests_the_same_bytes_under_a_different_signature() {
 }
 
 /// Replay and double response are the same thing at this boundary: the
-/// responder is PURE, so the second call returns the identical attestation.
+/// responder is pure, so the second call returns the identical attestation.
 /// Nothing in the MPC stops a replay — the settle circuit's `remove` does,
 /// which is why `consume` is not idempotent.
 #[test]
@@ -247,25 +246,25 @@ fn a_replay_produces_the_identical_attestation() {
 
 // ---- the link that does not close -------------------------------------------
 
-/// THE LAST LINK, CLOSED (2026-09-07, decisions.org T1): the digest a typed
-/// `Pending` settle verifies IS the digest the MPC signs.
+/// The last link, closed (2026-09-07, decisions.org T1): the digest a typed
+/// `Pending` settle verifies is the digest the MPC signs.
 ///
 /// `signet::calculate_attestation_digest_borsh` — what `Pending::complete`
 /// and `refund` use — hashes `[requestId.hi, requestId.lo]` then the
-/// serialized output `kind ‖ borsh(output)` PACKED as one byte string in
+/// serialized output `kind ‖ borsh(output)` packed as one byte string in
 /// FAB's 31-byte limbing. The MPC's `compact-hashing::compute_response_hash`
 /// (translated verbatim in `signet_sim::hashing`, pinned by the MPC's own
 /// golden vectors) hashes exactly that.
 ///
-/// Until 2026-09-07 the typed digest hashed ONE FIELD ELEMENT PER BORSH LEAF
+/// Until 2026-09-07 the typed digest hashed one field element per Borsh leaf
 /// (the kind byte one limb, the payload another) — which agreed with the MPC
-/// under keccak / persistentHash, where the hash is over BYTES, and stopped
+/// under keccak / persistentHash, where the hash is over bytes, and stopped
 /// agreeing when M28 moved the protocol to `transientHash`. That
 /// disagreement, and the packing that fixed it, belonged to the Borsh
 /// `serializedOutput`: `kind ‖ borsh(output)` as one byte string.
 ///
-/// V1 (M44 rung D) has no packing problem to get wrong. The digest names the
-/// id, the HEIGHT, the VERDICT and the attested WIDTH as separate field
+/// V1 has no packing problem to get wrong. The digest names the
+/// id, the height, the verdict and the attested width as separate field
 /// elements and then the output's own FAB limbs — so the agreement to pin is
 /// that the hand model, the MPC's rule and the width the filing implies all
 /// say the same thing, at each of the vault's three output shapes.
@@ -285,7 +284,7 @@ fn the_typed_settle_digest_is_the_digest_the_mpc_signs() {
     let theirs = mpc::attestation_digest(&rid, HEIGHT, mpc::output_kind::EXECUTED, &[1u8]);
     assert_eq!(model(mpc::output_kind::EXECUTED, FLAG_WIDTH, &[Fr::from(1u64)]), theirs, "the hand model limbs a Bytes<1> the way the MPC does");
 
-    // A `uint256` output: thirty-two bytes, TWO limbs (byte 31 above the
+    // A `uint256` output: thirty-two bytes, two limbs (byte 31 above the
     // low thirty-one).
     let amount_in = 0x0102_0304_0506_0708u64;
     let mut word = [0u8; 32];
@@ -297,7 +296,7 @@ fn the_typed_settle_digest_is_the_digest_the_mpc_signs() {
     let theirs = mpc::attestation_digest(&rid, HEIGHT, mpc::output_kind::FAILED, &[]);
     assert_eq!(model(mpc::output_kind::FAILED, 0, &[]), theirs, "a failure attests nothing at width zero");
 
-    // AND THE WIDTH IS LOAD-BEARING: the same bytes at a width the filing
+    // And the width is load-bearing: the same bytes at a width the filing
     // does not imply is a different digest, which is what makes a
     // wrong-width output unverifiable rather than merely wrong.
     assert_ne!(
@@ -305,7 +304,7 @@ fn the_typed_settle_digest_is_the_digest_the_mpc_signs() {
         model(mpc::output_kind::EXECUTED, WORD_WIDTH, &[Fr::from(1u64)]).1,
     );
 
-    // And what the CIRCUIT hashes is the model's: `tests/vault_pending`'s
+    // And what the circuit hashes is the model's: `tests/vault_pending`'s
     // spec harness holds the two together on every settle, and
     // `deposit_then_claim_settles_the_sims_attestation` below settles
     // against the sim's own attestation.
@@ -361,7 +360,7 @@ fn chain(
         .expect("the reference VM accepts the chained settle");
 }
 
-/// THE LAST LINK: `request → post → respond → settle`, with NOTHING supplied
+/// The last link: `request → post → respond → settle`, with nothing supplied
 /// by the model but the scenario. The vault's stored response key is the
 /// sim's derived one, the deposit files into real state, the sim reads that
 /// state and signs, and the claim circuit — run by the executor against the
@@ -400,7 +399,7 @@ fn deposit_then_claim_settles_the_sims_attestation() {
         // blockHeight, outputKind, serializedOutputLength, outputHash
         // (two), digest (two), bigR.x (two), bigR.y (two), s (two),
         // recoveryId, then the attested output. The output hash and the
-        // DIGEST slots are the sim's too.
+        // digest slots are the sim's too.
         let mut inputs = c.inputs();
         let (h_hi, h_lo) = b32_slots(&attestation.output_hash);
         let (d_hi, d_lo) = b32_slots(&attestation.digest);

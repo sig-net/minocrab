@@ -1,6 +1,6 @@
-//! **CHECKED CONSTRUCTION + CONSTRAINT DEDUP == TODAY'S STREAM.**
+//! **checked construction + constraint dedup == today's stream.**
 //!
-//! The Borsh layer's injectivity has been a doc comment: "PRECONDITION: every
+//! The Borsh layer's injectivity has been a doc comment: "precondition: every
 //! pushed wire must already be constrained to its byte length … without that
 //! the packing is not injective and the digest binds nothing"
 //! (notes/api-safety-survey.org §B3). `Serializer::constrained` and the
@@ -14,7 +14,7 @@
 //! shipped ZKIR is instruction for instruction what it is today.
 //!
 //! The other tests are the ones that keep that claim honest — the check is
-//! REAL when nothing else constrained the leaves, and it costs what it says
+//! real when nothing else constrained the leaves, and it costs what it says
 //! when the opt profile is off.
 
 use minocrab::Circuit;
@@ -28,7 +28,7 @@ use minocrab_zkir::to_zkir_string;
 
 /// A representative record: every leaf family the layer has, including the
 /// `Bool` whose entry constraint is `constrain_to_boolean` while its Borsh
-/// segment is one BYTE — the cross-family case the pass has to get right for
+/// segment is one byte — the cross-family case the pass has to get right for
 /// any of this to be free.
 #[derive(CircuitBorsh)]
 struct Record<V: Vis> {
@@ -74,9 +74,9 @@ fn buffer(c: &mut Circuit) -> BytesN<Private, LEN> {
     <BytesN<Private, LEN> as CircuitArg>::declare(c, &ArgPath::root("buffer"))
 }
 
-// ---- THE KEY TEST ---------------------------------------------------------------
+// ---- the key test ---------------------------------------------------------------
 
-/// **THE CLAIM.** The same circuit written two ways:
+/// **the claim.** The same circuit written two ways:
 ///
 /// (a) today's — arguments constrained at entry, `to_bytes` trusting them;
 /// (b) checked — the same entry constraints, `to_bytes_constrained`, and the
@@ -100,14 +100,14 @@ fn the_checked_serializer_is_free_when_the_arguments_were_constrained() {
     assert_eq!(today, checked);
 }
 
-/// The reader's half, on the shape the reader is FOR: a packed buffer
+/// The reader's half, on the shape the reader is for: a packed buffer
 /// arriving as a circuit argument and constrained at entry. The constrained
 /// constructor's buffer constraints are duplicates of the entry ones, and the
 /// pass drops them — in both modes.
 ///
-/// STATED DIFFERENTLY FROM THE SERIALIZER'S, and the difference is a finding:
+/// Stated differently from the serializer's, and the difference is a finding:
 /// this cannot be compared against today's dedup-off stream, because the
-/// Split reader ALREADY contains a redundant constraint. A leaf that happens
+/// Split reader already contains a redundant constraint. A leaf that happens
 /// to span exactly one limb comes back as that limb's own wire (`take` splits
 /// only where it must), so `constrain_canonical` re-constrains a wire the
 /// buffer's `constrain_input` already did. On this path the pass is a saving
@@ -159,9 +159,9 @@ fn the_checked_reader_is_free_when_the_buffer_was_constrained() {
 
 // ---- what keeps the claim honest ------------------------------------------------
 
-/// THE CHECK IS REAL. With the pass on but nothing else constraining the
+/// The check is real. With the pass on but nothing else constraining the
 /// leaves, the checked serializer's constraints survive — the pass removes
-/// what is IMPLIED, and an unconstrained wire implies nothing.
+/// what is implied, and an unconstrained wire implies nothing.
 ///
 /// This is the test a future "optimisation" that widened the dedup rule would
 /// fail, which is why it is a separate test and not a remark.
@@ -177,15 +177,15 @@ fn the_check_is_real_when_nothing_else_constrained_the_leaves() {
     });
     assert_ne!(unchecked, checked);
 
-    // And it is exactly the constraints, nothing else: ONE PER SEGMENT —
+    // And it is exactly the constraints, nothing else: one per segment —
     // eight leaves, of which the `Bytes<32>` is two segments and the
     // `Bytes<64>` three, and the `Flagged` two.
     let count = |ir: &str| ir.matches("constrain_bits").count();
     assert_eq!(count(&checked) - count(&unchecked), 12);
 }
 
-/// THE COST IS REAL TOO, and stated the same way: with the opt profile off,
-/// the checked path is the unchecked one PLUS its constraints. That is the
+/// The cost is real too, and stated the same way: with the opt profile off,
+/// the checked path is the unchecked one plus its constraints. That is the
 /// price a circuit pays for the check where it cannot afford to diverge from
 /// compactc — two rows per segment, per `tests/backend_folding.rs`.
 #[test]
@@ -205,7 +205,7 @@ fn the_flag_off_keeps_every_added_constraint() {
     assert_eq!(count(&checked_unoptimised) - count(&today), 12);
 }
 
-/// A LITERAL SEGMENT IS NOT RE-PROVEN. `Serializer::push_literal` builds its
+/// A literal segment is not re-proven. `Serializer::push_literal` builds its
 /// own constant limbs, which are in range by construction — and after the
 /// immediate-copy fold a constraint on one names an immediate, which no pass
 /// can remove again. So the constrained mode emits nothing for them.

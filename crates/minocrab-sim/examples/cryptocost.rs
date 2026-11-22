@@ -1,4 +1,4 @@
-//! Row costs of the crypto primitives (M10 step 0 instrument), in the
+//! Row costs of the crypto primitives, in the
 //! spirit of `examples/opcost.rs`: build minimal circuits, difference their
 //! cost-model rows, and print what each primitive actually costs.
 //!
@@ -753,7 +753,7 @@ fn ecdsa_part(
 
 /// What `rowcost::est_rows` adds up for one `secp256k1EcdsaVerify` — the
 /// instruction mix the eDSL emits (`minocrab_std::secp256k1_ecdsa_verify`).
-/// The verify is measured as a REGION of the finished stream: `finish` deletes
+/// The verify is measured as a region of the finished stream: `finish` deletes
 /// instructions, so a build-time instruction count cannot index the stream it
 /// returns (notes/ir-passes.org §13), and a region is moved onto it.
 fn ecdsa_estimate() -> f64 {

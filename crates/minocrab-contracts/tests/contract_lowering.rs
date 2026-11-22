@@ -1,5 +1,5 @@
 //! `#[contract(lowering = path)]` applies the path to every circuit of the
-//! block BEFORE the body, after the arguments are declared and constrained.
+//! block before the body, after the arguments are declared and constrained.
 //!
 //! Ordering is the point: `Circuit::set_lowering` refuses to run once a
 //! gadget has consulted the settings, so a lowering applied after the body's

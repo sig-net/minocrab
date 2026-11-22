@@ -1,14 +1,13 @@
-//! Typed disclosure declarations, gated the way every M9 phase is gated:
+//! Typed disclosure declarations, gated by the zero-movement rule:
 //! the same circuit written with and without a declaration must lower to
-//! BYTE-IDENTICAL ZKIR. A `Discloses<..>` return type is type-level only —
-//! it may not add an output, move a slot or emit an instruction — which is
-//! the zero-movement rule applied to phase 6.
+//! byte-identical ZKIR. A `Discloses<..>` return type is type-level only —
+//! it may not add an output, move a slot or emit an instruction.
 //!
 //! The generated set-equality tests are also here, implicitly: an
 //! integration test crate is compiled with `cfg(test)`, so every `#[circuit]`
 //! below that declares a `Discloses<..>` contributes its own generated
 //! `#[test]` to this file's harness (`__declaring_discloses`, …). They pass
-//! by running; that they FAIL when they should is
+//! by running; that they fail when they should is
 //! `assert_declared_disclosures`'s own unit test in the crate.
 
 use minocrab::{Circuit, Compiled};
@@ -51,7 +50,7 @@ minocrab::label!(RequestIdLoBare = "request id (lo)");
 minocrab::label!(AmountBare = "amount");
 
 /// The free-string twin: the same circuit spelled with bare `c.disclose`
-/// calls. It DECLARES its labels too (a declaration is type-level, no
+/// calls. It declares its labels too (a declaration is type-level, no
 /// slot, no instruction, so the byte-equality below is unaffected) because
 /// every `#[circuit]` now carries a disclosure test and one without a
 /// declaration must disclose nothing — which is exactly what this one is
@@ -91,7 +90,7 @@ fn a_declaration_moves_no_slot() {
     assert_eq!(declared.ir.instructions.len(), undeclared.ir.instructions.len());
 }
 
-/// The two spellings differ only in the disclosure RECORD, which is where
+/// The two spellings differ only in the disclosure record, which is where
 /// the win is: two limbs under one label instead of a `(hi)`/`(lo)` pair.
 #[test]
 fn one_label_covers_every_limb_of_a_value() {

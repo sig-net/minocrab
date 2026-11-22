@@ -1,4 +1,4 @@
-//! THIS CRATE'S CLAIM, CHECKED.
+//! This crate's claim, checked.
 //!
 //! `src/lib.rs` asserts that a contract deployed from
 //! `signet-midnight-integration`'s `signet-signer` package exports one
@@ -8,7 +8,7 @@
 //! settle that assertion is committed beside it — `artifact/`'s
 //! `contract-info.json` (the callee's own typed schema, as compactc wrote
 //! it) and `pin.json` (the distilled, hash-pinned facts of the compiled
-//! `.zkir`s) — so drift is a test failure HERE rather than a surprise at
+//! `.zkir`s) — so drift is a test failure here rather than a surprise at
 //! somebody's call site.
 //!
 //! Four positive tests and a mutation suite:
@@ -19,7 +19,7 @@
 //! - every declared circuit passes all six checks, including the compiled
 //!   `.zkir`'s constraint prefix slot for slot;
 //! - the published ABI equals its frozen snapshot;
-//! - and [`mutation`] proves the checker BITES: nine ways to be wrong,
+//! - and [`mutation`] proves the checker bites: nine ways to be wrong,
 //!   nine failures.
 
 use std::path::PathBuf;
@@ -32,7 +32,7 @@ use signet_signer_interface::{RequestId, SignBidirectionalEventNotification, Sig
 /// string `pin.json` carries.
 const SOURCE: &str = "corpus/zkir/signet-midnight-integration-v026/packages/signet-signer/src/signet-signer";
 
-/// A circuit of the SAME deployment's other contract, the responder, for
+/// A circuit of the same deployment's other contract, the responder, for
 /// the swapped-circuit mutation: the signer exports only one circuit.
 const RESPONDER_RESPOND_ZKIR: &str =
     "corpus/zkir/signet-midnight-integration-v026/packages/signet-responder/src/signet-responder/zkir/respond.zkir";
@@ -52,7 +52,7 @@ fn artifact() -> Artifact {
     Artifact::open(crate_dir()).expect("the pinned artifact opens")
 }
 
-/// The frozen published ABI, rendered from the TYPES alone.
+/// The frozen published ABI, rendered from the types alone.
 fn schema() -> String {
     let mut out = String::from(
         "# The published ABI of `signet-signer-interface`, derived from the\n\
@@ -65,7 +65,7 @@ fn schema() -> String {
     out
 }
 
-/// The committed pin is the DISTILLATION of the source artifact, not a
+/// The committed pin is the distillation of the source artifact, not a
 /// hand-maintained file: re-pinning is `--ignored` plus a diff.
 #[test]
 fn the_committed_pin_is_the_artifacts_distillation() {
@@ -122,9 +122,9 @@ fn regenerate_pin_and_schema() {
         .expect("interface-schema.txt writes");
 }
 
-/// THE CHECKER HAS TO BITE, or the four tests above are decoration.
+/// The checker has to bite, or the four tests above are decoration.
 ///
-/// Each case takes the real artifact, breaks ONE thing, and asserts the
+/// Each case takes the real artifact, breaks one thing, and asserts the
 /// check fails with a message naming it. The last two are the interesting
 /// ones: they forge `pin.json` to agree with the damage, and the compiled
 /// `.zkir` catches them anyway — which is why check 6 reads the instruction
@@ -178,7 +178,7 @@ mod mutation {
         expect_failure(&rebuilt(info, pin, zkir), "proof: false");
     }
 
-    /// The callee REORDERED its arguments. Same slots, same widths, a
+    /// The callee reordered its arguments. Same slots, same widths, a
     /// different commitment — the change the semver rule calls major.
     #[test]
     fn a_reordered_argument_list_is_caught() {
@@ -222,8 +222,8 @@ mod mutation {
         expect_failure(&rebuilt(info, pin, zkir), "constraint");
     }
 
-    /// THE `.zkir` IS AN INDEPENDENT ORACLE, case 1: `contract-info.json`
-    /// and `pin.json` are left CORRECT, so checks 1-5 all pass; only the
+    /// The `.zkir` is an independent oracle, case 1: `contract-info.json`
+    /// and `pin.json` are left correct, so checks 1-5 all pass; only the
     /// compiled circuit is swapped for another of the same deployment's
     /// (the responder's `respond`, since the signer has one circuit). A
     /// deployment that shipped the wrong circuit under this name is

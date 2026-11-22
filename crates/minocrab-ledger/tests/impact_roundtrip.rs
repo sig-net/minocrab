@@ -1,4 +1,4 @@
-//! THE ENCODER'S INVERSE, pinned: every op shape this crate can put into a
+//! The encoder's inverse, pinned: every op shape this crate can put into a
 //! circuit's public transcript decodes back to the op it came from.
 //!
 //! `minocrab-ledger` encodes Impact ops into field elements (`ImpactOp`,

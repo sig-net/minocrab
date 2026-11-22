@@ -2,7 +2,7 @@
 //! simulated by `minocrab_sim::simulate` and checked by midnight-zkir
 //! 3.2.0's own `IrSource::check` on the same IR and preimage: both accept
 //! or both reject, and on acceptance the outputs agree, compared through
-//! the communications commitment (upstream accepts it only if ITS outputs
+//! the communications commitment (upstream accepts it only if its outputs
 //! encode to the same limbs as ours). Every rejection path below is one the
 //! corpus never reaches, since compactc writes only valid instances.
 
@@ -86,7 +86,7 @@ fn diff(
     }
     let run = ours.unwrap();
     assert_eq!(&run.pi_skips, theirs.as_ref().unwrap(), "[{label}] pi_skips");
-    // Commit to OUR outputs; upstream re-derives its own and must match.
+    // Commit to our outputs; upstream re-derives its own and must match.
     let mut cc_in: Vec<TFr> = raw.to_vec();
     for v in &run.outputs {
         for e in encode_offcircuit(v) {

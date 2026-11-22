@@ -1,7 +1,7 @@
 //! The v3 builder's output is accepted by the pinned `zkir-v3` toolchain
 //! binary (`zkir-v3 mock-compile`) and round-trips through our bindings.
 //!
-//! Runs when `zkir-v3` is on PATH (the nix dev shell provides the pinned
+//! Runs when `zkir-v3` is on path (the nix dev shell provides the pinned
 //! one) or `ZKIR_V3_BIN` is set; skips otherwise so plain `cargo test`
 //! still works.
 

@@ -1,12 +1,12 @@
-//! M27 rung 1's gate, driven from `cargo test`: the Lean syntax under
+//! The Lean syntax gate, driven from `cargo test`: the Lean syntax under
 //! `lean/` (`MinocrabZkir`) must parse every v3 corpus artifact and print
-//! it back BYTE FOR BYTE (notes/zkir-semantics.org §1, §8). The Lean side
+//! it back byte for byte (notes/zkir-semantics.org §1, §8). The Lean side
 //! is the instrument; this test only builds it, runs it over the corpus,
 //! and asserts the count the way `corpus_roundtrip.rs` does, so a partial
 //! checkout cannot be green by silence.
 //!
-//! Needs `lake` on PATH (the nix devshell provides Lean 4) and a compiled
-//! corpus; without either it SKIPS with a loud message rather than fail,
+//! Needs `lake` on path (the nix devshell provides Lean 4) and a compiled
+//! corpus; without either it skips with a loud message rather than fail,
 //! the same policy as the Rust round-trip. CI's lean job runs the same
 //! executable directly.
 
@@ -52,7 +52,7 @@ fn lean_syntax_round_trips_the_v3_corpus_byte_for_byte() {
         run.status.success(),
         "zkir-roundtrip reported failures:\n{stdout}{stderr}"
     );
-    // THE COUNT IS ASSERTED, mirroring corpus_roundtrip.rs: the v3 count
+    // The count is asserted, mirroring corpus_roundtrip.rs: the v3 count
     // moves only when the corpus does; update both in the same commit.
     // 722 → 739 v2 skipped at the M31 compactc bump (0.33.0-rc.2 → 0.34.0):
     // compact/examples/types/examples.compact compiles under language 0.26.0

@@ -1,43 +1,42 @@
-//! M38 rung D — THE FIXTURE ORACLE: every EVM call's selector and every ABI
+//! The fixture oracle: every EVM call's selector and every ABI
 //! word pinned against **alloy's** encoder, not against our own.
 //!
 //! `tests/evm_abi.rs` checks our selectors against the vault's constants
 //! (which `erc20_vault_differential` pins against compactc's own calldata)
 //! and our words against the host-side model in `tests/vault/prims.rs`.
-//! Both of those are OURS. This file adds the outside witness: each call is
-//! declared a SECOND time, in Solidity, through `alloy_sol_types::sol!`, and
+//! Both of those are ours. This file adds the outside witness: each call is
+//! declared a second time, in Solidity, through `alloy_sol_types::sol!`, and
 //! the assertions are
 //!
 //! 1. `Call::signature() == solCall::SIGNATURE`,
 //! 2. `Call::selector() == solCall::SELECTOR`, and
-//! 3. for GENERATED argument values, the words our `AbiType::word` encoders
+//! 3. for generated argument values, the words our `AbiType::word` encoders
 //!    produce as circuit wires — run through the simulator and read back as
 //!    bytes — equal `solCall { .. }.abi_encode()[4..]` split into 32-byte
 //!    words.
 //!
-//! The dependency is pinned EXACTLY at `alloy-sol-types`/`alloy-primitives`
+//! The dependency is pinned exactly at `alloy-sol-types`/`alloy-primitives`
 //! 1.6.1, the versions sig-net/mpc's own `Cargo.lock` resolves (the four
 //! macro crates behind them are pinned to 1.6.1 in our lock too), so the
 //! oracle is the encoder the MPC itself runs rather than "some ABI library".
 //!
 //! `tests/evm_abi.rs`'s compactc-calldata pins stay exactly as they are:
-//! they are the INDEPENDENT control, and alloy does not replace them.
+//! they are the independent control, and alloy does not replace them.
 //!
 //! # Adding a row
 //!
 //! Adding a call to this oracle needs three things and touches no harness
 //! code:
 //!
-//! 1. A `sol!` declaration of the function as ETHEREUM spells it, in the
+//! 1. A `sol!` declaration of the function as Ethereum spells it, in the
 //!    interface's `sol_*` module below. `uint256` wherever our word type is
-//!    `U64`/`U128`/`U256` — those are OUR range bounds on a 32-byte word,
+//!    `U64`/`U128`/`U256` — those are our range bounds on a 32-byte word,
 //!    not different Solidity types. A struct argument is a `struct` item
 //!    plus a function taking it (see [`sol_uniswap_v3`]).
 //! 2. A [`SampleLeaf`] impl for any `AbiType` the call uses that has none
 //!    yet — the host-side value, its proptest strategy, the field limbs it
-//!    enters the circuit as, and how to rebuild the wire from them. All TEN
-//!    of today's leaves already have one (`U8` joined at M38 rung B, for
-//!    ERC-2612 `permit`'s `v`; `U16` at rung C, for Aave v3's
+//!    enters the circuit as, and how to rebuild the wire from them. All ten
+//!    leaves have one (`U8` for ERC-2612 `permit`'s `v`; `U16` for Aave v3's
 //!    `referralCode`).
 //! 3. One row in the [`oracle_rows!`] invocation:
 //!
@@ -55,7 +54,7 @@
 //!
 //! # What is not pinned here
 //!
-//! The RETURN types. `EvmCall::Return` is what the MPC attests and narrows
+//! The return types. `EvmCall::Return` is what the MPC attests and narrows
 //! (`AbiType::RESPOND`), and the narrowing is a Signet protocol fact, not an
 //! ABI one — alloy has nothing to say about it. `tests/evm_abi.rs` and
 //! `src/evm.rs`'s unit tests keep those.
@@ -112,7 +111,7 @@ mod sol_erc20 {
     }
 }
 
-/// WETH9, as the deployed contract declares it. `deposit()` is PAYABLE and
+/// WETH9, as the deployed contract declares it. `deposit()` is payable and
 /// takes no arguments — the ether is the argument — and neither call
 /// returns anything.
 mod sol_weth {
@@ -122,12 +121,12 @@ mod sol_weth {
     }
 }
 
-/// THE NON-CONFORMING TOKENS, declared as they really are: the same three
-/// functions with NO RETURN.
+/// The non-conforming tokens, declared as they really are: the same three
+/// functions with no return.
 ///
 /// A Solidity signature does not mention the return type, so alloy hashes
 /// these to the ERC-20 selectors above — which is precisely the fact that
-/// makes `UsdtLike` a TYPE distinction rather than a wire one, and having
+/// makes `UsdtLike` a type distinction rather than a wire one, and having
 /// alloy say so is worth a row (see [`usdt_selectors_are_the_erc20_ones`]).
 mod sol_usdt {
     alloy_sol_types::sol! {
@@ -161,7 +160,7 @@ mod sol_aave_v3 {
             address onBehalfOf,
             uint16 referralCode
         ) external;
-        // FLAT, not a nested struct — verified against `IPool.sol` on
+        // Flat, not a nested struct — verified against `IPool.sol` on
         // `aave-dao/aave-v3-origin`'s `main` (notes/evm-interfaces.org §10).
         function supplyWithPermit(
             address asset,
@@ -191,7 +190,7 @@ mod sol_aave_v3 {
     }
 }
 
-/// ERC-721, from the EIP — declared with NO RETURNS, which is what the
+/// ERC-721, from the EIP — declared with no returns, which is what the
 /// standard says and what makes two of these hash to ERC-20's selectors
 /// while meaning something else (see
 /// [`erc721_selectors_are_the_erc20_ones`]). `uint256 tokenId` is the same
@@ -204,7 +203,7 @@ mod sol_erc721 {
     }
 }
 
-/// Uniswap V3's `ISwapRouter` — the STRUCT argument, which the ABI renders
+/// Uniswap V3's `ISwapRouter` — the struct argument, which the ABI renders
 /// as a nested tuple and which is the whole reason
 /// [`uniswap_v3::ExactOutputSingle`] overrides `EvmCall::signature()`.
 /// alloy is the authority on the rendering here:
@@ -238,8 +237,8 @@ mod sol_uniswap_v3 {
     }
 }
 
-/// EVERY LEAF IN ONE CALL. Rung A's five shipped calls between them never
-/// passed a `bool` or a `bytes32` as an ARGUMENT (both appeared only as
+/// Every leaf in one call. Rung A's five shipped calls between them never
+/// passed a `bool` or a `bytes32` as an argument (both appeared only as
 /// returns), so this synthetic function is where those two encoders meet
 /// alloy. It is also the demonstration that a row costs a `sol!` line and a
 /// table entry: nothing below it is call-specific.
@@ -249,7 +248,7 @@ mod sol_uniswap_v3 {
 /// both are checked by shipped calls rather than by a synthetic one, and
 /// `bytes32` now is too (permit's `r` and `s`). Rung C's ERC-721
 /// `setApprovalForAll` does the same for the `bool`; this probe keeps it
-/// anyway, as the one place every leaf meets alloy in ONE call.
+/// anyway, as the one place every leaf meets alloy in one call.
 mod sol_probe {
     alloy_sol_types::sol! {
         function abiLeafProbe(
@@ -265,12 +264,12 @@ mod sol_probe {
     }
 }
 
-/// THE NEGATIVE CONTROLS (see [`the_oracle_can_fail`] and
+/// The negative controls (see [`the_oracle_can_fail`] and
 /// [`the_router_shape_is_the_one_we_declare`]).
 ///
-/// 1. `transfer` with the wrong argument WIDTH — same name, same arity, one
+/// 1. `transfer` with the wrong argument width — same name, same arity, one
 ///    type different.
-/// 2. Uniswap's ORIGINAL `SwapRouter`, whose `ExactOutputSingleParams`
+/// 2. Uniswap's original `SwapRouter`, whose `ExactOutputSingleParams`
 ///    carries a `deadline` field the deployed `SwapRouter02` dropped. Same
 ///    function name, same struct-wrapped shape, one extra field.
 ///
@@ -312,8 +311,8 @@ mod sol_wrong {
 }
 
 /// Our side of the all-leaves probe. A test-local [`EvmCall`]: the callee
-/// and the gas limit are arbitrary (nothing files this call), the ARGUMENT
-/// TUPLE is the point.
+/// and the gas limit are arbitrary (nothing files this call), the argument
+/// tuple is the point.
 struct AbiLeafProbe;
 
 impl EvmCall for AbiLeafProbe {
@@ -340,15 +339,15 @@ impl EvmCall for AbiLeafProbe {
 
 // ---- the harness: a leaf's host-side sample ----------------------------------
 
-/// HOW A LEAF IS SAMPLED — the four facts the oracle needs about an
+/// How a leaf is sampled — the four facts the oracle needs about an
 /// [`AbiType`] that a circuit is going to be handed a value of.
 ///
-/// Deliberately a SEPARATE trait from `AbiArg` rather than more methods on
+/// Deliberately a separate trait from `AbiArg` rather than more methods on
 /// it: the sample side is test-only, and the library's leaf traits stay what
 /// they are.
 ///
-/// The supertrait is [`AbiArg`] and not `AbiType` (M38 rung B): `AbiType` is
-/// the RETURN position's bound and `AbiArg` the ARGUMENT position's, and
+/// The supertrait is [`AbiArg`] and not `AbiType`: `AbiType` is
+/// the return position's bound and `AbiArg` the argument position's, and
 /// only arguments are sampled — there is no word to encode for `Unit`, and
 /// `SampleArgs`'s `AbiTuple` supertrait would not hold for it anyway.
 trait SampleLeaf: AbiArg {
@@ -360,7 +359,7 @@ trait SampleLeaf: AbiArg {
     /// a leaf carried by a single limb, two for a `B32` (`hi`, `lo`).
     const SLOTS: usize;
 
-    /// Generated values, INSIDE the leaf's range: the range is what our
+    /// Generated values, inside the leaf's range: the range is what our
     /// Rust type claims and what makes `numeric_word` correct, so sampling
     /// outside it would be testing an encoder nobody may call.
     fn strategy() -> BoxedStrategy<Self::Value>;
@@ -484,7 +483,7 @@ impl SampleLeaf for OurU8 {
     }
 }
 
-/// `uint16` — Aave v3's `referralCode` (M38 rung C). Zero gets its own arm
+/// `uint16` — Aave v3's `referralCode`. Zero gets its own arm
 /// because zero is what every integrator passes, both ends of the range get
 /// one because they are where a truncation would show, and the whole range
 /// is sampled behind them.
@@ -550,7 +549,7 @@ impl SampleLeaf for U128 {
     }
 }
 
-/// `uint160` — an ALREADY-ENCODED word, so the value is the 160-bit number's
+/// `uint160` — an already-encoded word, so the value is the 160-bit number's
 /// twenty big-endian bytes and the wire is the left-padded word built from
 /// them. Sampling only in-range is the point: `uint160` is what the ABI says
 /// the field holds.
@@ -635,7 +634,7 @@ trait SampleArgs: AbiTuple {
     fn wires(args: &[Wire<FieldT, Private>]) -> Self::Wires<Private>;
 }
 
-/// THE EMPTY ARGUMENT LIST — WETH's `deposit()`, whose only argument is the
+/// The empty argument list — WETH's `deposit()`, whose only argument is the
 /// ether in the transaction's `value` field and whose calldata is therefore
 /// four selector bytes and nothing else.
 ///
@@ -712,13 +711,13 @@ fn preimage(inputs: &[Fr]) -> ProofPreimage {
     }
 }
 
-/// A simulated `B32`'s `(hi, lo)` slot pair read back as the THIRTY-TWO
-/// BYTES of the ABI word.
+/// A simulated `B32`'s `(hi, lo)` slot pair read back as the thirty-two
+/// bytes of the ABI word.
 ///
 /// `B32` stores byte 31 in `hi` and bytes 0..31 as `lo`'s little-endian
 /// limb (`vault::prims::b32_slots` is the forward direction, and the vault
 /// differential pins it against compactc). The final line re-derives the
-/// pair from the bytes and asserts it matches, so a bug in THIS reader
+/// pair from the bytes and asserts it matches, so a bug in this reader
 /// cannot hide a bug in the encoder it is reading.
 fn word_bytes(hi: Fr, lo: Fr) -> [u8; 32] {
     let mut out = [0u8; 32];
@@ -743,7 +742,7 @@ fn word_bytes(hi: Fr, lo: Fr) -> [u8; 32] {
     out
 }
 
-/// OUR words for `C`'s arguments: the sample values as circuit arguments,
+/// Our words for `C`'s arguments: the sample values as circuit arguments,
 /// `AbiTuple::words` over the rebuilt wires, run under the simulator, each
 /// word read back as bytes.
 fn our_words<C: EvmCall>(values: &<C::Args as SampleArgs>::Values) -> Vec<[u8; 32]>
@@ -795,7 +794,7 @@ fn alloy_words(encoded: &[u8]) -> Vec<[u8; 32]> {
         .collect()
 }
 
-/// THE SIGNATURE AND THE SELECTOR, ours against alloy's.
+/// The signature and the selector, ours against alloy's.
 fn pin_signature<C: EvmCall, S: SolCall>() {
     assert_eq!(
         C::signature(),
@@ -810,7 +809,7 @@ fn pin_signature<C: EvmCall, S: SolCall>() {
     );
 }
 
-/// THE WORDS, ours against alloy's, one 32-byte word at a time so a failure
+/// The words, ours against alloy's, one 32-byte word at a time so a failure
 /// names the argument that disagrees.
 fn oracle<C: EvmCall>(values: &<C::Args as SampleArgs>::Values, encoded: &[u8])
 where
@@ -915,7 +914,7 @@ oracle_rows! {
     };
 
     /// `exactOutputSingle((address,address,uint24,address,uint256,uint256,uint160))`
-    /// — 5023b4df. THE NESTED TUPLE: alloy renders the struct argument, and
+    /// — 5023b4df. The nested tuple: alloy renders the struct argument, and
     /// its seven fields encode as seven flat words exactly as our flat
     /// argument tuple does.
     exact_output_single: uniswap_v3::ExactOutputSingle => sol_uniswap_v3::exactOutputSingleCall,
@@ -956,7 +955,7 @@ oracle_rows! {
     };
 
     /// ERC-2612 `permit(address,address,uint256,uint256,uint8,bytes32,bytes32)`
-    /// — d505accf. SEVEN static words and the library's only `uint8`: if our
+    /// — d505accf. seven static words and the library's only `uint8`: if our
     /// `U8` spelled itself `uint256` the selector would be something else
     /// entirely, and this row is where that shows.
     permit: erc20::Permit => sol_erc20::permitCall,
@@ -970,7 +969,7 @@ oracle_rows! {
         s: FixedBytes::<32>::from(s),
     };
 
-    /// `deposit()` — d0e30db0. THE ZERO-ARGUMENT ROW: alloy's `abi_encode()`
+    /// `deposit()` — d0e30db0. The zero-argument row: alloy's `abi_encode()`
     /// is four bytes, our word list is empty, and the two agree on nothing
     /// being there. (The ether it carries is the transaction's `value`
     /// field, which is not calldata and so not alloy's business.)
@@ -985,7 +984,7 @@ oracle_rows! {
 
     /// USDT's `transfer(address,uint256)` — a9059cbb, the ERC-20 selector.
     /// The calldata is byte-identical to `transfer` above; only the declared
-    /// RETURN differs, and a signature does not carry one.
+    /// return differs, and a signature does not carry one.
     usdt_transfer: usdt::Transfer => sol_usdt::transferCall,
     |(to, amount)| sol_usdt::transferCall {
         to: SolAddress::from(to),
@@ -1008,7 +1007,7 @@ oracle_rows! {
     };
 
     /// `mint(uint256,address)` — 94bf804d. [`deposit`](deposit)'s
-    /// exact-output twin: the same two argument TYPES in the same order, a
+    /// exact-output twin: the same two argument types in the same order, a
     /// different name, and therefore a different function.
     erc4626_mint: erc4626::Mint => sol_erc4626::mintCall,
     |(shares, receiver)| sol_erc4626::mintCall {
@@ -1018,7 +1017,7 @@ oracle_rows! {
 
     /// `withdraw(uint256,address,address)` — b460af94. Its argument types
     /// are [`redeem`](redeem)'s exactly, which is the case a selector is
-    /// there to separate: only the NAME differs, and the four bytes do.
+    /// there to separate: only the name differs, and the four bytes do.
     erc4626_withdraw: erc4626::Withdraw => sol_erc4626::withdrawCall,
     |(assets, receiver, owner)| sol_erc4626::withdrawCall {
         assets: SolU256::from(assets),
@@ -1061,9 +1060,9 @@ oracle_rows! {
 
     /// Aave v3 `supplyWithPermit(address,uint256,address,uint16,uint256,
     /// uint8,bytes32,bytes32)` — [`Supply`](aave_v3::Supply) and
-    /// [`Permit`](erc20::Permit) folded into one call (M38 rung H,
-    /// notes/evm-interfaces.org §10). EIGHT static words — the maximum
-    /// arity this library's `AbiTuple` implements — and FLAT, not the
+    /// [`Permit`](erc20::Permit) folded into one call
+    /// (notes/evm-interfaces.org §10). Eight static words — the maximum
+    /// arity this library's `AbiTuple` implements — and flat, not the
     /// nested `(uint8,bytes32,bytes32)` struct rung C's own doc guessed:
     /// `IPool.sol` declares eight plain parameters, which is what
     /// `sol_aave_v3::supplyWithPermitCall` above also declares, so a wrong
@@ -1081,7 +1080,7 @@ oracle_rows! {
     };
 
     /// Aave v3 `withdraw(address,uint256,address)` — 69328dec. Note the
-    /// SAME NAME as [`erc4626_withdraw`](erc4626_withdraw) with a different
+    /// same name as [`erc4626_withdraw`](erc4626_withdraw) with a different
     /// argument list: two interfaces, two selectors, and the callee marker
     /// is what keeps them apart on our side.
     aave_withdraw: aave_v3::Withdraw => sol_aave_v3::withdrawCall,
@@ -1092,7 +1091,7 @@ oracle_rows! {
     };
 
     /// Aave v3 `borrow(address,uint256,uint256,uint16,address)` — a415bcad.
-    /// FIVE words, and the one call whose `uint16` sits in the MIDDLE of the
+    /// Five words, and the one call whose `uint16` sits in the middle of the
     /// list rather than at the end — a word-order bug here is invisible to
     /// the selector and shows only in the word comparison.
     aave_borrow: aave_v3::Borrow => sol_aave_v3::borrowCall,
@@ -1115,8 +1114,8 @@ oracle_rows! {
         onBehalfOf: SolAddress::from(on_behalf_of),
     };
 
-    /// ERC-721 `transferFrom(address,address,uint256)` — 23b872dd, THE
-    /// ERC-20 SELECTOR. The calldata is byte-identical to
+    /// ERC-721 `transferFrom(address,address,uint256)` — 23b872dd, the
+    /// ERC-20 selector. The calldata is byte-identical to
     /// [`transfer_from`](transfer_from)'s; the two differ only in the
     /// declared return, which a signature does not carry — and alloy saying
     /// so is the point of the row.
@@ -1136,7 +1135,7 @@ oracle_rows! {
     };
 
     /// ERC-721 `setApprovalForAll(address,bool)` — a22cb465. The one shipped
-    /// call that passes a `bool` as an ARGUMENT (every other `bool` in the
+    /// call that passes a `bool` as an argument (every other `bool` in the
     /// library is a return), so this row retires half of what
     /// [`all_leaves`](all_leaves)'s synthetic probe was standing in for.
     erc721_set_approval_for_all: erc721::SetApprovalForAll
@@ -1146,7 +1145,7 @@ oracle_rows! {
         approved,
     };
 
-    /// ALL EIGHT LEAVES AT ONCE — including the `bool` and the `bytes32`
+    /// All eight leaves at once — including the `bool` and the `bytes32`
     /// that no shipped call passes as an argument.
     all_leaves: AbiLeafProbe => sol_probe::abiLeafProbeCall,
     |(who, flag, tag, fee, small, wide, price, raw)| sol_probe::abiLeafProbeCall {
@@ -1163,13 +1162,13 @@ oracle_rows! {
 
 // ---- the controls ------------------------------------------------------------
 
-/// THE ORACLE CAN FAIL. A deliberately wrong Solidity declaration —
+/// The oracle can fail. A deliberately wrong Solidity declaration —
 /// `transfer(address,uint128)`, the same name and arity with one type
 /// changed — hashes to a different selector, so an agreement above is a
 /// fact about the encodings rather than about the test always passing.
 ///
 /// It is also the argument for spelling `U64`/`U128` as `uint256` in every
-/// row: a `uintN` that is our RANGE rather than Ethereum's width would move
+/// row: a `uintN` that is our range rather than Ethereum's width would move
 /// the selector, and this is what that looks like.
 #[test]
 fn the_oracle_can_fail() {
@@ -1188,24 +1187,24 @@ fn the_oracle_can_fail() {
     );
 }
 
-/// AND THE WORD COMPARISON CAN FAIL. The selector control above says nothing
+/// And the word comparison can fail. The selector control above says nothing
 /// about [`oracle`]'s word loop — a harness that compared an empty list to an
 /// empty list would pass that one too. So: `deposit(uint256,address)` with
-/// its two arguments TRANSPOSED disagrees with our words, and the same two
+/// its two arguments transposed disagrees with our words, and the same two
 /// values in the right order still agree.
 ///
-/// Argument ORDER is the right thing to perturb. It is the ABI mistake a
+/// Argument order is the right thing to perturb. It is the ABI mistake a
 /// flat reading of a call makes ("deposit into an account" puts the account
-/// first), it is INVISIBLE to the selector — `deposit(uint256,address)` is
+/// first), it is invisible to the selector — `deposit(uint256,address)` is
 /// that signature however the caller fills it — and it is exactly what
-/// `EvmCall::Args` being an ORDERED tuple claims.
+/// `EvmCall::Args` being an ordered tuple claims.
 #[test]
 fn the_word_comparison_can_fail() {
     let assets = 42u128;
     let receiver = [0x44u8; 20];
     let ours = our_words::<erc4626::Deposit>(&(assets, receiver));
 
-    // The right order: our two words ARE alloy's — the positive twin, so
+    // The right order: our two words are alloy's — the positive twin, so
     // the inequality below is the transposition and not a broken harness.
     let right = sol_erc4626::depositCall {
         assets: SolU256::from(assets),
@@ -1230,7 +1229,7 @@ fn the_word_comparison_can_fail() {
     );
 }
 
-/// THE ROUTER GENERATION IS PINNED, and alloy is what pins it. Our
+/// The router generation is pinned, and alloy is what pins it. Our
 /// [`uniswap_v3::ExactOutputSingle`] and [`uniswap_v3::ExactInputSingle`]
 /// are `SwapRouter02`'s seven-field shapes (`5023b4df` and `04e45aaf`); the
 /// original `SwapRouter`'s params structs have a `deadline` between
@@ -1240,7 +1239,7 @@ fn the_word_comparison_can_fail() {
 ///
 /// This is the negative control that matters for the two calls whose
 /// `signature()` we override: the extra parentheses are pinned by
-/// `tests/evm_abi.rs`, and the FIELD LIST is pinned here. It is a live
+/// `tests/evm_abi.rs`, and the field list is pinned here. It is a live
 /// hazard rather than a contrived one — `414bf389` is the selector most of
 /// the Uniswap documentation on the internet shows.
 #[test]
@@ -1265,7 +1264,7 @@ fn the_router_shape_is_the_one_we_declare() {
         "SwapRouter02's exactOutputSingle"
     );
 
-    // The same, for the input side (M38 rung C).
+    // The same, for the input side.
     assert_eq!(
         sol_wrong::exactInputSingleCall::SIGNATURE,
         "exactInputSingle((address,address,uint24,address,uint256,uint256,uint256,uint160))"
@@ -1286,7 +1285,7 @@ fn the_router_shape_is_the_one_we_declare() {
         "SwapRouter02's exactInputSingle"
     );
 
-    // The two directions are DIFFERENT FUNCTIONS with identical argument
+    // The two directions are different functions with identical argument
     // types — the case where only the name separates them.
     assert_ne!(
         uniswap_v3::ExactInputSingle::selector(),
@@ -1294,13 +1293,13 @@ fn the_router_shape_is_the_one_we_declare() {
     );
 }
 
-/// THE NON-CONFORMING TOKENS HASH TO ERC-20's SELECTORS, and alloy is what
+/// The non-conforming tokens hash to ERC-20's selectors, and alloy is what
 /// says so: a Solidity signature does not carry the return type, so
 /// `transfer(address,uint256)` is `a9059cbb` whether it returns a `bool` or
 /// nothing at all.
 ///
 /// That is the fact [`UsdtLike`](usdt::UsdtLike) is built around. The wire
-/// cannot tell the two apart, so the TYPE has to — and this test is the
+/// cannot tell the two apart, so the type has to — and this test is the
 /// evidence that the calldata really is identical, which is what makes
 /// declaring a USDT address as an `Erc20` a silent hazard rather than a
 /// loud one (notes/evm-calls.org §3.1).
@@ -1328,13 +1327,13 @@ fn usdt_selectors_are_the_erc20_ones() {
     );
 }
 
-/// AND SO DO TWO OF ERC-721's (M38 rung C) — the same fact, on a standard
+/// And so do two of ERC-721's — the same fact, on a standard
 /// nobody thinks of as a token variant.
 ///
 /// `transferFrom(address,address,uint256)` and `approve(address,uint256)`
 /// are ERC-20's signatures exactly, so an NFT and a fungible token file
 /// byte-identical calldata for functions that return different things. The
-/// callee's INTERFACE is what distinguishes them
+/// callee's interface is what distinguishes them
 /// ([`erc721`](minocrab_contracts::evm::erc721)'s module docs carry the
 /// compile_fail gates for both directions); nothing on the wire does, and
 /// this test is why we can say that rather than hope it.
@@ -1367,7 +1366,7 @@ fn erc721_selectors_are_the_erc20_ones() {
     );
 }
 
-/// BOTH BOOL VALUES, without waiting on the sampler: `false` encodes to the
+/// Both bool values, without waiting on the sampler: `false` encodes to the
 /// zero word and `true` to a word whose last byte is 1, and alloy says so.
 #[test]
 fn bool_covers_both_values() {
@@ -1401,7 +1400,7 @@ fn bool_covers_both_values() {
     }
 }
 
-/// THE NARROW TYPES AT THEIR BOUNDS, deterministically: the largest value
+/// The narrow types at their bounds, deterministically: the largest value
 /// each leaf's Rust type can hold still encodes to alloy's word. The
 /// proptest rows sample these too (each strategy has an arm for them); this
 /// is the version that runs even at `PROPTEST_CASES=1`.
@@ -1430,7 +1429,7 @@ fn every_leaf_at_its_upper_bound() {
     oracle::<AbiLeafProbe>(&values, &sol.abi_encode());
 }
 
-/// THE PROBE IS EVERY LEAF, in the order its `sol!` twin declares them —
+/// The probe is every leaf, in the order its `sol!` twin declares them —
 /// the one fact about the synthetic call worth pinning, since a leaf
 /// dropped from its tuple would silently stop being checked at all.
 #[test]

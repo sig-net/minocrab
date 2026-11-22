@@ -1,6 +1,6 @@
 //! The typed ledger block must be pure type-level structure: a circuit
 //! written through `#[derive(Ledger)]` + [`LedgerMap`] has to lower to the
-//! BYTE-IDENTICAL ZKIR of the same circuit written as explicit
+//! byte-identical ZKIR of the same circuit written as explicit
 //! `minocrab_ledger` calls with hand-written field indices and hand-written
 //! atom lists. That is the "no hidden Impact ops" invariant stated as a test:
 //! serialized-ZKIR equality catches an extra op, a missing op, a reordered
@@ -40,7 +40,7 @@ struct Demo {
 const DEMO: Demo = Demo::new();
 
 /// A stored record whose atoms are its own — the shape a contract's event
-/// record has (a hand-written atom list in ONE place, the type).
+/// record has (a hand-written atom list in one place, the type).
 struct Record(Vec<Wire<FieldT, Public>>);
 
 impl Record {
@@ -112,7 +112,7 @@ fn record_value(record: &Record) -> LedgerValue {
 }
 
 /// Every map method, in one circuit, against the explicit form of the same
-/// sequence — both run inside the SAME scope (notes/edsl-trim.org §B: the
+/// sequence — both run inside the same scope (notes/edsl-trim.org §B: the
 /// scope is the one spelling of a conditional, so a guarded call is a plain
 /// method under `c.when`, not a per-operation guard parameter).
 #[test]
@@ -161,7 +161,7 @@ fn the_map_methods_are_the_explicit_ops() {
     assert_eq!(zkir(typed), zkir(explicit));
 }
 
-/// The STRAIGHT-LINE forms are the same ops with the immediate `1` where the
+/// The straight-line forms are the same ops with the immediate `1` where the
 /// guard operand goes — no ambient scope, so [`Circuit::effect_guard`]
 /// resolves to the bare immediate and nothing is named.
 #[test]
@@ -224,9 +224,9 @@ fn the_guard_free_methods_are_the_ops_with_an_immediate_guard() {
     assert_eq!(zkir(typed), zkir(explicit));
 }
 
-/// A `Secp256k1Point` CELL (M9 phase 8, candidate 2): the limbs are computed
-/// in both directions — `encode` on the way out, and a read that mints ONE
-/// TYPED gate and encodes it — so the typed cell must equal the hand-written
+/// A `Secp256k1Point` cell (candidate 2): the limbs are computed
+/// in both directions — `encode` on the way out, and a read that mints one
+/// typed gate and encodes it — so the typed cell must equal the hand-written
 /// mint/encode/popeq form that `common::cell_read_point` spells out.
 #[test]
 fn the_point_cell_is_the_hand_written_typed_gate() {
@@ -269,7 +269,7 @@ fn the_point_cell_is_the_hand_written_typed_gate() {
     assert_eq!(zkir(typed), zkir(explicit));
 }
 
-/// A `JubjubPoint` CELL: the same typed-gate read and `encode` write as the
+/// A `JubjubPoint` cell: the same typed-gate read and `encode` write as the
 /// `Secp256k1Point` cell above, over two `field` limbs. Pins that the point
 /// cell read survived the split of the ledger traits (it is
 /// `LedgerStore::read_cell`, not a limb read) unchanged.
@@ -314,7 +314,7 @@ fn the_jubjub_cell_is_the_hand_written_typed_gate() {
     assert_eq!(zkir(typed), zkir(explicit));
 }
 
-/// A MAP OF POINTS is stored into and tested exactly as any other map: the
+/// A map of points is stored into and tested exactly as any other map: the
 /// insert pushes the point's `encode` limbs, the member test pushes only the
 /// key. (Its `lookup` does not compile — a point is `LedgerStore`, not
 /// `LedgerRepr`; see the `compile_fail` doctest on `LedgerRepr`.)
@@ -353,15 +353,15 @@ fn a_point_map_insert_and_member_are_the_explicit_ops() {
 }
 
 /// The guarded reads (a lookup inside a conditional branch) spelled as the
-/// SCOPE returning its value — `when(branch, |c| map.lookup(c, &key))
-/// .or_default()` — are the raw ops under the SAME scope: the scope is the
+/// scope returning its value — `when(branch, |c| map.lookup(c, &key))
+/// .or_default()` — are the raw ops under the same scope: the scope is the
 /// one spelling of a conditional read (notes/edsl-trim.org §B), so there is
 /// no separate `_guarded` twin left to compare the typed layer against —
 /// only that its plain methods, under `when`, match the raw layer's plain
 /// functions under the identical scope.
 ///
 /// `.or_default()` is the typed layer saying what the raw form does
-/// silently: a guarded-off read IS the type's default. Zero instructions,
+/// silently: a guarded-off read is the type's default. Zero instructions,
 /// which is what keeps the two sides equal.
 #[test]
 fn the_scoped_map_reads_are_the_guarded_ops() {

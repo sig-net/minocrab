@@ -1,21 +1,21 @@
-//! `nested.compact` — the M22 stage B1 differential: NESTED LEDGER ADTs
+//! `nested.compact` — the differential: nested ledger ADTs
 //! against compactc's own artifacts (notes/coin-arms-nested-adts.org §2).
 //!
-//! WHY THE FIXTURE IS OURS, for the sixth milestone running. Nested
+//! Why the fixture is ours, for the sixth milestone running. Nested
 //! declarations have real third-party demand — OpenZeppelin's
 //! `ShieldedMultiSig` declares `Map<Uint<64>, Map<Either<..>, Boolean>>` and
 //! writes through it — and compactc's own test suite compiles two more
 //! (`map_boolean_map_field_counter`, `map_field_list_field`). Every one of
 //! those artifacts is ZKIR **v2**, and across the three
-//! `--feature-zkir-v3` corpus sources nested declarations are used ZERO
-//! times. So they are corroboration for the SHAPE and not a differential
+//! `--feature-zkir-v3` corpus sources nested declarations are used zero
+//! times. So they are corroboration for the shape and not a differential
 //! target (notes/ledger-adts.org finding (e)), and the target is our source,
-//! compiled with the PINNED compactc — the invocation is in the fixture's
+//! compiled with the pinned compactc — the invocation is in the fixture's
 //! header.
 //!
-//! WHAT THE HEADLINE PINS, and what nothing weaker would. A nested access is
-//! ONE `idx` with a longer path and ONE `insc` with a bigger `n`, so the only
-//! thing that can be wrong is the ARITHMETIC, and there are five distinct
+//! What the headline pins, and what nothing weaker would. A nested access is
+//! one `idx` with a longer path and one `insc` with a bigger `n`, so the only
+//! thing that can be wrong is the arithmetic, and there are five distinct
 //! answers:
 //!
 //! | closing `insc` | who |
@@ -23,15 +23,15 @@
 //! | `len(f)` | `insert`, `insertDefault`, `remove`, `increment`, `popFront`, `insertIndex` |
 //! | `len(f) + 1` | `List.pushFront`, `MerkleTree.insert`, `HistoricMerkleTree.insert` |
 //! | `len(f) + 2` | `HistoricMerkleTree.resetHistory` — alone |
-//! | `len(f) − 1`, SUPPRESSED at zero | the nine whole-field-replace ops |
-//! | a literal 1 or 2 | the `insc` in the MIDDLE of a tree insert, at every depth |
+//! | `len(f) − 1`, suppressed at zero | the nine whole-field-replace ops |
+//! | a literal 1 or 2 | the `insc` in the middle of a tree insert, at every depth |
 //!
 //! plus the leading `idxp`, which for those nine takes `f` minus its last
 //! element and disappears entirely at depth 1. Every one of those five is a
 //! circuit below, at depth 2, and `deepInsert` / `deepLookup` add depth 3 so
 //! that "tracks `len(f)`" is pinned as a relation rather than a constant.
 //!
-//! AND ONE FINDING THE DIFFERENTIAL EXISTS TO CATCH: `outerInsertDefault`.
+//! And one finding the differential exists to catch: `outerInsertDefault`.
 //! An `insertDefault` whose value type is an ADT pushes the ADT's own
 //! `(initial-value …)` — the empty map — and not a cell of zeros, because
 //! `assemble-operand-acc`'s `VMstate-value-ADT` case discards the value
@@ -91,7 +91,7 @@ fn cases() -> Vec<(&'static str, fn() -> Compiled)> {
     ]
 }
 
-/// THE HEADLINE: for every nested operation, our serialized ZKIR IS
+/// The headline: for every nested operation, our serialized ZKIR is
 /// compactc's up to identifier renaming.
 #[test]
 fn identical_instruction_streams() {
@@ -104,8 +104,8 @@ fn identical_instruction_streams() {
     }
 }
 
-/// EVERY CIRCUIT THE CONTRACT EXPORTS IS IN THE DIFFERENTIAL, compared by
-/// FUNCTION POINTER rather than by count — the two lists name circuits
+/// Every circuit the contract exports is in the differential, compared by
+/// function pointer rather than by count — the two lists name circuits
 /// differently (`mapInsert` against `map_insert`), and a count would pass
 /// while two entries silently swapped.
 #[test]
@@ -148,7 +148,7 @@ fn every_fixture_circuit_is_covered() {
     assert_eq!(compiled, covered);
 }
 
-/// CLAIM 2 — the DEPTH is visible in the bytes, and it is the only thing that
+/// Claim 2 — the depth is visible in the bytes, and it is the only thing that
 /// moved.
 ///
 /// The headline compares whole streams and would pass if every depth were
@@ -206,8 +206,8 @@ fn the_depth_is_the_opcode_nibble_and_the_ins_operand() {
     assert_eq!(*opcodes("hmtInsert").1.last().unwrap(), 0xa3);
     assert_eq!(*opcodes("hmtResetHistory").1.last().unwrap(), 0xa4);
 
-    // SUPPRESSION, come alive: a nested `resetToDefault` leads with `idxp`
-    // over the path MINUS its last element — one element, so `0x70` — and
+    // Suppression, come alive: a nested `resetToDefault` leads with `idxp`
+    // over the path minus its last element — one element, so `0x70` — and
     // closes with the `insc 1` that a top-level reset suppresses away.
     let (lead, ins) = opcodes("mapReset");
     assert_eq!(lead, 0x70, "the CONTAINER's path, not the field's");
@@ -219,11 +219,11 @@ fn the_depth_is_the_opcode_nibble_and_the_ins_operand() {
     assert_eq!(opcodes("hmtReset").1, vec![0xa2, 0x91, 0xa1]);
 }
 
-/// CLAIM 3 — compactc's own ABI agrees with the argument types.
+/// Claim 3 — compactc's own ABI agrees with the argument types.
 ///
 /// The fixture's `contract-info.json`, flattened by `minocrab_abi::info`,
 /// against the `CircuitAbi` of the Rust types. Here it also pins that a
-/// nested declaration does not change a circuit's SIGNATURE at all — the
+/// nested declaration does not change a circuit's signature at all — the
 /// keys are ordinary arguments and the nesting is invisible above the
 /// transcript.
 #[test]

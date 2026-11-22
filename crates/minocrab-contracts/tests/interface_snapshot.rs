@@ -1,15 +1,14 @@
-//! A frozen snapshot of every circuit's ORDERED interface: arguments,
+//! A frozen snapshot of every circuit's ordered interface: arguments,
 //! outputs and witness reads.
 //!
 //! The differential comparator (`assert_call_compatible`) checks only the
 //! *type* column of the input schema — and nearly every argument is a
 //! `Scalar<BLS12-381>`, so a same-typed permutation of the argument list is
 //! invisible to it except through PI equality on the one honest preimage it
-//! runs. Argument ORDER is the real contract: it feeds the communications
+//! runs. Argument order is the real contract: it feeds the communications
 //! commitment and the preimage layout, so a reorder, rename or insertion
 //! silently breaks every caller. This test is the instrument that makes such
-//! movement mechanically visible before the M9 port starts rewriting the
-//! argument lists.
+//! movement mechanically visible.
 //!
 //! Per circuit it freezes, in order:
 //!   - `in  <label>: <type>` — one line per `IrSource::inputs` entry (the
@@ -25,7 +24,7 @@
 //!     instruction stream (the count is cross-checked against
 //!     `Compiled::witnesses`).
 //!
-//! To regenerate after an INTENTIONAL interface change (a toolchain bump
+//! To regenerate after an intentional interface change (a toolchain bump
 //! that moves a schema is one — notes/version-bump.org):
 //! `cargo test --release -p minocrab-contracts --test interface_snapshot -- \
 //!      --ignored regenerate_interface_snapshot`, or `./bump.sh accept` to
@@ -42,7 +41,7 @@ use support::{circuits, diff, rewrite_generated_region, test_source};
 /// `(circuit, interface)` — frozen at "M9 phase 0: freeze every circuit's
 /// ordered interface in a snapshot guard test".
 const SNAPSHOT: &[(&str, &str)] = &[
-    // GENERATED BEGIN — rewritten by `regenerate_interface_snapshot`
+    // Generated begin — rewritten by `regenerate_interface_snapshot`
     (
         "erc20_vault::initialise",
         "\
@@ -2579,7 +2578,7 @@ in  seed_hi: Scalar<BLS12-381>
 in  seed_lo: Scalar<BLS12-381>
 ",
     ),
-    // GENERATED END
+    // Generated end
 ];
 
 /// The serde name of an [`IrType`], i.e. the type column the differential
@@ -2701,7 +2700,7 @@ fn diff_shows_reorders_renames_and_insertions() {
     );
 }
 
-/// Regeneration helper: rewrites the SNAPSHOT table in this file.
+/// Regeneration helper: rewrites the snapshot table in this file.
 #[test]
 #[ignore = "regeneration helper, not a check"]
 fn regenerate_interface_snapshot() {

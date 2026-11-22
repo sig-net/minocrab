@@ -1,4 +1,4 @@
-//! THE STREAM'S GATE (M41 A, notes/stream-design.org): both layouts placed
+//! The stream's gate (notes/stream-design.org): both layouts placed
 //! by `#[derive(Ledger)]`, both run on Midnight's on-chain VM through the
 //! executor, and the contention claim checked on the transcript — a
 //! primitive stream's insert, take and combine never read the accumulator;
@@ -233,7 +233,7 @@ fn a_primitive_stream_inserts_blind_and_takes_the_post_step_state() {
     assert_eq!(entry(&out.post, 0, 9), Some(120), "the body");
     assert_eq!(entry(&out.post, 3, 9), Some(7), "the post-step nonce");
     assert_eq!(entry(&out.post, 4, 9), Some(120), "the post-step last seen");
-    // A second insert with a LOWER height against the state the first left:
+    // A second insert with a lower height against the state the first left:
     // nonce advances, last seen stays.
     let mut seed2 = Seed::default();
     seed2.cells[1] = 7;

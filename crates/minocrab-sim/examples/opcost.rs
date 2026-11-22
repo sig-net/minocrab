@@ -1,4 +1,4 @@
-//! Row costs of the byte-plumbing instructions (M7 scoping): builds
+//! Row costs of the byte-plumbing instructions: builds
 //! minimal circuit variants and prints the marginal rows of each shape,
 //! so optimisation targets rows rather than instruction counts.
 //! Run: cargo run --release -p minocrab-sim --example opcost
@@ -15,7 +15,7 @@ fn rows(label: &str, build: impl FnOnce(&mut Circuit)) {
 }
 
 fn main() {
-    // What a `cond_select` costs, and what a `Copy` does not (M17): the two
+    // What a `cond_select` costs, and what a `Copy` does not: the two
     // instruction classes a lowering change most often removes. The `Copy`
     // row is the evidence behind "inlining an immediate is zero rows"; the
     // `cond_select` row is what a folded select would actually save.
@@ -148,7 +148,7 @@ fn main() {
 
     // Native reversal straight into a scalar import (the verify-path shape:
     // BE-stored Bytes<32> → Secp256k1Scalar). The secp256k1 chip is enabled
-    // only when a secp type appears in the INPUT SCHEMA (`used_chips`,
+    // only when a secp type appears in the input schema (`used_chips`,
     // ir_vm.rs:1246) — a `from_bytes32` alone does not do it, and the cost
     // model panics without the chip — so both this shape and its own
     // baseline declare an (unused) public key.

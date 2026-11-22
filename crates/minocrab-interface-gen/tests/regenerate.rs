@@ -1,4 +1,4 @@
-//! `--check`, WIRED AS A TEST: every generated interface crate in the
+//! `--check`, wired as a test: every generated interface crate in the
 //! workspace is regenerated from its own committed artifact and compared
 //! byte for byte against its committed `src/lib.rs`.
 //!
@@ -7,10 +7,9 @@
 //! makes "generated source is committed and reviewable" safe rather than a
 //! source of quiet drift.
 //!
-//! `signet-signer-interface` is also the generator's ACCEPTANCE TEST: that
-//! crate was hand-authored in M12 stage 4, before this generator existed,
-//! and the generator now reproduces its every declaration. See
-//! notes/interface-crates.org §"As built — stage 5" for which side moved.
+//! `signet-signer-interface` is also the generator's acceptance test: that
+//! crate was hand-authored, and the generator reproduces its every
+//! declaration (notes/interface-crates.org).
 
 use std::path::PathBuf;
 

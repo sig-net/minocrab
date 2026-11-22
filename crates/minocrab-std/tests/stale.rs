@@ -1,4 +1,4 @@
-//! The stale-read backstop on the WRITE path: `minocrab_ledger::emit`
+//! The stale-read backstop on the write path: `minocrab_ledger::emit`
 //! refuses a stored value computed from an unacknowledged inline read,
 //! whether the write is a typed slot's or written by hand, with the same
 //! message; it checks values, never keys; and when it accepts it adds no
@@ -144,7 +144,7 @@ fn a_raw_read_is_acknowledged_with_acknowledge_stale() {
     let _ = c.finish(true);
 }
 
-/// A KEY derived from an unacknowledged read is accepted, raw and typed
+/// A key derived from an unacknowledged read is accepted, raw and typed
 /// alike, and the two are the same circuit.
 #[test]
 fn a_key_from_a_read_is_accepted_as_a_typed_slot_accepts_it() {

@@ -4,11 +4,11 @@
 //!
 //! Two distinct properties live here and they must not be conflated:
 //!
-//! - [`sweep`] is the SOUNDNESS property: perturbing any single element of
-//!   a preimage must make OUR artifact reject. A circuit that accepts a
+//! - [`sweep`] is the soundness property: perturbing any single element of
+//!   a preimage must make our artifact reject. A circuit that accepts a
 //!   perturbed transcript is proving something weaker than its transcript
 //!   claims.
-//! - the `disagreements` count [`sweep`] returns is the COMPATIBILITY
+//! - the `disagreements` count [`sweep`] returns is the compatibility
 //!   property: compactc's artifact must reject exactly the same
 //!   perturbations. It is only meaningful when a corpus artifact is
 //!   supplied, and is what the differential suite asserts is zero.
@@ -107,16 +107,16 @@ pub fn run_with(ir: &IrSource, pi: &ProofPreimage, part: Part, i: usize, v: Fr) 
 /// Re-derive a preimage's communications commitment after its arguments
 /// were changed.
 ///
-/// EVERY circuit argument is bound by `do_communications_commitment`:
+/// Every circuit argument is bound by `do_communications_commitment`:
 /// `comm = transient_commit(inputs, rand)` is PI #2, so perturbing any
 /// argument — even one the circuit never reads — makes the simulator
 /// reject on the commitment alone. To ask whether a particular argument is
 /// genuinely unread, the commitment has to be re-derived; otherwise the
 /// test only re-proves that the commitment binds.
 ///
-/// (Note what this does NOT mean: the ledger pushes the commitment
-/// VERBATIM out of the `ContractCall` and never recomputes it from the FAB
-/// inputs — `ledger/src/verify.rs:1946-1948` — so for a ROOT call the
+/// (Note what this does not mean: the ledger pushes the commitment
+/// verbatim out of the `ContractCall` and never recomputes it from the FAB
+/// inputs — `ledger/src/verify.rs:1946-1948` — so for a root call the
 /// commitment does not imply argument canonicity on chain. That is why the
 /// `constrain_bits` range checks have to stay; see
 /// notes/vault-optimization.org §"constrain_bits dedup".)

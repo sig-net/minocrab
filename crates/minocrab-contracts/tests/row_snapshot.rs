@@ -1,7 +1,7 @@
 //! A frozen `(k, rows)` snapshot of every circuit in this crate.
 //!
-//! The const-generic refactor of M7 is a TYPE-level change: the sequence,
-//! order and arguments of the `Circuit` builder calls must not move, so
+//! A type-level change (a const-generic refactor, say) must not move the
+//! sequence, order and arguments of the `Circuit` builder calls, so
 //! every circuit's cost must stay bit-identical. This test is the guard —
 //! it prices each circuit with the same cost model the benchmark harness
 //! uses (`minocrab_sim::cost`, i.e. Midnight's own model) and compares
@@ -10,17 +10,17 @@
 //! The twelve benchmark circuits agree with the published numbers in
 //! `BENCHMARK.md`.
 //!
-//! To regenerate after an INTENTIONAL cost change (a toolchain bump that
+//! To regenerate after an intentional cost change (a toolchain bump that
 //! moves lowering is one — notes/version-bump.org):
 //! `cargo test --release -p minocrab-contracts --test row_snapshot -- \
 //!      --ignored regenerate_row_snapshot`, or `./bump.sh accept` to run
 //! every regenerator at once. It rewrites the table below in place, so the
 //! new baseline arrives as a reviewable diff.
 //!
-//! WHEN IT FIRES it says WHICH INSTRUCTIONS MOVED, not just that the rows
+//! When it fires it says which instructions moved, not just that the rows
 //! did. `(k, rows)` is a number, and a number is not a diagnosis; the
 //! instruction-level answer is one dump comparison away, so this test runs it
-//! itself. Every PASSING run refreshes a ZKIR baseline under the target
+//! itself. Every passing run refreshes a ZKIR baseline under the target
 //! directory (`support::zkir_lines`, the `zkir_dump` rendering), and a
 //! failing run diffs each moved circuit against it. Point
 //! `MINOCRAB_ZKIR_BASELINE=<dir>` at a `zkir_dump` directory to diff against
@@ -36,7 +36,7 @@ use support::{
 /// `(circuit, k, rows)` — frozen at "M7: freeze per-circuit (k, rows) in a
 /// row-snapshot guard test".
 const SNAPSHOT: &[(&str, u8, usize)] = &[
-    // GENERATED BEGIN — rewritten by `regenerate_row_snapshot`
+    // Generated begin — rewritten by `regenerate_row_snapshot`
     ("erc20_vault::initialise", 12, 2709),
     ("erc20_vault::set_gas_params", 10, 664),
     ("erc20_vault::add_allowed_token", 9, 495),
@@ -264,7 +264,7 @@ const SNAPSHOT: &[(&str, u8, usize)] = &[
     ("manager::execute", 18, 220606),
     ("disclosure::register", 10, 1006),
     ("disclosure::disclose_to", 14, 12796),
-    // GENERATED END
+    // Generated end
 ];
 
 #[test]
@@ -376,7 +376,7 @@ fn the_instruction_diff_keeps_only_the_movement_and_caps_it() {
     );
 }
 
-/// Regeneration helper: rewrites the SNAPSHOT table in this file.
+/// Regeneration helper: rewrites the snapshot table in this file.
 #[test]
 #[ignore = "regeneration helper, not a check"]
 fn regenerate_row_snapshot() {

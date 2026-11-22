@@ -6,7 +6,7 @@
 //! dedups — with what it keeps: asserts on arguments, on other constants,
 //! on a constant that is also returned (its copy stays named), and guarded
 //! asserts under `when_private`, inside regions nested three deep. Every
-//! message must come out on its OWN assert (the argument or immediate it
+//! message must come out on its own assert (the argument or immediate it
 //! was written on), in order, and every region must hold exactly the
 //! messages built inside it and the number of instructions that survive in
 //! it. A fixed seed, so a failure reproduces. Before the fix this failed on
@@ -105,7 +105,7 @@ fn steps(c: &mut Circuit, p: &mut Program, depth: u32, here: &mut Vec<usize>) ->
                 survivors = plus(survivors, Some(1));
             }
             3 => {
-                // A constant 1 that is also RETURNED: the copy stays named,
+                // A constant 1 that is also returned: the copy stays named,
                 // so the assert reads a name and stays too.
                 let one = c.constant(1u64);
                 let text = p.message(Some(On::Named), here);

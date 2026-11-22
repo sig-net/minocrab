@@ -1,20 +1,20 @@
-//! The version of each of our crates is written down TWICE, and nothing but
+//! The version of each of our crates is written down twice, and nothing but
 //! this test makes the two copies agree: the crate's own version (inherited
 //! from `[workspace.package] version`, or its own literal for an interface
 //! crate), and a `version = "…"` beside the `path` of its entry in
 //! `[workspace.dependencies]`.
 //!
-//! THE FAILURE CLASS IS POST-FIRST-PUBLISH SILENT RESOLUTION. Today a stale
+//! The failure class is post-first-publish silent resolution. Today a stale
 //! requirement is invisible — nothing of ours is on crates.io, so cargo has
 //! only the path to resolve against and the number beside it is decoration.
 //! The day the first `cargo publish` lands, that number becomes the thing
 //! cargo matches: bump `[workspace.package]` to 0.2.0 without bumping the
-//! requirements and every sibling dependency resolves to the REGISTRY's 0.1.0
+//! requirements and every sibling dependency resolves to the registry's 0.1.0
 //! instead of the crate sitting next to it. The build succeeds, the tests
 //! pass, and half the workspace is being compiled against a published copy of
 //! its own past. There is no error message for that, so there is a test.
 //!
-//! The second test holds the publish rules of PUBLISHING.md for every crate
+//! The second test holds the publish rules of publishing.md for every crate
 //! that does not carry `publish = false`: a regular dependency on one of our
 //! crates goes through `[workspace.dependencies]` (where the version is) and
 //! names a crate that is itself published; a dev-dependency on one of our
@@ -152,7 +152,7 @@ fn members(workspace_version: &str) -> BTreeMap<String, Member> {
 }
 
 /// Every `version = "…"` in `[workspace.dependencies]` that belongs to one of
-/// OUR crates is that crate's own version: `[workspace.package] version` for
+/// our crates is that crate's own version: `[workspace.package] version` for
 /// every crate that inherits it, the crate's literal for one that does not
 /// (`signet-signer-interface`, versioned by its callee's wire format).
 ///
@@ -279,14 +279,14 @@ fn published_crates_depend_only_on_published_crates() {
     );
 }
 
-/// The crate with NO compatibility promise, and the one crate allowed to
+/// The crate with no compatibility promise, and the one crate allowed to
 /// depend on it.
 const EXPERIMENTAL: &str = "minocrab-experimental";
 const ONLY_DEPENDENT_OF_EXPERIMENTAL: &str = "minocrab-contracts";
 
 /// No crate of ours but the unpublished corpus depends on
 /// `minocrab-experimental`, in any dependency section (regular, build, dev,
-/// or target-specific). PUBLISHING.md's stability statement for it rests on
+/// or target-specific). Publishing.md's stability statement for it rests on
 /// this: it is released at 0.0.x and may break anything in any release, and
 /// that churn can only stay out of the core and the published library crates
 /// if none of them names it.

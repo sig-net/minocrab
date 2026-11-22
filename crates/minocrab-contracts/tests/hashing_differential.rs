@@ -164,7 +164,7 @@ fn hashing_persistent_matches_corpus() {
 fn hashing_persistent_vec8_matches_corpus() {
     // The same 256 bytes, hashed as 8 × Bytes<32> — the FAB binary is the
     // concatenated bytes, so the digest equals the flat sha256; but the
-    // ARGUMENTS are 16 limbs ([hi, lo] per Bytes<32>), not 9.
+    // arguments are 16 limbs ([hi, lo] per Bytes<32>), not 9.
     let digest = sha(&data(256));
     check_with_inputs(
         hashing::Hashing::persistent_vec8().ir,

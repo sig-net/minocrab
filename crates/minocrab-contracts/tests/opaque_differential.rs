@@ -1,20 +1,20 @@
-//! `opaque.compact` — the M15 differential: [`minocrab_std::Opaque`] and
+//! `opaque.compact` — the differential: [`minocrab_std::Opaque`] and
 //! the two curve-point leaves against compactc's own artifacts.
 //!
-//! WHY THE FIXTURE IS OURS. The corpus has 74 `Opaque` nodes across 23 of the
+//! Why the fixture is ours. The corpus has 74 `Opaque` nodes across 23 of the
 //! 312 artifacts — real production code, not test fixtures (`bboard`'s
 //! `message`, `welcome`'s `add_participant`, eleven OpenZeppelin token
-//! contracts' `name()`) — and NONE of them is in a v3 artifact. Only the three
+//! contracts' `name()`) — and none of them is in a v3 artifact. Only the three
 //! sig-net sources are compiled with `--feature-zkir-v3`, and our IR is v3;
 //! their four `Opaque` nodes are all `Secp256k1Point`. So this is the
-//! established tiny.compact-style fallback, compiled with the PINNED compactc,
+//! established tiny.compact-style fallback, compiled with the pinned compactc,
 //! with the exact invocation in the fixture's header.
 //!
-//! FOUR CLAIMS, in increasing interest:
+//! Four claims, in increasing interest:
 //!
 //! 1. `identical_instruction_streams` — for all fourteen circuits, our
 //!    serialized ZKIR IS compactc's up to identifier renaming: every op, every
-//!    immediate, every width, every operand position. This SUBSUMES the
+//!    immediate, every width, every operand position. This subsumes the
 //!    notes/ledger-abi.org §6 call-compatibility criterion the other
 //!    differentials settle for (identical streams cannot produce differing
 //!    `pis`), which is why it is first and why the preimage-based tests below
@@ -25,12 +25,12 @@
 //!    test that would have caught the curve-point bug on day one.
 //! 3. `the_vaults_own_initialize_now_flattens` — the corpus provenance the
 //!    fixture route costs, recovered where the corpus does have coverage: the
-//!    erc20-vault's own `initialize`, which our reader refused before M15.
+//!    erc20-vault's own `initialize`.
 //! 4. `the_compress_atom_is_a_transient_commitment` — the one claim that is
 //!    not about compactc at all. An opaque's slot holds
 //!    `transient_commit(bytes, len)` (upstream's
 //!    `ValueAtom::field_repr_unchecked`), so a preimage whose ledger write
-//!    carries the BYTES and whose circuit input carries the COMMITMENT must
+//!    carries the bytes and whose circuit input carries the commitment must
 //!    satisfy both artifacts. Nothing else in the suite pins that reading of
 //!    upstream, and everything in `minocrab_std::Opaque`'s docs rests on
 //!    it.
@@ -78,7 +78,7 @@ fn bytes1_value(v: u8) -> AlignedValue {
     .unwrap()
 }
 
-/// An `Opaque`'s stored value: the RAW BYTES under a `compress` atom.
+/// An `Opaque`'s stored value: the raw bytes under a `compress` atom.
 ///
 /// A `compress` atom accepts a value of any length —
 /// `AlignmentAtom::fits` returns `true` for it unconditionally — so the ledger
@@ -119,8 +119,8 @@ fn preimage(inputs: Vec<Fr>, transcript: Vec<Fr>) -> ProofPreimage {
     preimage_out(inputs, transcript, &[])
 }
 
-/// The communications commitment covers the circuit's INPUTS **and** its
-/// OUTPUTS (`onchain-runtime-wasm/src/primitives.rs`: `input`, then `output`,
+/// The communications commitment covers the circuit's inputs **and** its
+/// outputs (`onchain-runtime-wasm/src/primitives.rs`: `input`, then `output`,
 /// into `comm_comm_preimage`), so a circuit that returns a value has to declare
 /// it here. `bounded_differential.rs` gets away with inputs alone because none
 /// of its circuits returns anything.
@@ -191,21 +191,21 @@ fn cases() -> Vec<(&'static str, fn() -> Compiled)> {
     ]
 }
 
-/// CLAIM 1, and the headline: for every position an opaque can occupy, our
-/// circuit IS compactc's — op for op, immediate for immediate.
+/// Claim 1, and the headline: for every position an opaque can occupy, our
+/// circuit is compactc's — op for op, immediate for immediate.
 ///
 /// This is what says the `compress` atom's Impact immediate (`-0x01`), its
 /// position in a map key versus a map value, the absence of any range
 /// constraint, and the two curve alignments are all compactc's decisions and
 /// not ours.
 ///
-/// ALL FOURTEEN are equal outright. Three of them — `opDefault`, `opMapKey`
-/// and `opMaybe`, the ones whose ledger value is a LITERAL — used not to be:
+/// All fourteen are equal outright. Three of them — `opDefault`, `opMapKey`
+/// and `opMaybe`, the ones whose ledger value is a literal — used not to be:
 /// they named the constant with a `copy` where compactc inlines it, because a
 /// ledger value position goes through `LedgerRepr::push_limbs`, which hands
-/// back wires. That gap (M15, notes/opaque-bridging.org) was measured at zero
+/// back wires. That gap (notes/opaque-bridging.org) was measured at zero
 /// rows and described here by a bespoke `without_named_immediates` normaliser
-/// plus a test counting the extra `copy`s. Both are GONE: the constant-folding
+/// plus a test counting the extra `copy`s. Both are gone: the constant-folding
 /// pass (notes/ir-passes.org §2 ii) inlines the copy at `finish`, so the
 /// three circuits are equal on the same criterion as the other eleven and the
 /// API change the gap was waiting on is not needed.
@@ -220,7 +220,7 @@ fn identical_instruction_streams() {
     }
 }
 
-/// An opaque argument carries NO constraint instruction, which is the fact the
+/// An opaque argument carries no constraint instruction, which is the fact the
 /// whole leaf rests on — asserted directly rather than only through stream
 /// equality, so that a future change to both sides at once still fails here.
 #[test]
@@ -233,7 +233,7 @@ fn an_opaque_argument_is_unconstrained() {
             "opArg emitted `{constraint}` for an opaque argument"
         );
     }
-    // …while its NEIGHBOUR in `opStruct` does get one, so the absence above is
+    // …while its neighbour in `opStruct` does get one, so the absence above is
     // a property of the type and not of the test.
     let tagged = to_zkir_string(&opaque::OpaqueLedger::op_struct().ir).expect("serializes");
     assert_eq!(
@@ -243,9 +243,9 @@ fn an_opaque_argument_is_unconstrained() {
     );
 }
 
-/// CLAIM 4: an opaque's slot is `transient_commit(bytes, len)`.
+/// Claim 4: an opaque's slot is `transient_commit(bytes, len)`.
 ///
-/// The preimage is INCONSISTENT unless that is true: the circuit input is the
+/// The preimage is inconsistent unless that is true: the circuit input is the
 /// commitment we compute natively, the ledger write carries the raw bytes, and
 /// the two are tied together only by upstream's own `field_repr` of a
 /// `compress` atom. Both artifacts have to accept it, and upstream's `check()`
@@ -281,7 +281,7 @@ fn the_compress_atom_is_a_transient_commitment() {
     }
 }
 
-/// The commitment BINDS: a preimage whose circuit input is the commitment of
+/// The commitment binds: a preimage whose circuit input is the commitment of
 /// one string while the ledger write carries another is rejected by both
 /// artifacts.
 ///
@@ -310,7 +310,7 @@ fn a_mismatched_commitment_is_rejected_by_both() {
 #[test]
 fn the_increment_only_circuits_are_call_compatible() {
     let name = opaque_commitment(b"alice");
-    // A circuit's `output` is a ZKIR output instruction, NOT a public
+    // A circuit's `output` is a ZKIR output instruction, not a public
     // transcript entry — it stays out of `public_transcript_outputs` and goes
     // into the communications commitment instead. `opEq` returns `a == b` on
     // two equal commitments, hence the `1`.
@@ -334,9 +334,9 @@ fn the_increment_only_circuits_are_call_compatible() {
     }
 }
 
-/// CLAIM 2, THE ABI ROUND-TRIP: compactc's `contract-info.json`, flattened,
+/// Claim 2, the ABI round-trip: compactc's `contract-info.json`, flattened,
 /// against the `CircuitAbi` of the leaf the generator maps each argument to —
-/// atoms AND primitive types, slot for slot. Those two lists agreeing IS the
+/// atoms and primitive types, slot for slot. Those two lists agreeing is the
 /// agreement check every interface crate rests on.
 ///
 /// This is the test whose absence let the curve-point bug survive: before M15
@@ -368,7 +368,7 @@ fn compactc_s_abi_agrees_with_the_leafs() {
         }};
     }
 
-    // One entry per circuit that HAS arguments, in declaration order.
+    // One entry per circuit that has arguments, in declaration order.
     let expected: Vec<(&str, (Vec<_>, Vec<_>))> = vec![
         ("opArg", abi!(Opaque<ts::Str, Public>)),
         ("opRet", abi!(Opaque<ts::Str, Public>)),
@@ -378,7 +378,7 @@ fn compactc_s_abi_agrees_with_the_leafs() {
         ("opMapKey", abi!(Opaque<ts::Str, Public>)),
         ("opSet", abi!(Opaque<ts::Str, Public>)),
         ("opMaybe", abi!(Opaque<ts::Str, Public>)),
-        // The second ts-type has the SAME layout — the distinction is a Rust
+        // The second ts-type has the same layout — the distinction is a Rust
         // type-level one, and this is where that is stated as a fact.
         ("opBytes", abi!(Opaque<ts::Uint8Array, Public>)),
         ("opStruct", abi!(Uint<8, Public>, Opaque<ts::Str, Public>)),
@@ -396,10 +396,10 @@ fn compactc_s_abi_agrees_with_the_leafs() {
     }
 }
 
-/// CLAIM 3: the corpus provenance the fixture route costs, recovered where the
+/// Claim 3: the corpus provenance the fixture route costs, recovered where the
 /// corpus does have coverage.
 ///
-/// `Secp256k1Point` is the one `Opaque` spelling the corpus DOES compile to
+/// `Secp256k1Point` is the one `Opaque` spelling the corpus does compile to
 /// v3, and the erc20-vault — our own benchmark contract — takes one as
 /// `initialise`'s seventh argument (fifth before the lending flows added
 /// the two Aave addresses). Before M15 `flatten()` returned

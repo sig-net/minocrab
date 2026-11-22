@@ -1,27 +1,27 @@
-//! `coins.compact` — the M22 stage A differential: the three COIN ARMS of the
+//! `coins.compact` — the differential: the three coin arms of the
 //! collection ADTs, against compactc's own artifacts
 //! (notes/coin-arms-nested-adts.org).
 //!
-//! WHY THE FIXTURE IS OURS, for the fifth milestone running and with a
-//! sharper reason than usual. The three arms have REAL third-party demand —
+//! Why the fixture is ours, for the fifth milestone running and with a
+//! sharper reason than usual. The three arms have real third-party demand —
 //! OpenZeppelin's `ShieldedTreasury` keeps its coins in a
 //! `Map<Bytes<32>, QualifiedShieldedCoinInfo>` and calls `Map.insertCoin`
 //! three times — and compactc's own test suite compiles all three
 //! (`adt/exports/set_qualified_coin_info`, `list_qualified_coin_info`). But
 //! every one of those artifacts is ZKIR **v2**, and across the three
-//! `--feature-zkir-v3` corpus sources the three arms are used ZERO times. So
-//! they are corroboration for the SHAPE and not a differential target
+//! `--feature-zkir-v3` corpus sources the three arms are used zero times. So
+//! they are corroboration for the shape and not a differential target
 //! (notes/ledger-adts.org finding (e)), and the target is our source,
-//! compiled with the PINNED compactc — the invocation is in the fixture's
+//! compiled with the pinned compactc — the invocation is in the fixture's
 //! header.
 //!
-//! WHAT THE HEADLINE PINS, and what nothing weaker would: the three `dup`
+//! What the headline pins, and what nothing weaker would: the three `dup`
 //! reaches (4, 5 and 7 — three different constants, none of them the `3` the
 //! crate already had), the `idxc [(align 1 1), stack]` two-element path that
 //! resolves the Merkle-tree index, the `concatc 91` literal, the fact that
-//! `Set`'s dance runs BEFORE its `pushs null` because the qualified coin is
-//! the KEY, and `List.pushFrontCoin`'s eight extra instructions around a
-//! BLANK `[null, null, null]` node.
+//! `Set`'s dance runs before its `pushs null` because the qualified coin is
+//! the key, and `List.pushFrontCoin`'s eight extra instructions around a
+//! blank `[null, null, null]` node.
 
 #[path = "support/common.rs"]
 mod common;
@@ -49,7 +49,7 @@ fn cases() -> Vec<(&'static str, fn() -> Compiled)> {
     ]
 }
 
-/// THE HEADLINE: for all three coin arms, our serialized ZKIR IS compactc's
+/// The headline: for all three coin arms, our serialized ZKIR IS compactc's
 /// up to identifier renaming.
 #[test]
 fn identical_instruction_streams() {
@@ -62,8 +62,8 @@ fn identical_instruction_streams() {
     }
 }
 
-/// EVERY CIRCUIT THE CONTRACT EXPORTS IS IN THE DIFFERENTIAL, compared by
-/// FUNCTION POINTER rather than by count — the two lists name circuits
+/// Every circuit the contract exports is in the differential, compared by
+/// function pointer rather than by count — the two lists name circuits
 /// differently (`setInsertCoin` against `set_insert_coin`), and a count would
 /// pass while two entries silently swapped.
 #[test]
@@ -106,7 +106,7 @@ fn every_fixture_circuit_is_covered() {
     assert_eq!(compiled, covered);
 }
 
-/// CLAIM 2 — compactc's own ABI agrees with the argument types.
+/// Claim 2 — compactc's own ABI agrees with the argument types.
 ///
 /// The fixture's `contract-info.json`, flattened by `minocrab_abi::info`,
 /// against the `CircuitAbi` of the Rust types. This is where "our

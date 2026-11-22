@@ -1,13 +1,13 @@
-//! THE HOOKS' GATE (M42 A, notes/hooks-design.org).
+//! The hooks' gate (notes/hooks-design.org).
 //!
 //! Every `Hook` method is run through the executor (`minocrab_sim::exec`,
-//! Midnight's on-chain VM) against a SEEDED state, and the resulting cells
+//! Midnight's on-chain VM) against a seeded state, and the resulting cells
 //! and map entries are read back — including each failure row of the
 //! design's table, which must be refused by the VM at landing and never by
 //! the circuit. Then the attachment semantics: hooks run after the whole
 //! body, in attachment order, under the guard captured at `c.then`, and are
-//! refused inside `when_private`. Every hook that applies is BLIND: zero
-//! reads, zero public transcript outputs. And NO HIDDEN OPS: a hook lowers
+//! refused inside `when_private`. Every hook that applies is blind: zero
+//! reads, zero public transcript outputs. And no hidden ops: a hook lowers
 //! to the byte-identical ZKIR of the explicit `minocrab_ledger` op lists.
 
 use midnight_base_crypto::fab::{
@@ -173,7 +173,7 @@ fn run(compiled: &Compiled, seed: &Seed, inputs: &[u64]) -> Result<Executed, Exe
     exec::execute(&compiled.ir, &call, &ctx)
 }
 
-/// Apply and require success; the transcript READ nothing.
+/// Apply and require success; the transcript read nothing.
 fn apply(compiled: &Compiled, seed: &Seed, inputs: &[u64]) -> Executed {
     let out = run(compiled, seed, inputs).expect("the hook applies");
     assert!(out.reads.is_empty(), "a hook performs no read: {:?}", out.reads);
@@ -182,7 +182,7 @@ fn apply(compiled: &Compiled, seed: &Seed, inputs: &[u64]) -> Executed {
     out
 }
 
-/// Apply and require the LEDGER to refuse it (the circuit was satisfied).
+/// Apply and require the ledger to refuse it (the circuit was satisfied).
 fn refused(compiled: &Compiled, seed: &Seed, inputs: &[u64]) {
     match run(compiled, seed, inputs) {
         Err(ExecError::NotApplied { .. }) => {}
@@ -321,7 +321,7 @@ fn move_entry_moves_a_present_entry_and_refuses_an_absent_source() {
     // Overwrites an existing destination, as `insert` does.
     let out = apply(&circuit, &seed, &[5, 6]);
     assert_eq!(map_u64(&out.post, SNAP, 6), Some(77));
-    // An absent source fails the transaction — and does NOT plant a Null.
+    // An absent source fails the transaction — and does not plant a Null.
     refused(&circuit, &seed, &[8, 9]);
 }
 
@@ -340,7 +340,7 @@ fn if_absent_runs_the_arm_only_when_the_key_is_absent() {
     let out = apply(&circuit, &seed, &[9, 42]);
     assert_eq!(map_u64(&out.post, SNAP, 9), Some(7), "present: untouched");
     assert_eq!(cell_u64(&out.post, N), 1, "present: the arm was skipped");
-    // A failure INSIDE the arm fails only when the arm runs.
+    // A failure inside the arm fails only when the arm runs.
     refused(&circuit, &Seed { n: u64::MAX, ..Seed::default() }, &[9, 42]);
     let seed = Seed { n: u64::MAX, snap: vec![(9, 7)], ..Seed::default() };
     apply(&circuit, &seed, &[9, 42]);
@@ -402,7 +402,7 @@ fn a_hook_runs_after_the_whole_body_whatever_the_position_of_then() {
     let circuit = compile(|c| {
         let (_k, d) = two_args(c);
         c.then(Hook::new().add(&BLOCK.n, 1u64));
-        // An inline write that appears AFTER the `then` still lands first.
+        // An inline write that appears after the `then` still lands first.
         BLOCK.n.write(c, &d);
     });
     let out = run(&circuit, &Seed { n: 100, ..Seed::default() }, &[0, 10]).expect("applies");
@@ -447,7 +447,7 @@ fn a_hook_attached_inside_when_is_emitted_under_that_guard() {
     let off = apply(&circuit, &seed, &[0, 0]);
     assert_eq!(cell_u64(&off.post, N), 5, "guard off: absent from the transcript");
     assert_eq!(cell_u64(&off.post, M), 6, "the unguarded hook still ran");
-    // The guard is in the TRANSCRIPT, not the circuit: the skipped hook's
+    // The guard is in the transcript, not the circuit: the skipped hook's
     // ops are not run at all (four fewer ops than the on-path).
     assert_eq!(on.ops.len(), off.ops.len() + 4);
 }

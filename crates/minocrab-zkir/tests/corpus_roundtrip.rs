@@ -1,4 +1,4 @@
-//! M1 exit criterion: round-trip every compactc-compiled ZKIR v3 `.zkir` in
+//! Round-trip every compactc-compiled ZKIR v3 `.zkir` in
 //! the corpus — parse, re-emit, re-parse, assert equality. The corpus's v2
 //! artifacts are counted and skipped (nothing targets them). Skips when the
 //! corpus hasn't been compiled yet (corpus/compile.sh).
@@ -67,7 +67,7 @@ fn round_trips_entire_corpus() {
         v3_count,
         files.len() - v3_count,
     );
-    // THE COUNT IS ASSERTED. Without it this test is green on a partial or
+    // The count is asserted. Without it this test is green on a partial or
     // empty checkout, which is silence, not evidence. The number moves only
     // when the corpus does (corpus/compile.sh after a source is added or the
     // compactc pin bumps — notes/version-bump.org); update it in the same
@@ -88,7 +88,7 @@ fn round_trips_entire_corpus() {
         // PR #127 beside the fff3421c ones (the Signet module and its
         // circuits.compact compile to no artifact of their own).
         // 834/95 → 849/110 at M44 A: the corpus repinned to
-        // midnight-examples main (375071b, the FLUSH-PATTERN vault) and
+        // midnight-examples main (375071b, the flush-pattern vault) and
         // midnight-integration v0.24.1 (the V1 Signet vocabulary). The
         // flush-pattern vault's circuit set is larger than the
         // seventeen-circuit one it replaces, and all fifteen new artifacts

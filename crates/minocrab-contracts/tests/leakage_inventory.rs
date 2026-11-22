@@ -1,46 +1,46 @@
-//! The vault's LEAKAGE INVENTORY (M27, the vault prong): for each of the
+//! The vault's leakage inventory (the vault prong): for each of the
 //! twenty-nine circuits, what the artifact publishes, what each published
 //! component is a function of, which secrets the circuit consumes and what
-//! checks them — GENERATED from the artifact by a dataflow walk, and frozen
+//! checks them — generated from the artifact by a dataflow walk, and frozen
 //! below like every other snapshot in this crate.
 //!
 //! What the analysis draft (notes/zkir-semantics.org §7, §7.1) states by
 //! hand in its per-circuit tables, this file derives:
 //!
-//! - COMPLETENESS: the public statement is the `impact` operand stream (plus
+//! - Completeness: the public statement is the `impact` operand stream (plus
 //!   the binding input and the communications commitment, which are the
 //!   proof system's own). Every `impact` operand wire is classified — an
 //!   immediate, a wire that depends on no secret, or a wire that carries a
-//!   DECLARED disclosure label in its ancestry. A witness-dependent operand
-//!   with no label in its ancestry is an UNLABELLED LEAK, listed by name;
+//!   declared disclosure label in its ancestry. A witness-dependent operand
+//!   with no label in its ancestry is an unlabelled leak, listed by name;
 //!   `no_unlabelled_witness_dependent_public_component` asserts there are
 //!   none.
-//! - DEPENDENCY CLASSIFICATION: every declared disclosure's provenance —
+//! - Dependency classification: every declared disclosure's provenance —
 //!   which circuit inputs, which witness ordinals, which public inputs — and
 //!   every digest's (the "component c = H(operands)" statements).
-//! - WITNESS INVENTORY: each `private_input` with its guard, the labels it
+//! - Witness inventory: each `private_input` with its guard, the labels it
 //!   flows into, and the checks (`assert` / `constrain_*`) it reaches with
-//!   what ELSE those checks depend on — which is how "the secret is asserted
+//!   what else those checks depend on — which is how "the secret is asserted
 //!   only on the refund branch" reads mechanically: its one check also
 //!   depends on the attested outcome input.
-//! - LITERAL CONSTANCY: how many times the `"vault"` signing path, the
+//! - Literal constancy: how many times the `"vault"` signing path, the
 //!   `"vault:user:"` and `"vault:refund:"` commitment pads appear as
 //!   immediates.
-//! - THE CORPUS TWIN: the same structural counts on compactc's own artifact
+//! - The corpus twin: the same structural counts on compactc's own artifact
 //!   for the same circuit (witnesses and guards, `impact` ops and guards,
 //!   operand wires, digests, literals). The two lowerings are PI-equal
 //!   (tests/erc20_vault_differential.rs); this line says the leakage
-//!   SURFACE is the same shape too, so the inventory describes both.
+//!   surface is the same shape too, so the inventory describes both.
 //!
 //! The walk is static — no preimage, no run. Provenance is the transitive
-//! closure of `minocrab_ir::passes::operands` (rung 2's `Instr.operands`
+//! closure of `minocrab_ir::passes::operands` (`Instr.operands`
 //! in Lean, gate-equal on the corpus) seeded at the circuit inputs, the
 //! `private_input`s and the `public_input`s; labels are seeded at the wires
 //! `Compiled::disclosures` names and propagated the same way. Provenance
 //! over-approximates (a hash of a secret "depends on" the secret, which is
 //! exactly the claim the inventory wants to make), never under-approximates.
 //!
-//! Regenerate after an INTENTIONAL change to a circuit's leakage surface:
+//! Regenerate after an intentional change to a circuit's leakage surface:
 //! `cargo test -p minocrab-contracts --test leakage_inventory -- --ignored
 //! regenerate_leakage_inventory`. The diff names the moved component.
 
@@ -54,7 +54,7 @@ use vault::artifact::Circuit;
 /// line reports them: the MPC signing path and the two commitment pads.
 const LITERALS: &[&str] = &["vault", "vault:user:", "vault:refund:"];
 
-/// One circuit's inventory: OUR artifact, against compactc's own.
+/// One circuit's inventory: our artifact, against compactc's own.
 fn inventory(circuit: Circuit) -> Vec<String> {
     leakage::inventory(
         circuit.zkir_name(),
@@ -70,7 +70,7 @@ fn build_inventory() -> Vec<String> {
 
 /// The frozen inventory, one line per fact, in `Circuit::ALL` order.
 const INVENTORY: &[&str] = &[
-    // GENERATED BEGIN — rewritten by `regenerate_leakage_inventory`
+    // Generated begin — rewritten by `regenerate_leakage_inventory`
     "== initialise | inputs 20 (vaultEvm.0,swapRouter.1,stataUnderlyingAddr.2,stataTokenAddr.3,chainId.4,responseKey.5,responseKeyVersion.6,evmHeight.7,stataUnderlyingFees_withdraw.8,stataUnderlyingFees_swap.9,stataUnderlyingFees_supply.10,stataUnderlyingFees_redeem.11,stataTokenFees_withdraw.12,stataTokenFees_swap.13,stataTokenFees_supply.14,stataTokenFees_redeem.15,feeRecipientCoinKey_hi.16,feeRecipientCoinKey_lo.17,feeRecipientEncryptionKey_hi.18,feeRecipientEncryptionKey_lo.19) | witnesses 2 (guarded 0) | public_inputs 3 (guarded 0) | impact 86 (guarded 0) wires 317 | digests transient_hash 1 | outputs 0",
     "literals | \"vault\" x0 \"vault:user:\" x1 \"vault:refund:\" x0",
     "corpus twin | witnesses 2 (guarded 0) | public_inputs 3 (guarded 0) | impact 86 (guarded 0) wires 317 | digests transient_hash 1 | literals \"vault\" x0 \"vault:user:\" x1 \"vault:refund:\" x0",
@@ -3101,7 +3101,7 @@ const INVENTORY: &[&str] = &[
     "impact #113 | guarded | wires 1: immediate 1, public-derived 0, labelled 0 | unlabelled witness-dependent 0",
     "impact #114 | guarded | wires 1: immediate 1, public-derived 0, labelled 0 | unlabelled witness-dependent 0",
     "unlabelled witness-dependent public components | none",
-    // GENERATED END
+    // Generated end
 ];
 
 #[test]
@@ -3126,7 +3126,7 @@ fn the_leakage_inventory_is_frozen() {
     }
 }
 
-/// COMPLETENESS, as a hard gate: every witness-dependent wire that reaches
+/// Completeness, as a hard gate: every witness-dependent wire that reaches
 /// the public statement carries a declared label in its ancestry.
 #[test]
 fn no_unlabelled_witness_dependent_public_component() {
@@ -3138,7 +3138,7 @@ fn no_unlabelled_witness_dependent_public_component() {
     assert!(offenders.is_empty(), "{}", offenders.join("\n"));
 }
 
-/// The corpus twin has the same leakage SURFACE: same witness and guard
+/// The corpus twin has the same leakage surface: same witness and guard
 /// counts, same `impact` op and guard counts, same operand-wire count, same
 /// digest counts, same literal counts.
 #[test]

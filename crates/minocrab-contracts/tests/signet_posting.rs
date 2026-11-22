@@ -1,5 +1,5 @@
-//! M43 rung D — THE POSTING BENCHMARK: what it costs to post one signer
-//! event on chain, under OUR artifact and under compactc's, for the same
+//! The posting benchmark: what it costs to post one signer
+//! event on chain, under our artifact and under compactc's, for the same
 //! call.
 //!
 //! `#[ignore]`d, `--release`, and it needs the KZG params on disk:
@@ -8,8 +8,8 @@
 //! cargo test --release -p minocrab-contracts --test signet_posting -- --ignored posting_benchmark --nocapture
 //! ```
 //!
-//! `crates/minocrab-bench` prices the PROOF (keygen, prove, verify, RSS);
-//! this gate prices the TRANSACTION, the way a chain does. Per circuit ×
+//! `crates/minocrab-bench` prices the proof (keygen, prove, verify, RSS);
+//! this gate prices the transaction, the way a chain does. Per circuit ×
 //! side it runs the whole posting path in one subprocess (so peak RSS is
 //! the cell's own): keygen from that side's IR → deploy the signet signer under
 //! that side's verifier key → build the same call the other gates build →
@@ -17,7 +17,7 @@
 //! verified in `Real` mode → `apply`; and it reads off the ledger what the
 //! ledger would charge: `Transaction::cost` (the `SyntheticCost` the fee
 //! model normalises) and `Transaction::fees` under `INITIAL_PARAMETERS`, in
-//! SPECKS. The sides:
+//! specks. The sides:
 //!
 //! - `minocrab`: `signet_contract::SignetContract::*().ir`, the artifact
 //!   `crates/signet-artifacts` ships;
@@ -25,7 +25,7 @@
 //!   source (midnight-integration v0.25.0, `b62e67e`), keygen'd here with
 //!   the same `midnight-zkir-v3`.
 //!
-//! What is EXPECTED equal, and why: the proof (same proof system, same
+//! What is expected equal, and why: the proof (same proof system, same
 //! `k`-independent proof size), the verifier key size (1353 bytes both,
 //! the fixed-column count does not depend on `k`), the transcript (the
 //! call-compatibility gates prove both artifacts accept the identical
@@ -174,7 +174,7 @@ struct Cell {
     cost_compute_ps: u64,
     cost_block_usage: u64,
     cost_bytes_written: u64,
-    /// `Transaction::fees(INITIAL_PARAMETERS)`, in SPECKS (decimal string:
+    /// `Transaction::fees(INITIAL_PARAMETERS)`, in specks (decimal string:
     /// u128 does not survive every JSON reader).
     fee_specks: String,
     peak_rss_bytes: u64,
@@ -216,7 +216,7 @@ async fn measure(side: &str, circuit: &str) -> Cell {
         },
     );
 
-    // Deploy under THIS side's key for the circuit under test (the other two
+    // Deploy under this side's key for the circuit under test (the other two
     // operations carry the managed keys and are never called here).
     let vk_for_deploy = vk.clone();
     let (ledger, address) = deploy_singleton(
@@ -412,7 +412,7 @@ fn posting_benchmark() {
     println!("\n{table}");
 
     // The claims the module header makes, checked on the numbers: for each
-    // circuit, both sides paid the SAME fee, the same cost-model inputs and
+    // circuit, both sides paid the same fee, the same cost-model inputs and
     // the same proof size.
     if sides.len() == 2 {
         for circuit in SIGNER_CIRCUITS {

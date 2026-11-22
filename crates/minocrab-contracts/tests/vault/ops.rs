@@ -1,8 +1,8 @@
-//! The flush vault's Impact op builders, over its SEGMENTED 37-field
+//! The flush vault's Impact op builders, over its segmented 37-field
 //! ledger: 37 fields = a leading remainder segment of seven and two full
 //! segments of fifteen, so field `i` lives at `[0, i]` for `i < 7`,
 //! `[1, i − 7]` for `i < 22` and `[2, i − 22]` otherwise, and every
-//! whole-field write is a NESTED write. The op shapes were transcribed from
+//! whole-field write is a nested write. The op shapes were transcribed from
 //! the `375071b` artifacts (`initialise.zkir`, `startDeposit.zkir`,
 //! `completeDeposit.zkir`, `flushQueue.zkir`); the differential suite pins
 //! our lowering to them and the executor runs them against a real state.

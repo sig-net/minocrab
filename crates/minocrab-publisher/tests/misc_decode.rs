@@ -4,7 +4,7 @@
 //! captured on-chain transactions in `minocrab-contracts`), so a decoder
 //! that inverts them exactly reads what the singleton emits. The one input
 //! here that no encoder of ours produced is the fixture's `responseEvent`:
-//! the `respondBidirectional` emission of the COMPILED circuit (compactc
+//! the `respondBidirectional` emission of the compiled circuit (compactc
 //! 0.33.0-rc.2, `@sig-net/midnight@0.25.0-rc.1`), with its fields beside it.
 
 use minocrab_publisher::call::{

@@ -1,15 +1,15 @@
-//! The erc20-vault REFERENCE MODEL (M44, the flush-pattern vault): per-circuit
+//! The erc20-vault reference model (the flush-pattern vault): per-circuit
 //! scenarios that carry a concrete pre-state plus the arguments and witnesses
 //! of one call, and emit the Impact op stream and the `ProofPreimage` that
 //! stream implies.
 //!
 //! Shape: an [`Env`] is the configuration every circuit may read plus the
-//! call context; a [`Sent`] is ONE request followed through the queue — its
+//! call context; a [`Sent`] is one request followed through the queue — its
 //! buffered entry, its flushed index, its V1 event and request id — so the
 //! send, queue-attestation and complete scenarios of every action are built
 //! from the same object. The op stream is built from `ops::*` in the
 //! circuit's read order — the order compactc's artifact reads in, which the
-//! differential pins — and the popeq results are DERIVED from that stream
+//! differential pins — and the popeq results are derived from that stream
 //! (`ops::outputs_of`), so a scenario cannot list an output its ops never
 //! read.
 
@@ -1163,7 +1163,7 @@ impl Sent {
 #[derive(Clone, Debug)]
 pub struct InitialiseScenario {
     pub env: Env,
-    /// The secret the CALLER witnesses; `env.deployer_sk` is whose
+    /// The secret the caller witnesses; `env.deployer_sk` is whose
     /// commitment is stored.
     pub sk: [u8; 32],
     pub vault_evm: [u8; 20],

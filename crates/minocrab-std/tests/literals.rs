@@ -1,11 +1,11 @@
 //! Inline immediates: a native Rust value in an operand position must cost
-//! NOTHING, and must cost strictly less than naming the same constant first.
+//! nothing, and must cost strictly less than naming the same constant first.
 //!
 //! v3 has no `LoadImm` — an immediate is an operand — so
 //! `c.less_than(0u64, x, 64)` is one instruction where
 //! `c.less_than(c.constant(0u64), x, 64)` is two, and the second one exists
 //! only to give the constant a name. This is the property the row snapshot
-//! CANNOT see (a `Copy` is zero rows), so it is asserted here on the
+//! cannot see (a `Copy` is zero rows), so it is asserted here on the
 //! instruction stream itself.
 
 use minocrab::{Circuit, FieldT, Wire};
@@ -88,7 +88,7 @@ fn a_literal_operand_costs_one_instruction_less_than_naming_it() {
     );
 }
 
-/// The immediate is INLINE in the stream — the operand is the value, and
+/// The immediate is inline in the stream — the operand is the value, and
 /// there is no `copy` naming it.
 #[test]
 fn the_immediate_appears_as_the_operand() {

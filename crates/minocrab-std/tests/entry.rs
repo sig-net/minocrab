@@ -3,7 +3,7 @@
 //! `entry()` has to lower to the byte-identical ZKIR of the same circuit
 //! written as a hand-written `c.arg` block followed by a hand-written
 //! `assert_bits` block. Serialized-ZKIR equality also pins the argument
-//! LABELS, which appear in the stream as `%name.index`.
+//! labels, which appear in the stream as `%name.index`.
 
 use minocrab::{Circuit, Compiled, Encode, FieldT, Prim, Secp256k1PointT, Wire};
 use minocrab::{AlignmentAtom, Private, Public};
@@ -267,7 +267,7 @@ fn a_tag_costs_a_slot_and_every_arm_costs_its_own() {
 // ---- the one slot that is not a field element -------------------------------
 
 /// `initialise(responseKey: Secp256k1Point)` shaped: a point slot in the
-/// middle of ordinary ones, so the test pins its POSITION as well as its
+/// middle of ordinary ones, so the test pins its position as well as its
 /// (absent) constraint.
 struct PointArgs {
     chain_id: Uint<64>,

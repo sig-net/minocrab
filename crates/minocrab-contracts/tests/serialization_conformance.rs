@@ -1,16 +1,16 @@
-//! "Today's protocol is already Borsh" — with a test behind it (M11
-//! stage 0, notes/borsh-format.org §Phasing).
+//! "Today's protocol is already Borsh" — with a test behind it
+//! (notes/borsh-format.org §Phasing).
 //!
-//! No circuit changes and no new encoder: every byte string on the DEPLOYED
+//! No circuit changes and no new encoder: every byte string on the deployed
 //! side of an assertion here is produced by the protocol's own code — the
 //! FAB `binary_repr` the ledger holds a record as, the `Misc` envelope the
-//! signet signer logs, the reference model M44's differential suite pins to the
-//! compactc artifacts. Every byte string on the SPEC side is produced by
+//! signet signer logs, the reference model the vault differential pins to the
+//! compactc artifacts. Every byte string on the spec side is produced by
 //! borsh's and serde+bincode's derives over the declarations in
 //! `serialization::spec_types`.
 //!
-//! TWO FORMATS are checked, and they are not alternatives: the deployed
-//! SIGNET V1 records and outputs (`@sig-net/midnight` 0.24.1, which the
+//! Two formats are checked, and they are not alternatives: the deployed
+//! Signet V1 records and outputs (`@sig-net/midnight` 0.24.1, which the
 //! flush-pattern vault imports), and the V2 lineage's own format, which
 //! nothing has deployed. Only the V1 half has a deployed-bytes claim; the V2
 //! half is a specification pinned against borsh's encoder, borsh's schema and
@@ -19,23 +19,23 @@
 //! The four properties of the stage, in the order the design of record lists
 //! them:
 //!
-//! a. DUAL ORACLE — `borsh::to_vec(v) == bincode-fixint(v)` for every spec
+//! a. Dual oracle — `borsh::to_vec(v) == bincode-fixint(v)` for every spec
 //!    type over generated values. Together with (b) this is the subset
 //!    checker; `subset_boundary` below pins the three known-bad shapes and
 //!    which of the two properties catches each.
-//! b. FIXED WIDTH — `borsh::object_length(v) == T::LEN` for all v, and
+//! b. Fixed width — `borsh::object_length(v) == T::LEN` for all v, and
 //!    `T::LEN` equals the deployed FAB alignment's own `bin_len`, trailing
 //!    `Bytes<0>` atom included (`the_trailing_b0_atom_is_free`). No
 //!    value-dependent branching, so every offset is a compile-time constant.
-//! c. THE HEADLINE — byte-equality against the deployed protocol's actual
+//! c. The headline — byte-equality against the deployed protocol's actual
 //!    bytes: the five V1 request records, the three V1 attested-output
 //!    widths, and the signet signer's Misc payloads, the last checked by handing
-//!    the bytes to the CORPUS ARTIFACT itself. NEITHER the request id NOR the
+//!    the bytes to the corpus artifact itself. Neither the request id nor the
 //!    attestation digest is a hash of these bytes: both are Poseidon over
-//!    FIELD elements, which is why there is no V1 preimage spec type and why
+//!    field elements, which is why there is no V1 preimage spec type and why
 //!    `v1_attestation_digest_commits_to_the_kind_and_the_width` states the
 //!    V1 digest in limbs instead.
-//! d. SCHEMA DRIFT — the Borsh schema walked into a frozen `(path, kind,
+//! d. Schema drift — the Borsh schema walked into a frozen `(path, kind,
 //!    offset, width)` table, the seed of stage 8's published offset tables.
 //!
 //! Case counts scale with `PROPTEST_CASES` (see `vault::gen::config`).
@@ -64,7 +64,7 @@ use vault::prims::{attestation_digest_v026, attested_output_hash, b32_slots, tra
 
 // ---- (a) + (b): the dual oracle and the fixed width --------------------------
 
-/// Assert everything that holds of a spec-type VALUE regardless of where it
+/// Assert everything that holds of a spec-type value regardless of where it
 /// came from: the two oracles agree, the width is the type's constant, and
 /// the encoding round-trips (bijective on the subset — there is nothing to
 /// choose between two encodings of the same value).
@@ -208,7 +208,7 @@ fn tx_params3() -> impl Strategy<Value = EvmType2TxParams3> {
 
 /// The V1 record's shared fields: everything before `txParams` and everything
 /// after it but the output schema. Generated, not fixed, at every one — the
-/// conformance properties are about the ENCODING, so they must hold at every
+/// conformance properties are about the encoding, so they must hold at every
 /// value the type admits and not only at the values the protocol writes.
 type RecordHeaderV1 = (u8, [u8; 32], [u8; 32], u8, u8, [u8; 64], u8, [u8; 64]);
 
@@ -272,7 +272,7 @@ v1_record_strategy!(supply_event_v1 -> SupplyEventV1, tx_params2, 36);
 v1_record_strategy!(redeem_event_v1 -> RedeemEventV1, tx_params3, 36);
 
 /// The V2 record's header — the `fff3421c` field order the V2 format keeps,
-/// which is NOT the V1 order ([`record_header_v1`]): the sender first, the
+/// which is not the V1 order ([`record_header_v1`]): the sender first, the
 /// request nonce after it, `params` before `txParamType`.
 type RecordHeaderV2 = ([u8; 32], u64, u8, [u8; 32], u8, u8, [u8; 64], u8, [u8; 32]);
 
@@ -387,8 +387,8 @@ fn respond_misc() -> impl Strategy<Value = RespondMisc> {
 
 // ---- the deployed side: generated requests -----------------------------------
 //
-// `vault::gen`'s scenario strategies went with the seventeen-circuit vault
-// (M44), so the generators here are LOCAL and small: they take one of the
+// `vault::gen` has no scenario strategies for this vault,
+// so the generators here are local and small: they take one of the
 // model's canonical requests — `Sent::deposit()` and its siblings, each a
 // request followed through the flush queue — and replace the values a caller
 // controls. The model then assembles the record from them (`Sent::req()`), the
@@ -411,7 +411,7 @@ fn request_values() -> impl Strategy<Value = RequestValues> {
     (
         byte_array::<32>(),
         byte_array::<32>(),
-        // Five DISTINCT slots rather than one address reused, so a record that
+        // Five distinct slots rather than one address reused, so a record that
         // puts the right kind of value in the wrong field still fails.
         proptest::collection::vec(byte_array::<20>(), 5),
         // `keyVersion >= 1` is guarded by `constructSignBidirectionalEventV1`.
@@ -458,7 +458,7 @@ fn sent(base: fn() -> Sent) -> impl Strategy<Value = Sent> {
                 Args::Deposit { erc20, amount, path, gas: g } => {
                     *erc20 = addr[3];
                     *amount = first;
-                    // The deposit's path IS the requester's commitment; the
+                    // The deposit's path is the requester's commitment; the
                     // bridge recomputes it from `sk`, so the two must agree.
                     *path = user_commitment(&sk);
                     *g = gas;
@@ -595,12 +595,12 @@ fn empty_output() -> EmptyOutput {
     }
 }
 
-/// (b), the other half: each `LEN` is the DEPLOYED shape's own width, not an
+/// (b), the other half: each `LEN` is the deployed shape's own width, not an
 /// arithmetic claim of ours. `Alignment::bin_len` is what the ledger and the
 /// hash chips size a record by.
 #[test]
 fn lens_match_the_deployed_alignments() {
-    // The five deployed V1 records. `fab_len` sums the atom list INCLUDING the
+    // The five deployed V1 records. `fab_len` sums the atom list including the
     // trailing `Bytes<0>` — so this equality is also the claim the zero-width
     // `respond_serialization_schema` field makes, and `the_trailing_b0_atom_is_free`
     // below isolates it.
@@ -645,11 +645,11 @@ fn lens_match_the_deployed_alignments() {
     );
     assert_eq!(SwapEventV1::LEN, 558);
 
-    // The keccak blocks those widths buy, counted by the ROW MODEL's own
+    // The keccak blocks those widths buy, counted by the row model's own
     // `keccak_blocks` (rate 136, at least one padding byte) rather than by a
-    // second copy of the padding rule. The V1 swap record was FOUR blocks at
+    // second copy of the padding rule. The V1 swap record was four blocks at
     // 0.24 (526 bytes, under the 544-byte boundary); the 64-byte
-    // `executionDest` of 0.25 takes it to 558 and back to FIVE, the count of
+    // `executionDest` of 0.25 takes it to 558 and back to five, the count of
     // the `fff3421c` record. Nothing hashes a V1 record with keccak, so the
     // count is a size fact, not a cost.
     use minocrab_sim::rowcost::keccak_blocks as blocks;
@@ -663,7 +663,7 @@ fn lens_match_the_deployed_alignments() {
     assert_eq!(BoolOutput::LEN, 1);
     assert_eq!(WordOutput::LEN, 32);
 
-    // THE V2 LINEAGE, and the same statement about a SHIPPING alignment: the
+    // The V2 lineage, and the same statement about a shipping alignment: the
     // widths are the `Pending` records' own atom lists, not our arithmetic.
     assert_eq!(
         VaultEventV2::LEN,
@@ -685,7 +685,7 @@ fn lens_match_the_deployed_alignments() {
     assert_eq!(RedeemEventV2::LEN, 370);
 
     // The V2 lineage's shapes, and the digest preimages they define. These are
-    // THE SPEC — nothing has settled in this format — so what pins them is
+    // the spec — nothing has settled in this format — so what pins them is
     // borsh's own encoder, borsh's own schema, and the circuit that hashes
     // them.
     assert_eq!(VaultResponse::LEN, 2);
@@ -706,7 +706,7 @@ fn lens_match_the_deployed_alignments() {
     const { assert!(RespondMisc::LEN + 32 <= minocrab_contracts::events::MISC_SIZE) };
 }
 
-/// The trailing `respondSerializationSchema: Bytes<0>` is an ATOM that costs
+/// The trailing `respondSerializationSchema: Bytes<0>` is an atom that costs
 /// nothing — which is what licenses spelling it as a zero-width
 /// [`ByteArray<0>`] rather than leaving it out of the spec type.
 ///
@@ -740,7 +740,7 @@ fn the_trailing_b0_atom_is_free() {
         );
         // One atom per field, and the b0 is the one with no limb: the limb
         // count is the field count less the multi-limb fields' extras, and
-        // taking the b0 off the END changes nothing a limb index points at.
+        // taking the b0 off the end changes nothing a limb index points at.
         let value = deployed::fab_len(&atoms);
         assert_eq!(value, len, "{name}: declared width");
         assert!(limbs > 0, "{name}: a record has limbs");
@@ -799,16 +799,16 @@ fn schema_widths_match_the_lens() {
     }
 }
 
-// ---- (c) THE HEADLINE: the deployed bytes ------------------------------------
+// ---- (c) the headline: the deployed bytes ------------------------------------
 
-/// A V2 record's limbs from the model's V1 request: the same field VALUES, in
+/// A V2 record's limbs from the model's V1 request: the same field values, in
 /// the V2 slot order.
 ///
 /// V2 is a specification, so there is no model to take its limbs from; what
 /// there is, is the V1 record the vault actually writes. This reorders those
 /// limbs — the version byte in front, the request nonce restored after the
 /// sender, `params` before `txParamType`, the response kind where the output
-/// schema was — and changes nothing else. The VALUES stay the model's, which
+/// schema was — and changes nothing else. The values stay the model's, which
 /// is what keeps the byte claim below two independent statements rather than
 /// one restated.
 fn v2_limbs(req: &Req, env: &Env, request_nonce: u64, kind: u8) -> Vec<Fr> {
@@ -865,12 +865,12 @@ proptest! {
     /// approval routes (`sendApprove` for the router and for the stata token)
     /// write this shape.
     ///
-    /// LEFT: the bytes the deployed record holds. The reference model's limbs
+    /// Left: the bytes the deployed record holds. The reference model's limbs
     /// under `erc20_vault::VaultRecord`'s atoms, packed by the FAB rule
     /// (`parse_field_repr` + `binary_repr`) — the record M44's differential
     /// suite pins to compactc's artifact.
     ///
-    /// RIGHT: `borsh::to_vec` of the spec type at the same field values.
+    /// Right: `borsh::to_vec` of the spec type at the same field values.
     #[test]
     fn vault_record_bytes_are_canonical_borsh(
         deposit in sent(Sent::deposit),
@@ -895,7 +895,7 @@ proptest! {
         }
     }
 
-    /// The nonce-replacement record: the one V1 record with NO calldata, so
+    /// The nonce-replacement record: the one V1 record with no calldata, so
     /// `calldata.is_some` is 0 and the word slots the alignment still reserves
     /// are zero — the `Maybe ↦ Flagged` rule at the value that distinguishes
     /// it from `Option`.
@@ -947,11 +947,11 @@ proptest! {
         );
     }
 
-    /// THE V2 LINEAGE: the record the `Pending` format writes.
+    /// The V2 lineage: the record the `Pending` format writes.
     ///
     /// The V1 properties above are untouched; this is the same statement about
-    /// the V2 format, with the same two independent sides. LEFT: the V2 limbs
-    /// under `VaultEventV2::atoms()` ([`v2_limbs`]). RIGHT: `borsh::to_vec` of
+    /// the V2 format, with the same two independent sides. Left: the V2 limbs
+    /// under `VaultEventV2::atoms()` ([`v2_limbs`]). Right: `borsh::to_vec` of
     /// the spec twin.
     #[test]
     fn v2_record_bytes_are_canonical_borsh(
@@ -1022,9 +1022,9 @@ proptest! {
     /// The V1 attested outputs, at the three widths the three
     /// `queueAttestation*` circuits take.
     ///
-    /// LEFT: `Bytes<LEN>`'s FAB binary over the limbs the circuit discloses —
+    /// Left: `Bytes<LEN>`'s FAB binary over the limbs the circuit discloses —
     /// a `Bytes<1>`'s single limb, a `Bytes<32>`'s `[hi, lo]` slot pair, and
-    /// the empty output's nothing. RIGHT: `borsh::to_vec` of the spec type.
+    /// the empty output's nothing. Right: `borsh::to_vec` of the spec type.
     #[test]
     fn attested_output_bytes_are_canonical_borsh(
         success in any::<u8>(),
@@ -1051,7 +1051,7 @@ proptest! {
 /// The V1 attestation digest's preimage, and the two facts that replaced the
 /// retired `0xdeadbeef01` failure output.
 ///
-/// a. THE PREIMAGE IS FIELD ELEMENTS, not bytes: Poseidon over
+/// a. The preimage is field elements, not bytes: Poseidon over
 ///    `[HashDomain.attestationDigest, requestId.hi, requestId.lo, blockHeight,
 ///    outputKind, LEN, outputHash.hi, outputHash.lo]`, the output entering
 ///    through `calculateAttestedOutputHashV1` (`[attestedOutput, ..output]`)
@@ -1060,7 +1060,7 @@ proptest! {
 ///    no byte string for one to describe. The order is restated here against
 ///    `prims::attestation_digest_v026`, which the vault's differential suite pins
 ///    to compactc's artifact.
-/// b. A FAILED OR UNVIABLE VERDICT CARRIES AN EMPTY OUTPUT. There is no
+/// b. A failed or unviable verdict carries an empty output. There is no
 ///    sentinel value to assert equal in-circuit any more; what a refund path
 ///    goes on is the verdict and the width, which is exactly why V1 signs both
 ///    of them. The three `assert_ne!`s are that claim: the same empty output
@@ -1130,14 +1130,14 @@ fn v1_attestation_digest_commits_to_the_kind_and_the_width() {
 /// The signet signer's `signBidirectional` Misc payload.
 ///
 /// The strong form: the bytes are not compared against a second Rust
-/// construction of them, they are handed to the PINNED COMPACTC ARTIFACT as
+/// construction of them, they are handed to the pinned compactc artifact as
 /// the logged transcript. The corpus circuit accepts the borsh envelope, and
 /// rejects it as soon as any single byte moves — including a byte of the
 /// zero pad, which is the padding rule ("bytes 0..LEN are the payload,
-/// LEN..N MUST be zero") enforced in-circuit.
+/// LEN..N must be zero") enforced in-circuit.
 ///
 /// Written against `TestRunner` rather than `proptest!` so the two artifacts
-/// are built and parsed ONCE rather than per case.
+/// are built and parsed once rather than per case.
 #[test]
 fn sign_bidirectional_misc_bytes_are_canonical_borsh() {
     let ours = signet_contract::Signer::sign_bidirectional().ir;
@@ -1232,7 +1232,7 @@ fn respond_misc_bytes_are_canonical_borsh() {
 
 /// [`ByteArray`] exists only because serde's blanket `[T; N]` impls stop at
 /// N = 32 and borsh's derived schema declaration would drop the length. It
-/// must add NOTHING to either encoding — checked at the N where the native
+/// must add nothing to either encoding — checked at the N where the native
 /// impls exist and can be compared against.
 #[test]
 fn byte_array_wrapper_is_transparent() {
@@ -1258,7 +1258,7 @@ fn byte_array_wrapper_is_transparent() {
 
 // ---- the subset boundary ------------------------------------------------------
 
-/// The three shapes the design of record excludes, and WHICH property
+/// The three shapes the design of record excludes, and which property
 /// catches each. Without these the conformance suite could be vacuous: they
 /// are the negative controls.
 mod subset_boundary {
@@ -1271,7 +1271,7 @@ mod subset_boundary {
     }
 
     /// A Rust `enum` — the shape the design of record's leaf table calls
-    /// `Tag<K>`. CAUGHT BY THE DUAL ORACLE: borsh writes a 1-byte
+    /// `Tag<K>`. Caught by the dual oracle: borsh writes a 1-byte
     /// discriminant, bincode-fixint writes a 4-byte variant index. Hence
     /// every tag in `spec_types` is a `u8`, which is what Compact's `Tag`
     /// already is.
@@ -1281,7 +1281,7 @@ mod subset_boundary {
         assert_eq!(bincode_fixint_bytes(&FieldlessEnum::Second), vec![1, 0, 0, 0]);
     }
 
-    /// A `Vec` — CAUGHT BY THE DUAL ORACLE: borsh prefixes a `u32` length,
+    /// A `Vec` — caught by the dual oracle: borsh prefixes a `u32` length,
     /// bincode-fixint a `u64` one. (Either way the layout would be
     /// value-dependent, which is the deeper reason it is excluded; the
     /// record uses `[T; K]` plus a separate `noWords` count instead.)
@@ -1292,11 +1292,11 @@ mod subset_boundary {
         assert_eq!(bincode_fixint_bytes(&v), vec![2, 0, 0, 0, 0, 0, 0, 0, 7, 8]);
     }
 
-    /// An `Option` — NOT caught by the dual oracle: both write a 1-byte tag
+    /// An `Option` — not caught by the dual oracle: both write a 1-byte tag
     /// and then the payload, so the two agree byte for byte. It is caught by
-    /// the FIXED-WIDTH property instead, because borsh omits the payload on
+    /// the fixed-width property instead, because borsh omits the payload on
     /// `None` and the width becomes value-dependent. This is why the design
-    /// of record insists on `Flagged` (1-byte tag, payload ALWAYS present)
+    /// of record insists on `Flagged` (1-byte tag, payload always present)
     /// and why the suite runs both properties rather than just the oracle.
     #[test]
     fn option_is_caught_by_the_width_property_not_the_oracle() {
@@ -1323,7 +1323,7 @@ mod subset_boundary {
 /// MPC sides implement against — so a silent move here is exactly the
 /// failure that would desynchronise them.
 ///
-/// To regenerate after an INTENTIONAL layout change:
+/// To regenerate after an intentional layout change:
 /// `cargo test --release -p minocrab-contracts --test serialization_conformance -- \
 ///      --ignored --nocapture print_layout_snapshot`
 const LAYOUT_SNAPSHOT: &[(&str, &str, &str, usize, usize)] = &[
@@ -1610,11 +1610,11 @@ fn layout_matches_its_frozen_table() {
     );
 }
 
-// ---- (e) THE IN-CIRCUIT ENCODER against a deployed shape (M11 stage 1) ---------
+// ---- (e) the in-circuit encoder against a deployed shape ---------
 //
 // Stage 1 built `minocrab_std::borsh` — the same Borsh subset, emitted by
 // a circuit. Its own suite proves it against a twin of its own. Here it is
-// pointed at a DEPLOYED payload shape, `RespondMisc`, whose bytes stage 0
+// pointed at a deployed payload shape, `RespondMisc`, whose bytes stage 0
 // proved the pinned compactc artifact itself accepts: the circuit's packed
 // output must equal `borsh::to_vec` of the spec type, and the circuit's
 // layout table must equal the table walked out of borsh's own schema.
@@ -1629,13 +1629,13 @@ mod in_circuit {
     use minocrab::Private;
     use minocrab_zkir::IrValue;
 
-    /// [`RespondMisc`] over wires — ONE DERIVE for the circuit-argument
+    /// [`RespondMisc`] over wires — one derive for the circuit-argument
     /// family and the serialization, and `#[borsh(spec = …)]` for the
     /// generated cross-check against borsh's own schema of the spec type
     /// (`__minocrab_borsh_spec_RespondMiscCircuit` in this binary's test
     /// list).
     ///
-    /// The field names are the SPEC type's, so the layout paths need no
+    /// The field names are the spec type's, so the layout paths need no
     /// override; the argument labels are the mechanical camelCase ones, which
     /// nothing here is pinned to (this circuit is a test fixture, not a
     /// deployed interface).
@@ -1666,7 +1666,7 @@ mod in_circuit {
     }
 
     /// The packed bytes a circuit built through `CircuitBorsh` emits for the
-    /// deployed `respond` payload ARE `borsh::to_vec` of the spec type.
+    /// deployed `respond` payload are `borsh::to_vec` of the spec type.
     #[test]
     fn the_circuit_encoder_emits_the_spec_bytes() {
         let mut c = Circuit::new();
@@ -1731,7 +1731,7 @@ mod in_circuit {
         );
     }
 
-    /// The circuit type's layout table IS borsh's own schema walk of the spec
+    /// The circuit type's layout table is borsh's own schema walk of the spec
     /// type — same paths, same kinds, same offsets, same widths. (This is the
     /// cross-check `#[borsh(spec = …)]` generates in stage 3, done by hand for
     /// one deployed shape.)
@@ -1767,11 +1767,11 @@ fn print_layout_snapshot() {
     }
 }
 
-// ---- (f) THE PUBLISHED SPEC (M11 stages 8 and 10) ------------------------------
+// ---- (f) the published spec ------------------------------
 //
 // `spec/borsh-subset.md`, `spec/vectors/*.json` and `spec/ts/` are the
 // artifact the TS and MPC sides implement against. The prose is hand-written;
-// every OFFSET, every BYTE and every line of the TypeScript DECODER is
+// every offset, every byte and every line of the TypeScript decoder is
 // generated from the same schema walk this suite checks, and the tests below
 // fail if the committed files stop being that generator's output. A spec that
 // can drift from the format is worse than no spec, so the document — and now
@@ -1783,7 +1783,7 @@ mod spec_document {
     use serialization::{spec_doc, ts_codegen};
 
     /// `(what the document has between a marker pair, what the generator says
-    /// belongs there)` — read from the SAME list the regenerator writes from,
+    /// belongs there)` — read from the same list the regenerator writes from,
     /// so a check and a rewrite cannot disagree about what a region is.
     fn committed_and_generated(begin_marker: &str) -> (String, String) {
         let path = spec_doc::spec_dir().join("borsh-subset.md");
@@ -1816,7 +1816,7 @@ mod spec_document {
         );
     }
 
-    /// §5's response-kind table IS the generated one, and the generator's own
+    /// §5's response-kind table is the generated one, and the generator's own
     /// asserts hold: exactly `RESPONSE_KINDS` rows, numbered `0..n` in order.
     ///
     /// The table is the MPC's `kind ↦ (ABI types, response shape)` lookup, so
@@ -1832,7 +1832,7 @@ mod spec_document {
         );
     }
 
-    /// Every committed vector file IS the generator's output, and the
+    /// Every committed vector file is the generator's output, and the
     /// directory holds exactly those files (a stale vector is as misleading
     /// as a wrong one).
     #[test]
@@ -1860,7 +1860,7 @@ mod spec_document {
         assert_eq!(committed, expected, "spec/vectors holds a file nobody generates");
     }
 
-    /// The committed vectors are INTERNALLY consistent: the fields tile the
+    /// The committed vectors are internally consistent: the fields tile the
     /// value exactly — same order, no gap, no overlap — and their bytes
     /// concatenate to the vector's own `hex`. An implementer who decodes
     /// field by field and one who hashes the whole string are looking at the
@@ -1938,7 +1938,7 @@ mod spec_document {
     /// stripped, which is the lookup `vectors.test.ts` performs.
     ///
     /// The loop-closer between stage 8 and stage 10: a new vector for a type
-    /// the codegen does not cover fails HERE, in Rust, rather than in the
+    /// the codegen does not cover fails here, in Rust, rather than in the
     /// node suite.
     #[test]
     fn every_vector_type_has_a_typescript_codec() {

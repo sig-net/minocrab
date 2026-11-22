@@ -255,7 +255,7 @@ fn check_hash_verify(ours: &IrSource, theirs: &IrSource, digest_of: impl Fn(&[u8
     assert_call_compatible(ours, theirs, &pi);
 
     // Criterion 3a: a failed respond (success = 0, correctly signed) must
-    // be rejected by BOTH (the signature is fine; the deserialize assert
+    // be rejected by both (the signature is fine; the deserialize assert
     // fires).
     let failed = pack_respond_output(0, 1_000_000, &recipient);
     let mut preimage_bytes = Vec::new();
@@ -268,7 +268,7 @@ fn check_hash_verify(ours: &IrSource, theirs: &IrSource, digest_of: impl Fn(&[u8
     assert!(simulate(theirs, &pi).is_err(), "corpus must reject success=0");
 
     // Criterion 3b: a tampered output (digest no longer matches the
-    // signature) must be rejected by BOTH.
+    // signature) must be rejected by both.
     let mut tampered = output;
     tampered[20] ^= 1;
     let inputs = hash_verify_inputs(&request_id, &tampered, &r, &s, &pk);
@@ -279,7 +279,7 @@ fn check_hash_verify(ours: &IrSource, theirs: &IrSource, digest_of: impl Fn(&[u8
     // The deserialize splits only the 17 bytes `success` and `amount` occupy
     // (as compactc's does), so what each side constrains in the rest is
     // shown on correctly signed outputs. A success byte other than 0 or 1 is
-    // refused by BOTH (compactc's Boolean constraint; the `== 1` assert
+    // refused by both (compactc's Boolean constraint; the `== 1` assert
     // would refuse it anyway)…
     let signed = |output: &[u8; 128]| {
         let mut preimage_bytes = Vec::new();
@@ -293,7 +293,7 @@ fn check_hash_verify(ours: &IrSource, theirs: &IrSource, digest_of: impl Fn(&[u8
         assert!(simulate(ours, &pi).is_err(), "ours must reject success={success}");
         assert!(simulate(theirs, &pi).is_err(), "corpus must reject success={success}");
     }
-    // …while the bytes neither side reads are free on BOTH: the largest
+    // …while the bytes neither side reads are free on both: the largest
     // amount, any recipient and nonzero padding in every limb are accepted,
     // with the same public inputs.
     let mut wild = pack_respond_output(1, u128::MAX, &[0xff; 20]);
@@ -362,7 +362,7 @@ fn verify_only_matches_corpus() {
     let pi = preimage(inputs, attest_transcript(&request_id));
     assert_call_compatible(&ours, &theirs, &pi);
 
-    // Criterion 3: a tampered signature must be rejected by BOTH.
+    // Criterion 3: a tampered signature must be rejected by both.
     let mut bad_s = s;
     bad_s[0] ^= 1;
     let inputs = verify_only_inputs(&request_id, &digest, &r, &bad_s, &pk);

@@ -1,5 +1,5 @@
 // rename-v3: skip-file (this test spells the old paths on purpose)
-//! The deprecated `v3` shims still resolve (M48 rung K).
+//! The deprecated `v3` shims still resolve.
 //!
 //! The `v3` module of minocrab, minocrab-ir, minocrab-std, minocrab-sim and
 //! minocrab-zkir went to the crate root and its items lost their `3`

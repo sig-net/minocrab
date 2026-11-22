@@ -1,5 +1,5 @@
 //! The metadata beside every workspace circuit's ZKIR names instructions of
-//! the stream that SHIPS.
+//! the stream that ships.
 //!
 //! `Compiled::assert_messages` and `Compiled::regions` are taken while the
 //! circuit is built, and `Builder::finish` deletes instructions after that
@@ -7,10 +7,10 @@
 //! dedup). `Circuit::finish` moves both onto the finished stream through
 //! `Builder::finish_kept` (notes/ir-passes.org §13). Before that move, 169
 //! of the 260 messages named an instruction that was not an `assert`, 12
-//! named a DIFFERENT assert, and 73 of the 348 regions ran past the end of
+//! named a different assert, and 73 of the 348 regions ran past the end of
 //! the stream, across 56 of the 214 circuits.
 //!
-//! THE EXACT CHECK runs inside the build. Under `debug_assertions`,
+//! The exact check runs inside the build. Under `debug_assertions`,
 //! `Builder::finish_kept` checks every kept instruction against the one it
 //! became, operands included (`passes::check_kept`), and `Circuit::finish`
 //! checks that each message sits on its own assert's finished position and

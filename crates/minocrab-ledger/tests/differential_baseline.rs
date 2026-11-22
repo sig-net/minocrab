@@ -1,4 +1,4 @@
-//! THE acceptance test for the ledger-op layer (notes/ledger-abi.org §6):
+//! The acceptance test for the ledger-op layer (notes/ledger-abi.org §6):
 //! rebuild corpus baseline circuits with minocrab-ledger + Circuit and
 //! prove call-compatibility with compactc's artifacts — identical typed
 //! inputs/outputs schemas, and identical `pis` + `pi_skips` from the v3

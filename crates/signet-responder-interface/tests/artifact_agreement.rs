@@ -1,4 +1,4 @@
-//! THIS CRATE'S CLAIM, CHECKED.
+//! This crate's claim, checked.
 //!
 //! `src/lib.rs` asserts that a contract deployed from
 //! `signet-midnight-integration`'s `signet-responder` package exports two
@@ -39,7 +39,7 @@ fn artifact() -> Artifact {
     Artifact::open(crate_dir()).expect("the pinned artifact opens")
 }
 
-/// The frozen published ABI, rendered from the TYPES alone.
+/// The frozen published ABI, rendered from the types alone.
 fn schema() -> String {
     let mut out = String::from(
         "# The published ABI of `signet-responder-interface`, derived from the\n\
@@ -56,7 +56,7 @@ fn schema() -> String {
     out
 }
 
-/// The committed pin is the DISTILLATION of the source artifact, not a
+/// The committed pin is the distillation of the source artifact, not a
 /// hand-maintained file: re-pinning is `--ignored` plus a diff.
 #[test]
 fn the_committed_pin_is_the_artifacts_distillation() {
@@ -115,7 +115,7 @@ fn regenerate_pin_and_schema() {
         .expect("interface-schema.txt writes");
 }
 
-/// THE CHECKER HAS TO BITE on this artifact as well: each case breaks ONE
+/// The checker has to bite on this artifact as well: each case breaks one
 /// thing of `respond` and asserts the check names it. The last two forge
 /// the compiled `.zkir` while leaving `contract-info.json` and `pin.json`
 /// correct.

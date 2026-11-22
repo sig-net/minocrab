@@ -1,4 +1,4 @@
-//! `passes::simplify` (M48 F) on hand-built streams: each rule, and each
+//! `passes::simplify` on hand-built streams: each rule, and each
 //! refusal that keeps it sound (notes/ir-passes.org §14).
 //!
 //! The streams are written out instruction by instruction so the
@@ -101,7 +101,7 @@ fn a_disclosed_value_stays_defined_though_nothing_reads_it() {
 
 #[test]
 fn an_unused_instruction_that_constrains_its_operands_is_kept() {
-    // Each of these LOOKS dead: no output is read. Each constrains an
+    // Each of these looks dead: no output is read. Each constrains an
     // operand, so deleting it would accept witnesses the circuit rejects.
     let stream = vec![
         // The selector must be a bit.

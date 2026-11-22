@@ -1,12 +1,12 @@
-//! The PUBLISHED artifact: `spec/borsh-subset.md`'s offset tables and
+//! The published artifact: `spec/borsh-subset.md`'s offset tables and
 //! `spec/vectors/*.json`, generated from the same layout machinery the
-//! conformance suite checks (M11 stage 8, notes/borsh-format.org).
+//! conformance suite checks (notes/borsh-format.org).
 //!
 //! Everything a reader of the spec could implement against is generated
 //! here, from `borsh`'s own schema of the spec types — never typed by hand —
 //! so the document cannot drift from the format. What is hand-written in
-//! `spec/borsh-subset.md` is PROSE: the subset rule, the reject rules, the
-//! padding rule and the rationale. The §5 response-kind table is NOT prose any
+//! `spec/borsh-subset.md` is prose: the subset rule, the reject rules, the
+//! padding rule and the rationale. The §5 response-kind table is not prose any
 //! more — it is the MPC's lookup table and its rows are the contract's own
 //! constants, so it is generated like the offsets. Everything between a
 //! generated marker pair ([`generated_regions`]) is this module's output, and
@@ -86,7 +86,7 @@ struct KindRow {
     len: usize,
 }
 
-/// THE KIND TABLE, once. §5's markdown is written from this array and the
+/// The kind table, once. §5's markdown is written from this array and the
 /// attested-output vectors' kind bytes are checked against it, so the
 /// document, the vectors and the contract's constants cannot say three
 /// different things.
@@ -94,7 +94,7 @@ struct KindRow {
 /// The two asserts are the count-sync: the array is exactly `RESPONSE_KINDS`
 /// long, and its numbers are `0..len` in order. `RESPONSE_KINDS` is what the
 /// circuits build `Tag<RESPONSE_KINDS>` from, so a sixth kind added to the
-/// contract without a row here fails HERE rather than publishing a lookup
+/// contract without a row here fails here rather than publishing a lookup
 /// table that is quietly one row short — which is a response byte the MPC can
 /// sign and nobody can decode.
 fn kind_rows() -> Vec<KindRow> {
@@ -257,7 +257,7 @@ pub fn offset_tables_markdown() -> String {
 
 // ---- the golden vectors ----------------------------------------------------------
 
-/// One leaf of a vector's value, in DECLARATION ORDER — which is why the
+/// One leaf of a vector's value, in declaration order — which is why the
 /// value is an array and not a JSON object: the format is ordered and JSON
 /// objects are not.
 #[derive(Serialize)]
@@ -281,13 +281,13 @@ pub struct Vector {
     #[serde(rename = "type")]
     pub kind: String,
     pub len: usize,
-    /// The canonical Borsh encoding — THE AUTHORITATIVE BYTES of the vector.
+    /// The canonical Borsh encoding — the authoritative bytes of the vector.
     pub hex: String,
     /// `SHA-256(hex)` — what Midnight's `persistentHash` computes over this
     /// preimage.
     pub sha256: String,
     /// `keccak256(hex)` — a checksum an implementation can compare against.
-    /// Since the protocol move (M28) it is NOT the request id and NOT the
+    /// Since the protocol move it is not the request id and not the
     /// signed digest: both are Poseidon over field elements (§6a, §5).
     pub keccak256: String,
     /// The 288-byte `Misc` envelope these bytes are logged inside, where
@@ -375,7 +375,7 @@ fn misc_vector<T: BorshSerialize + BorshSchema>(name: &str, event: &str, value: 
 // ---- the values the vectors carry ------------------------------------------------
 //
 // Fixed and deterministic, and realistic where the protocol fixes a value:
-// the schema strings and selectors are the DEPLOYED constants
+// the schema strings and selectors are the deployed constants
 // (`erc20_vault::*`), the enum tags are the first members every deployed
 // site uses, and every free byte is a visible pattern so that a wrong offset
 // shows up as a wrong byte rather than as a plausible one.
@@ -449,7 +449,7 @@ pub fn vault_event_v1() -> VaultEventV1 {
     }
 }
 
-/// The nonce-replacement record: the ONE V1 record whose `calldata.is_some` is
+/// The nonce-replacement record: the one V1 record whose `calldata.is_some` is
 /// 0 — the vector a decoder should test its `Flagged` handling on, because the
 /// word slots are still there and still read.
 pub fn replace_nonce_event_v1() -> ReplaceNonceEventV1 {
@@ -594,10 +594,10 @@ pub fn redeem_event_v1() -> RedeemEventV1 {
 
 /// The 2-word record as the V2 format writes it: the same values as
 /// [`vault_event_v1`], in the V2 field order, with the version byte in front,
-/// a request nonce restored and the response kind (0, CLAIM — a `deposit`
+/// a request nonce restored and the response kind (0, claim — a `deposit`
 /// request) where the output schema was.
 ///
-/// Built FROM the V1 value, so a reader can diff the two vectors and see
+/// Built from the V1 value, so a reader can diff the two vectors and see
 /// exactly what the format change is.
 pub fn vault_event_v2() -> VaultEventV2 {
     let e = vault_event_v1();
@@ -617,7 +617,7 @@ pub fn vault_event_v2() -> VaultEventV2 {
     }
 }
 
-/// The 7-word swap record in V2 — response kind 2, SWAP.
+/// The 7-word swap record in V2 — response kind 2, swap.
 pub fn swap_event_v2() -> SwapEventV2 {
     let e = swap_event_v1();
     SwapEventV2 {
@@ -636,7 +636,7 @@ pub fn swap_event_v2() -> SwapEventV2 {
     }
 }
 
-/// The supply record in V2 — `VaultEventV2` at kind 5, SUPPLY: the lending
+/// The supply record in V2 — `VaultEventV2` at kind 5, supply: the lending
 /// schema was the only thing that told a supply record from a vault record,
 /// and V2 carries neither.
 pub fn supply_event_v2() -> VaultEventV2 {
@@ -657,7 +657,7 @@ pub fn supply_event_v2() -> VaultEventV2 {
     }
 }
 
-/// The 3-word redeem record in V2 — kind 6, REDEEM.
+/// The 3-word redeem record in V2 — kind 6, redeem.
 pub fn redeem_event_v2() -> RedeemEventV2 {
     let e = redeem_event_v1();
     RedeemEventV2 {
@@ -679,7 +679,7 @@ pub fn redeem_event_v2() -> RedeemEventV2 {
 /// A 32-byte checksum over a record's bytes, for the vectors' `request_id`
 /// fields.
 ///
-/// NOT the request id: V1 hashes a `RequestIdPreimageV1` with Poseidon, and
+/// Not the request id: V1 hashes a `RequestIdPreimageV1` with Poseidon, and
 /// the V2 lineage hashes the record's field elements. This is a fixed,
 /// reproducible 32 bytes to put where a notification carries an id, and the
 /// vector files say so.
@@ -773,7 +773,7 @@ fn records() -> String {
     )
 }
 
-/// The attested outputs THIS SPEC defines (the V2 lineage), with their signed
+/// The attested outputs this spec defines (the V2 lineage), with their signed
 /// digest preimages.
 fn attested_outputs() -> String {
     let request_id = request_id_of(&vault_event_v2());
@@ -855,7 +855,7 @@ fn attested_outputs() -> String {
     )
 }
 
-/// The attested outputs the DEPLOYED V1 protocol carries.
+/// The attested outputs the deployed V1 protocol carries.
 fn deployed_attested_outputs() -> String {
     file(
         "TODAY'S deployed (V1) attested outputs: a Bytes<LEN> at one of THREE widths, with no \

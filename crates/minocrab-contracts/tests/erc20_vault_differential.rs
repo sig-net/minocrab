@@ -3,7 +3,7 @@
 //! plus acceptance agreement on guard failures and tampering.
 //!
 //! Twenty-nine circuits (signet-midnight-examples `erc20-vault-v0.7.0-rc.2`,
-//! `6054146`, the flush pattern with per-token fees; M44, M48 L): for each, PI-equality on the reference model's preimage
+//! `6054146`, the flush pattern with per-token fees): for each, PI-equality on the reference model's preimage
 //! against compactc's own artifact, the guard failures both artifacts must
 //! reject, and the tamper sweep (every transcript and witness element
 //! perturbed; zero acceptance disagreements). The per-circuit scenario
@@ -22,7 +22,7 @@ use vault::artifact::Circuit;
 use vault::model::*;
 use vault::tamper;
 
-/// Both artifacts must REJECT this preimage.
+/// Both artifacts must reject this preimage.
 fn both_reject(circuit: Circuit, pi: &ProofPreimage, why: &str) {
     assert!(simulate(&circuit.ir(), pi).is_err(), "ours accepts: {why}");
     assert!(simulate(circuit.corpus(), pi).is_err(), "corpus accepts: {why}");
@@ -34,7 +34,7 @@ fn matches(circuit: Circuit, pi: &ProofPreimage) {
     assert_call_compatible(&circuit.ir(), circuit.corpus(), pi);
 }
 
-/// [`matches`], and the model's op stream REPLAYED through Midnight's
+/// [`matches`], and the model's op stream replayed through Midnight's
 /// reference VM against the scenario's pre-state: every `popeq` the model
 /// claims is checked against a real state tree, so the pre-state the
 /// differential pins is real rather than asserted.
@@ -51,9 +51,9 @@ fn check<S: Scenario>(circuit: Circuit, s: &S) {
     matches(circuit, &s.preimage());
 }
 
-/// MEASURED OVER BUDGET (2026-11-19, ledger 9.1.0.1's initial parameters,
+/// Measured over budget (2026-11-19, ledger 9.1.0.1's initial parameters,
 /// these scenarios' pre-states): the ledger's partitioner demotes each of
-/// these WHOLE to the fallible section in at least one scenario here, from
+/// these whole to the fallible section in at least one scenario here, from
 /// 59 ops (`startWithdraw`, `completeWithdraw`) to 298 (`flushQueue` over
 /// every action). Named so the gate stays green while they are; an eleventh
 /// demotion fails. Demotion depends on the pre-state as well as the op
@@ -251,7 +251,7 @@ fn flush_queue_every_action_matches_corpus() {
     // Five vault-signed requests take five consecutive nonces, a deposit
     // keeps the caller's, and three attestations fold their heights in
     // (one of them lower than the running globalLastSeen). The attestation
-    // slots' requests are SENT ones at other nonces, so their flushed
+    // slots' requests are sent ones at other nonces, so their flushed
     // indices do not collide with the request slots' (the reference VM
     // caught the collision when they were the same canonical requests).
     let mut s = FlushScenario::new();
@@ -402,7 +402,7 @@ fn start_withdraw_rejects_guard_failures() {
     let mut s = StartScenario::withdraw();
     s.coin.as_mut().unwrap().value -= u128::from(s.sent.env.fees_allowed[0]);
     both_reject(Circuit::StartWithdraw, &s.preimage(), "a coin of the amount without the fee");
-    // The coin must be THIS ERC20's vault token.
+    // The coin must be this ERC20's vault token.
     let mut s = StartScenario::withdraw();
     s.coin.as_mut().unwrap().color[0] ^= 1;
     both_reject(Circuit::StartWithdraw, &s.preimage(), "wrong colour");
@@ -769,7 +769,7 @@ fn complete_withdraw_rejects_tampering() {
 /// 0.7.0-rc.2), and compactc 0.36 constrains the `Boolean` it reads to be
 /// 0 or 1. On an executed verdict that is the attested byte, so a 2 is refused
 /// even when the MPC attested it; on a verdict that ignores the output the
-/// deserialize reads a zero, so ANY byte is accepted there (at `375071b` the
+/// deserialize reads a zero, so any byte is accepted there (at `375071b` the
 /// byte itself was read on every verdict, and a 2 was refused everywhere).
 fn complete_bool_output_is_constrained(circuit: Circuit, sent: fn() -> Sent) {
     for verdict in [Attestation::failed, Attestation::unviable] {
@@ -891,7 +891,7 @@ fn complete_replace_nonce_rejects_guard_failures() {
     complete_guard_failures(Circuit::CompleteReplaceNonce, || {
         CompleteScenario::of(Sent::replace_nonce(&Sent::withdraw()), Attestation::executed_empty())
     });
-    // The record's width and hash must be the EMPTY output's on every verdict.
+    // The record's width and hash must be the empty output's on every verdict.
     let mut s = CompleteScenario::of(Sent::replace_nonce(&Sent::withdraw()), Attestation::executed_empty());
     s.attestation.width = 1;
     s.attestation.output = vec![Fr::from(1u64)];

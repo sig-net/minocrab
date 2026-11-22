@@ -1,4 +1,4 @@
-//! An out-of-range secp256k1 limb batch is a decode ERROR, not a panic.
+//! An out-of-range secp256k1 limb batch is a decode error, not a panic.
 //!
 //! The simulator maps a `decode_offcircuit` failure to `SimError::Inputs`
 //! (src/vm.rs), and the Lean model of the emulated-field decode

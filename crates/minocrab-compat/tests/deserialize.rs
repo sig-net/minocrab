@@ -1,6 +1,6 @@
 //! `deserialize::Packed` reads the values a packed struct holds, including a
 //! field that straddles two limbs, and refuses what compactc refuses: a
-//! Boolean byte above 1. Its SHAPE is checked against compactc's artifacts
+//! Boolean byte above 1. Its shape is checked against compactc's artifacts
 //! in `minocrab-contracts` (`attest_differential`, `serde_builtin_differential`);
 //! this checks the values, by running the circuit through the simulator.
 

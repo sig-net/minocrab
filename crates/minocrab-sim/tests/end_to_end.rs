@@ -1,7 +1,7 @@
 //! v3 simulator correctness anchors.
 //!
 //! Every circuit here is built with the typed `Builder`, then run through
-//! BOTH our `minocrab_sim::simulate` and upstream's `IrSource::check`
+//! both our `minocrab_sim::simulate` and upstream's `IrSource::check`
 //! (the `Zkir` trait; literally `preprocess(..)?.pi_skips`, see
 //! midnight-zkir 3.2.0 src/ir.rs:77-82) on the same `ProofPreimage`. Acceptance must
 //! agree, and our `pi_skips` must equal `check`'s — the simulator is never
@@ -380,7 +380,7 @@ fn circuit3_frontend_end_to_end() {
     assert_eq!(compiled.disclosures.len(), 2);
 }
 
-/// A failed assert is reported with ITS message and a profile charges each
+/// A failed assert is reported with its message and a profile charges each
 /// region its own instructions, after `finish` has deleted instructions in
 /// front of both. `c.assert_with(c.constant(1), ..)` is a copy and an
 /// `assert 1`, both removed by the passes; before the build-time indices

@@ -208,7 +208,7 @@ fn emit4_matches_corpus() {
 
 /// Criterion 3: a transcript whose event payload disagrees with the
 /// circuit's emit (tampered amount inside the logged bytes) must be
-/// rejected by BOTH artifacts.
+/// rejected by both artifacts.
 #[test]
 fn emit1_rejects_tampered_event_payload() {
     let theirs = corpus_zkir("emit1");
@@ -246,16 +246,16 @@ fn emit1_rejects_tampered_event_payload() {
 
 // ---- M11 stage 6: the Borsh twin ---------------------------------------------
 
-/// `events_borsh` emits THE SAME BYTES as `events`, built out of declared
+/// `events_borsh` emits the same bytes as `events`, built out of declared
 /// [`minocrab_std::borsh`] types instead of hand-rolled `Serializer`
-/// pushes — and the equality is BYTE-IDENTICAL ZKIR, not merely equal
+/// pushes — and the equality is byte-identical ZKIR, not merely equal
 /// payloads.
 ///
 /// That is the strongest form the claim can take: identical ZKIR means the
 /// twin is the same circuit, so the same rows, the same interface, the same
 /// PI vector and the same 288-byte `Misc` transcript, and compactc's own
 /// differential below covers it verbatim. Stage 0 had already proved the
-/// deployed payload IS canonical Borsh; this proves the API PRODUCES it, on a
+/// deployed payload is canonical Borsh; this proves the API produces it, on a
 /// real event shape, for nothing.
 #[test]
 fn borsh_twins_are_byte_identical_to_the_originals() {
@@ -275,10 +275,10 @@ fn borsh_twins_are_byte_identical_to_the_originals() {
     }
 }
 
-/// ...and the twin is run against compactc's golden ITSELF, on the preimage
+/// ...and the twin is run against compactc's golden itself, on the preimage
 /// whose transcript carries the exact 288-byte `Misc` bytes. Redundant while
 /// the ZKIR is identical, and deliberately kept: the day the twin diverges,
-/// this is the test that says whether the BYTES still agree with the deployed
+/// this is the test that says whether the bytes still agree with the deployed
 /// artifact, which is the property stage 6 is actually about.
 #[test]
 fn borsh_twins_match_the_corpus() {

@@ -3,7 +3,7 @@
 //!
 //! The first is the opt profile's one member (notes/ir-passes.org §1, §11),
 //! the second is always on (§12); for both, what they do and — more
-//! importantly — what they REFUSE to do is stated here rather than left to
+//! importantly — what they refuse to do is stated here rather than left to
 //! the circuits that use them. A range constraint removed where it was not
 //! implied is a missing range check, and an `assert` removed where it could
 //! fail is a missing check outright: both are invisible to every differential
@@ -46,9 +46,9 @@ fn a_wider_constraint_after_a_tighter_one_is_dropped() {
     assert_eq!(out, vec![bits("%a", 8)]);
 }
 
-/// THE DIRECTION THAT IS NOT SOUND, and therefore not taken: a tighter bound
+/// The direction that is not sound, and therefore not taken: a tighter bound
 /// is new information, so both constraints stay — and a third, wider one
-/// after them is then measured against the TIGHTER of the two.
+/// after them is then measured against the tighter of the two.
 #[test]
 fn a_tighter_constraint_after_a_wider_one_is_kept() {
     let out = dedup_range_constraints(vec![bits("%a", 64), bits("%a", 8), bits("%a", 32)]);
@@ -78,10 +78,10 @@ fn unrelated_wires_are_untouched_and_order_is_preserved() {
     );
 }
 
-/// THE BOOLEAN FAMILY IS THE `bits = 1` FAMILY. `constrain_to_boolean` and
+/// The boolean family is the `bits = 1` family. `constrain_to_boolean` and
 /// `constrain_bits(_, 1)` are different gadgets — `convert` to an
 /// `AssignedBit` against `assert_lower_than_fixed(x, 2)` (`ir_vm.rs`; see
-/// the pass's doc) — and the same PREDICATE, `val ∈ {0,1}`, which is
+/// the pass's doc) — and the same predicate, `val ∈ {0,1}`, which is
 /// what a constraint-system pass reasons about. So the two dedup against
 /// each other, in both directions.
 #[test]
@@ -99,7 +99,7 @@ fn booleanity_and_a_one_bit_range_are_one_family() {
         vec![boolean("%a")]
     );
     // The case the checked Borsh serializer actually hits: a `Bool` argument
-    // constrained as boolean at entry, then serialized as one BYTE.
+    // constrained as boolean at entry, then serialized as one byte.
     assert_eq!(
         dedup_range_constraints(vec![boolean("%a"), bits("%a", 8)]),
         vec![boolean("%a")]
@@ -112,7 +112,7 @@ fn booleanity_and_a_one_bit_range_are_one_family() {
     );
 }
 
-/// A constraint on an IMMEDIATE (reachable after `fold_immediate_copies`
+/// A constraint on an immediate (reachable after `fold_immediate_copies`
 /// substitutes a named constant) has no wire to key on, so the pass neither
 /// drops it nor lets it establish a bound for anything else.
 #[test]
@@ -140,7 +140,7 @@ fn duplicate_constraint_circuit(dedup: bool) -> Vec<Instruction> {
     b.finish(false).instructions.to_vec()
 }
 
-/// DEFAULT OFF is the hard gate on this change: a genuine duplicate survives
+/// Default off is the hard gate on this change: a genuine duplicate survives
 /// `finish` unless the circuit asked for the pass.
 #[test]
 fn the_flag_is_off_by_default_and_finish_is_unchanged() {
@@ -155,7 +155,7 @@ fn the_flag_is_off_by_default_and_finish_is_unchanged() {
     assert_eq!(duplicate_constraint_circuit(true).len(), 1);
 }
 
-// ---- the Pass trait (M24) --------------------------------------------------
+// ---- the Pass trait --------------------------------------------------
 
 use minocrab_ir::passes::{
     builtin_names, by_name, run_pipeline, DedupRangeConstraints, FoldImmediateCopies, Pass,
@@ -171,7 +171,7 @@ fn the_dedup_wrapper_matches_the_free_function_and_reports() {
     assert_eq!(report.pass, "dedup_range_constraints");
     assert_eq!(report.before, 3);
     assert_eq!(report.after, 2);
-    // It DROPPED an instruction, so the runner auto-warned even though a
+    // It dropped an instruction, so the runner auto-warned even though a
     // valid dedup is sound — "make sure they've been warned first".
     assert!(
         report.warnings.iter().any(|w| w.contains("dropped 1 instruction")),
@@ -221,14 +221,14 @@ fn a_pipeline_threads_the_ir_and_collects_a_report_per_pass() {
     assert_eq!(out, vec![bits("%a", 64), assert_("%p")]);
 }
 
-// ---- the VerifiedPass reflection (M25) -------------------------------------
+// ---- the VerifiedPass reflection -------------------------------------
 
 use minocrab_ir::passes::{
     run_pipeline_verified, VerifiedPass, DEDUP_PROOF, FOLD_PROOF,
 };
 
 /// The claim and the proof must agree: every theorem a built-in pass cites
-/// is DECLARED in the Lean file embedded at compile time. Rename or remove
+/// is declared in the Lean file embedded at compile time. Rename or remove
 /// one in lean/MinocrabProofs/ and this fires — proof drift is a test
 /// failure, not a stale claim.
 #[test]
@@ -243,7 +243,7 @@ fn the_builtin_proofs_declare_every_claimed_theorem() {
     }
 }
 
-/// The reflection asserts nothing about the TRANSFORM: the verified
+/// The reflection asserts nothing about the transform: the verified
 /// pipeline is the plain pipeline plus the proof-drift check, byte for
 /// byte on the IR it produces.
 #[test]
@@ -305,10 +305,10 @@ fn a_drifted_proof_claim_is_surfaced_as_a_warning() {
     );
 }
 
-// ---- `drop_true_asserts` (M37) ------------------------------------------------
+// ---- `drop_true_asserts` ------------------------------------------------
 //
 // notes/ir-passes.org §12, notes/evm-calls.org §3.2. The rule is one line;
-// what it must NOT do is why it gets a section of its own.
+// what it must not do is why it gets a section of its own.
 
 use minocrab_ir::passes::{drop_true_asserts, DropTrueAsserts, DROP_TRUE_ASSERTS_PROOF};
 
@@ -335,10 +335,10 @@ fn an_assert_on_the_immediate_one_is_deleted() {
     assert_eq!(out, vec![bits("%a", 64), assert_("%p")]);
 }
 
-/// THE DIRECTION THAT MATTERS. An `assert` on any other immediate is an
+/// The direction that matters. An `assert` on any other immediate is an
 /// always-FAILING circuit — 0 rejects with "Failed direct assertion", 2 and 3
 /// with "Expected boolean" — and deleting one would turn a circuit the
-/// verifier REJECTS into one it ACCEPTS. Every one of them stays.
+/// verifier rejects into one it accepts. Every one of them stays.
 #[test]
 fn an_assert_on_any_other_immediate_survives() {
     let stream = vec![assert_imm(0), assert_imm(2), assert_imm(3), assert_imm(1)];
@@ -349,7 +349,7 @@ fn an_assert_on_any_other_immediate_survives() {
     );
 }
 
-/// No dataflow: a WIRE that happens to hold 1 is not this pass's business.
+/// No dataflow: a wire that happens to hold 1 is not this pass's business.
 /// Only [`fold_immediate_copies`] may turn such a name into an immediate, and
 /// then only where it can prove the copy is a rename.
 #[test]
@@ -358,7 +358,7 @@ fn an_assert_on_a_wire_is_left_alone() {
     assert_eq!(drop_true_asserts(stream.clone()), stream);
 }
 
-/// THE ORDER TEST, and the shape the rule exists for: `assert(constant(1))`
+/// The order test, and the shape the rule exists for: `assert(constant(1))`
 /// is `copy %k = 1; assert %k`, which only the copy fold turns into
 /// `assert 1`. Run alone the drop sees nothing (the test above);
 /// `Builder::finish` runs the fold first, so the pair costs no instruction
@@ -371,7 +371,7 @@ fn assert_of_a_named_one_folds_then_drops_to_nothing() {
     assert_eq!(b.finish(false).instructions.to_vec(), Vec::<Instruction>::new());
 }
 
-/// A named constant that is NOT 1 keeps its assert through both passes — the
+/// A named constant that is not 1 keeps its assert through both passes — the
 /// always-failing circuit stays always-failing.
 #[test]
 fn assert_of_a_named_zero_survives_finish() {

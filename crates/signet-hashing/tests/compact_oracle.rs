@@ -1,4 +1,4 @@
-//! The hashes against the COMPILED Compact circuits.
+//! The hashes against the compiled Compact circuits.
 //!
 //! `fixtures/api-parity-vectors.json` was produced by running the Signet
 //! module's exported pure circuits (`calculateEvmType2RequestIdV1_*`,

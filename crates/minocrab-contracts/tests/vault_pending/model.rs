@@ -1,8 +1,8 @@
-//! The `erc20_vault_pending` REFERENCE MODEL, mirroring `tests/vault/model.rs`
-//! (M35 rung C's spec-harness extension) but over the `Pending`-based
+//! The `erc20_vault_pending` reference model, mirroring `tests/vault/model.rs`
+//! (the spec-harness extension) but over the `Pending`-based
 //! lineage: a twenty-two-field, thirteen-declaration block, V2 Borsh
 //! signing records, `Pending`/`Fired` request+settle in one call each, and
-//! `Commit<T>` refund commitments whose digest's `hi` limb is NOT forced
+//! `Commit<T>` refund commitments whose digest's `hi` limb is not forced
 //! to zero (unlike `upgradeFromTransient`).
 //!
 //! Every op-sequence claim below was checked against the real circuit's
@@ -28,7 +28,7 @@ use minocrab_contracts::erc20_vault::{
 use minocrab_contracts::evm::erc4626::CALL_GAS as LENDING_GAS;
 use minocrab_contracts::evm_flow::REFUND_PAD;
 // The `RESPONSE_KIND_*` constants are no longer part of this lineage's wire:
-// V1 records carry an output SCHEMA where they carried a kind byte, and the
+// V1 records carry an output schema where they carried a kind byte, and the
 // MPC's verdict is `signet_v1::output_kind`. They survive on
 // `erc20_vault_pending` only as the retired fork's documented numbering.
 use minocrab_contracts::erc20_vault_pending::VAULT_TOKEN_TAG;
@@ -48,7 +48,7 @@ pub const VAULT_EVM_ADDRESS: u8 = 2;
 pub const UNISWAP_ROUTER: u8 = 3;
 pub const SIGNET_SIGNER: u8 = 4;
 pub const MPC_RESPONSE_KEY: u8 = 5;
-/// `mpcKeyVersion` — a CELL under V1, where V2 had a request-nonce counter
+/// `mpcKeyVersion` — a cell under V1, where V2 had a request-nonce counter
 /// and a caip2 cell in these two positions (notes/vault-flush.org §6). Every
 /// field below it moved down one at M44 rung D.
 pub const MPC_KEY_VERSION: u8 = 6;
@@ -69,8 +69,8 @@ pub const REDEEMS_ENVS: u8 = 20;
 
 // ---- the V1 output vocabulary ---------------------------------------------------
 //
-// Where the Borsh lineage had a response KIND byte per action, V1 has an
-// output SCHEMA per filing and an attested WIDTH per return. The schema is
+// Where the Borsh lineage had a response kind byte per action, V1 has an
+// output schema per filing and an attested width per return. The schema is
 // in the record (and so outside the request id, which hashes a transaction
 // digest); the width is inside the signed digest, which is why an output of
 // the wrong width cannot verify.
@@ -110,7 +110,7 @@ pub const SELF_ADDR: [u8; 32] = {
     a
 };
 
-/// `userCommitment(sk)` for THIS lineage — `upgradeFromTransient(
+/// `userCommitment(sk)` for this lineage — `upgradeFromTransient(
 /// transientHash([pad(32, "vault:user:"), sk]))`, the `fff3421c` order
 /// `common::commitment_transient` keeps. The compat port's shared
 /// `prims::user_commitment` moved to secret-first (`[sk, pad]`) with
@@ -146,12 +146,12 @@ pub struct Env {
     pub signer_addr: [u8; 32],
     /// The MPC response key's secret scalar seed.
     pub key_seed: u64,
-    /// The MPC response key as a POINT, big-endian affine coordinates,
+    /// The MPC response key as a point, big-endian affine coordinates,
     /// overriding `key_seed` when set: the key a `SigNetSim` derives for
     /// this contract, whose secret the model does not hold — the settle
     /// then verifies the sim's signature, not one the model made.
     pub mpc_key_xy: Option<([u8; 32], [u8; 32])>,
-    /// `mpcKeyVersion`, a CELL under V1 — no circuit takes one.
+    /// `mpcKeyVersion`, a cell under V1 — no circuit takes one.
     pub key_version: u8,
     pub chain_id: u64,
     /// The signet signer's `signBidirectional` entry-point hash.
@@ -266,7 +266,7 @@ pub fn point_av(point: &IrValue) -> AlignedValue {
 /// record's or a point's own [`minocrab::AlignmentAtom`] list, which may
 /// contain non-`Bytes` atoms (a `Field`, for a point's fifth limb).
 ///
-/// Atoms come back in the ledger's NORMAL FORM (trailing zero bytes
+/// Atoms come back in the ledger's normal form (trailing zero bytes
 /// stripped, `ValueAtom::normalize`), as `ops.rs`'s constructors already
 /// build them and as the executor now decodes a program's values: a
 /// `bytes<32>` whose top byte is zero is one and the same state value
@@ -294,11 +294,11 @@ pub fn preimage_of(inputs: Vec<Fr>, witnesses: Vec<Fr>, ops: &[VmOp], rand: Fr) 
     }
 }
 
-// ---- vaultTokenDomainSeparator: an INJECTIVE ENCODING, not a hash ---------------------
+// ---- vaultTokenDomainSeparator: an injective encoding, not a hash ---------------------
 
 /// `vaultTokenDomainSeparator(erc20) = [hi: VAULT_TOKEN_TAG, lo: erc20]` —
 /// differs from the compat lineage's `vault_domain_sep`, which hashes; the
-/// Pending lineage's ledger derivation (`tokenType`) hashes it a SECOND
+/// Pending lineage's ledger derivation (`tokenType`) hashes it a second
 /// time regardless, so this only has to be distinct per ERC-20.
 pub fn vault_token_domain_sep(erc20: &[u8; 20]) -> [u8; 32] {
     let mut out = [0u8; 32];
@@ -307,7 +307,7 @@ pub fn vault_token_domain_sep(erc20: &[u8; 20]) -> [u8; 32] {
     out
 }
 
-/// `tokenType(vaultTokenDomainSeparator(erc20), self)` — PINNED (the
+/// `tokenType(vaultTokenDomainSeparator(erc20), self)` — pinned (the
 /// ledger's own SHA-256 derivation), fed the Pending lineage's own domain
 /// separator.
 pub fn vault_color(erc20: &[u8; 20], self_addr: &[u8; 32]) -> [u8; 32] {
@@ -317,11 +317,11 @@ pub fn vault_color(erc20: &[u8; 20], self_addr: &[u8; 32]) -> [u8; 32] {
     fab_sha256(vec![atom(32), atom(32), atom(32)], &[t_hi, t_lo, d_hi, d_lo, s_hi, s_lo])
 }
 
-// ---- Commit<T>: hi is NOT forced to zero (unlike upgradeFromTransient) --------------
+// ---- Commit<T>: hi is not forced to zero (unlike upgradeFromTransient) --------------
 
 /// `Commit::digest_of` off-circuit: `transientHash([pad.hi, pad.lo,
 /// value_limbs…, id.hi, id.lo])`, then `{hi: f >> 248, lo: f mod 2^248}` —
-/// the RAW `div_mod_power_of_two` split, not `transient_upgrade`'s
+/// the raw `div_mod_power_of_two` split, not `transient_upgrade`'s
 /// (`hi` there is always forced to 0). Both splits agree on `lo`; only the
 /// forced-zero differs, and it is exactly `b32_slots` of the hash's plain
 /// 32-byte little-endian encoding (byte 31 holds bits 248..255).
@@ -365,11 +365,11 @@ pub struct Tx<const WORDS: usize> {
 /// A `SignBidirectionalEventV1<_, WORDS, Schema>`, off-circuit: what a
 /// request circuit files and a settle circuit reads back.
 ///
-/// V1 SINCE M44 RUNG D. The format-version byte, the request-nonce field and
+/// V1 since M44 rung D. The format-version byte, the request-nonce field and
 /// the configurable caip2 are gone; `keyVersion` leads (read off the cell,
 /// so it comes from [`Env`] rather than from the request), the destination is
-/// the constant `pad(32, "eip155:1")`, and the record ENDS with
-/// `signatureDest`, `params` and the OUTPUT SCHEMA, which is where the
+/// the constant `pad(32, "eip155:1")`, and the record ends with
+/// `signatureDest`, `params` and the output schema, which is where the
 /// response kind byte's job went.
 #[derive(Clone, Debug)]
 pub struct Req<const WORDS: usize> {
@@ -433,7 +433,7 @@ impl<const WORDS: usize> Req<WORDS> {
         aligned(&self.widths(), &self.limbs(env))
     }
 
-    /// `calculateEvmType2TxParamsDigestV1` over the USED words.
+    /// `calculateEvmType2TxParamsDigestV1` over the used words.
     pub fn tx_digest(&self, env: &Env) -> [u8; 32] {
         tx_params_digest(
             env.chain_id,
@@ -448,7 +448,7 @@ impl<const WORDS: usize> Req<WORDS> {
 
     /// The id is no longer a hash of the whole record but of
     /// `RequestIdPreimageV1`, whose transaction enters as a digest — so the
-    /// schema and the stored words are OUTSIDE the id, and the gas numbers
+    /// schema and the stored words are outside the id, and the gas numbers
     /// are inside it.
     pub fn request_id(&self, env: &Env) -> [u8; 32] {
         request_id_v026(env.key_version, &env.self_addr, &self.path, &self.tx_digest(env))
@@ -457,7 +457,7 @@ impl<const WORDS: usize> Req<WORDS> {
 
 /// The notification's `depth ‖ path` payload, as `Bytes<128>` limbs — same
 /// shape the compat lineage's `notification_payload_limbs` builds, but the
-/// path comes from THIS slot's own two-element field path.
+/// path comes from this slot's own two-element field path.
 pub fn notification_payload_limbs(self_addr: &[u8; 32], records_field: u8) -> Vec<Fr> {
     let (seg, off) = ops::segment_of(records_field);
     let mut bytes = [0u8; 128];
@@ -479,7 +479,7 @@ pub fn call_args(self_addr: &[u8; 32], records_field: u8, request_id: &[u8; 32])
     args
 }
 
-/// The cross-contract call's own witness, threaded through EVERY request
+/// The cross-contract call's own witness, threaded through every request
 /// circuit's `Pending::request` / `Fired::request` call: `cc-rand`
 /// (`signer.sign_bidirectional`'s communications commitment). The entry-point
 /// hash is a constant of the claim since compactc 0.36.
@@ -489,7 +489,7 @@ pub fn call_witnesses(cc_rand: Fr) -> Vec<Fr> {
 
 // ---- the two shared op skeletons ----------------------------------------------------
 
-/// The op stream `signet_flow::file_request` emits for EVERY request
+/// The op stream `signet_flow::file_request` emits for every request
 /// circuit (`Pending::request` and `Fired::request` alike), in order:
 /// `kernel.self()` (via `cache_self_address`), the chain id into the
 /// transaction, then `mpcKeyVersion` into the record, `records.member`,
@@ -497,7 +497,7 @@ pub fn call_witnesses(cc_rand: Fr) -> Vec<Fr> {
 /// `None` for a `Fired` slot), `signer.pin` (a fresh read), the
 /// `claimContractCall`.
 ///
-/// TWO OPS FEWER SINCE M44 RUNG D: the caip2 read and the nonce
+/// Two ops fewer since M44 rung D: the caip2 read and the nonce
 /// read-modify-write both went, and `mpcKeyVersion` arrived — so this is the
 /// one place the V1 vocabulary's contention win is visible as a count.
 ///
@@ -536,13 +536,13 @@ pub fn file_request_ops(
 }
 
 /// The op stream `Pending::consume` (shared by `complete` and `refund`)
-/// emits for EVERY settle circuit, in order: the MPC key read,
+/// emits for every settle circuit, in order: the MPC key read,
 /// `records.member`, `records.remove`, `envs.lookup`, `envs.remove`.
 ///
-/// NO RECORD LOOKUP since M44 rung D: the V2 settle read the stored record
+/// No record lookup since M44 rung D: the V2 settle read the stored record
 /// back, because the request id was a hash of it and the attestation had to
 /// be tied to those bytes. A V1 id is a hash of `RequestIdPreimageV1`, and
-/// the id itself is the ticket's key — so the entry's PRESENCE is the whole
+/// the id itself is the ticket's key — so the entry's presence is the whole
 /// of what the record has to say, and four ops go with the lookup
 /// (`record_av` is kept as an argument because the pre-state still has to
 /// hold the entry the member check finds).
@@ -568,17 +568,17 @@ pub fn consume_ops(
 
 /// The settle ticket's leading argument slots, computed from a fresh
 /// signature over the V1 attestation digest
-/// (`prims::attestation_digest`: tag, id, height, VERDICT, WIDTH, output).
+/// (`prims::attestation_digest`: tag, id, height, verdict, width, output).
 ///
 /// Slot order is the derive's: `requestId` (two), `blockHeight`,
 /// `outputKind`, `serializedOutputLength`, `digest` (two), `signature`
 /// (`bigR.x` two, `bigR.y` two, `s` two, `recoveryId`), then the output.
 /// `bigR.y` and `recoveryId` are unread and kept zero; the signature is
-/// circuit-input LITTLE-endian.
+/// circuit-input little-endian.
 ///
-/// V1 SINCE M44 RUNG D: where the Borsh lineage hashed `requestId` with a
+/// V1 since M44 rung D: where the Borsh lineage hashed `requestId` with a
 /// packed `kind ‖ output` byte string, the V1 digest names the verdict and
-/// the attested WIDTH as separate field elements — so an output of the wrong
+/// the attested width as separate field elements — so an output of the wrong
 /// width cannot verify, which the `kind + 256·leaf` packing could not say.
 #[allow(clippy::too_many_arguments)]
 pub fn settle_head_inputs(
@@ -626,12 +626,12 @@ pub fn settle_head_inputs(
 /// The `outputKind` argument slot of a ticket — index 3, by the order above.
 pub const OUTPUT_KIND_SLOT: usize = 3;
 
-/// [`settle_head_inputs`] where the SIGNED preimage and the circuit's
-/// ARGUMENT SLOTS differ — the shape a `Failed` ticket has (M37 rung D).
+/// [`settle_head_inputs`] where the signed preimage and the circuit's
+/// argument slots differ — the shape a `Failed` ticket has.
 ///
 /// The ticket's wire block is one shape whatever the MPC attested, so the
 /// attested-value slot is always there; but when the verdict is a
-/// NON-EXECUTION the signed preimage has width zero and no output limbs, and
+/// non-execution the signed preimage has width zero and no output limbs, and
 /// the slot carries prover-chosen padding. `Pending::refund` hashes the
 /// preimage both ways — at the call's width and at zero — and selects by the
 /// verdict, which is exactly what this models.
@@ -655,23 +655,23 @@ pub fn settle_head_inputs_padded(
         signed_width,
         signed_limbs,
     );
-    // `settle_head_inputs` appended the SIGNED limbs to the slots; replace
+    // `settle_head_inputs` appended the signed limbs to the slots; replace
     // them with what the argument slots actually carry.
     v.truncate(v.len() - signed_limbs.len());
     v.extend_from_slice(slot_limbs);
     v
 }
 
-/// WHAT THE MPC ATTESTED, for a settle that takes a `Failed` ticket.
+/// What the MPC attested, for a settle that takes a `Failed` ticket.
 ///
 /// The M37 rung D split: `complete` takes the successes, `refund` takes the
 /// two non-successes — the MPC's failure kind (reverted, never mined, or an
 /// undecodable return) and this call's own kind with a return the call's
 /// `EvmCall::succeeded` says is not a success. A `refund` presented with a
-/// SUCCESS must reject, which is the case this enum's third shape drives.
+/// success must reject, which is the case this enum's third shape drives.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Attested {
-    /// A NON-EXECUTION (`output_kind::FAILED`), with prover-chosen padding
+    /// A non-execution (`output_kind::FAILED`), with prover-chosen padding
     /// in the output slot and width zero in the signed digest.
     Failure { padding: u64 },
     /// `output_kind::EXECUTED`, carrying the attested return value at the
@@ -680,7 +680,7 @@ pub enum Attested {
 }
 
 impl Attested {
-    /// The MPC's VERDICT on the wire, where the Borsh lineage had a response
+    /// The MPC's verdict on the wire, where the Borsh lineage had a response
     /// kind byte.
     pub fn output_kind(self) -> u64 {
         match self {
@@ -689,7 +689,7 @@ impl Attested {
         }
     }
 
-    /// The attested WIDTH inside the digest: the call's own for an
+    /// The attested width inside the digest: the call's own for an
     /// execution, zero for a non-execution.
     pub fn signed_width(self, executed_width: usize) -> usize {
         match self {
@@ -706,7 +706,7 @@ impl Attested {
         }
     }
 
-    /// The limbs in the ticket's ARGUMENT slots — always the call's own
+    /// The limbs in the ticket's argument slots — always the call's own
     /// width, whatever the verdict: the wire block is one shape, and a
     /// non-execution fills it with prover-chosen padding.
     pub fn slot_limbs(self, executed_width: usize) -> Vec<Fr> {
@@ -731,7 +731,7 @@ impl Attested {
     /// `flag_is_the_verdict` is the call's success rule: `true` for a `Bool`
     /// return whose `succeeded` is `is_true` (the ERC-20 `transfer` the
     /// withdrawal makes), `false` for a numeric return whose `succeeded` is
-    /// `always` — for those, EXECUTED IS SUCCESS and only the failure kind
+    /// `always` — for those, executed is success and only the failure kind
     /// is refundable, which is exactly the deployed semantics.
     pub fn refundable(self, flag_is_the_verdict: bool) -> bool {
         match self {
@@ -749,7 +749,7 @@ pub struct Settle {
     pub pending: bool,
     pub mint_nonce: [u8; 32],
     pub own_pk: [u8; 32],
-    /// The secret the CALLER witnesses. `None` = the requester's own (the
+    /// The secret the caller witnesses. `None` = the requester's own (the
     /// gate passes); `Some(other)` drives the "Not the …" guard.
     pub claimant_sk: Option<[u8; 32]>,
     pub nonce_seed: u64,
@@ -1451,14 +1451,14 @@ impl CompleteWithdrawScenario {
         vec![Fr::from(u64::from(self.success))]
     }
 
-    /// M37 rung D: no mint nonce. `complete_withdraw` mints nothing — a
-    /// withdrawal that SUCCEEDED moved the tokens on the far side — so the
+    /// No mint nonce. `complete_withdraw` mints nothing — a
+    /// withdrawal that succeeded moved the tokens on the far side — so the
     /// ticket is the whole argument list.
     pub fn inputs(&self) -> Vec<Fr> {
         settle_head_inputs(self.w.env.key_seed, self.settle.nonce_seed, &self.w.request_id(), self.settle.block_height, output_kind::EXECUTED, FLAG_WIDTH, &self.output_limbs())
     }
 
-    /// EMPTY, and that is the milestone: a completion witnesses no secret,
+    /// Empty, and that is the milestone: a completion witnesses no secret,
     /// so anyone holding the attestation can prove it and a stranger's proof
     /// is the same proof.
     pub fn witnesses(&self) -> Vec<Fr> {
@@ -1505,7 +1505,7 @@ impl Settle {
 pub struct RefundWithdrawalScenario {
     pub w: StartWithdrawScenario,
     pub settle: Settle,
-    /// M37 rung D: BOTH non-successes refund here, and a success must not.
+    /// Both non-successes refund here, and a success must not.
     pub attested: Attested,
 }
 
@@ -1776,7 +1776,7 @@ impl CompleteSwapScenario {
         }
     }
 
-    /// The `amountIn` as a V1 attested `uint256`: TWO limbs, not the one
+    /// The `amountIn` as a V1 attested `uint256`: two limbs, not the one
     /// the Borsh `U64` output had.
     pub fn output_limbs(&self) -> Vec<Fr> {
         word_output_limbs(self.amount_in)
@@ -1844,7 +1844,7 @@ impl Default for CompleteSwapScenario {
 pub struct RefundSwapScenario {
     pub s: StartSwapScenario,
     pub settle: Settle,
-    /// M37 rung D. This call's return is a NUMBER, so `EvmCall::succeeded`
+    /// M37 rung D. This call's return is a number, so `EvmCall::succeeded`
     /// is `always` and an executed attestation is a success: only the MPC's
     /// failure kind refunds here, which is the deployed semantics exactly.
     pub attested: Attested,
@@ -2130,7 +2130,7 @@ impl Default for CompleteSupplyScenario {
 pub struct RefundSupplyScenario {
     pub s: StartSupplyScenario,
     pub settle: Settle,
-    /// M37 rung D. This call's return is a NUMBER, so `EvmCall::succeeded`
+    /// M37 rung D. This call's return is a number, so `EvmCall::succeeded`
     /// is `always` and an executed attestation is a success: only the MPC's
     /// failure kind refunds here, which is the deployed semantics exactly.
     pub attested: Attested,
@@ -2416,7 +2416,7 @@ impl Default for CompleteRedeemScenario {
 pub struct RefundRedeemScenario {
     pub s: StartRedeemScenario,
     pub settle: Settle,
-    /// M37 rung D. This call's return is a NUMBER, so `EvmCall::succeeded`
+    /// M37 rung D. This call's return is a number, so `EvmCall::succeeded`
     /// is `always` and an executed attestation is a success: only the MPC's
     /// failure kind refunds here, which is the deployed semantics exactly.
     pub attested: Attested,

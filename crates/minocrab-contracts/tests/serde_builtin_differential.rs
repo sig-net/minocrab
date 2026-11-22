@@ -125,7 +125,7 @@ fn check_roundtrip_matches_corpus() {
     assert_eq!(our_run.pis, their_run.pis, "PI vectors differ");
     assert_eq!(ours.check(&pi).expect("upstream accepts ours"), our_run.pi_skips);
 
-    // Criterion 3: non-canonical encodings must be rejected by BOTH —
+    // Criterion 3: non-canonical encodings must be rejected by both —
     // a flag byte of 2 (compactc 0.36 refuses it as a Boolean; ours reads
     // false, re-serializes 0 and fails the round trip)…
     let mut bad_flag = bytes;
@@ -142,7 +142,7 @@ fn check_roundtrip_matches_corpus() {
     assert!(simulate(&theirs, &pi).is_err(), "corpus must reject padding");
 
     // The deserialize splits only the 50 bytes the fields occupy, so the
-    // padding is held to zero by the round trip alone, on BOTH sides: a
+    // padding is held to zero by the round trip alone, on both sides: a
     // nonzero byte is refused in each limb, including the first padding
     // byte (in the limb the tag shares) and the last byte of the string.
     for at in [50usize, 61, 62, 93, 124, 127] {
@@ -153,7 +153,7 @@ fn check_roundtrip_matches_corpus() {
         assert!(simulate(&theirs, &pi).is_err(), "corpus must reject padding at {at}");
     }
     // A flag of 0 and the widest field values are canonical, and accepted by
-    // BOTH with the same public inputs.
+    // both with the same public inputs.
     let mut wide = mixed_bytes(u128::MAX, 0xff, &[0xff; 32]);
     wide[0] = 0;
     let pi = preimage(&wide);

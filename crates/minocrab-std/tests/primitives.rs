@@ -1,5 +1,5 @@
 //! The small primitives contract authors kept hand-writing, each pinned to
-//! the BYTE-IDENTICAL ZKIR of the sequence it replaces: `B32::equals`,
+//! the byte-identical ZKIR of the sequence it replaces: `B32::equals`,
 //! `LedgerMap::lookup_required`.
 
 use minocrab::{Circuit, Compiled, FieldT};

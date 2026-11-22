@@ -3,13 +3,13 @@
 //! Compiled into every test binary that declares `mod support`, each of
 //! which uses only the part it needs — hence the blanket `dead_code`
 //! allowance, and the same allowance for the re-exports through which
-//! `signet_call` now hands on `minocrab-publisher`'s construction path
-//! (M30 rung A): a test binary that needs three of them still names the
+//! `signet_call` hands on `minocrab-publisher`'s construction path:
+//! a test binary that needs three of them still names the
 //! module, not the item.
 #![allow(dead_code, unused_imports)]
 
-// The signet signer's calls, built through the LEDGER's own
-// `ContractCallPrototype`/`construct_proof` (M29 rung C). Every signet signer
+// The signet signer's calls, built through the ledger's own
+// `ContractCallPrototype`/`construct_proof`. Every signet signer
 // proof preimage in the suite comes from here.
 pub mod common;
 pub mod proving;
@@ -38,9 +38,9 @@ pub fn test_source(name: &str) -> std::path::PathBuf {
 
 /// Replace a snapshot table's generated region, in place.
 ///
-/// The snapshot regenerators WRITE their table back into their own source
+/// The snapshot regenerators write their table back into their own source
 /// file instead of printing it for a human to paste. A toolchain bump moves
-/// several snapshots at once (M8, notes/version-bump.org), and `./bump.sh
+/// several snapshots at once (notes/version-bump.org), and `./bump.sh
 /// accept` runs every regenerator in one step — a step that has to end with
 /// a reviewable `git diff`, not with paste instructions.
 ///
@@ -66,8 +66,8 @@ pub fn rewrite_generated_region(path: &std::path::Path, body: &str) {
     };
     let (begin_at, end_at) = (at(&begin), at(&end));
     assert!(begin_at < end_at, "{}: the markers are the wrong way round", path.display());
-    // From just past the BEGIN marker's newline to the start of the line
-    // carrying the END marker.
+    // From just past the begin marker's newline to the start of the line
+    // carrying the end marker.
     let from = begin_at + text[begin_at..].find('\n').expect("the begin marker ends its line") + 1;
     let to = text[..end_at].rfind('\n').expect("the end marker is not on line 1") + 1;
 
@@ -81,7 +81,7 @@ pub fn rewrite_generated_region(path: &std::path::Path, body: &str) {
 
 // ---- the ZKIR dump, and the diff that reads it ------------------------------
 
-/// A circuit's serialized ZKIR, ONE INSTRUCTION PER LINE.
+/// A circuit's serialized ZKIR, one instruction per line.
 ///
 /// Exactly [`to_zkir_string`]'s JSON, split: the first line is the object
 /// without its `instructions` (version, input schema, output types, the
@@ -130,7 +130,7 @@ pub fn write_zkir_dump(dir: &std::path::Path) -> usize {
 }
 
 /// Where `row_snapshot` looks for the previous run's dump: `$MINOCRAB_ZKIR_
-/// BASELINE` if it is set (a directory `zkir_dump` produced at a chosen
+/// baseline` if it is set (a directory `zkir_dump` produced at a chosen
 /// commit), otherwise the copy the row snapshot keeps for itself under the
 /// target directory.
 pub fn zkir_baseline_dir() -> std::path::PathBuf {
@@ -251,27 +251,27 @@ pub fn circuits() -> Vec<Circuit> {
         };
     }
 
-    // M32 A: every contract below is a `#[contract]` block now, so its
-    // circuit set is DERIVED (`Contract::CIRCUITS`) rather than hand-listed —
+    // Every contract below is a `#[contract]` block now, so its
+    // circuit set is derived (`Contract::CIRCUITS`) rather than hand-listed —
     // a circuit added to one of them appears here without anyone editing
     // this file. `of()` names each entry `module::circuit`, matching what
     // this list named things by hand, so the frozen snapshots below don't
     // move. Two shapes can't be `of()`-derived in one call and stay in
-    // their ORIGINAL positions instead (both gates row_snapshot and
+    // their original positions instead (both gates row_snapshot and
     // interface_snapshot on): `erc20_vault_pending`, whose hand-written
     // order interleaves `approve_router` earlier than the source declares
     // it, and `xcall`, whose derived circuits sit between `entry()`-built
     // ones (see below). Listing those individually still calls through the
-    // derived `Contract::circuit()` — only the BULK union is skipped.
+    // derived `Contract::circuit()` — only the bulk union is skipped.
     let mut listed: Vec<Circuit> = vec![
         // erc20-vault, the compat port of the seventeen-circuit vault
-        // (signet-midnight-examples 0d9c1660, M28): PI-equal to compactc.
+        // (signet-midnight-examples 0d9c1660): PI-equal to compactc.
     ];
     listed.extend(of("erc20_vault", &erc20_vault::Vault::CIRCUITS));
-    // M35 rung C: the vault on `Pending` — ten circuits (refund per slot).
+    // The vault on `Pending` — ten circuits (refund per slot).
     // Individually listed (not `of()`-unioned): the frozen snapshot orders
     // `approve_router` right after `claim`, but the source (preserved in
-    // its EXISTING order, per the migration's zero-movement rule) declares
+    // its existing order, per the migration's zero-movement rule) declares
     // it after `refund_swap` — the two orders disagree, and the snapshot
     // wins.
     listed.extend([
@@ -301,14 +301,14 @@ pub fn circuits() -> Vec<Circuit> {
         c!("events::emit_n(1)", || events::emit_n(1)),
         c!("events::emit_n(2)", || events::emit_n(2)),
         c!("events::emit_n(4)", || events::emit_n(4)),
-        // events, THROUGH THE BORSH API (M11 stage 6): byte-identical ZKIR to
+        // events, through the Borsh API: byte-identical ZKIR to
         // the four above, so these rows must match them line for line.
         c!("events_borsh::base", || events_borsh::base()),
         c!("events_borsh::emit_n(1)", || events_borsh::emit_n(1)),
         c!("events_borsh::emit_n(2)", || events_borsh::emit_n(2)),
         c!("events_borsh::emit_n(4)", || events_borsh::emit_n(4)),
-        // `hashing`/`keccak` (M9 phase 5): the width sweep is built through
-        // [`hashing::control`] etc., a Rust VALUE parameterizing the family,
+        // `hashing`/`keccak`: the width sweep is built through
+        // [`hashing::control`] etc., a Rust value parameterizing the family,
         // so it has no `#[circuit]` to derive from — see that module's docs.
         // `persistent_vec8`, the one fixed-width circuit in the family, IS
         // `#[contract]`-derived (below, via `of("hashing", ..)`).
@@ -330,9 +330,9 @@ pub fn circuits() -> Vec<Circuit> {
         c!("hashing::transient(1024)", || hashing::transient(1024)),
     ]);
     listed.extend(of("hashing", &hashing::Hashing::CIRCUITS));
-    // `xcall` (M5): individually listed, like `erc20_vault_pending` above —
+    // `xcall`: individually listed, like `erc20_vault_pending` above —
     // its derived circuits (`local_base`, `call_emit`, `call_big`,
-    // `target_deposit_big`) sit BETWEEN `entry()`-built family members
+    // `target_deposit_big`) sit between `entry()`-built family members
     // (`call_once`, `call_twice`, `target_deposit`,
     // `target_deposit_emit`) in the frozen snapshot's order, so no single
     // `of()` call could reproduce it — the derived ones still call through
@@ -359,66 +359,66 @@ pub fn circuits() -> Vec<Circuit> {
     listed.extend(of("mint_tokens", &mint_tokens::MintTokens::CIRCUITS));
     listed.extend(of("serde_builtin", &serde_builtin::SerdeBuiltin::CIRCUITS));
     listed.extend(of("test_caller", &test_caller::TestCaller::CIRCUITS));
-    // `treasury` (M37 rung C): notes/evm-calls.org §0's target shape as a
+    // `treasury`: notes/evm-calls.org §0's target shape as a
     // real contract — the README's cross-chain example, compiled. Three
     // circuits, derived like every other `#[contract]` block.
     listed.extend(of("treasury", &treasury::Treasury::CIRCUITS));
-    // `bounded.compact` (M14): Compact's `Uint<0..n>` at every shape the
+    // `bounded.compact`: Compact's `Uint<0..n>` at every shape the
     // bound can take, one circuit each. The only block here whose Compact
-    // source is OURS rather than the corpus's — no compiled corpus
+    // source is ours rather than the corpus's — no compiled corpus
     // artifact carries a non-power-of-two bound
     // (tests/bounded_differential.rs has the scan).
     listed.extend(of("bounded", &bounded::Bounded::CIRCUITS));
-    // `bounded_ledger.compact` (M31): a `Uint<0..1>` in LEDGER position —
+    // `bounded_ledger.compact`: a `Uint<0..1>` in ledger position —
     // compactc issue #588 gives it a one-byte alignment there, where
-    // `bounded`'s own `b1` (an ARGUMENT position probe) sees no change
+    // `bounded`'s own `b1` (an argument position probe) sees no change
     // (tests/bounded_ledger_differential.rs has the reading).
     listed.extend(of("bounded_ledger", &bounded_ledger::BoundedLedger::CIRCUITS));
-    // `opaque.compact` (M15): Compact's `Opaque<'ts-type'>` in every
-    // position it can occupy, plus the two CURVE POINT types, which
+    // `opaque.compact`: Compact's `Opaque<'ts-type'>` in every
+    // position it can occupy, plus the two curve point types, which
     // compactc's ABI also spells `Opaque`. Ours rather than the corpus's
     // for the same reason as `bounded` above: the corpus's 74 `Opaque`
     // nodes are all in v2 artifacts except four `Secp256k1Point`s
     // (tests/opaque_differential.rs has the scan).
     listed.extend(of("opaque", &opaque::OpaqueLedger::CIRCUITS));
-    // `adts.compact` (M16): every ledger-ADT operation Compact exposes.
+    // `adts.compact`: every ledger-ADT operation Compact exposes.
     // Ours rather than the corpus's for the third time and the same
     // reason — the corpus's `List`/`MerkleTree`/`HistoricMerkleTree`
     // declarations are in v2 artifacts, and its v3 ones exercise three of
     // these thirty-one (tests/adts_differential.rs has the scan).
     listed.extend(of("adts", &adts::Adts::CIRCUITS));
-    // `kernel.compact` (M17): the kernel primitives and the token-stdlib
+    // `kernel.compact`: the kernel primitives and the token-stdlib
     // circuits built on them. Ours rather than the corpus's for the fourth
     // time and the same measured reason — the v3 corpus's kernel/token
-    // surface is entirely SHIELDED (tests/kernel_tokens_differential.rs
+    // surface is entirely shielded (tests/kernel_tokens_differential.rs
     // has the scan). `kernel.checkpoint()` is absent: compactc before 0.36
     // could not compile it for v3, and it is not ported yet.
     listed.extend(of(
         "kernel_tokens",
         &kernel_tokens::KernelTokens::CIRCUITS,
     ));
-    // `coins.compact` (M22 stage A): the three COIN ARMS of the collection
+    // `coins.compact`: the three coin arms of the collection
     // ADTs — `Set.insertCoin`, `Map.insertCoin`, `List.pushFrontCoin`. Ours
     // rather than the corpus's for the fifth time, and here because the
     // demand is OpenZeppelin's and OZ's artifacts are ZKIR v2
     // (tests/coins_differential.rs has the scan).
     listed.extend(of("coins", &coins::Coins::CIRCUITS));
-    // `nested.compact` (M22 stage B1): NESTED ledger ADTs — `Map<K, Map>`,
+    // `nested.compact`: nested ledger ADTs — `Map<K, Map>`,
     // `Map<K, List>`, `Map<K, Set>`, `Map<K, Counter>`, the two trees, and a
-    // three-level `Map`. Built at the RAW op layer (`&[LedgerKey]` by hand),
+    // three-level `Map`. Built at the raw op layer (`&[LedgerKey]` by hand),
     // because the typed surface is stage B2 and the encoding had to be
     // proven first.
     listed.extend(of("nested", &nested::Nested::CIRCUITS));
     // `manager.compact` (aa-midnight-evm-experiment, pinned in
     // corpus/sources.json): the AA custody contract's nine provable
-    // circuits, ported SEMANTICALLY rather than instruction-mirroring —
-    // the rows here are deliberately BELOW compactc's artifacts
+    // circuits, ported semantically rather than instruction-mirroring —
+    // the rows here are deliberately below compactc's artifacts
     // (tests/manager_differential.rs holds the PI-equality warrant).
     listed.extend(of("manager", &manager::Manager::CIRCUITS));
-    // Per-recipient disclosure (notes/disclosure-model.org): an EXPLORATION,
+    // Per-recipient disclosure (notes/disclosure-model.org): an exploration,
     // listed anyway, because `circuit_closure` is right that an unlisted
     // circuit is seen by no snapshot, dump or lint — an exploration is the
-    // last thing that should be exempt. Appended LAST so the frozen tables
+    // last thing that should be exempt. Appended last so the frozen tables
     // above keep their row order and only gain entries.
     listed.extend(of("disclosure", &disclosure::Disclosure::CIRCUITS));
     listed
@@ -439,7 +439,7 @@ fn of(module: &str, circuits: &[(&'static str, fn() -> Compiled)]) -> Vec<Circui
 /// Dump a differential test's honest, corpus-verified preimage for the
 /// benchmark harness (crates/minocrab-bench): no-op unless
 /// `MINOCRAB_DUMP_PREIMAGES=<dir>` is set. Both toolchains' artifacts are
-/// PI-equal on these preimages, so the benchmark proves the SAME statement
+/// PI-equal on these preimages, so the benchmark proves the same statement
 /// under both.
 pub fn dump_preimage(circuit: &str, pi: &ProofPreimage) {
     dump_preimage_in(None, circuit, pi)

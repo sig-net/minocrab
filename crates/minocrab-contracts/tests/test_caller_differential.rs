@@ -1,6 +1,6 @@
 //! test-caller-contract `initialise`: call-compatibility with the corpus
 //! artifact per notes/ledger-abi.org §6 — the first differential over
-//! ledger READS (Counter.read + Cell.read), plus acceptance agreement on
+//! ledger reads (Counter.read + Cell.read), plus acceptance agreement on
 //! the guard failures (already initialised, wrong deployer secret, the
 //! identity point as the response key). The artifact is
 //! signet-midnight-integration v0.26.0-rc.15's.

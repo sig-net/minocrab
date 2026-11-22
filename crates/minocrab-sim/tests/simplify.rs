@@ -1,19 +1,19 @@
-//! The simplification pass (M48 F, notes/ir-passes.org §14) on random
-//! `Circuit` programs, run through the simulator AND upstream's own
+//! The simplification pass (notes/ir-passes.org §14) on random
+//! `Circuit` programs, run through the simulator and upstream's own
 //! `IrSource::check` with the pass off and on, on the same preimages.
 //!
 //! Each program draws from native arithmetic, comparisons, selects (on
 //! wires and on the immediates 0, 1 and the never-satisfiable 2), `not`,
 //! `inv`, `less_than`, `div_mod`, Poseidon, range constraints and asserts,
-//! with a deliberate share of exact REPEATS (the merge rule's food) and of
+//! with a deliberate share of exact repeats (the merge rule's food) and of
 //! results nothing reads (the dead-code rule's), some of them disclosed,
 //! pushed through an Impact or returned. The inputs are drawn small, so
 //! selectors are bits and comparisons fit their width only sometimes: a
-//! good share of runs REJECT, and must keep rejecting.
+//! good share of runs reject, and must keep rejecting.
 //!
 //! Per run: the same verdict from both builds under both walks; on accept,
 //! the same public-input vector, skips, outputs, witnesses consumed and the
-//! same disclosed values (which resolve by NAME, so a disclosure record
+//! same disclosed values (which resolve by name, so a disclosure record
 //! pointing at a deleted value would show as "<not computed>"); the same
 //! assert messages. `Circuit::finish`'s debug checks re-prove every
 //! surviving instruction's position, renames included, on every build. A
@@ -45,7 +45,7 @@ impl Rng {
 
 type W = Wire<FieldT, Private>;
 
-/// The op a step emitted, kept so a later step can REPEAT it exactly.
+/// The op a step emitted, kept so a later step can repeat it exactly.
 #[derive(Clone, Copy)]
 enum Op {
     Add(W, W),
@@ -152,7 +152,7 @@ fn preimage(inputs: &[Fr], public_transcript_inputs: Vec<Fr>) -> ProofPreimage {
     }
 }
 
-/// The preimage the UNSIMPLIFIED circuit asks for on `inputs`: its Impact
+/// The preimage the unsimplified circuit asks for on `inputs`: its Impact
 /// inputs, gathered by the executor's walk (which records rather than
 /// aborts on a failed assert, so a rejecting run still has a transcript).
 fn gathered(ir: &minocrab_zkir::IrSource, inputs: &[Fr]) -> ProofPreimage {

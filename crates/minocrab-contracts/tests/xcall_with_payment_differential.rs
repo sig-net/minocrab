@@ -131,7 +131,7 @@ fn target_addr() -> [u8; 32] {
     t
 }
 
-/// The entry-point hash, DERIVED from the callee circuit's name (M12
+/// The entry-point hash, derived from the callee circuit's name (M12
 /// stage 1). The claim carries it as a constant, so it appears only in the
 /// public transcript (`call_ops`).
 fn ep(name: &str) -> [u8; 32] {
@@ -413,7 +413,7 @@ fn pay_matches_corpus() {
     assert_call_compatible(&ours, &theirs, &s.pay_preimage(&request_id));
 }
 
-/// Criterion 3: tampering with ANY transcript element of the custody body
+/// Criterion 3: tampering with any transcript element of the custody body
 /// (the claimed commitment, the written coin, the self address…) must be
 /// rejected by both artifacts, with zero acceptance disagreements.
 #[test]

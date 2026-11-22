@@ -1,11 +1,11 @@
-//! M27 rung 2's gate: the Lean dataflow functions over the real IR
+//! The Lean dataflow gate: the Lean dataflow functions over the real IR
 //! (`MinocrabZkir.Dataflow` in crates/minocrab-zkir/lean/) agree with
-//! `operands_mut` / `returned_operands` / `defined_identifiers` on EVERY
+//! `operands_mut` / `returned_operands` / `defined_identifiers` on every
 //! corpus instruction (notes/zkir-semantics.org §8). Both sides print one
 //! line per instruction — path, index, operands, returned, defines, with
 //! wires by name and immediates as `#` — and the two texts must be equal.
 //!
-//! Skips loudly without `lake` on PATH or a compiled corpus, the policy of
+//! Skips loudly without `lake` on path or a compiled corpus, the policy of
 //! the rest of the corpus-driven gates.
 
 use std::path::{Path, PathBuf};
@@ -111,7 +111,7 @@ fn lean_dataflow_agrees_with_the_rust_functions_on_every_corpus_instruction() {
         );
     }
     let instructions = rust.lines().count();
-    // THE COUNT IS ASSERTED, as in corpus_roundtrip.rs: it moves only when
+    // The count is asserted, as in corpus_roundtrip.rs: it moves only when
     // the corpus does; update it in the same commit, naming the source.
     assert_eq!(
         // 16815 → 16666 at the M28 corpus refresh (4d9cf61): the Poseidon

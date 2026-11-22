@@ -93,7 +93,7 @@ fn field_unwrap_emits_no_instruction() {
 
 #[test]
 fn uint_constant_accepts_every_u64_at_64_bits_and_wider() {
-    // The range check must not trip — nor shift-overflow — once BITS >= 64.
+    // The range check must not trip — nor shift-overflow — once bits >= 64.
     let mut c = Circuit::new();
     Uint::<64, _>::constant(&mut c, u64::MAX);
     Uint::<128, _>::constant(&mut c, u64::MAX);
@@ -107,7 +107,7 @@ fn uint_constant_rejects_an_out_of_range_value() {
     Uint::<8, _>::constant(&mut Circuit::new(), 256);
 }
 
-/// `from_field_checked` is DEFINED as `from_field_unchecked` immediately
+/// `from_field_checked` is defined as `from_field_unchecked` immediately
 /// followed by `constrain_input` (notes/api-safety-survey.org §A1's fix) —
 /// so the two spellings must lower to byte-identical ZKIR, for every typed
 /// leaf that has a `constrain_input` to delegate to.

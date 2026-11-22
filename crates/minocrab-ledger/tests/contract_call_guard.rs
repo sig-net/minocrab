@@ -1,11 +1,11 @@
-//! `contract_call` under a guard (external review §4.3): its witnesses —
+//! `contract_call` under a guard: its witnesses —
 //! the callee's results and cc-rand — are read under
 //! the same guard the claim op is emitted under, so a call inside a branch
 //! consumes the private transcript only where the branch runs.
 //!
-//! `contract_call` no longer takes a guard parameter at all
+//! `contract_call` takes no guard parameter at all
 //! (notes/edsl-trim.org §B): its witness reads are `c.witness()`, which
-//! resolves the AMBIENT scope, so the one way to guard a call is
+//! resolves the ambient scope, so the one way to guard a call is
 //! `c.when(g, |c| contract_call(c, ..))`.
 
 use minocrab::{Circuit, FieldT, LimbConstraint};

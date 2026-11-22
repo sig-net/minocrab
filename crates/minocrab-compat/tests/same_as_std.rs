@@ -3,9 +3,9 @@
 //! manager calls several of them under a guard).
 //!
 //! Two strengths of check. Where std's gadget is still compactc's shape the
-//! two emit the IDENTICAL ZKIR (the `pin_*` tests; M48 C step 1 copied them).
-//! Where std's has gone lean (M48 C step 3) they cannot, and they are held to
-//! EQUIVALENT BEHAVIOUR instead (the `agree_*` tests): each side is built in
+//! two emit the identical ZKIR (the `pin_*` tests).
+//! Where std's has gone lean they cannot, and they are held to
+//! equivalent behaviour instead (the `agree_*` tests): each side is built in
 //! the same harness, both are run on the same inputs through the executor
 //! (`minocrab_sim::exec`, which settles the transcript against Midnight's
 //! on-chain VM and replays it in `ResultModeVerify`), and they must agree on
@@ -35,7 +35,7 @@ use midnight_transient_crypto::proofs::Zkir;
 use minocrab_sim::exec::{self, Call, ExecError, Executed};
 
 /// The circuit `f` builds under compactc's lowering, serialized. Both sides
-/// of a `pin_*` comparison are built this way: the pin is about the GADGET
+/// of a `pin_*` comparison are built this way: the pin is about the gadget
 /// emitting the same instructions, not about the lowering settings.
 fn build(f: impl FnOnce(&mut Circuit)) -> String {
     let mut c = Circuit::new();

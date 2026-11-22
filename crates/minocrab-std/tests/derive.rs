@@ -1,8 +1,8 @@
-//! `#[derive(CircuitArg)]` must generate exactly the impls phase 2 wrote by
+//! `#[derive(CircuitArg)]` must generate exactly the impls written by
 //! hand — so the gate is the same one the core itself passes: a circuit
 //! whose arguments are a derived struct has to lower to byte-identical ZKIR
 //! against the same circuit written over a hand-written impl. Serialized
-//! ZKIR pins the argument LABELS too (`%name.index`), so the camelCase rule
+//! ZKIR pins the argument labels too (`%name.index`), so the camelCase rule
 //! and the `#[arg(name = "…")]` override are checked by the same equality.
 
 use minocrab::{Circuit, Compiled, Encode, FieldT, Prim, Wire};

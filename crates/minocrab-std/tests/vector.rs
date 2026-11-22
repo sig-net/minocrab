@@ -1,6 +1,6 @@
-//! BOUNDED AND NON-EMPTY VECTORS' GATE (M40 C, notes/stream-design.org).
+//! Bounded and non-empty vectors' gate (notes/stream-design.org).
 //!
-//! 1. A fold with ledger ops over a short vector emits the LIVE slots' ops
+//! 1. A fold with ledger ops over a short vector emits the live slots' ops
 //!    only: the transcript the executor produces has one insert per live
 //!    key and the post-state has exactly those entries.
 //! 2. The step is applied only on live slots: the circuit's fold equals a
@@ -167,14 +167,14 @@ fn a_fold_emits_the_live_slots_ops_only() {
 #[test]
 fn a_length_past_max_is_rejected_by_the_argument_constraint() {
     let circuit = insert_each();
-    // REST = 3: the length's type is `Uint<0..4>`, a 2-bit constraint, which
+    // Rest = 3: the length's type is `Uint<0..4>`, a 2-bit constraint, which
     // the walk refuses as a failed `constrain_bits` (a non-power-of-two
     // bound would be a `less_than` + `assert`, an `ExecError::Rejected`).
     match run(&circuit, &[100, 4, 101, 102, 103]) {
         Err(ExecError::Circuit(e)) => assert!(e.to_string().contains("constrain_bits"), "{e}"),
         other => panic!("tail len 4 on REST = 3 must be refused by the constraint, got {other:?}"),
     }
-    // REST = 4 takes the other constraint shape: `less_than 5` + `assert`.
+    // Rest = 4 takes the other constraint shape: `less_than 5` + `assert`.
     let circuit = compile(|c| {
         let keys = <Bounded<Uint<64>, 4> as CircuitArg>::declare(c, &ArgPath::root("keys"));
         keys.constrain(c);
@@ -227,7 +227,7 @@ fn the_fold_applies_the_step_on_live_slots_only() {
         c.assert(eq(sum, expected_sum));
         c.assert(eq(max, expected_max));
     });
-    // Dead slots carry LARGE values, so applying a dead step would show.
+    // Dead slots carry large values, so applying a dead step would show.
     let slots = [5u64, 9, 2, 7];
     for len in 0..=4usize {
         let live = &slots[..len];

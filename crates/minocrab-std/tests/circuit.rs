@@ -1,8 +1,8 @@
-//! `#[circuit]` must generate exactly the entry point phase 2 wrote by hand
+//! `#[circuit]` must generate exactly the entry point written by hand
 //! — so the gate is the same one the derive passes: the same circuit written
 //! twice, once as an attributed function and once as an explicit argument
 //! struct + `entry` call, has to lower to byte-identical ZKIR. Serialized
-//! ZKIR pins the argument LABELS too (`%label.index`), so the parameter-name
+//! ZKIR pins the argument labels too (`%label.index`), so the parameter-name
 //! rule and the `#[arg(name = "…")]` override on a parameter are checked by
 //! the same equality.
 

@@ -1,28 +1,28 @@
-//! M30 rung B's exit gate: a respond intent goes build → prove → sign → seal
-//! → `well_formed` WITH PROOFS VERIFIED, in one process, with no network once
+//! The publish pipeline's proving gate: a respond intent goes build → prove → sign → seal
+//! → `well_formed` with proofs verified, in one process, with no network once
 //! the KZG parameters are on disk.
 //!
-//! `#[ignore]`d and meant for `--release`, like M29 E's:
+//! `#[ignore]`d and meant for `--release`, like `signet_real_proof.rs`:
 //!
 //! ```console
 //! cargo test --release -p minocrab-publisher --test real_proof -- --ignored --nocapture
 //! ```
 //!
-//! What this adds to M29 E (`minocrab-contracts`' `tests/signet_real_proof.rs`,
+//! What this adds to `minocrab-contracts`' `tests/signet_real_proof.rs` (
 //! which proves all three circuits with a provider defined inside the test):
-//! the proof here goes through the PUBLISHER — `minocrab_publisher::publish`,
+//! the proof here goes through the publisher — `minocrab_publisher::publish`,
 //! `InProcessProver`, and a `ManagedDir` resolver reading key files off disk —
 //! so what is exercised is the library mpc will link, not a test's own
 //! transcription of it. And the values are the capture chain's own: the
-//! request id and signature come out of M29 D's `respond-tx-161.mn`.
+//! request id and signature come out of the captured `respond-tx-161.mn`.
 //!
 //! The keys are written to a temp managed directory by keygen at the top of
 //! the test, because this repo commits the `.verifier` but not the 56 MB
-//! `.prover` or the `.bzkir` (M29 A). The verifier key that comes out is
+//! `.prover` or the `.bzkir`. The verifier key that comes out is
 //! asserted byte-identical to the committed one, so the directory the
-//! resolver reads is the artifact M29 A ships and not a look-alike.
+//! resolver reads is the shipped artifact and not a look-alike.
 //!
-//! # What it does NOT prove
+//! # What it does not prove
 //!
 //! No fee is paid: `enforce_balancing` and `enforce_limits` are off, and the
 //! dust seam is [`NoDust`]. Nothing is submitted. And the deployed key is
@@ -68,7 +68,7 @@ fn managed_verifier_key(circuit: &str) -> VerifierKey {
     committed_managed().verifier_key(circuit).expect("a committed verifier key")
 }
 
-/// Each circuit's operation carrying the NEXT circuit's verifier key — the
+/// Each circuit's operation carrying the next circuit's verifier key — the
 /// negative control's deployment.
 fn permuted_key(circuit: &str) -> VerifierKey {
     let i = SIGNER_CIRCUITS.iter().position(|c| *c == circuit).expect("a signer circuit");
@@ -77,7 +77,7 @@ fn permuted_key(circuit: &str) -> VerifierKey {
 
 /// Peak RSS of this process, in bytes — `getrusage(RUSAGE_SELF)`, the same
 /// measurement `crates/minocrab-bench` and M29 E report. Process-wide and
-/// MONOTONIC.
+/// monotonic.
 fn peak_rss_bytes() -> u64 {
     let mut ru: libc::rusage = unsafe { std::mem::zeroed() };
     let rc = unsafe { libc::getrusage(libc::RUSAGE_SELF, &mut ru) };
@@ -138,7 +138,7 @@ fn a_respond_intent_publishes_and_verifies() {
         let params = params_provider().expect("the KZG parameter provider");
         let tblock = Timestamp::from_secs(0);
 
-        // 1. Keygen from OUR IR into a temp managed directory, laid out the
+        // 1. Keygen from our IR into a temp managed directory, laid out the
         // way the sidecar's package lays it out.
         let root = std::env::temp_dir().join(format!(
             "minocrab-publisher-proof-{}-{}",
@@ -174,7 +174,7 @@ fn a_respond_intent_publishes_and_verifies() {
         let ir_bytes = ser(&|buf: &mut Vec<u8>| {
             midnight_serialize::tagged_serialize(&ir, buf).expect("ir serializes")
         });
-        // 2. The key this gate proves under is the COMMITTED artifact.
+        // 2. The key this gate proves under is the committed artifact.
         assert_eq!(
             vk_bytes,
             committed_managed().verifier_key_bytes(RESPOND).expect("the committed verifier key"),
@@ -183,7 +183,7 @@ fn a_respond_intent_publishes_and_verifies() {
         std::fs::write(managed.prover_key_path(RESPOND), &pk_bytes).expect("write prover");
         std::fs::write(managed.verifier_key_path(RESPOND), &vk_bytes).expect("write verifier");
         std::fs::write(managed.ir_path(RESPOND), &ir_bytes).expect("write ir");
-        // `ManagedDir::deployment` reads `expectedVk.json` (M30 C2); this
+        // `ManagedDir::deployment` reads `expectedVk.json`; this
         // directory is built fresh by keygen above rather than by
         // `signet-artifacts::generate`, so nothing has written one yet. The
         // hash matches the key just written by construction — step 2 already
@@ -231,7 +231,7 @@ fn a_respond_intent_publishes_and_verifies() {
         .await;
         let publish_s = t.elapsed().as_secs_f64();
 
-        // 6. well_formed with proofs VERIFIED against the deployed key, then
+        // 6. well_formed with proofs verified against the deployed key, then
         // apply.
         let t = Instant::now();
         let vtx = sealed
@@ -253,7 +253,7 @@ fn a_respond_intent_publishes_and_verifies() {
         );
 
         // 7. The negative control: the same publish, offered to a signet signer
-        // whose respond operation carries ANOTHER circuit's verifier key.
+        // whose respond operation carries another circuit's verifier key.
         // Without this, step 6 passing would be consistent with nothing being
         // verified at all.
         let wrong = publish_respond(

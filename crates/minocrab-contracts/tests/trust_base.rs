@@ -1,24 +1,24 @@
-//! M33 — the trusted-computing-base inventory, generated not typed.
+//! The trusted-computing-base inventory, generated not typed.
 //!
 //! `TRUST.md` at the repository root carries a table, one row per source
-//! file of the eight eDSL crates: WHAT WARRANTS IT (which test, proof or
+//! file of the eight eDSL crates: what warrants it (which test, proof or
 //! gate would catch a wrong line), and the failure that would hide there if
-//! it were wrong. The rows whose warrant is READING are the trusted
+//! it were wrong. The rows whose warrant is reading are the trusted
 //! computing base — the part a human reviewer has to read.
 //!
-//! The classification is DATA in this file ([`ROWS`]); the table carries no
+//! The classification is data in this file ([`ROWS`]); the table carries no
 //! line counts, so editing a source file does not make it stale — only
 //! adding, removing or reclassifying a file does. The table in `TRUST.md`
 //! is regenerated between its markers by
 //! `MINOCRAB_TRUST_BASE=1 cargo test -p minocrab-contracts --test trust_base`
 //! (the same reviewable-diff rule as the snapshots). The test fails when:
-//! a classified file no longer exists, a source file of those crates is not
+//! a classified file does not exist, a source file of those crates is not
 //! classified (closure, so a new file cannot slip in unwarranted), or the
 //! table in `TRUST.md` is stale.
 //!
-//! THE ONE ERROR THE TABLE MUST NOT CONTAIN is a warrant claimed that is not
-//! there: where unsure, a row says READING and a reviewer downgrades it,
-//! never the reverse (milestones.org M33).
+//! The one error the table must not contain is a warrant claimed that is not
+//! there: where unsure, a row says reading and a reviewer downgrades it,
+//! never the reverse.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -54,7 +54,7 @@ const ROWS: &[Row] = &[
     Row { path: "minocrab/src/effects.rs", warrant: "guard_scope; every differential with a branch", hides: "an effect escaping its guard" },
     Row { path: "minocrab/src/lowering.rs", warrant: "minocrab-compat tests/profile.rs (the profile's settings and both refusals); kernel_cache (OncePerCircuit, and never keeping a guarded read); the zkir dump (every parity port byte-identical under the profile)", hides: "a setting the profile leaves at a non-compactc value, moving a parity port or a deployed key" },
     // ---- L2.5: Impact ledger ops ----------------------------------------------------------
-    // M26: split from one 3724-line lib.rs into modules by concern (zero
+    // Split from one 3724-line lib.rs into modules by concern (zero
     // behavioural movement) — the warrant below is the whole op layer's and
     // applies unchanged to every file it was split across.
     Row { path: "minocrab-ledger/src/lib.rs", warrant: READING, hides: "nothing beyond the crate doc and mod/pub-use plumbing" },
@@ -127,7 +127,7 @@ fn source_files(crates_dir: &Path) -> BTreeSet<String> {
 }
 
 /// The table body, from the classification alone. The closing sentence
-/// counts FILES, which move only when a file is added, removed or
+/// counts files, which move only when a file is added, removed or
 /// reclassified.
 fn table() -> String {
     let mut body = String::from("| file | what warrants it | the failure that would hide there |\n|---|---|---|\n");

@@ -1,6 +1,6 @@
-//! `#[interface]` must be exactly the handles M12 stage 2 wrote by hand.
+//! `#[interface]` must expand to exactly the hand-written handles.
 //!
-//! The gate is not a token comparison but SERIALIZED ZKIR: the same circuit
+//! The gate is not a token comparison but serialized ZKIR: the same circuit
 //! is built twice — once through the attribute-generated handle, once
 //! through a hand-written twin of the shape stage 2 committed — and the two
 //! lowerings are compared byte for byte. That pins the argument limb order,
@@ -9,7 +9,7 @@
 //!
 //! The macro's own unit tests (crates/minocrab-macros/src/interface.rs)
 //! cover the error inventory and the thinness rule; this file covers what
-//! the expansion MEANS.
+//! the expansion means.
 
 use minocrab::{Circuit, Compiled, FieldT, Wire};
 use minocrab::Public;
@@ -127,7 +127,7 @@ impl HandPaymentTarget {
 
 // ---- the same circuits, both ways -------------------------------------------
 
-/// A RESULT-carrying call: `token.deposit(amount, me) -> Bytes<32>`, whose
+/// A result-carrying call: `token.deposit(amount, me) -> Bytes<32>`, whose
 /// two result limbs must pick up `[Bits(8), Bits(248)]` from the type.
 fn returning_call(build: impl FnOnce(&mut Circuit) -> B32<Public>) -> Compiled {
     let mut c = Circuit::new();
@@ -156,12 +156,12 @@ fn a_returning_call_lowers_like_the_hand_written_handle() {
 }
 
 /// The amount wire, recovered without re-declaring an argument: a constant
-/// stands in, since what is under test is the CALL, not the argument.
+/// stands in, since what is under test is the call, not the argument.
 fn pull_amount(c: &mut Circuit) -> Wire<FieldT, Public> {
     c.constant(7u64)
 }
 
-/// A unit-returning call with a STRUCT argument, and the `pin` shape: the
+/// A unit-returning call with a struct argument, and the `pin` shape: the
 /// erc20-vault's `notify_signet`, in miniature.
 fn notify_call(build: impl FnOnce(&mut Circuit)) -> Compiled {
     let mut c = Circuit::new();
@@ -199,7 +199,7 @@ fn a_pinned_struct_argument_call_lowers_like_the_hand_written_handle() {
 }
 
 /// A nine-limb argument (`Bytes<256>`) and a five-limb struct
-/// (`ShieldedCoinInfo`): the limb ORDER is what the flattening decides.
+/// (`ShieldedCoinInfo`): the limb order is what the flattening decides.
 #[test]
 fn multi_limb_arguments_lower_like_the_hand_written_handles() {
     let big = |hand: bool| {
@@ -236,7 +236,7 @@ fn multi_limb_arguments_lower_like_the_hand_written_handles() {
 
 // ---- what the expansion promises --------------------------------------------
 
-/// The entry-point consts are the DERIVED hashes of the Compact names — the
+/// The entry-point consts are the derived hashes of the Compact names — the
 /// `snake_case` → `lowerCamelCase` rule applied to the method names.
 #[test]
 fn entry_point_consts_are_the_derived_names() {

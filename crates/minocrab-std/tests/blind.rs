@@ -1,21 +1,21 @@
-//! THE BLIND OPS' GATE (M40 A/B, notes/stream-design.org).
+//! The blind ops' gate (notes/stream-design.org).
 //!
 //! Nothing in `blind` is expressible in Compact, so there is no compactc
 //! artifact to differ against. The gate is Midnight's own on-chain VM: every
 //! transcript below is compiled, run by the executor
 //! (`minocrab_sim::exec`, `ResultModeGather` then `ResultModeVerify`)
-//! against a SEEDED state, and the resulting cells and map entries are read
+//! against a seeded state, and the resulting cells and map entries are read
 //! back and compared with the value the op is defined to leave. The failure
 //! paths — an overflowing add, a take on an absent key — are checked to be
 //! refused by the VM, not by the circuit.
 //!
 //! Two invariants ride along:
 //!
-//! 1. NO PUBLIC INPUT. Each blind op mints zero `public_input` gates and
+//! 1. no public input. Each blind op mints zero `public_input` gates and
 //!    performs zero reads (`Executed::reads` is empty, `consumed_public` is
 //!    zero), which is the whole point: with no `popeq` there is nothing a
 //!    landed transaction can make stale.
-//! 2. NO HIDDEN OPS. The typed spellings (a `Hook`'s `copy`, each
+//! 2. no hidden ops. The typed spellings (a `Hook`'s `copy`, each
 //!    `Primitive`'s `combine`, the tuple impls) lower to the byte-identical
 //!    ZKIR of the explicit `minocrab_ledger` op lists.
 //!
@@ -197,7 +197,7 @@ fn run(compiled: &Compiled, seed: &Seed, inputs: &[u64]) -> Result<Executed, Exe
     exec::execute(&compiled.ir, &call, &ctx)
 }
 
-/// The gate's first invariant: the transcript READ nothing.
+/// The gate's first invariant: the transcript read nothing.
 fn assert_blind(executed: &Executed) {
     assert!(executed.reads.is_empty(), "a blind op performs no read: {:?}", executed.reads);
     assert_eq!(executed.run.consumed_public, 0, "a blind op consumes no public transcript output");
@@ -370,7 +370,7 @@ fn take_reads_the_snapshot_and_removes_it_and_an_absent_key_is_refused() {
     assert!(run(&circuit, &seed, &[11, 0]).is_err(), "an absent key does not apply");
 }
 
-// ---- tuples (M40 B) -------------------------------------------------------------
+// ---- tuples -------------------------------------------------------------
 
 /// `(Add, Max)` over `(nonce, last_seen)` — the sig-net outbox's state — laid
 /// out by the tuple impl: two cells then two maps.
@@ -423,7 +423,7 @@ fn the_tuple_lays_out_one_cell_and_one_map_per_component() {
 fn the_pair_round_trips_through_the_ledger() {
     let block = pair_block();
     // The outbox's insert: combine (1, 0) blind, then snapshot — so the
-    // stored state is the post-step value (the DECIDED convention).
+    // stored state is the post-step value (the decided convention).
     let insert = compile(|c| {
         let (k, h) = two_args(c);
         let one = Uint::from_field_unchecked(c.constant(1u64));

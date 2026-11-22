@@ -1,4 +1,4 @@
-//! The helpers lifted from the passport account custody port (PR #184) and
+//! The helpers lifted from the passport account custody port and
 //! its cost study: each is checked against the thing it replaces.
 //!
 //! - `hash::Preimage`'s constant fold against the in-circuit hash;

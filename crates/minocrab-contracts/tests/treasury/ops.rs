@@ -1,8 +1,8 @@
-//! The treasury's Impact op builders, over a NARROW block.
+//! The treasury's Impact op builders, over a narrow block.
 //!
 //! The treasury declares seven ledger fields (`Signet`'s five, then the
 //! transfer slot's record and environment maps), which is under compactc's
-//! fifteen-field segment length, so every path is ONE element and no write
+//! fifteen-field segment length, so every path is one element and no write
 //! is nested.
 //!
 //! The builders themselves are `tests/support/ledger_ops.rs`, shared with

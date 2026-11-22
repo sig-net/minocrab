@@ -1,11 +1,11 @@
 //! The Borsh (fixed-width subset) layer: the two claims that matter.
 //!
-//! 1. **IT IS BORSH.** The bytes the circuit hashes and packs are compared,
+//! 1. **it is Borsh.** The bytes the circuit hashes and packs are compared,
 //!    through the simulator, against `borsh::to_vec` of a plain Rust twin
 //!    carrying borsh's own derive — so the oracle is borsh itself, not a
 //!    re-statement of our layout logic. The keccak path is checked the same
 //!    way, against `Keccak256(borsh::to_vec(v))`.
-//! 2. **THE HASH PATH IS FREE.** Every circuit built through
+//! 2. **the hash path is free.** Every circuit built through
 //!    [`CircuitBorsh`] is compared as serialized ZKIR against the same
 //!    circuit written by hand over raw wires and a hand-written alignment.
 //!    Byte equality is the zero-cost claim, stronger than an instruction
@@ -37,7 +37,7 @@ use sha3::{Digest, Keccak256};
 
 // ---- the two declarations of one record ----------------------------------------
 //
-// THE SPEC TYPE, with borsh's own derive — the oracle. It knows nothing about
+// The spec type, with borsh's own derive — the oracle. It knows nothing about
 // circuits, and the circuit side is never computed from it.
 
 #[derive(BorshSerialize, Clone, Debug)]
@@ -59,7 +59,7 @@ struct SpecRecord {
     calldata: SpecFlagged<u32>,
 }
 
-/// THE CIRCUIT TYPE: the same record over wires. Hand-written impls — the
+/// The circuit type: the same record over wires. Hand-written impls — the
 /// derive is stage 3, and its gate is byte-equality against exactly this.
 struct Record<V: Vis> {
     version: Uint<8, V>,
@@ -330,9 +330,9 @@ fn output_bytes<const N: usize>(c: &mut Circuit, value: &BytesN<Private, N>) {
     }
 }
 
-// ---- (1) IT IS BORSH -------------------------------------------------------------------
+// ---- (1) it is Borsh -------------------------------------------------------------------
 
-/// The packed bytes the circuit produces ARE `borsh::to_vec` of the twin —
+/// The packed bytes the circuit produces are `borsh::to_vec` of the twin —
 /// simulated, byte for byte, all 204 of them.
 #[test]
 fn packed_bytes_are_canonical_borsh() {
@@ -384,7 +384,7 @@ fn the_hash_path_hashes_the_borsh_encoding() {
 
 // ---- (1b) the fixed-width property -------------------------------------------------------
 
-/// `LEN` is a CONSTANT: `borsh::object_length` of the twin agrees at every
+/// `LEN` is a constant: `borsh::object_length` of the twin agrees at every
 /// value, per leaf and for the whole record. This is the property that makes
 /// every offset a compile-time constant — and the one that catches `Option`,
 /// which the dual oracle does not (notes/borsh-format.org §"Two corrections").
@@ -421,17 +421,17 @@ fn every_leaf_is_fixed_width() {
 
     let mut spec = spec_record();
     check(&[spec.clone()], <Record<Private> as CircuitBorsh<Private>>::LEN, "Record");
-    // The tag being unset changes NOTHING about the width — that is the
+    // The tag being unset changes nothing about the width — that is the
     // whole difference between Flagged and Option.
     spec.calldata = SpecFlagged { is_some: false, value: 0 };
     check(&[spec], <Record<Private> as CircuitBorsh<Private>>::LEN, "Record (flag unset)");
 }
 
-// ---- (2) THE HASH PATH IS FREE ------------------------------------------------------------
+// ---- (2) the hash path is free ------------------------------------------------------------
 
 /// `limbs_of(..).keccak256(c)` lowers to the byte-identical ZKIR of a
 /// hand-written alignment and a hand-written operand list — the zero-cost
-/// claim, and simultaneously the statement that the alignment IS the Borsh
+/// claim, and simultaneously the statement that the alignment is the Borsh
 /// layout.
 #[test]
 fn the_hash_preimage_is_the_hand_written_one() {
@@ -528,7 +528,7 @@ fn the_packed_path_is_the_hand_written_serializer() {
     assert_eq!(hand, typed);
 }
 
-/// Describing the preimage emits NOTHING: `limbs_of` and `alignment_of` are
+/// Describing the preimage emits nothing: `limbs_of` and `alignment_of` are
 /// bookkeeping over wires that already exist.
 #[test]
 fn describing_the_preimage_is_free() {
@@ -577,9 +577,9 @@ fn constrain_canonical_is_the_argument_constraint() {
     same!(Flagged<Uint<32, Private>, Private>, "Flagged<Uint<32>>");
 }
 
-/// THE ONE EXCEPTION, and the reason `constrain_canonical` exists at all: a
+/// The one exception, and the reason `constrain_canonical` exists at all: a
 /// tag's canonicity is `< K`, which no Compact circuit emits. The canonical
-/// form is the argument constraint PLUS that bound.
+/// form is the argument constraint plus that bound.
 #[test]
 fn a_tag_adds_the_bound_compactc_does_not_emit() {
     let as_arg = ir_of(|c| {
@@ -609,7 +609,7 @@ fn a_tag_adds_the_bound_compactc_does_not_emit() {
     assert_eq!(full, as_arg);
 }
 
-/// The circuit REJECTS a discriminant outside the enum — the bound is a real
+/// The circuit rejects a discriminant outside the enum — the bound is a real
 /// constraint, not a comment.
 #[test]
 fn a_tag_out_of_range_is_rejected() {
@@ -634,7 +634,7 @@ fn a_tag_out_of_range_is_rejected() {
 
 // ---- (4) the layout table ------------------------------------------------------------------
 
-/// The published offset table: dot-joined SPEC paths, borsh declarations as
+/// The published offset table: dot-joined spec paths, borsh declarations as
 /// kinds, offsets that sum to `LEN` — the same four columns stage 0's schema
 /// walk produces, which is what stage 3 cross-checks against.
 #[test]
@@ -675,7 +675,7 @@ fn the_layout_table_is_the_offset_table() {
     );
 }
 
-// ---- (5) THE READER (stage 2) -------------------------------------------------------------
+// ---- (5) the reader (stage 2) -------------------------------------------------------------
 //
 // A library component: no vault circuit uses it. Both modes are proven
 // against bytes borsh itself produced, not only against our own writer.
@@ -851,7 +851,7 @@ fn assert_records_equal(c: &mut Circuit, a: &Record<Private>, b: &Record<Private
     c.assert_eq(a.calldata.value.field(), b.calldata.value.field());
 }
 
-/// THE PADDING RULE, enforced by both modes: a 204-byte value read out of a
+/// The padding rule, enforced by both modes: a 204-byte value read out of a
 /// 288-byte envelope accepts a zero tail and rejects a dirty one. (Split
 /// asserts it segment by segment; WitnessCheck gets it for free, because the
 /// re-pack zero-fills the tail and the equality covers every limb.)
@@ -912,7 +912,7 @@ fn the_reader_consumes_exactly_len_bytes() {
 /// The two modes are not the same circuit, and the difference is the point:
 /// Split spends a ~143-row `div_mod` per field boundary interior to a limb,
 /// WitnessCheck spends 2w+1 rows per leaf (w bytes wide) plus one `div_mod`
-/// per straddled LIMB boundary in the re-pack — at most one per 31 bytes,
+/// per straddled limb boundary in the re-pack — at most one per 31 bytes,
 /// whatever the field layout. Measured at this record: 2,587 vs 1,331 rows of
 /// reading, 1.9x; per leaf the ratio runs from 2.0x ([[u8; 32]; 2]) to 73x
 /// (bool). The table is `minocrab-sim/examples/borshcost.rs`.
@@ -966,7 +966,7 @@ fn a_witness_check_without_finish_proves_nothing() {
 
 // ---- the strict extension ---------------------------------------------------------------------
 
-/// Every `Private` leaf and the record are BOTH a circuit argument and Borsh
+/// Every `Private` leaf and the record are both a circuit argument and Borsh
 /// serializable — the "one derive yields both" claim, as a compile-time fact.
 #[test]
 fn the_leaves_are_arguments_and_borsh() {
@@ -987,7 +987,7 @@ fn the_leaves_are_arguments_and_borsh() {
     assert_both::<Record<Private>>();
 }
 
-// ---- (6) THE HASH FLAVORS (stage 9) -------------------------------------------------------------
+// ---- (6) the hash flavors (stage 9) -------------------------------------------------------------
 //
 // `minocrab_std::hash` offers each hash twice: over the value's Borsh
 // encoding (the default) and over Compact's FAB representation (`_compact`,
@@ -995,7 +995,7 @@ fn the_leaves_are_arguments_and_borsh() {
 // each flavor hashes, where they agree and where they do not — so that
 // picking one is a decision with a test behind it rather than a habit.
 
-/// THE DEFAULT FLAVOR IS THE SPECIFIED ONE: the digest the chip produces is
+/// The default flavor is the specified one: the digest the chip produces is
 /// `SHA-256(borsh::to_vec(value))`, checked through the simulator against
 /// borsh's own encoder and a native SHA-256.
 #[test]
@@ -1014,7 +1014,7 @@ fn persistent_hash_is_sha256_of_the_borsh_encoding() {
     assert_eq!(digest, expected);
 }
 
-/// THE TWO PERSISTENT FLAVORS AGREE ON THE SUBSET, as byte-identical ZKIR:
+/// The two persistent flavors agree on the subset, as byte-identical ZKIR:
 /// for a value whose FAB alignment is all `bytes<n>` atoms, `binary_repr` IS
 /// the Borsh encoding (notes/borsh-format.org, finding #1). The two sides are
 /// built from independent descriptions — `CircuitBorsh::push_limbs` on one,
@@ -1044,11 +1044,11 @@ fn the_persistent_flavors_agree_on_the_subset() {
     assert_eq!(borsh_flavor, fab_flavor);
 }
 
-/// The Borsh transient flavor limbs the ENCODED BYTE STRING in 31-byte
-/// little-endian chunks IN STRING ORDER — chunk `i` is bytes `31i..31i+31`,
+/// The Borsh transient flavor limbs the encoded byte string in 31-byte
+/// little-endian chunks in string order — chunk `i` is bytes `31i..31i+31`,
 /// the last one short — which a native implementation writes as
 /// `borsh::to_vec(v).chunks(31)`. This is the limbing the spec publishes; it
-/// is NOT FAB's, whose leftover chunk comes first.
+/// is not FAB's, whose leftover chunk comes first.
 #[test]
 fn transient_hash_limbs_the_borsh_bytes_in_string_order() {
     let spec = spec_record();
@@ -1067,7 +1067,7 @@ fn transient_hash_limbs_the_borsh_bytes_in_string_order() {
     assert_eq!(outputs[0], native_transient_hash(&limbs));
 }
 
-/// THE TRANSIENT FLAVORS GENUINELY DISAGREE, and the FAB one is Poseidon over
+/// The transient flavors genuinely disagree, and the FAB one is Poseidon over
 /// the argument slots verbatim. Poseidon absorbs field elements, so the
 /// preimage is a limbing and the two limbings are different: Borsh's is the
 /// byte string in 31-byte chunks, FAB's is one slot per field with a byte

@@ -1,5 +1,5 @@
-//! THE SERIAL REFERENCE STREAM (M41 B, notes/stream-design.org): a fee
-//! estimate that is NOT a monoid — an exponential moving average — so it
+//! The serial reference stream (notes/stream-design.org): a fee
+//! estimate that is not a monoid — an exponential moving average — so it
 //! goes behind the accumulator's `popeq`: `report` inserts, `sequence`
 //! flushes one to four reports through the step, `settle` takes one.
 //!
@@ -56,7 +56,7 @@ impl StreamSpec for Fees {
     type Body = Report;
     type Head = U64;
     type State = U64;
-    /// Flushed one to four at a time: REST counts the optional slots.
+    /// Flushed one to four at a time: rest counts the optional slots.
     type Step = Serial<Ema, 3>;
 
     fn head(_c: &mut Circuit, body: &Report) -> U64 {
@@ -243,7 +243,7 @@ fn a_settle_takes_the_report_and_its_state() {
     assert!(matches!(run(&settle(), state(&[(5, 1)], 0, &[]), &[5]), Err(ExecError::Rejected { .. })));
 }
 
-/// THE ROW TABLE, in §11's style: the flush proof pays for four slots
+/// The row table, in §11's style: the flush proof pays for four slots
 /// whatever the count; report and settle are per key.
 #[test]
 fn the_row_table() {

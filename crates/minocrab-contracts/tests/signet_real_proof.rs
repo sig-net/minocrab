@@ -1,4 +1,4 @@
-//! M29 rung E — THE REAL-PROVING GATE. The first real proof in this test
+//! The real-proving gate. The first real proof in this test
 //! suite.
 //!
 //! `#[ignore]`d by default and meant for `--release`, like `row_snapshot`:
@@ -7,27 +7,27 @@
 //! cargo test --release -p minocrab-contracts --test signet_real_proof -- --ignored --nocapture
 //! ```
 //!
-//! Everything before this rung stops at the public inputs. `IrSource::check`
+//! The other gates stop at the public inputs. `IrSource::check`
 //! says the preimage satisfies the circuit; the differential says both
-//! artifacts agree on the PI vector; rung D says the ledger applies the call
-//! — but nothing anywhere had ever produced a PROOF from a
-//! ledger-constructed preimage and had the ledger VERIFY it against a
-//! DEPLOYED verifier key. That is this rung, for all three signer circuits:
+//! artifacts agree on the PI vector; `signet_ledger_apply.rs` says the ledger applies the call
+//! — but none produces a proof from a
+//! ledger-constructed preimage and has the ledger verify it against a
+//! deployed verifier key. This gate does, for all three signer circuits:
 //!
-//! 1. keygen from OUR IR (`signet_contract::*().ir`), parameters from
+//! 1. keygen from our IR (`signet_contract::*().ir`), parameters from
 //!    `MidnightDataProvider` (pre-warmed under `~/.cache/midnight/zk-params`);
 //! 2. assert the verifier key that came out is byte-identical to the
-//!    COMMITTED `crates/signet-artifacts/managed/keys/<circuit>.verifier`, so
-//!    the key this gate deploys is the artifact M29 A ships and not a
+//!    committed `crates/signet-artifacts/managed/keys/<circuit>.verifier`, so
+//!    the key this gate deploys is the shipped artifact and not a
 //!    look-alike;
 //! 3. `ContractDeploy` under those keys, into a `LedgerState`;
 //! 4. build the call the rung-C way, then `Transaction::prove` through an
-//!    IN-PROCESS `ProvingProvider` ([`V3ProvingProvider`]), and `seal`;
+//!    in-process `ProvingProvider` ([`V3ProvingProvider`]), and `seal`;
 //! 5. `well_formed` with `verify_contract_proofs` ON in
 //!    `ProofVerificationMode::Real`, against the deployed key — then `apply`.
 //!
 //! The negative control is in the same test: the same three proofs are also
-//! offered to a signet signer deployed with the keys PERMUTED (respond's
+//! offered to a signet signer deployed with the keys permuted (respond's
 //! operation carrying signBidirectional's verifier key, and so on), and
 //! `well_formed` must reject every one. Without it, step 5 passing would be
 //! consistent with nothing being verified at all.
@@ -39,7 +39,7 @@
 //! features, and its resolver is `ledger::prove::Resolver`, which owns a
 //! `ZswapResolver` and a `DustResolver`: network-fetched parameter sets this
 //! gate has no use for, since the transaction carries no zswap offer and no
-//! dust action. So [`V3ProvingProvider`] is a MECHANICAL TRANSLATION of that
+//! dust action. So [`V3ProvingProvider`] is a mechanical translation of that
 //! struct's v3 arm (midnight-ledger `04c9c5d`,
 //! `ledger/src/test_utilities.rs:749-818`): resolve the key
 //! material, load the `ir-source[v3-generic]` `IrSource` from it, and hand
@@ -49,7 +49,7 @@
 //! Proving is therefore entirely in process: no proof server, no child
 //! process, and no network once the KZG parameters are on disk.
 //!
-//! # What this gate does NOT prove
+//! # What this gate does not prove
 //!
 //! Nothing about fees: `enforce_balancing` and `enforce_limits` are off, and
 //! no DUST wallet exists in this workspace. Nothing about the network: the
@@ -167,7 +167,7 @@ fn call_arguments(circuit: &str) -> (Vec<u8>, AlignedValue) {
 }
 
 /// The permuted key assignment for the negative control: each circuit's
-/// operation carries the NEXT circuit's verifier key.
+/// operation carries the next circuit's verifier key.
 fn permuted_key(circuit: &str) -> midnight_transient_crypto::proofs::VerifierKey {
     let i = SIGNER_CIRCUITS
         .iter()
@@ -307,7 +307,7 @@ fn every_signer_circuit_proves_and_verifies_against_the_deployed_key() {
             previous_rss = rss.max(previous_rss);
 
             // The negative control: the same circuit, proved honestly, at a
-            // signet signer whose operation carries ANOTHER circuit's verifier
+            // signet signer whose operation carries another circuit's verifier
             // key. `well_formed` must say no.
             let wrong_tx = prove_at(wrong_address);
             let provider = V3ProvingProvider {

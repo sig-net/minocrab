@@ -1,4 +1,4 @@
-//! THE EXECUTOR GATE (M35 rung 1): the transcript the executor derives from
+//! The executor gate: the transcript the executor derives from
 //! ledger state is byte-for-byte the transcript the vault harness's hand
 //! model writes.
 //!
@@ -8,10 +8,10 @@
 //! same transcript from a 3.8k-line reference model that knows every read's
 //! answer by hand. They are completely independent routes to the same
 //! bytes, which is what makes this a gate and not a tautology — and the
-//! harness is the ORACLE, so any disagreement is the executor's fault until
+//! harness is the oracle, so any disagreement is the executor's fault until
 //! shown otherwise.
 //!
-//! Per generated case, on the SEVENTEEN circuits of the Pending lineage:
+//! Per generated case, on the seventeen circuits of the Pending lineage:
 //!
 //! 1. **The op stream.** `Executed::ops` equals the model's `ops()` op for
 //!    op — including each `popeq`'s expected `AlignedValue`, which the
@@ -23,9 +23,9 @@
 //!    preimage — the executor did not merely agree with the model, it
 //!    produced something upstream will prove.
 //! 4. **The post-state.** The executor's `post` is what
-//!    `exec::run(pre, ops)` computes, so the state-driving half of M35 D
+//!    `exec::run(pre, ops)` computes, so `signet_round_trip.rs`
 //!    can chain calls through it.
-//! 5. **The negative control.** A case the spec REJECTS is rejected by the
+//! 5. **The negative control.** A case the spec rejects is rejected by the
 //!    executor too, as `ExecError::Rejected` at an `Assert` — the same
 //!    failure the hand model's `Guard` names.
 
@@ -83,7 +83,7 @@ fn check_case(
         };
     }
 
-    // An accepted case whose transcript the LEDGER will not apply is the
+    // An accepted case whose transcript the ledger will not apply is the
     // `counter_would_overflow` case `erc20_vault_pending_spec.rs` carves
     // out: the circuit is satisfied, the state has no room. The model's own
     // op stream is refused identically.

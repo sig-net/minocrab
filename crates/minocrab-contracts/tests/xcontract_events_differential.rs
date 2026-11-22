@@ -1,6 +1,6 @@
 //! xcontract-events depositViaVault (caller with a returned value) and
 //! token deposit (callee): call-compatibility with the corpus artifacts per
-//! notes/ledger-abi.org §6 — the M5 return-value path (result witnesses
+//! notes/ledger-abi.org §6 — the return-value path (result witnesses
 //! bound by the communication commitment) plus Set.insert, against real
 //! compactc artifacts, with rejection agreement on tampering.
 
@@ -174,7 +174,7 @@ impl Scenario {
         let mut token_addr = [0u8; 32];
         token_addr[..9].copy_from_slice(b"token-adr");
         token_addr[31] = 0x22;
-        // DERIVED from the callee circuit's name (M12 stage 1); the ep
+        // Derived from the callee circuit's name; the ep
         // limbs are witnesses, so this is a preimage-only change.
         let ep = ep_hash("deposit");
         Scenario {
@@ -379,7 +379,7 @@ fn deposit_via_vault_rejects_tampering() {
 // ---- M11 stage 6: the Borsh twin ---------------------------------------------
 
 /// `xcontract_events_borsh::XcontractEventsBorsh::token_deposit` emits the same bytes as the
-/// original — as BYTE-IDENTICAL ZKIR — with both serializations built from
+/// original — as byte-identical ZKIR — with both serializations built from
 /// declared types: the 256-byte payload (56 Borsh bytes then the zero pad,
 /// hashed whole) and the 288-byte `Misc` envelope (`LEN` exactly 288, so no
 /// pad at all). See `tests/events_differential.rs` for why identical ZKIR is

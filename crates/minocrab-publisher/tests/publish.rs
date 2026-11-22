@@ -1,7 +1,7 @@
-//! M30 rung B's gates that do not prove: the disk resolver, and
-//! build → sign → seal → `well_formed` → `apply` on the M29 D fixtures.
+//! The publish pipeline's gates that do not prove: the disk resolver, and
+//! build → sign → seal → `well_formed` → `apply` on the ledger-apply fixtures.
 //!
-//! `tests/real_proof.rs` is the same pipeline WITH the proof, under
+//! `tests/real_proof.rs` is the same pipeline with the proof, under
 //! `--release` and `#[ignore]`. Everything here runs in the ordinary
 //! `cargo test` loop, because everything here is cheap: no keygen, no
 //! proving, and the proof-preimage marker's `proof_verify` is a no-op.
@@ -38,7 +38,7 @@ const RESPOND_TX_161: &[u8] =
 const RESPOND_TX_161_SHA256: &str =
     "9444aa6304257d0ae278531a3c70ee0baa508c197369024fb14463f987b06745";
 
-/// The COMMITTED managed directory (M29 A): verifier keys and `.zkir`, but
+/// The committed managed directory: verifier keys and `.zkir`, but
 /// deliberately no `.prover` or `.bzkir`.
 fn committed_managed() -> ManagedDir {
     ManagedDir::new(
@@ -72,7 +72,7 @@ fn the_verifier_key_hashes_are_the_committed_expected_vk_table() {
 }
 
 /// M30 C2's gate: `ManagedDir::deployment` reads `expectedVk.json`, so a
-/// hand-edited (or stale) entry is caught HERE, against the key file it
+/// hand-edited (or stale) entry is caught here, against the key file it
 /// disagrees with, named — rather than being trusted into a `Deployment` that
 /// can only ever agree with itself.
 #[test]
@@ -85,7 +85,7 @@ fn a_corrupted_expected_vk_entry_is_caught_against_the_key_file() {
             .expect("time moves forward")
             .as_nanos()
     ));
-    // A full copy of the committed managed directory's keys AND expectedVk.json
+    // A full copy of the committed managed directory's keys and expectedVk.json
     // — everything `deployment` reads, so the only thing this test changes is
     // the one entry it corrupts.
     let committed = committed_managed();
@@ -99,8 +99,8 @@ fn a_corrupted_expected_vk_entry_is_caught_against_the_key_file() {
     }
     let managed = ManagedDir::new(&root);
 
-    // Corrupt RESPOND's entry alone: flip the hash's first hex character to
-    // some OTHER valid hex digit, so the corrupted table is still well-formed
+    // Corrupt respond's entry alone: flip the hash's first hex character to
+    // some other valid hex digit, so the corrupted table is still well-formed
     // JSON with a 64-hex value — the only thing wrong with it is that it no
     // longer matches the file.
     let real_hash = committed.verifier_key_hash(RESPOND).expect("a committed verifier key");
@@ -134,7 +134,7 @@ fn a_corrupted_expected_vk_entry_is_caught_against_the_key_file() {
     std::fs::remove_dir_all(&root).expect("clean up");
 }
 
-/// The committed directory carries verifier keys and NOTHING ELSE a prover
+/// The committed directory carries verifier keys and nothing else a prover
 /// needs, and the resolver says so by resolving nothing — rather than half-
 /// resolving a circuit and failing somewhere deeper in the prover.
 #[test]
@@ -150,8 +150,8 @@ fn the_committed_managed_dir_cannot_prove() {
     }
 }
 
-/// THE `expectedVk` GATE, in both directions: a signet signer deployed under our
-/// committed keys passes, and one whose operations carry each OTHER circuit's
+/// The `expectedVk` gate, in both directions: a signet signer deployed under our
+/// committed keys passes, and one whose operations carry each other circuit's
 /// key is caught — by the hash, not by the name.
 ///
 /// This is the check `sig-net/mpc`'s `prover.ts` makes before it will prove:
@@ -172,7 +172,7 @@ fn the_expected_vk_gate_catches_a_deployment_carrying_other_keys() {
         .check_deployed(&singleton_contract_state(|c| Some(managed_verifier_key(c))))
         .expect("the committed keys are the expected ones");
 
-    // Each circuit's operation carrying the NEXT circuit's key.
+    // Each circuit's operation carrying the next circuit's key.
     let permuted = |circuit: &str| {
         let i = SIGNER_CIRCUITS.iter().position(|c| *c == circuit).expect("a signer circuit");
         Some(managed_verifier_key(SIGNER_CIRCUITS[(i + 1) % SIGNER_CIRCUITS.len()]))
@@ -189,7 +189,7 @@ fn the_expected_vk_gate_catches_a_deployment_carrying_other_keys() {
     assert!(matches!(err, PublishError::VerifierKeyMismatch { .. }), "{err}");
 }
 
-/// The resolver answers to the bare circuit id AND to compact-js's encoded
+/// The resolver answers to the bare circuit id and to compact-js's encoded
 /// contract key location, so it can stand in for the sidecar's resolver
 /// without re-spelling any preimage.
 #[test]
@@ -205,7 +205,7 @@ fn the_resolver_answers_to_both_spellings_of_a_key_location() {
     let managed = ManagedDir::new(&root);
     std::fs::create_dir_all(root.join("keys")).expect("mkdir keys");
     std::fs::create_dir_all(root.join("zkir")).expect("mkdir zkir");
-    // Not real keys — this test is about which FILES a key location selects,
+    // Not real keys — this test is about which files a key location selects,
     // which is a question the prover never gets to ask if the answer is wrong.
     let material = ProvingKeyMaterial {
         prover_key: b"prover".to_vec(),
@@ -250,7 +250,7 @@ fn the_resolver_answers_to_both_spellings_of_a_key_location() {
 
 // ---- build → sign → seal → well_formed → apply -----------------------------
 
-/// The publisher's steps, on a REAL request id and a REAL signature taken off
+/// The publisher's steps, on a real request id and a real signature taken off
 /// the capture chain's own respond transaction: the transaction is well
 /// formed against a signet signer deployed under our verifier keys, it applies,
 /// and the 288 bytes the ledger recorded while applying it are the 288 bytes

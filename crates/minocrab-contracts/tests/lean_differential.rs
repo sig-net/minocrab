@@ -1,18 +1,18 @@
-//! M27 rung 4's RUN-RECORD INTERFACE (notes/zkir-semantics.org §6,
-//! notes/zkir-rung4.org): turn dumped `ProofPreimage`s into PLAIN-TEXT run
+//! The run-record interface (notes/zkir-semantics.org §6,
+//! notes/zkir-rung4.org): turn dumped `ProofPreimage`s into plain-text run
 //! records the Lean interpreter can read without a second implementation of
 //! midnight's tagged binary format.
 //!
 //! Lean must not parse `midnight_serialize::tagged_serialize` output — that
-//! is a format we refused to re-implement at M21 and would be a second,
+//! is a format we do not re-implement and would be a second,
 //! unwarranted serializer. So this regenerator (the house `--ignored`
 //! pattern of `row_snapshot.rs` / `interface_snapshot.rs`) reads each dumped
 //! preimage, names the `.zkir` it was proved against, runs the Rust oracle
-//! (`minocrab_sim::simulate`, CROSS-CHECKED against upstream
+//! (`minocrab_sim::simulate`, cross-checked against upstream
 //! `IrSource::check`), and writes one record per (circuit, variant) under
 //! `crates/minocrab-zkir/lean/differential/`.
 //!
-//! Every artifact a record names is a CORPUS artifact — compactc's own
+//! Every artifact a record names is a corpus artifact — compactc's own
 //! `.zkir`, already tracked under `corpus/zkir/` — so the records add no
 //! duplicated artifact bytes, and the gate is a differential between
 //! compactc's output and our Lean rather than between two of ours. That is
@@ -20,7 +20,7 @@
 //! and the corpus twin on exactly these preimages
 //! (`minocrab_sim::assert_call_compatible`).
 //!
-//! REGENERATE (two steps, both from the repo root):
+//! Regenerate (two steps, both from the repo root):
 //!
 //! ```text
 //! MINOCRAB_DUMP_PREIMAGES=$PWD/target/lean-differential/preimages \
@@ -136,7 +136,7 @@ fn corpus_table() -> Vec<(&'static str, String)> {
     t
 }
 
-/// Which preimages get a TAMPERED sibling, and where. `(stem, part, index)`
+/// Which preimages get a tampered sibling, and where. `(stem, part, index)`
 /// with the index taken modulo the stream length, so the table survives a
 /// scenario growing a slot. `Part::Inputs` tampering also breaks the
 /// communications commitment — that is a genuine reject and exactly the
@@ -186,7 +186,7 @@ impl Part {
 // ==== lexemes ===============================================================
 
 /// A field element as the artifact spells its immediates: `0x` then
-/// LITTLE-ENDIAN hex bytes, minimal length, at least one byte
+/// little-endian hex bytes, minimal length, at least one byte
 /// (compactc's `zkir-field-rep->string`, print-zkir-v3.ss:46-61; the Lean
 /// twin is `MinocrabZkir.immString`).
 fn fr_lexeme(x: &Fr) -> String {
@@ -202,7 +202,7 @@ fn fr_lexeme(x: &Fr) -> String {
     s
 }
 
-/// A byte string in STREAM order, `#` then two lowercase hex digits each.
+/// A byte string in stream order, `#` then two lowercase hex digits each.
 fn bytes_lexeme(bs: &[u8]) -> String {
     let mut s = String::with_capacity(1 + 2 * bs.len());
     s.push('#');
@@ -293,7 +293,7 @@ fn wrapped(key: &str, values: &[String]) -> String {
 /// upstream `IrSource::check` (which is `preprocess(..)?.pi_skips`
 /// verbatim, midnight-zkir 3.2.0 src/ir.rs:77-82).
 ///
-/// `check` PANICS rather than erroring on some malformed preimages
+/// `check` panics rather than erroring on some malformed preimages
 /// (notes/zkir-semantics.org §10 I2: `decode_offcircuit`'s `assert_eq!` on a
 /// `Bytes<32>` limb), so a panic there is caught and read as "not accept" —
 /// which is the disposition that note already records for this rung.
@@ -343,7 +343,7 @@ fn record(artifact: &str, variant: &str, pi: &ProofPreimage, run: Option<&Run>) 
         None => out.push_str("comm_comm none\n"),
         Some((c, r)) => out.push_str(&format!("comm_comm {} {}\n", fr_lexeme(&c), fr_lexeme(&r))),
     }
-    // ---- the EXPECTED block: everything below this line is what
+    // ---- the expected block: everything below this line is what
     // `lake exe zkir-run` must print, byte for byte.
     out.push_str(&expected_block(run));
     out
@@ -381,7 +381,7 @@ fn expected_block(run: Option<&Run>) -> String {
 
 /// The primitive-level KATs: one line per call, in the same lexemes the run
 /// records use. These are what validates each ported intrinsic on its own,
-/// BEFORE the interpreter is asked to agree on a whole circuit — a
+/// before the interpreter is asked to agree on a whole circuit — a
 /// disagreement here names the primitive, a disagreement in a record does
 /// not.
 ///
@@ -451,7 +451,7 @@ fn known_answers() -> String {
     //    byte hashes: `Alignment::parse_field_repr` then
     //    `ValueReprAlignedValue::binary_repr` (ir_vm.rs:491-499). The
     //    non-canonical vectors are the point: a limb carrying a byte above
-    //    its slot must REJECT, not truncate.
+    //    its slot must reject, not truncate.
     for (length, limbs) in fab_cases() {
         let align = Alignment(vec![AlignmentSegment::Atom(AlignmentAtom::Bytes { length })]);
         let got = align.parse_field_repr(&limbs).map(|v| {
@@ -605,7 +605,7 @@ fn fab_cases() -> Vec<(u32, Vec<Fr>)> {
         (32, vec![limb(0xfe), wide31]),
         // Exactly one full limb.
         (31, vec![wide31]),
-        // Two full limbs, no stray — note the REVERSED limb order.
+        // Two full limbs, no stray — note the reversed limb order.
         (62, vec![wide31, limb(9)]),
         // Empty.
         (0, vec![]),
@@ -733,9 +733,9 @@ fn regenerate_lean_run_records() {
             );
             let i = idx % slot.len();
             slot[i] = slot[i] + Fr::from(1u64);
-            // A tampered element is USUALLY a reject; it is not always one,
+            // A tampered element is usually a reject; it is not always one,
             // and that is a fact about the circuit rather than a defect in
-            // this table. Transcript reads and their guards are UNCONSTRAINED
+            // this table. Transcript reads and their guards are unconstrained
             // in the v3 statement (notes/zkir-semantics.org §4.3, and
             // upstream's own spec PR #16 §6.6(d)/O4), so a private input that
             // no downstream constraint depends on may be perturbed freely —
@@ -773,7 +773,7 @@ fn regenerate_lean_run_records() {
 }
 
 /// The records must stay in step with the Rust oracle: re-derive every
-/// record's expected block from the artifact and preimage IT NAMES and
+/// record's expected block from the artifact and preimage it names and
 /// compare. This is a plain `cargo test` (no `lake`, no preimage dump) —
 /// what it catches is a record edited by hand or left behind by a change to
 /// `simulate`.

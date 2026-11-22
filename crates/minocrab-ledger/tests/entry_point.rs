@@ -7,11 +7,11 @@
 //! [`minocrab_ledger::ep_hash`] does not: it calls
 //! `EntryPointBuf::ep_hash`.
 //!
-//! What is left to test is that the CALL is the right one and that our FAB
+//! What is left to test is that the call is the right one and that our FAB
 //! limb split of the result matches the `Bytes<32>` convention the claim's
 //! `rt-aligned-concat` uses. Both are checked here against the real thing:
 //!
-//!  - the hash, for EVERY circuit name in EVERY corpus `contract-info.json`
+//!  - the hash, for every circuit name in every corpus `contract-info.json`
 //!    (312 artifacts), against an independently constructed
 //!    `EntryPointBuf`, and against `persistent_commit` with the domain
 //!    separator spelled out by hand;
@@ -71,7 +71,7 @@ fn corpus_circuit_names() -> (usize, BTreeSet<String>) {
     (files.len(), names)
 }
 
-/// THE SWEEP: our hash is upstream's, for every circuit name compactc has
+/// The sweep: our hash is upstream's, for every circuit name compactc has
 /// ever emitted in the corpus.
 #[test]
 fn ep_hash_matches_upstream_for_every_corpus_circuit() {
@@ -83,7 +83,7 @@ fn ep_hash_matches_upstream_for_every_corpus_circuit() {
     // Uint<0> became a legal type (CHANGELOG 0.33.111). The hash rule
     // itself did not move: every circuit name in the corpus, the new
     // source's included, still hashes to upstream's entry point. +3 at
-    // M43 A: the second signet-midnight-integration pin (pr127, e9350c4),
+    // The second signet-midnight-integration pin (pr127, e9350c4),
     // the signet signer's three circuits at PR #127. +3 at M44 A: the third
     // pin (v0.24.1, a80e98e) — three artifacts: the signet signer, the Signet
     // module and its oracle program; the vault's 17 → 29 circuits replace

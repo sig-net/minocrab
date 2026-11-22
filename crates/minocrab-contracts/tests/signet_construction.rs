@@ -1,11 +1,11 @@
-//! M29 rung C — THE CONSTRUCTION GATE.
+//! The construction gate.
 //!
 //! `tests/signet_contract_differential.rs` already asks "does compactc's
 //! artifact accept the same preimage ours does?". Until this rung, the
 //! preimage it asked about was assembled by hand: a `ProofPreimage` literal
 //! whose `inputs` were a `Vec<Fr>` the test wrote out and whose
 //! `public_transcript_inputs` were `op.field_repr` over ops the test wrote
-//! out. That is a SECOND reading of the ledger's rule, and a differential
+//! out. That is a second reading of the ledger's rule, and a differential
 //! against a second reading proves nothing about the first.
 //!
 //! Here the preimage comes from the ledger: `ContractCallPrototype` +
@@ -14,15 +14,15 @@
 //! (`ledger/src/construct.rs:515-573`) — the same three calls
 //! `sig-net/mpc`'s sidecar makes through the ledger-v9 WASM bindings
 //! (`midnight-publisher-ts/src/intent.ts`) and the same ones a Rust
-//! publisher will make (M30 B). See `support/signet_call.rs`.
+//! publisher will make. See `support/signet_call.rs`.
 //!
-//! What this gate proves: on the preimage PRODUCTION BUILDS, our artifact
+//! What this gate proves: on the preimage production builds, our artifact
 //! and compactc's have the same input schema and the same output schema,
 //! accept it, and produce identical public-input vectors and pi-skip
-//! sequences — under our own simulator AND under the upstream
-//! `IrSource::check`. What it does NOT prove: that a proof made from that
-//! preimage verifies (rung E), that the Impact program in it is the one
-//! compactc's executor emits on chain (rung D), or anything about the
+//! sequences — under our own simulator and under the upstream
+//! `IrSource::check`. What it does not prove: that a proof made from that
+//! preimage verifies (`signet_real_proof.rs`), that the Impact program in it is the one
+//! compactc's executor emits on chain (`signet_ledger_apply.rs`), or anything about the
 //! contract's state, since these three circuits have none.
 
 
@@ -96,7 +96,7 @@ impl SignCall {
         bytes
     }
 
-    /// The arguments with their COMPACT alignment: `Bytes<32>`, `Uint<8>`
+    /// The arguments with their Compact alignment: `Bytes<32>`, `Uint<8>`
     /// (one byte), `Bytes<128>`.
     fn typed_input(&self) -> AlignedValue {
         AlignedValue::concat([
@@ -263,9 +263,9 @@ fn respond_bidirectional_call_is_compatible_with_the_corpus_artifact() {
     );
 }
 
-/// The preimage the LEDGER builds is the preimage the differential's
+/// The preimage the ledger builds is the preimage the differential's
 /// `inputs`/`public_transcript_inputs` describe — stated as an assertion
-/// rather than as a comment, and stated on the FIELD VECTOR the circuit
+/// rather than as a comment, and stated on the field vector the circuit
 /// actually reads.
 ///
 /// `ContractCallExt::construct_proof` fills `inputs` from
@@ -293,7 +293,7 @@ fn the_ledgers_inputs_are_the_arguments_field_repr() {
 }
 
 /// The typed alignment and a flat `[Field; n]` alignment over the same limbs
-/// give the SAME preimage, byte for byte.
+/// give the same preimage, byte for byte.
 ///
 /// This is what licenses `serialization/deployed.rs`'s `misc_preimage`,
 /// which takes raw limbs (its proptest generates thousands of payloads and
@@ -350,8 +350,8 @@ fn input_schema_matches_the_corpus_artifact() {
     assert_eq!(RespondBidirectionalCall::new().preimage().inputs.len(), 16);
 }
 
-/// The tamper twins, on the LEDGER-BUILT preimage: a transcript whose logged
-/// bytes disagree with the arguments must be rejected by BOTH artifacts.
+/// The tamper twins, on the ledger-built preimage: a transcript whose logged
+/// bytes disagree with the arguments must be rejected by both artifacts.
 /// `partition_transcripts` is content-blind — it runs whatever program it is
 /// given — so the tamper survives the move onto the production path.
 #[test]

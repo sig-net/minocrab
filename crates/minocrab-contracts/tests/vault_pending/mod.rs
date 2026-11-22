@@ -1,9 +1,9 @@
-//! The `erc20_vault_pending` verification harness (M35 rung C's spec-harness
+//! The `erc20_vault_pending` verification harness (the spec-harness
 //! extension): the same shape as `tests/vault` — a reference model, an
 //! executor and a spec — retargeted at the `Pending`-based lineage's
 //! seventeen circuits.
 //!
-//! `prims` and `tamper` are the COMPAT lineage's, unchanged: the FAB
+//! `prims` and `tamper` are the compat lineage's, unchanged: the FAB
 //! encodings, hash constructions and signature helpers they hold are
 //! protocol-level (Poseidon commitments, ECDSA, coin commitments), not
 //! specific to the 21-field block, so they are declared here by path
