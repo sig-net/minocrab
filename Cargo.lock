@@ -1605,9 +1605,9 @@ checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 
 [[package]]
 name = "form_urlencoded"
-version = "1.2.2"
+version = "1.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cb4cb245038516f5f85277875cdaa4f7d2c9a0fa0468de06ed190163b1581fcf"
+checksum = "afa489199eaffb1211795df1c6236ce1ad0d41a6fa45250add73e3b02420f06e"
 dependencies = [
  "percent-encoding",
 ]
@@ -3204,6 +3204,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "minocrab-compat"
+version = "0.1.0"
+dependencies = [
+ "midnight-curves 0.3.1",
+ "midnight-onchain-state",
+ "midnight-storage",
+ "midnight-transient-crypto 3.0.1",
+ "midnight-zkir 3.2.0",
+ "minocrab",
+ "minocrab-ir",
+ "minocrab-ledger",
+ "minocrab-sim",
+ "minocrab-std",
+ "minocrab-zkir",
+ "proptest",
+]
+
+[[package]]
 name = "minocrab-contracts"
 version = "0.1.0"
 dependencies = [
@@ -3228,11 +3246,16 @@ dependencies = [
  "midnight-zswap",
  "minocrab",
  "minocrab-abi",
+ "minocrab-compat",
+ "minocrab-evm",
+ "minocrab-experimental",
  "minocrab-ir",
  "minocrab-ledger",
  "minocrab-publisher",
+ "minocrab-signet",
  "minocrab-sim",
  "minocrab-std",
+ "minocrab-taint",
  "minocrab-zkir",
  "proptest",
  "rand 0.8.7",
@@ -3241,10 +3264,28 @@ dependencies = [
  "sha2 0.11.0",
  "sha3",
  "signet-protocol",
+ "signet-responder-interface",
  "signet-signer-interface",
  "signet-sim",
  "tokio",
  "xcall-target-interface",
+]
+
+[[package]]
+name = "minocrab-evm"
+version = "0.1.0"
+dependencies = [
+ "minocrab",
+ "minocrab-std",
+ "sha3",
+]
+
+[[package]]
+name = "minocrab-experimental"
+version = "0.0.1"
+dependencies = [
+ "minocrab",
+ "minocrab-ledger",
 ]
 
 [[package]]
@@ -3261,7 +3302,6 @@ name = "minocrab-ir"
 version = "0.1.0"
 dependencies = [
  "midnight-base-crypto",
- "minocrab-ir",
  "minocrab-zkir",
  "serde_json",
 ]
@@ -3318,6 +3358,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "minocrab-signet"
+version = "0.1.0"
+dependencies = [
+ "minocrab",
+ "minocrab-evm",
+ "minocrab-ledger",
+ "minocrab-std",
+ "signet-protocol",
+ "signet-responder-interface",
+ "signet-signer-interface",
+]
+
+[[package]]
 name = "minocrab-sim"
 version = "0.1.0"
 dependencies = [
@@ -3334,7 +3387,6 @@ dependencies = [
  "midnight-zkir 3.2.0",
  "minocrab",
  "minocrab-ir",
- "minocrab-sim",
  "minocrab-std",
  "minocrab-zkir",
  "proptest",
@@ -3366,6 +3418,15 @@ dependencies = [
  "serde_json",
  "sha2 0.11.0",
  "sha3",
+]
+
+[[package]]
+name = "minocrab-taint"
+version = "0.1.0"
+dependencies = [
+ "midnight-base-crypto",
+ "minocrab-ir",
+ "minocrab-zkir",
 ]
 
 [[package]]
@@ -4737,8 +4798,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "signet-responder-interface"
+version = "0.1.0"
+dependencies = [
+ "minocrab",
+ "minocrab-abi",
+ "minocrab-ledger",
+ "minocrab-std",
+]
+
+[[package]]
 name = "signet-signer-interface"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "minocrab",
  "minocrab-abi",
@@ -4760,6 +4831,7 @@ dependencies = [
  "midnight-transient-crypto 3.0.1",
  "serde_json",
  "sha3",
+ "signet-hashing",
  "thiserror",
 ]
 
@@ -5356,9 +5428,9 @@ checksum = "6d49784317cd0d1ee7ec5c716dd598ec5b4483ea832a2dced265471cc0f690ae"
 
 [[package]]
 name = "url"
-version = "2.5.8"
+version = "2.5.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ff67a8a4397373c3ef660812acab3268222035010ab8680ec4215f38ba3d0eed"
+checksum = "f00cd2407bb42c0ef17be88d4cf020f5cceffd121665bac9b8b9493a369b3b1a"
 dependencies = [
  "form_urlencoded",
  "idna",

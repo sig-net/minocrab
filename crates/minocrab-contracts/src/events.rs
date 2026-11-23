@@ -18,21 +18,21 @@
 //! `Misc` is event tag 10, version 1, serialized size 288 = name ‖ payload
 //! (compiler/midnight-events.ss:71).
 
-use minocrab::v3::{Circuit3, Compiled3, FieldT, Wire3};
+use minocrab::{Circuit, Compiled, FieldT, Wire};
 use minocrab::{label, Private, Public};
-use minocrab_ledger::{
-    cell_write, counter_increment, counter_read, emit, emit_event, map_insert, ImpactElem,
+use minocrab_experimental::impact::raw::{
+    cell_write, counter_increment, counter_read, emit, map_insert, ImpactElem,
     LedgerValue,
 };
-use minocrab_std::v3::{entry, CircuitArg, Disclose, Discloses, Serializer, Uint, B32};
+use minocrab_std::{entry, event, CircuitArg, Disclose, Discloses, Serializer, Uint, B32};
 
 /// Ledger field indices, in declaration order.
 pub const CALL_COUNT: u8 = 0;
 pub const LAST_AMOUNT: u8 = 1;
 pub const BALANCES: u8 = 2;
 
-/// The Misc event constants (compiler/midnight-events.ss:71) — DEFINED in
-/// `signet-protocol` (M30 C1), the publishable crate the publisher reads them
+/// The Misc event constants (compiler/midnight-events.ss:71) — defined in
+/// `signet-protocol`, the publishable crate the publisher reads them
 /// from; re-exported here so the suites keep their spelling.
 pub use signet_protocol::misc::{MISC_SIZE, MISC_TAG, MISC_VERSION};
 
@@ -49,19 +49,19 @@ label! {
     pub(crate) Recipient = "recipient";
 }
 
-/// What EVERY circuit in this family discloses, whatever `emits` is: the two
+/// What every circuit in this family discloses, whatever `emits` is: the two
 /// arguments, and nothing the emit loop adds (a log is a public statement, not
 /// a disclosure).
 ///
 /// Named once, because the family is built through [`entry`] rather than
 /// `#[circuit]`: the entry point's return type and the set-equality test below
-/// must be the SAME declaration, and an alias is the only spelling that makes
+/// must be the same declaration, and an alias is the only spelling that makes
 /// that a compiler fact rather than a convention.
 pub(crate) type DepositDisclosures = Discloses<(Amount, Recipient)>;
 
 /// The shared workload: `callCount.increment(1); lastAmount = a;
 /// balances.insert(r, a)`.
-fn workload(c: &mut Circuit3, r: &B32<Public>, a: Wire3<FieldT, Public>) {
+fn workload(c: &mut Circuit, r: &B32<Public>, a: Wire<FieldT, Public>) {
     let amount_val = LedgerValue::bytes(16, vec![ImpactElem::Wire(a)]);
     let recipient_val = LedgerValue::bytes(32, vec![ImpactElem::Wire(r.hi), ImpactElem::Wire(r.lo)]);
     let mut ops = counter_increment(CALL_COUNT, 1);
@@ -81,19 +81,20 @@ struct DepositArgs {
 /// The circuit family: the workload plus `emits` Misc events.
 ///
 /// Built through [`entry`] rather than `#[circuit]`: the attribute makes a
-/// NULLARY constructor, and this family is parameterized by a Rust value
+/// nullary constructor, and this family is parameterized by a Rust value
 /// (`emits`), which is not a circuit argument. The argument list is the
 /// derived struct either way, so the typed-argument guarantee is the same
-/// one — only the entry point's spelling differs. The DECLARATION is the
+/// one — only the entry point's spelling differs. The declaration is the
 /// same one too: `entry` takes any `CircuitOut` of zero slots, and
 /// [`DepositDisclosures`] is one (see [`Discloses`]).
-fn base_with_emits(emits: usize) -> Compiled3 {
+fn base_with_emits(emits: usize) -> Compiled {
     entry(|c, args: DepositArgs| -> DepositDisclosures {
+        // Explicit: built through `entry`, outside a `#[contract]` block, so no attribute reaches it.
+        minocrab_compat::profile(c);
         let recipient = args.recipient;
         let amount = args.amount;
-        // Kept even though guard threading no longer uses it: dropping this
-        // `Copy` would renumber every later identifier, moving the ZKIR
-        // (notes/edsl-trim.org §B, the removal's zero-movement gate).
+        // The `one` compactc threads, unused here: dropping this `Copy` would
+        // renumber every later identifier, moving the ZKIR (notes/edsl-trim.org §B).
         let _ = c.constant(1u64);
 
         let a = amount.disclose_as::<Amount>(c).field();
@@ -119,11 +120,7 @@ fn base_with_emits(emits: usize) -> Compiled3 {
                 s.push_b32(&r); // recipient: Bytes<32>
                 let serialized = s.finish::<MISC_SIZE>(c);
 
-                let payload = LedgerValue::bytes(
-                    MISC_SIZE as u32,
-                    serialized.limbs().iter().map(|&w| ImpactElem::Wire(w)).collect(),
-                );
-                emit(c, &emit_event(MISC_VERSION, MISC_TAG, &payload));
+                event::emit(c, MISC_VERSION, MISC_TAG, &serialized);
             });
         }
 
@@ -132,27 +129,27 @@ fn base_with_emits(emits: usize) -> Compiled3 {
 }
 
 /// `export circuit base(recipient, amount): []` — the control.
-pub fn base() -> Compiled3 {
+pub fn base() -> Compiled {
     base_with_emits(0)
 }
 
 /// `export circuit emit1/2/4(recipient, amount): []`.
-pub fn emit_n(n: usize) -> Compiled3 {
+pub fn emit_n(n: usize) -> Compiled {
     assert!(n >= 1);
     base_with_emits(n)
 }
 
 /// The set-equality test `#[circuit]` would have generated, hand-written
 /// because this family has no attribute to generate it from — one assertion
-/// per INSTANTIATION, over the same [`DepositDisclosures`] the entry point
+/// per instantiation, over the same [`DepositDisclosures`] the entry point
 /// returns and through the same public
-/// [`assert_declared_disclosures`](minocrab_std::v3::assert_declared_disclosures)
+/// [`assert_declared_disclosures`](minocrab_std::assert_declared_disclosures)
 /// the expansion calls. Nothing about the machinery is macro-only; the
 /// attribute's version of this is these four lines with the loop unrolled.
 #[cfg(test)]
 mod discloses {
     use super::*;
-    use minocrab_std::v3::assert_declared_disclosures;
+    use minocrab_std::assert_declared_disclosures;
 
     #[test]
     fn the_declared_disclosures_are_the_ones_the_family_makes() {

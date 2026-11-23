@@ -1,5 +1,7 @@
 # Internal error on `<ledger read> || deserialize<…>(…)`
 
+**Fixed in compactc 0.36.1** (compact#856, checked 2026-11-21): `ice.compact` compiles, its byte check guarded by the short-circuit, so `test.sh` now fails at its first assertion; 0.36.0 still crashes.
+
 ### Context & versions:
 
 compactc 0.35.0 (debb05f94 2026-09-29), language 0.27.0, runtime 0.20.0, aarch64-darwin. Last good: compactc 0.34.0 (language 0.26.0), so this is a 0.27.0 regression.

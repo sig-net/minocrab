@@ -1,6 +1,6 @@
 //! `#[derive(Ledger)]`: a struct mirroring the Compact `export ledger` block
-//! becomes the contract's ledger handle, with each field's PATH computed from
-//! its DECLARATION ORDER the way compactc computes it.
+//! becomes the contract's ledger handle, with each field's path computed from
+//! its declaration order the way compactc computes it.
 //!
 //! For
 //!
@@ -13,7 +13,9 @@
 //! }
 //! ```
 //!
-//! the expansion is
+//! the expansion is, in effect (each slot is really built by
+//! `at_block_anchored(total, start, anchor)`, which segments the path as
+//! below)
 //!
 //! ```ignore
 //! impl Vault {
@@ -31,16 +33,17 @@
 //!
 //! — nothing but the paths, which is the whole point: the one place a ledger
 //! field's number is written down is the order it is declared in. By the
-//! THINNESS RULE the expansion contains no `Circuit3` call; every operation
+//! thinness rule the expansion contains no `Circuit` call; every operation
 //! is a method on the slot types, in minocrab-std.
 //!
-//! A PATH AND NOT AN INDEX, because a ledger block is SEGMENTED at fifteen
+//! A path and not an index, because a ledger block is segmented at fifteen
 //! fields (`maximum-ledger-segment-length`, langs.ss:851): a sixteen-field
 //! block gives every field a two-element path and every `Cell` write in it is
 //! a nested write. See [`field_paths`], which is that pass transcribed.
 
 use proc_macro2::TokenStream;
-use quote::quote;
+use quote::{quote, quote_spanned};
+use syn::spanned::Spanned;
 use syn::{Data, DeriveInput, Fields};
 
 pub fn expand(input: DeriveInput) -> syn::Result<TokenStream> {
@@ -86,67 +89,63 @@ pub fn expand(input: DeriveInput) -> syn::Result<TokenStream> {
         ));
     }
 
-    let width = quote!(::minocrab_std::v3::LedgerWidth);
+    let width = quote!(::minocrab_std::LedgerWidth);
     let types: Vec<&syn::Type> = fields.iter().map(|f| &f.ty).collect();
-    // The block's field count and each slot's first flat index are SUMS OF
-    // WIDTHS, evaluated at compile time: a slot that is a group of fields
+    // The block's field count and each slot's first flat index are sums of
+    // widths, evaluated at compile time: a slot that is a group of fields
     // (`LedgerWidth::WIDTH > 1`) shifts everything after it, and the type
     // says by how much — nothing is counted by hand.
     let total = quote!(0usize #( + <#types as #width>::WIDTH )*);
 
-    // THE SIGNET BLOCK, THREADED (M37 rung B, notes/evm-calls.org §3). An
-    // `evm_flow::Pending` slot reads the contract's Signet configuration —
-    // the MPC key, the nonce, the two chain ids — so it needs that block's
-    // own start offset, and the ONE place that knows it is here: a block
-    // has exactly one `Signet` field, and its offset is the same width sum
-    // every other field's is. Threading it is what lets `request` /
-    // `complete` / `refund` take no `&SELF.signet` argument.
-    let signets: Vec<usize> = (0..fields.len()).filter(|i| named_as(types[*i], "Signet")).collect();
-    // `Pending`, `Fired` and `Outbox` alike: all three are `evm_flow` slots
-    // that read the block's Signet configuration, and none takes a
-    // `&SELF.signet`.
-    let pendings: Vec<usize> = (0..fields.len())
-        .filter(|i| is_signet_slot(types[*i]))
+    // Each field's first flat index: the widths of the fields before it.
+    let starts: Vec<TokenStream> = (0..fields.len())
+        .map(|i| {
+            let before = &types[..i];
+            quote!(0usize #( + <#before as #width>::WIDTH )*)
+        })
         .collect();
-    if signets.len() > 1 {
-        let second = fields.iter().nth(signets[1]).expect("index from this list");
-        return Err(syn::Error::new_spanned(
-            second,
-            "#[derive(Ledger)] wants EXACTLY ONE `Signet` field per block: it \
-             is the contract's one Sig Network configuration (signer, MPC key, \
-             request nonce, caip2 id, chain id), and every `Pending` and \
-             `Fired` slot is built against its offset. Two of them would give \
-             one contract two \
-             MPC keys and two nonce sequences; delete this one.",
-        ));
-    }
-    if signets.is_empty() && !pendings.is_empty() {
-        let first = fields.iter().nth(pendings[0]).expect("index from this list");
-        return Err(syn::Error::new_spanned(
-            first,
-            "a `Pending` or `Fired` slot needs the block's `Signet` field, and \
-             this block has none. Add `pub signet: Signet,` to the ledger \
-             block — it is \
-             the signer address, the MPC response key, the request nonce and \
-             the two chain identifiers a request reads from context.",
-        ));
-    }
-    let signet_start = signets.first().map(|i| {
-        let before = &types[..*i];
-        quote!(0usize #( + <#before as #width>::WIDTH )*)
+
+    // The anchor, threaded. A slot whose type sets `LedgerWidth::NEEDS_ANCHOR`
+    // reads the fields of the block's one `IS_ANCHOR` slot, so it is handed
+    // that slot's start offset rather than taking the slot as an argument on
+    // every call. Which field is the anchor is read off the types, in a
+    // `const`, by `anchor_start`. Every field is then built through the same
+    // constructor; an ordinary slot ignores the third argument.
+    let anchor_rows = types.iter().zip(&starts).map(|(ty, start)| {
+        quote!((<#ty as #width>::IS_ANCHOR, <#ty as #width>::NEEDS_ANCHOR, #start))
     });
 
-    let inits = fields.iter().enumerate().map(|(i, field)| {
+    // The two rejections (E0080), one `const` assertion per field spanned at
+    // that field's type, so rustc points at the offending field: the second
+    // of two anchors, or the slot that needs an anchor in a block without.
+    let is_anchor: Vec<TokenStream> =
+        types.iter().map(|ty| quote!(<#ty as #width>::IS_ANCHOR)).collect();
+    let anchor_checks = types.iter().enumerate().map(|(i, ty)| {
+        let (earlier, all) = (&is_anchor[..i], &is_anchor);
+        quote_spanned! {ty.span()=>
+            const _: () = ::core::assert!(
+                !(<#ty as #width>::IS_ANCHOR && (false #( || #earlier )*)),
+                "this ledger block has two anchor fields (types with \
+                 `LedgerWidth::IS_ANCHOR`), and a block has at most one: every \
+                 slot with `NEEDS_ANCHOR` is built against it. Delete one of \
+                 them (for the Sig Network slots, the block keeps one \
+                 `signet: Signet`)."
+            );
+            const _: () = ::core::assert!(
+                !<#ty as #width>::NEEDS_ANCHOR || (false #( || #all )*),
+                "this field needs the block's anchor (its type sets \
+                 `LedgerWidth::NEEDS_ANCHOR`) and no field is one (sets \
+                 `LedgerWidth::IS_ANCHOR`). Add the anchor field the slot's \
+                 type documents (for the Sig Network slots `Pending`, `Fired` \
+                 and `Outbox`, add `pub signet: Signet,`)."
+            );
+        }
+    });
+
+    let inits = fields.iter().zip(&starts).map(|(field, start)| {
         let ident = &field.ident;
         let ty = &field.ty;
-        let before = &types[..i];
-        let start = quote!(0usize #( + <#before as #width>::WIDTH )*);
-        match (&signet_start, is_signet_slot(ty)) {
-            (Some(signet_start), true) => {
-                quote!(#ident: <#ty>::at_block_with_signet(__TOTAL, #start, #signet_start))
-            }
-            _ => quote!(#ident: <#ty>::at_block(__TOTAL, #start)),
-        }
+        quote!(#ident: <#ty>::at_block_anchored(__TOTAL, #start, __ANCHOR))
     });
 
     Ok(quote! {
@@ -156,7 +155,9 @@ pub fn expand(input: DeriveInput) -> syn::Result<TokenStream> {
             /// `const`, so a contract's ledger handle is a `const` item and
             /// costs nothing at run time.
             pub const fn new() -> Self {
+                #(#anchor_checks)*
                 const __TOTAL: usize = #total;
+                const __ANCHOR: usize = ::minocrab_std::anchor_start(&[#(#anchor_rows),*]);
                 #name { #(#inits),* }
             }
         }
@@ -166,61 +167,29 @@ pub fn expand(input: DeriveInput) -> syn::Result<TokenStream> {
                 Self::new()
             }
         }
-
-        // No two slots of one block settle under the same Signet response
-        // kind (E0080 if they do). A Signet slot's `KINDS` is a one-element
-        // list holding its `evm::Filing::KIND` — the DEPLOYMENT's protocol
-        // byte, which since M38 rung A is named by the slot's filing rather
-        // than by the library call it files.
-        const _: () = ::minocrab_std::v3::assert_distinct_kinds(&[
-            #( <#types as #width>::KINDS ),*
-        ]);
     })
-}
-
-/// Is this field one of the `evm_flow` slots built against the block's
-/// `Signet` — `Pending`, `Fired` or `Outbox`?
-///
-/// Spelling, like [`named_as`]: the derive sees tokens, not resolutions.
-fn is_signet_slot(ty: &syn::Type) -> bool {
-    named_as(ty, "Pending") || named_as(ty, "Fired") || named_as(ty, "Outbox")
-}
-
-/// Is this type SPELLED `name` — is the last segment of its path that
-/// identifier? Spelling, not resolution: a proc macro sees tokens, and a
-/// `use` alias or a fully-qualified `signet_flow::Pending` both read as
-/// `Pending` here, which is the intended latitude.
-fn named_as(ty: &syn::Type, name: &str) -> bool {
-    let syn::Type::Path(path) = ty else {
-        return false;
-    };
-    path.path
-        .segments
-        .last()
-        .is_some_and(|segment| segment.ident == name)
 }
 
 /// compactc's `maximum-ledger-segment-length` (langs.ss:851).
 #[cfg(test)]
 const SEGMENT: usize = 15;
 
-/// EVERY FIELD'S PATH, as `determine-ledger-paths.ss` computes it — the
+/// Every field's path, as `determine-ledger-paths.ss` computes it — the
 /// reference the expansion's `const` twin (`FieldPath::in_block`, in
 /// minocrab-std) is pinned against by the derive tests below.
 ///
 /// A ledger block is not a flat list of fields: `batch` (that pass's own
-/// helper, verbatim below) folds the fields into a TREE of segments no wider
+/// helper, verbatim below) folds the fields into a tree of segments no wider
 /// than fifteen, and the pass then walks the tree handing each leaf the list
 /// of indices from the root down. For fifteen fields or fewer the tree is one
-/// level and every path is `[i]` — the bare index this derive used to emit.
-/// At SIXTEEN it is two levels, and every field's path becomes two elements:
+/// level and every path is `[i]`.
+/// At sixteen it is two levels, and every field's path becomes two elements:
 /// `[0, 0]` for the first, `[1, j]` for the rest. A `Cell` write in such a
-/// block is a NESTED write, with the `idxp`/`insc` pair compactc suppresses
+/// block is a nested write, with the `idxp`/`insc` pair compactc suppresses
 /// at depth 1 come back to life.
 ///
 /// So the derive has to know the segmentation or a sixteen-field contract
-/// silently diverges from compactc — which is exactly what happened before
-/// M22 stage B2 (notes/coin-arms-nested-adts.org, stage B1 correction (ii);
+/// silently diverges from compactc (notes/coin-arms-nested-adts.org;
 /// pinned on the emission side by
 /// `a_sixteen_field_contract_makes_every_cell_write_nested`).
 ///
@@ -238,7 +207,7 @@ const SEGMENT: usize = 15;
 ///               (f (cons (list-head x* r) x**) (fx+ q 1))))))))
 /// ```
 ///
-/// — the REMAINDER leads, as its own short segment, and the full segments
+/// — the remainder leads, as its own short segment, and the full segments
 /// follow; then the list of segments is batched again until it fits.
 #[cfg(test)]
 fn field_paths(fields: usize) -> Vec<Vec<u8>> {
@@ -301,7 +270,7 @@ mod tests {
         expand(input).expect("expands").to_string()
     }
 
-    /// FIFTEEN OR FEWER: one segment, and every path is the bare declaration
+    /// Fifteen or fewer: one segment, and every path is the bare declaration
     /// index — the shape every contract in the workspace has.
     #[test]
     fn a_narrow_block_is_one_element_paths() {
@@ -314,7 +283,7 @@ mod tests {
         }
     }
 
-    /// SIXTEEN: compactc segments the block, and every field — including the
+    /// Sixteen: compactc segments the block, and every field — including the
     /// first — gets a two-element path. Pinned against the pinned compactc's
     /// own artifact for a sixteen-field probe, which compiles `f0 = v` to
     /// `idxp [1,1,0]; push [1,1,1,0]; …` — path `[0, 0]` — and `f15 = v` to
@@ -343,7 +312,7 @@ mod tests {
         assert_eq!(all.len(), 256);
     }
 
-    /// THINNESS RULE: the expansion builds no circuit — it is indices.
+    /// Thinness rule: the expansion builds no circuit — it is indices.
     #[test]
     fn the_expansion_calls_no_circuit_method() {
         let expanded = expansion(syn::parse_quote! {
@@ -357,12 +326,12 @@ mod tests {
             "expansion calls a method on the circuit:\n{expanded}"
         );
         assert!(
-            !expanded.contains("Circuit3 ::"),
-            "expansion calls a Circuit3 associated function:\n{expanded}"
+            !expanded.contains("Circuit ::"),
+            "expansion calls a Circuit associated function:\n{expanded}"
         );
     }
 
-    /// The index IS the declaration order, and nothing else is generated.
+    /// The index is the declaration order, and nothing else is generated.
     #[test]
     fn each_field_gets_its_declaration_order_index() {
         let expanded = expansion(syn::parse_quote! {
@@ -372,24 +341,49 @@ mod tests {
                 initialized: LedgerCounter,
             }
         });
-        assert!(expanded.contains("event_map : < LedgerMap < B32 < Public > , VaultRecord > > :: at_block (__TOTAL , 0usize)"), "{expanded}");
-        assert!(expanded.contains("signer : < LedgerField > :: at_block (__TOTAL , 0usize + < LedgerMap < B32 < Public > , VaultRecord > as :: minocrab_std :: v3 :: LedgerWidth > :: WIDTH)"), "{expanded}");
-        assert!(expanded.contains("initialized : < LedgerCounter > :: at_block (__TOTAL , 0usize + < LedgerMap < B32 < Public > , VaultRecord > as :: minocrab_std :: v3 :: LedgerWidth > :: WIDTH + < LedgerField as :: minocrab_std :: v3 :: LedgerWidth > :: WIDTH)"), "{expanded}");
-        assert!(expanded.contains("assert_distinct_kinds"), "{expanded}");
-        // …over EVERY field's `KINDS`, in declaration order: that is where
-        // a `Pending`/`Fired` slot's `Filing::KIND` reaches the check.
+        assert!(expanded.contains("event_map : < LedgerMap < B32 < Public > , VaultRecord > > :: at_block_anchored (__TOTAL , 0usize , __ANCHOR)"), "{expanded}");
+        assert!(expanded.contains("signer : < LedgerField > :: at_block_anchored (__TOTAL , 0usize + < LedgerMap < B32 < Public > , VaultRecord > as :: minocrab_std :: LedgerWidth > :: WIDTH , __ANCHOR)"), "{expanded}");
+        assert!(expanded.contains("initialized : < LedgerCounter > :: at_block_anchored (__TOTAL , 0usize + < LedgerMap < B32 < Public > , VaultRecord > as :: minocrab_std :: LedgerWidth > :: WIDTH + < LedgerField as :: minocrab_std :: LedgerWidth > :: WIDTH , __ANCHOR)"), "{expanded}");
+        assert!(!expanded.contains("KINDS"), "{expanded}");
+        // The anchor is found by one `const` over every field's two consts,
+        // in declaration order.
         assert!(
             expanded.contains(
-                "assert_distinct_kinds (& [< LedgerMap < B32 < Public > , VaultRecord > as \
-                 :: minocrab_std :: v3 :: LedgerWidth > :: KINDS , < LedgerField as \
-                 :: minocrab_std :: v3 :: LedgerWidth > :: KINDS , < LedgerCounter as \
-                 :: minocrab_std :: v3 :: LedgerWidth > :: KINDS])"
+                "const __ANCHOR : usize = :: minocrab_std :: anchor_start (& [(< LedgerMap < B32 < Public > , VaultRecord > as \
+                 :: minocrab_std :: LedgerWidth > :: IS_ANCHOR , < LedgerMap < B32 < Public > , VaultRecord > as \
+                 :: minocrab_std :: LedgerWidth > :: NEEDS_ANCHOR , 0usize) , (< LedgerField as"
+            ),
+            "{expanded}"
+        );
+        // The rejections are two `const` assertions per field (spanned at the
+        // field's type): a second anchor checks only the fields before it.
+        assert_eq!(expanded.matches("const _ : () = :: core :: assert !").count(), 6, "{expanded}");
+        assert!(
+            expanded.contains(
+                "! (< LedgerField as :: minocrab_std :: LedgerWidth > :: IS_ANCHOR && (false || \
+                 < LedgerMap < B32 < Public > , VaultRecord > as :: minocrab_std :: LedgerWidth > :: IS_ANCHOR))"
             ),
             "{expanded}"
         );
     }
 
-    /// …and a SIXTEEN-field block is laid out by `at_block` over the
+    /// No field is recognised by its name: a field type spelled like an
+    /// application's anchored slot, or aliased from one, expands exactly
+    /// as any other field does — the consts on its type decide.
+    #[test]
+    fn every_field_is_built_by_one_constructor_whatever_its_name() {
+        let expanded = expansion(syn::parse_quote! {
+            struct Block {
+                hub: Hub,
+                request: Request,
+                aliased: Renamed<Filing, 2>,
+            }
+        });
+        assert_eq!(expanded.matches("at_block_anchored (__TOTAL").count(), 3, "{expanded}");
+        assert!(expanded.contains("request : < Request > :: at_block_anchored (__TOTAL , 0usize + < Hub as"), "{expanded}");
+    }
+
+    /// …and a sixteen-field block is laid out by `at_block_anchored` over the
     /// block's total, whose `const` segmentation (`FieldPath::in_block`)
     /// is pinned against [`field_paths`] in minocrab-std's tests — stage
     /// B1's correction (ii) on the derive side.
@@ -402,8 +396,8 @@ mod tests {
         let expanded = expansion(syn::parse_quote! {
             struct Wide { #(#fields),* }
         });
-        assert!(expanded.contains("f0 : < LedgerCell < Uint < 64 , Public > > > :: at_block (__TOTAL , 0usize)"), "{expanded}");
-        assert!(expanded.contains("const __TOTAL : usize = 0usize + < LedgerCell < Uint < 64 , Public > > as :: minocrab_std :: v3 :: LedgerWidth > :: WIDTH"), "{expanded}");
+        assert!(expanded.contains("f0 : < LedgerCell < Uint < 64 , Public > > > :: at_block_anchored (__TOTAL , 0usize , __ANCHOR)"), "{expanded}");
+        assert!(expanded.contains("const __TOTAL : usize = 0usize + < LedgerCell < Uint < 64 , Public > > as :: minocrab_std :: LedgerWidth > :: WIDTH"), "{expanded}");
     }
 
     /// A ledger block is one contract's state.

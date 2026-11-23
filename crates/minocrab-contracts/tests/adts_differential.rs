@@ -1,15 +1,15 @@
-//! `adts.compact` — the M16 differential: every ledger-ADT operation Compact
+//! `adts.compact` — the differential: every ledger-ADT operation Compact
 //! exposes, against compactc's own artifacts (notes/ledger-adts.org).
 //!
-//! WHY THE FIXTURE IS OURS. The corpus declares 25 `List`, 15 `MerkleTree`, 7
+//! Why the fixture is ours. The corpus declares 25 `List`, 15 `MerkleTree`, 7
 //! `HistoricMerkleTree` and 41 `Set` fields, but our IR is v3 and only the
 //! three sig-net sources carry `--feature-zkir-v3`. Their v3 artifacts between
 //! them exercise three of the thirty-one operations here: `Set.insert`,
-//! `Set.member` and `List.pushFront`. So this is the M14/M15 fallback again —
-//! our source, compiled with the PINNED compactc, the invocation in the
+//! `Set.member` and `List.pushFront`. So this is the fixture fallback —
+//! our source, compiled with the pinned compactc, the invocation in the
 //! fixture's header.
 //!
-//! FOUR CLAIMS:
+//! Four claims:
 //!
 //! 1. `identical_instruction_streams` — for all thirty-one circuits, our
 //!    serialized ZKIR IS compactc's up to identifier renaming. Every opcode,
@@ -29,6 +29,10 @@
 //!    `check()`, which is what says the `root`/`member`/`neg` opcodes mean
 //!    here what they mean in the VM.
 
+#[path = "support/common.rs"]
+mod common;
+use common::*;
+
 use std::borrow::Cow;
 
 use midnight_base_crypto::fab::{
@@ -42,10 +46,10 @@ use midnight_storage::db::InMemoryDB;
 use midnight_transient_crypto::hash::transient_commit;
 use midnight_transient_crypto::repr::FieldRepr;
 use midnight_transient_crypto::proofs::{KeyLocation, ProofPreimage, Zkir};
-use minocrab::v3::Compiled3;
+use minocrab::Compiled;
 use minocrab::Fr;
 use minocrab_contracts::adts;
-use minocrab_zkir::v3::{to_zkir_string, IrSource};
+use minocrab_zkir::{to_zkir_string, IrSource};
 
 type VmOp = Op<ResultModeVerify, InMemoryDB>;
 
@@ -55,66 +59,24 @@ fn theirs(name: &str) -> IrSource {
         "{}/tests/fixtures/adts/out/zkir/{name}.zkir",
         env!("CARGO_MANIFEST_DIR")
     );
-    minocrab_zkir::v3::read_zkir(&path).expect("the pinned compactc's artifact parses")
+    minocrab_zkir::read_zkir(&path).expect("the pinned compactc's artifact parses")
 }
 
 /// The corpus's own `test-caller-contract` artifact.
 fn corpus(name: &str) -> IrSource {
     let path = format!(
-        "{}/../../corpus/zkir/signet-midnight-integration/packages/test-caller-contract/\
+        "{}/../../corpus/zkir/signet-midnight-integration-v026/packages/test-caller-contract/\
          src/test-caller-contract/zkir/{name}.zkir",
         env!("CARGO_MANIFEST_DIR")
     );
-    minocrab_zkir::v3::read_zkir(&path).expect("the corpus artifact parses")
-}
-
-/// Serialized ZKIR with every `%name.index` identifier replaced by
-/// `%<order of first appearance>` — the canonicalization every differential
-/// here uses: names are the only thing the two artifacts may differ in, and
-/// they are cosmetic to the ABI.
-fn canonical(ir: &IrSource) -> String {
-    // BOTH SIDES are folded first (notes/ir-passes.org §2 ii): our builder
-    // inlines a `Copy` of an immediate at `finish`, and compactc names some of
-    // the constants it inlines elsewhere, so the comparison is instruction for
-    // instruction MODULO the naming of constants — a rename with no rows, no
-    // public input and no semantics. Everything else still compares exactly.
-    let ir = &minocrab_ir::v3::passes::folded(ir);
-    canonicalize(&to_zkir_string(ir).expect("serializes"))
-}
-
-fn canonicalize(text: &str) -> String {
-    let mut renames: Vec<(String, String)> = Vec::new();
-    let mut out = String::with_capacity(text.len());
-    let mut rest = text;
-    while let Some(at) = rest.find('%') {
-        out.push_str(&rest[..at]);
-        rest = &rest[at..];
-        let end = rest[1..]
-            .find(|ch: char| !(ch.is_alphanumeric() || ch == '_' || ch == '.'))
-            .map(|i| i + 1)
-            .unwrap_or(rest.len());
-        let name = &rest[..end];
-        let next = renames.len();
-        let canon = match renames.iter().find(|(from, _)| from == name) {
-            Some((_, to)) => to.clone(),
-            None => {
-                let to = format!("%{next}");
-                renames.push((name.to_string(), to.clone()));
-                to
-            }
-        };
-        out.push_str(&canon);
-        rest = &rest[end..];
-    }
-    out.push_str(rest);
-    out
+    minocrab_zkir::read_zkir(&path).expect("the corpus artifact parses")
 }
 
 /// Every circuit of the fixture: compactc's artifact name and our builder.
-fn cases() -> Vec<(&'static str, fn() -> Compiled3)> {
+fn cases() -> Vec<(&'static str, fn() -> Compiled)> {
     vec![
         // Set
-        ("setInsert", adts::Adts::set_insert as fn() -> Compiled3),
+        ("setInsert", adts::Adts::set_insert as fn() -> Compiled),
         ("setMember", adts::Adts::set_member),
         ("setRemove", adts::Adts::set_remove),
         ("setSize", adts::Adts::set_size),
@@ -152,8 +114,8 @@ fn cases() -> Vec<(&'static str, fn() -> Compiled3)> {
     ]
 }
 
-/// CLAIM 1, and the headline: for every ledger-ADT operation Compact has, our
-/// circuit IS compactc's — op for op, immediate for immediate.
+/// Claim 1, and the headline: for every ledger-ADT operation Compact has, our
+/// circuit is compactc's — op for op, immediate for immediate.
 ///
 /// What that pins, and what nothing weaker would: the `Array` positions each
 /// ADT descends through, the `3 | len << 4` / `4 | h << 4` state-value tags in
@@ -194,7 +156,7 @@ fn every_fixture_circuit_is_covered() {
     assert_eq!(compiled, covered);
 }
 
-/// CLAIM 2 — corpus provenance for the one operation the corpus has in a v3
+/// Claim 2 — corpus provenance for the one operation the corpus has in a v3
 /// artifact.
 ///
 /// `test-caller-contract`'s `submitSignatureRequest` ends with
@@ -254,7 +216,7 @@ fn impact_ops(ir: &IrSource) -> Vec<Vec<String>> {
         .collect()
 }
 
-/// CLAIM 3 — compactc's own ABI agrees with the leaves, including the new one.
+/// Claim 3 — compactc's own ABI agrees with the leaves, including the new one.
 ///
 /// `MerkleTreeDigest` is published as a `Struct` of one `Field`, and
 /// `List.head`'s result as a `Struct` named `Maybe` of a `Boolean` and the
@@ -264,10 +226,10 @@ fn impact_ops(ir: &IrSource) -> Vec<Vec<String>> {
 /// caught the curve-point bug, pointed at M16's leaf.
 #[test]
 fn compactc_s_abi_agrees_with_the_leaves() {
-    use minocrab::v3::CircuitAbi;
+    use minocrab::CircuitAbi;
     use minocrab::Public;
     use minocrab_abi::info::ContractInfo;
-    use minocrab_std::v3::{Bool, Maybe, MerkleTreeDigest, Uint, B32};
+    use minocrab_std::{Bool, Maybe, MerkleTreeDigest, Uint, B32};
 
     let text = std::fs::read_to_string(format!(
         "{}/tests/fixtures/adts/out/compiler/contract-info.json",
@@ -288,7 +250,7 @@ fn compactc_s_abi_agrees_with_the_leaves() {
         }};
     }
 
-    // One entry per circuit that HAS arguments, in declaration order.
+    // One entry per circuit that has arguments, in declaration order.
     let expected: Vec<(&str, (Vec<_>, Vec<_>))> = vec![
         ("setInsert", abi!(B32<Public>)),
         ("setMember", abi!(B32<Public>)),
@@ -318,7 +280,7 @@ fn compactc_s_abi_agrees_with_the_leaves() {
         assert_eq!(flat.prims, prims, "{name}: primitive types differ");
     }
 
-    // `List.head`'s RESULT: compactc's `Maybe` struct against ours.
+    // `List.head`'s result: compactc's `Maybe` struct against ours.
     let head = info.circuit("listHead").expect("listHead is exported");
     let flat = minocrab_abi::info::flatten_all([&head.result_type])
         .expect("compactc's Maybe<Bytes<32>> flattens");
@@ -329,12 +291,12 @@ fn compactc_s_abi_agrees_with_the_leaves() {
     assert_eq!(flat.prims[0], <Bool<Public> as CircuitAbi>::prims()[0]);
 }
 
-/// CLAIM 4 — the tree READS mean what the VM says they mean.
+/// Claim 4 — the tree reads mean what the VM says they mean.
 ///
 /// The three read circuits between them carry every opcode M16 adds that is
 /// not exercised by a write: `lt`+`neg` (`isFull`), `root`+`eq`
 /// (`MerkleTree.checkRoot`) and `member` on the history map
-/// (`HistoricMerkleTree.checkRoot`). A preimage built from the REFERENCE
+/// (`HistoricMerkleTree.checkRoot`). A preimage built from the reference
 /// Impact program — the ops written out by hand here, not read back off either
 /// artifact — has to satisfy both artifacts and upstream's `check()`. That is
 /// the statement stream equality cannot make on its own: it says the transcript
@@ -368,8 +330,8 @@ fn the_tree_reads_are_accepted_by_upstream() {
         )
     };
 
-    let cases: Vec<(&str, fn() -> Compiled3, (Vec<VmOp>, Vec<Fr>, u8))> = vec![
-        ("mtIsFull", adts::Adts::mt_is_full as fn() -> Compiled3, is_full(4, 0)),
+    let cases: Vec<(&str, fn() -> Compiled, (Vec<VmOp>, Vec<Fr>, u8))> = vec![
+        ("mtIsFull", adts::Adts::mt_is_full as fn() -> Compiled, is_full(4, 0)),
         ("hmtIsFull", adts::Adts::hmt_is_full, is_full(5, 1)),
         (
             "mtCheckRoot",
@@ -439,16 +401,6 @@ fn idx(k: u8) -> VmOp {
     }
 }
 
-fn bytesn_value(n: u32, bytes: &[u8]) -> AlignedValue {
-    AlignedValue::new(
-        Value(vec![ValueAtom(bytes.to_vec()).normalize()]),
-        Alignment(vec![AlignmentSegment::Atom(AlignmentAtom::Bytes {
-            length: n,
-        })]),
-    )
-    .expect("the bytes fit the atom")
-}
-
 /// A `MerkleTreeDigest`: one `field` atom.
 fn field_value(f: Fr) -> AlignedValue {
     let mut bytes = Vec::new();
@@ -478,13 +430,13 @@ fn transcript(ops: &[VmOp]) -> Vec<Fr> {
     out
 }
 
-/// The preimage of a circuit that READS: the op stream is
+/// The preimage of a circuit that reads: the op stream is
 /// `public_transcript_inputs`, and what the ledger hands back — every `popeq`
 /// result, value-only, in read order — is `public_transcript_outputs`, which
 /// is what a `public_input` gate consumes (midnight-zkir 3.2.0 `src/ir_vm.rs`, the `PublicInput` arm).
 ///
-/// The communications commitment covers the circuit's INPUTS and its declared
-/// OUTPUTS (`onchain-runtime-wasm/src/primitives.rs`), which for these
+/// The communications commitment covers the circuit's inputs and its declared
+/// outputs (`onchain-runtime-wasm/src/primitives.rs`), which for these
 /// circuits is the Boolean each returns.
 fn preimage_out(
     inputs: Vec<Fr>,

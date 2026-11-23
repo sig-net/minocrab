@@ -2,6 +2,9 @@
 name = "minocrab-interface-gen"
 description = "Generate a MinoCrab interface crate from a compactc artifact, so any deployed Midnight contract becomes an importable Rust crate"
 version.workspace = true
+# Not in the crates.io set (PUBLISHING.md): it depends on minocrab-abi, which
+# is not published either. Ready to join as a leaf after minocrab-abi.
+publish = false
 edition.workspace = true
 license.workspace = true
 repository.workspace = true

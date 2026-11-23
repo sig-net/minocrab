@@ -4,24 +4,24 @@
   "inputs": [
   ],
   "outputs": [
-    "Scalar<BLS12-381>",
-    "Scalar<BLS12-381>",
-    "Scalar<BLS12-381>",
     "Scalar<BLS12-381>"
   ],
   "instructions": [
-    { "op": "impact", "guard": "0x01", "inputs": ["0x70", "0x01", "0x01", "0x00"] },
-    { "op": "impact", "guard": "0x01", "inputs": ["0x10", "0x01", "0x01", "0x01", "0x02"] },
-    { "op": "impact", "guard": "0x01", "inputs": ["0x11", "0x01", "0x04", "0x10", "0x10", "0x10", "0x10", "0x74657374", "0x6578616d706c65", "0x00", "0x000102030405060708090a0b0c0d0e0f"] },
+    { "op": "less_than", "output": "%tmp.0", "a": "0x03", "b": "0x03", "bits": 2 },
+    { "op": "assert", "cond": "%tmp.0" },
+    { "op": "copy", "output": "%t.1", "val": "0x03" },
+    { "op": "less_than", "output": "%tmp.2", "a": "0x04", "b": "0x03", "bits": 2 },
+    { "op": "assert", "cond": "%tmp.2" },
+    { "op": "copy", "output": "%t.3", "val": "0x04" },
+    { "op": "impact", "guard": "0x01", "inputs": ["0x70", "0x01", "0x01", "0x01"] },
+    { "op": "impact", "guard": "0x01", "inputs": ["0x10", "0x01", "0x01", "0x01", "0x00"] },
+    { "op": "impact", "guard": "0x01", "inputs": ["0x11", "0x01", "0x01", "0x01", "0x01"] },
     { "op": "impact", "guard": "0x01", "inputs": ["0x91"] },
     { "op": "impact", "guard": "0x01", "inputs": ["0xa1"] },
-    { "op": "public_input", "type": "Scalar<BLS12-381>", "output": "%t.0", "guard": null },
-    { "op": "public_input", "type": "Scalar<BLS12-381>", "output": "%t.1", "guard": null },
-    { "op": "public_input", "type": "Scalar<BLS12-381>", "output": "%t.2", "guard": null },
-    { "op": "public_input", "type": "Scalar<BLS12-381>", "output": "%t.3", "guard": null },
+    { "op": "public_input", "type": "Scalar<BLS12-381>", "output": "%t.4", "guard": null },
     { "op": "impact", "guard": "0x01", "inputs": ["0x30"] },
-    { "op": "impact", "guard": "0x01", "inputs": ["0x51", "0x01", "0x01", "0x00", "0x01", "0x01", "0x02"] },
-    { "op": "impact", "guard": "0x01", "inputs": ["0x0c", "0x04", "0x10", "0x10", "0x10", "0x10", "%t.0", "%t.1", "%t.2", "%t.3"] },
-    { "op": "output", "vals": ["%t.0", "%t.1", "%t.2", "%t.3"] }
+    { "op": "impact", "guard": "0x01", "inputs": ["0x51", "0x01", "0x01", "0x01", "0x01", "0x01", "0x00"] },
+    { "op": "impact", "guard": "0x01", "inputs": ["0x0c", "0x01", "0x01", "%t.4"] },
+    { "op": "output", "vals": ["%t.4"] }
   ]
 }

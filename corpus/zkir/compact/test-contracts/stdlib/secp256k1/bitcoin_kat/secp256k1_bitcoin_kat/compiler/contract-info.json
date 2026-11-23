@@ -1,0 +1,454 @@
+{
+  "compiler-version": "0.36.1",
+  "compiler-commit": "7fa3a117c5e7efe9d2c51da04263e5f0b3509144",
+  "language-version": "0.28.0",
+  "runtime-version": "0.21.0",
+  "circuits": [
+    {
+      "name": "proveBitcoin0",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "msg",
+          "type": {
+            "type-name": "Bytes",
+            "length": 0
+          }
+        },
+        {
+          "name": "sig",
+          "type": {
+            "type-name": "Struct",
+            "name": "Secp256k1EcdsaSignature",
+            "elements": [
+              {
+                "name": "r",
+                "type": {
+                  "type-name": "Secp256k1Scalar"
+                }
+              },
+              {
+                "name": "s",
+                "type": {
+                  "type-name": "Secp256k1Scalar"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "pk",
+          "type": {
+            "type-name": "Secp256k1Point"
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Boolean"
+      }
+    },
+    {
+      "name": "proveBitcoin3",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "msg",
+          "type": {
+            "type-name": "Bytes",
+            "length": 3
+          }
+        },
+        {
+          "name": "sig",
+          "type": {
+            "type-name": "Struct",
+            "name": "Secp256k1EcdsaSignature",
+            "elements": [
+              {
+                "name": "r",
+                "type": {
+                  "type-name": "Secp256k1Scalar"
+                }
+              },
+              {
+                "name": "s",
+                "type": {
+                  "type-name": "Secp256k1Scalar"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "pk",
+          "type": {
+            "type-name": "Secp256k1Point"
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Boolean"
+      }
+    },
+    {
+      "name": "proveBitcoin5",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "msg",
+          "type": {
+            "type-name": "Bytes",
+            "length": 5
+          }
+        },
+        {
+          "name": "sig",
+          "type": {
+            "type-name": "Struct",
+            "name": "Secp256k1EcdsaSignature",
+            "elements": [
+              {
+                "name": "r",
+                "type": {
+                  "type-name": "Secp256k1Scalar"
+                }
+              },
+              {
+                "name": "s",
+                "type": {
+                  "type-name": "Secp256k1Scalar"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "pk",
+          "type": {
+            "type-name": "Secp256k1Point"
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Boolean"
+      }
+    },
+    {
+      "name": "proveBitcoin6",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "msg",
+          "type": {
+            "type-name": "Bytes",
+            "length": 6
+          }
+        },
+        {
+          "name": "sig",
+          "type": {
+            "type-name": "Struct",
+            "name": "Secp256k1EcdsaSignature",
+            "elements": [
+              {
+                "name": "r",
+                "type": {
+                  "type-name": "Secp256k1Scalar"
+                }
+              },
+              {
+                "name": "s",
+                "type": {
+                  "type-name": "Secp256k1Scalar"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "pk",
+          "type": {
+            "type-name": "Secp256k1Point"
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Boolean"
+      }
+    },
+    {
+      "name": "proveBitcoin7",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "msg",
+          "type": {
+            "type-name": "Bytes",
+            "length": 7
+          }
+        },
+        {
+          "name": "sig",
+          "type": {
+            "type-name": "Struct",
+            "name": "Secp256k1EcdsaSignature",
+            "elements": [
+              {
+                "name": "r",
+                "type": {
+                  "type-name": "Secp256k1Scalar"
+                }
+              },
+              {
+                "name": "s",
+                "type": {
+                  "type-name": "Secp256k1Scalar"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "pk",
+          "type": {
+            "type-name": "Secp256k1Point"
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Boolean"
+      }
+    },
+    {
+      "name": "proveBitcoin8",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "msg",
+          "type": {
+            "type-name": "Bytes",
+            "length": 8
+          }
+        },
+        {
+          "name": "sig",
+          "type": {
+            "type-name": "Struct",
+            "name": "Secp256k1EcdsaSignature",
+            "elements": [
+              {
+                "name": "r",
+                "type": {
+                  "type-name": "Secp256k1Scalar"
+                }
+              },
+              {
+                "name": "s",
+                "type": {
+                  "type-name": "Secp256k1Scalar"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "pk",
+          "type": {
+            "type-name": "Secp256k1Point"
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Boolean"
+      }
+    },
+    {
+      "name": "proveBitcoin9",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "msg",
+          "type": {
+            "type-name": "Bytes",
+            "length": 9
+          }
+        },
+        {
+          "name": "sig",
+          "type": {
+            "type-name": "Struct",
+            "name": "Secp256k1EcdsaSignature",
+            "elements": [
+              {
+                "name": "r",
+                "type": {
+                  "type-name": "Secp256k1Scalar"
+                }
+              },
+              {
+                "name": "s",
+                "type": {
+                  "type-name": "Secp256k1Scalar"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "pk",
+          "type": {
+            "type-name": "Secp256k1Point"
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Boolean"
+      }
+    },
+    {
+      "name": "proveBitcoin10",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "msg",
+          "type": {
+            "type-name": "Bytes",
+            "length": 10
+          }
+        },
+        {
+          "name": "sig",
+          "type": {
+            "type-name": "Struct",
+            "name": "Secp256k1EcdsaSignature",
+            "elements": [
+              {
+                "name": "r",
+                "type": {
+                  "type-name": "Secp256k1Scalar"
+                }
+              },
+              {
+                "name": "s",
+                "type": {
+                  "type-name": "Secp256k1Scalar"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "pk",
+          "type": {
+            "type-name": "Secp256k1Point"
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Boolean"
+      }
+    },
+    {
+      "name": "proveBitcoin11",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "msg",
+          "type": {
+            "type-name": "Bytes",
+            "length": 11
+          }
+        },
+        {
+          "name": "sig",
+          "type": {
+            "type-name": "Struct",
+            "name": "Secp256k1EcdsaSignature",
+            "elements": [
+              {
+                "name": "r",
+                "type": {
+                  "type-name": "Secp256k1Scalar"
+                }
+              },
+              {
+                "name": "s",
+                "type": {
+                  "type-name": "Secp256k1Scalar"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "pk",
+          "type": {
+            "type-name": "Secp256k1Point"
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Boolean"
+      }
+    },
+    {
+      "name": "proveBitcoin20",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "msg",
+          "type": {
+            "type-name": "Bytes",
+            "length": 20
+          }
+        },
+        {
+          "name": "sig",
+          "type": {
+            "type-name": "Struct",
+            "name": "Secp256k1EcdsaSignature",
+            "elements": [
+              {
+                "name": "r",
+                "type": {
+                  "type-name": "Secp256k1Scalar"
+                }
+              },
+              {
+                "name": "s",
+                "type": {
+                  "type-name": "Secp256k1Scalar"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "pk",
+          "type": {
+            "type-name": "Secp256k1Point"
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Boolean"
+      }
+    }
+  ],
+  "witnesses": [
+  ],
+  "contracts": [
+  ],
+  "ledger": [
+  ]
+}

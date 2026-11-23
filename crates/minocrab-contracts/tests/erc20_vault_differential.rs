@@ -2,8 +2,8 @@
 //! notes/ledger-abi.org §6 — the benchmark target running on MinoCrab,
 //! plus acceptance agreement on guard failures and tampering.
 //!
-//! Twenty-nine circuits since M44 (signet-midnight-examples `375071b`, the
-//! flush pattern): for each, PI-equality on the reference model's preimage
+//! Twenty-nine circuits (signet-midnight-examples `erc20-vault-v0.7.0-rc.2`,
+//! `6054146`, the flush pattern with per-token fees): for each, PI-equality on the reference model's preimage
 //! against compactc's own artifact, the guard failures both artifacts must
 //! reject, and the tamper sweep (every transcript and witness element
 //! perturbed; zero acceptance disagreements). The per-circuit scenario
@@ -12,8 +12,8 @@
 use midnight_transient_crypto::proofs::ProofPreimage;
 use minocrab::Fr;
 use minocrab_contracts::signet_v1::output_kind;
-use minocrab_sim::v3::{assert_call_compatible, simulate};
-use minocrab_zkir::v3::IrSource;
+use minocrab_sim::{assert_call_compatible, simulate};
+use minocrab_zkir::IrSource;
 
 mod support;
 mod vault;
@@ -22,7 +22,7 @@ use vault::artifact::Circuit;
 use vault::model::*;
 use vault::tamper;
 
-/// Both artifacts must REJECT this preimage.
+/// Both artifacts must reject this preimage.
 fn both_reject(circuit: Circuit, pi: &ProofPreimage, why: &str) {
     assert!(simulate(&circuit.ir(), pi).is_err(), "ours accepts: {why}");
     assert!(simulate(circuit.corpus(), pi).is_err(), "corpus accepts: {why}");
@@ -34,7 +34,7 @@ fn matches(circuit: Circuit, pi: &ProofPreimage) {
     assert_call_compatible(&circuit.ir(), circuit.corpus(), pi);
 }
 
-/// [`matches`], and the model's op stream REPLAYED through Midnight's
+/// [`matches`], and the model's op stream replayed through Midnight's
 /// reference VM against the scenario's pre-state: every `popeq` the model
 /// claims is checked against a real state tree, so the pre-state the
 /// differential pins is real rather than asserted.
@@ -51,15 +51,19 @@ fn check<S: Scenario>(circuit: Circuit, s: &S) {
     matches(circuit, &s.preimage());
 }
 
-/// MEASURED OVER BUDGET (2026-11-19, ledger 9.1.0.1's initial parameters,
+/// Measured over budget (2026-11-19, ledger 9.1.0.1's initial parameters,
 /// these scenarios' pre-states): the ledger's partitioner demotes each of
-/// these WHOLE to the fallible section in at least one scenario here, from
+/// these whole to the fallible section in at least one scenario here, from
 /// 59 ops (`startWithdraw`, `completeWithdraw`) to 298 (`flushQueue` over
 /// every action). Named so the gate stays green while they are; an eleventh
 /// demotion fails. Demotion depends on the pre-state as well as the op
 /// count, so a circuit absent from this list is within budget on these
-/// scenarios, not on every state.
-const OVER_GUARANTEED_BUDGET: [Circuit; 10] = [
+/// scenarios, not on every state. `initialise` joined at 0.7.0-rc.2 (M48 L):
+/// its two fee-bearing token inserts and the fee recipient's two cells take
+/// it to 86 ops, all demoted. It is the deployer's one-shot setup, not a
+/// call Sig signs for.
+const OVER_GUARANTEED_BUDGET: [Circuit; 11] = [
+    Circuit::Initialise,
     Circuit::FlushQueue,
     Circuit::StartWithdraw,
     Circuit::StartSwap,
@@ -177,6 +181,49 @@ fn add_allowed_token_rejects_tampering() {
     sweep(Circuit::AddAllowedToken, &AddAllowedTokenScenario::new().preimage());
 }
 
+#[test]
+fn set_token_fees_matches_corpus() {
+    check(Circuit::SetTokenFees, &AddAllowedTokenScenario::reprice());
+}
+
+#[test]
+fn set_token_fees_rejects_guard_failures() {
+    let mut s = AddAllowedTokenScenario::reprice();
+    s.sk[0] ^= 1;
+    both_reject(Circuit::SetTokenFees, &s.preimage(), "not the deployer");
+    let mut s = AddAllowedTokenScenario::reprice();
+    s.allowed = false;
+    both_reject(Circuit::SetTokenFees, &s.preimage(), "ERC20 not allowed");
+    let mut s = AddAllowedTokenScenario::reprice();
+    s.env.initialised = false;
+    both_reject(Circuit::SetTokenFees, &s.preimage(), "not initialised");
+}
+
+#[test]
+fn set_token_fees_rejects_tampering() {
+    sweep(Circuit::SetTokenFees, &AddAllowedTokenScenario::reprice().preimage());
+}
+
+#[test]
+fn set_fee_recipient_matches_corpus() {
+    check(Circuit::SetFeeRecipient, &SetFeeRecipientScenario::new());
+}
+
+#[test]
+fn set_fee_recipient_rejects_guard_failures() {
+    let mut s = SetFeeRecipientScenario::new();
+    s.sk[0] ^= 1;
+    both_reject(Circuit::SetFeeRecipient, &s.preimage(), "not the deployer");
+    let mut s = SetFeeRecipientScenario::new();
+    s.env.initialised = false;
+    both_reject(Circuit::SetFeeRecipient, &s.preimage(), "not initialised");
+}
+
+#[test]
+fn set_fee_recipient_rejects_tampering() {
+    sweep(Circuit::SetFeeRecipient, &SetFeeRecipientScenario::new().preimage());
+}
+
 // ==== the queue ==============================================================================
 
 #[test]
@@ -204,7 +251,7 @@ fn flush_queue_every_action_matches_corpus() {
     // Five vault-signed requests take five consecutive nonces, a deposit
     // keeps the caller's, and three attestations fold their heights in
     // (one of them lower than the running globalLastSeen). The attestation
-    // slots' requests are SENT ones at other nonces, so their flushed
+    // slots' requests are sent ones at other nonces, so their flushed
     // indices do not collide with the request slots' (the reference VM
     // caught the collision when they were the same canonical requests).
     let mut s = FlushScenario::new();
@@ -230,31 +277,22 @@ fn flush_queue_rejects_tampering() {
     sweep(Circuit::FlushQueue, &FlushScenario::new().preimage());
 }
 
+/// One circuit for every output width since 0.7.0-rc.2: the attestation is
+/// verified without its output, at widths 0, 1 and 32 alike.
 #[test]
-fn queue_attestation0_matches_corpus() {
-    let s = QueueAttestationScenario::of(Sent::withdraw(), Attestation::failed());
-    check(Circuit::QueueAttestation0, &s);
-    let s = QueueAttestationScenario::of(Sent::approve_router(), Attestation::unviable());
-    check(Circuit::QueueAttestation0, &s);
+fn queue_attestation_matches_corpus() {
     let replaced = Sent::withdraw();
-    let s = QueueAttestationScenario::of(Sent::replace_nonce(&replaced), Attestation::executed_empty());
-    check(Circuit::QueueAttestation0, &s);
-}
-
-#[test]
-fn queue_attestation1_matches_corpus() {
-    let s = QueueAttestationScenario::of(Sent::deposit(), Attestation::executed_bool(true));
-    check(Circuit::QueueAttestation1, &s);
-    let s = QueueAttestationScenario::of(Sent::withdraw(), Attestation::executed_bool(false));
-    check(Circuit::QueueAttestation1, &s);
-}
-
-#[test]
-fn queue_attestation32_matches_corpus() {
-    let s = QueueAttestationScenario::of(Sent::swap(), Attestation::executed_u256(5_500));
-    check(Circuit::QueueAttestation32, &s);
-    let s = QueueAttestationScenario::of(Sent::supply(), Attestation::executed_u256(41_000));
-    check(Circuit::QueueAttestation32, &s);
+    for s in [
+        QueueAttestationScenario::of(Sent::withdraw(), Attestation::failed()),
+        QueueAttestationScenario::of(Sent::approve_router(), Attestation::unviable()),
+        QueueAttestationScenario::of(Sent::replace_nonce(&replaced), Attestation::executed_empty()),
+        QueueAttestationScenario::of(Sent::deposit(), Attestation::executed_bool(true)),
+        QueueAttestationScenario::of(Sent::withdraw(), Attestation::executed_bool(false)),
+        QueueAttestationScenario::of(Sent::swap(), Attestation::executed_u256(5_500)),
+        QueueAttestationScenario::of(Sent::supply(), Attestation::executed_u256(41_000)),
+    ] {
+        check(Circuit::QueueAttestation, &s);
+    }
 }
 
 #[test]
@@ -263,23 +301,23 @@ fn queue_attestation_rejects_guard_failures() {
 
     let mut s = fresh();
     s.sent_exists = false;
-    both_reject(Circuit::QueueAttestation1, &s.preimage(), "request not sent");
+    both_reject(Circuit::QueueAttestation, &s.preimage(), "request not sent");
 
     let mut s = fresh();
     s.open = false;
-    both_reject(Circuit::QueueAttestation1, &s.preimage(), "request not open");
+    both_reject(Circuit::QueueAttestation, &s.preimage(), "request not open");
 
     let mut s = fresh();
     s.attestation.block_height = s.sent.last_seen;
-    both_reject(Circuit::QueueAttestation1, &s.preimage(), "stale attestation");
+    both_reject(Circuit::QueueAttestation, &s.preimage(), "stale attestation");
 
     let mut s = fresh();
     s.already_queued = true;
-    both_reject(Circuit::QueueAttestation1, &s.preimage(), "already queued");
+    both_reject(Circuit::QueueAttestation, &s.preimage(), "already queued");
 
     let mut s = fresh();
     s.already_flushed = true;
-    both_reject(Circuit::QueueAttestation1, &s.preimage(), "already flushed");
+    both_reject(Circuit::QueueAttestation, &s.preimage(), "already flushed");
 
     // A signature under another key.
     let mut s = fresh();
@@ -288,14 +326,14 @@ fn queue_attestation_rejects_guard_failures() {
     let good = fresh().preimage();
     pi.public_transcript_outputs = good.public_transcript_outputs.clone();
     pi.public_transcript_inputs = good.public_transcript_inputs.clone();
-    both_reject(Circuit::QueueAttestation1, &pi, "wrong response key");
+    both_reject(Circuit::QueueAttestation, &pi, "wrong response key");
 }
 
 #[test]
 fn queue_attestation_rejects_tampering() {
-    sweep(Circuit::QueueAttestation0, &QueueAttestationScenario::of(Sent::withdraw(), Attestation::failed()).preimage());
-    sweep(Circuit::QueueAttestation1, &QueueAttestationScenario::of(Sent::deposit(), Attestation::executed_bool(true)).preimage());
-    sweep(Circuit::QueueAttestation32, &QueueAttestationScenario::of(Sent::swap(), Attestation::executed_u256(5_500)).preimage());
+    sweep(Circuit::QueueAttestation, &QueueAttestationScenario::of(Sent::withdraw(), Attestation::failed()).preimage());
+    sweep(Circuit::QueueAttestation, &QueueAttestationScenario::of(Sent::deposit(), Attestation::executed_bool(true)).preimage());
+    sweep(Circuit::QueueAttestation, &QueueAttestationScenario::of(Sent::swap(), Attestation::executed_u256(5_500)).preimage());
 }
 
 // ==== the starts ============================================================================
@@ -357,11 +395,14 @@ fn start_withdraw_rejects_guard_failures() {
         *dest = [0u8; 20];
     }
     both_reject(Circuit::StartWithdraw, &s.preimage(), "zero destination");
-    // The coin's value must equal the amount.
+    // The coin's value must equal the amount plus the withdraw fee.
     let mut s = StartScenario::withdraw();
     s.coin.as_mut().unwrap().value += 1;
     both_reject(Circuit::StartWithdraw, &s.preimage(), "coin value mismatch");
-    // The coin must be THIS ERC20's vault token.
+    let mut s = StartScenario::withdraw();
+    s.coin.as_mut().unwrap().value -= u128::from(s.sent.env.fees_allowed[0]);
+    both_reject(Circuit::StartWithdraw, &s.preimage(), "a coin of the amount without the fee");
+    // The coin must be this ERC20's vault token.
     let mut s = StartScenario::withdraw();
     s.coin.as_mut().unwrap().color[0] ^= 1;
     both_reject(Circuit::StartWithdraw, &s.preimage(), "wrong colour");
@@ -388,6 +429,20 @@ fn start_swap_rejects_guard_failures() {
         *amount_out = 0;
     }
     both_reject(Circuit::StartSwap, &s.preimage(), "zero amountOut");
+}
+
+/// A start whose token charges no fee mints no fee coin: the supply's
+/// underlying has a zero supply fee in the model's environment, and so does
+/// every action of a token repriced to zero.
+#[test]
+fn start_without_a_fee_matches_corpus() {
+    assert_eq!(StartScenario::supply().sent.args.vault_fee(), Some(0));
+    let mut s = Sent::withdraw();
+    s.env.fees_allowed = [0; 4];
+    if let Args::Withdraw { vault_fee, .. } = &mut s.args {
+        *vault_fee = 0;
+    }
+    check(Circuit::StartWithdraw, &StartScenario::of(s));
 }
 
 #[test]
@@ -709,23 +764,20 @@ fn complete_withdraw_rejects_tampering() {
     sweep(Circuit::CompleteWithdraw, &CompleteScenario::of(Sent::withdraw(), Attestation::executed_bool(false)).preimage());
 }
 
-/// `deserialize<VaultResponse, 1>(output)` runs on every verdict (the
-/// pinned source reads it before the branch, a workaround for compact#856),
-/// and compactc 0.36 constrains the `Boolean` it reads to 0 or 1: a byte of
-/// 2 is refused even where the verdict ignores it, and even when the MPC
-/// attested it. 0 and 1 are both accepted on a verdict that ignores them.
+/// `deserialize<VaultResponse, 1>(executed ? output : default<Bytes<1>>)`
+/// runs on every verdict (upstream's workaround for compact#856, kept at
+/// 0.7.0-rc.2), and compactc 0.36 constrains the `Boolean` it reads to be
+/// 0 or 1. On an executed verdict that is the attested byte, so a 2 is refused
+/// even when the MPC attested it; on a verdict that ignores the output the
+/// deserialize reads a zero, so any byte is accepted there (at `375071b` the
+/// byte itself was read on every verdict, and a 2 was refused everywhere).
 fn complete_bool_output_is_constrained(circuit: Circuit, sent: fn() -> Sent) {
     for verdict in [Attestation::failed, Attestation::unviable] {
-        for byte in [0u64, 1] {
+        for byte in [0u64, 1, 2] {
             let mut s = CompleteScenario::of(sent(), verdict());
             s.output = vec![Fr::from(byte)];
             check(circuit, &s);
         }
-    }
-    for verdict in [Attestation::failed(), Attestation::unviable()] {
-        let mut s = CompleteScenario::of(sent(), verdict);
-        s.output = vec![Fr::from(2u64)];
-        both_reject(circuit, &s.preimage(), "a non-Boolean output on an unexecuted verdict");
     }
 
     let mut attestation = Attestation::executed_bool(true);
@@ -839,7 +891,7 @@ fn complete_replace_nonce_rejects_guard_failures() {
     complete_guard_failures(Circuit::CompleteReplaceNonce, || {
         CompleteScenario::of(Sent::replace_nonce(&Sent::withdraw()), Attestation::executed_empty())
     });
-    // The record's digest must be over the EMPTY output on every verdict.
+    // The record's width and hash must be the empty output's on every verdict.
     let mut s = CompleteScenario::of(Sent::replace_nonce(&Sent::withdraw()), Attestation::executed_empty());
     s.attestation.width = 1;
     s.attestation.output = vec![Fr::from(1u64)];

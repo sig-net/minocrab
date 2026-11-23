@@ -1,5 +1,5 @@
-//! The managed artifact pipeline for the three Signet signer circuits
-//! (M29 rungs A+B).
+//! The managed artifact pipeline for the three Signet circuits, the signet
+//! signer's and the signet responder's.
 //!
 //! `sig-net/mpc`'s former TypeScript sidecar never interpreted the IR:
 //! compactc's JS executor made the proof preimage and whatever sat at
@@ -7,7 +7,7 @@
 //! artifact was a directory of files. This crate builds that directory:
 //!
 //! ```text
-//! <out-dir>/zkir/<circuit>.zkir        - minocrab_zkir::v3::write_zkir's
+//! <out-dir>/zkir/<circuit>.zkir        - minocrab_zkir::write_zkir's
 //!                                         on-disk form, COMMITTED (small,
 //!                                         reviewable)
 //! <out-dir>/zkir/<circuit>.bzkir       - the pinned `zkir-v3` binary's
@@ -25,7 +25,7 @@
 //! ```
 //!
 //! Circuit names on disk are the Compact names compactc's own artifacts use
-//! (`signBidirectional`, `respond`, `respondBidirectional`), NOT the Rust
+//! (`signBidirectional`, `respond`, `respondBidirectional`), not the Rust
 //! function names — consumers look them up by the Compact name
 //! (`@sig-net/midnight-contract`'s `expectedVk` keys, mpc's `chain-midnight`).
 
@@ -33,26 +33,41 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use minocrab::v3::Compiled3;
+use minocrab::Compiled;
 use sha2::{Digest, Sha256};
 use signet_protocol::circuits::{RESPOND, RESPOND_BIDIRECTIONAL, SIGN_BIDIRECTIONAL};
 use signet_protocol::hash_verifier_key;
 
 /// A signer circuit: its on-disk (Compact) name and how to build it.
-pub type Circuit = (&'static str, fn() -> Compiled3);
+pub type Circuit = (&'static str, fn() -> Compiled);
 
-/// The three Signet signer circuits, named the way compactc's artifacts and
-/// `@sig-net/midnight-contract`'s `expectedVk` name them
-/// (`signet_protocol::circuits`), each paired with the circuit that builds it
+/// The three Signet circuits, named the way compactc's artifacts and the
+/// packages' `expectedVk` tables name them (`signet_protocol::circuits`),
+/// each paired with the circuit that builds it
 /// (`crates/minocrab-contracts/src/signet_contract.rs`).
+///
+/// Two deployed contracts since midnight-integration v0.26: the signet
+/// signer carries `signBidirectional` ([`SIGNER_CIRCUITS`]), the signet
+/// responder `respond` and `respondBidirectional` ([`RESPONDER_CIRCUITS`]).
+/// The circuits are v0.25.0's, byte for byte, so this directory's files did
+/// not move with the split. It stays one directory: a publisher takes the
+/// table of the contract it calls with `ManagedDir::deployment(address,
+/// RESPONDER_CIRCUITS)`, and each package's deploy tooling copies its own
+/// circuits' files.
 pub fn circuits() -> Vec<Circuit> {
-    use minocrab_contracts::signet_contract::SignetContract;
+    use minocrab_contracts::signet_contract::{Responder, Signer};
     vec![
-        (SIGN_BIDIRECTIONAL, SignetContract::sign_bidirectional as fn() -> Compiled3),
-        (RESPOND, SignetContract::respond as fn() -> Compiled3),
-        (RESPOND_BIDIRECTIONAL, SignetContract::respond_bidirectional as fn() -> Compiled3),
+        (SIGN_BIDIRECTIONAL, Signer::sign_bidirectional as fn() -> Compiled),
+        (RESPOND, Responder::respond as fn() -> Compiled),
+        (RESPOND_BIDIRECTIONAL, Responder::respond_bidirectional as fn() -> Compiled),
     ]
 }
+
+/// The signet signer's circuits, by their Compact names.
+pub const SIGNER_CIRCUITS: &[&str] = &[SIGN_BIDIRECTIONAL];
+
+/// The signet responder's circuits, by their Compact names.
+pub const RESPONDER_CIRCUITS: &[&str] = &[RESPOND, RESPOND_BIDIRECTIONAL];
 
 /// Where the pinned `zkir-v3` binary is: `$ZKIR_V3` if set, else `zkir-v3`
 /// on `PATH` (a bare name with no `/` makes `Command` search `PATH` itself,
@@ -78,9 +93,9 @@ pub fn zkir_v3_available() -> Option<PathBuf> {
     ok.then_some(bin)
 }
 
-/// sha256(bytes) as lowercase hex, for the manifest. The SAME computation as
+/// sha256(bytes) as lowercase hex, for the manifest. The same computation as
 /// `signet_protocol::hash_verifier_key` (compact-js's `hashVerifierKey`,
-/// defined there since M30 C1, pinned under node by
+/// defined there, pinned under node by
 /// `tests/hash_verifier_key_pin.rs`) on different files; spelled through
 /// `sha2` here so the manifest does not read as a verifier-key hash.
 fn sha256_hex(bytes: &[u8]) -> String {
@@ -162,12 +177,12 @@ pub fn generate(out_dir: &Path, zkir_v3: &Path) -> anyhow::Result<()> {
         let path = zkir_dir.join(format!("{name}.zkir"));
         let file = std::fs::File::create(&path)
             .map_err(|e| anyhow::anyhow!("creating {}: {e}", path.display()))?;
-        minocrab_zkir::v3::write_zkir(&compiled.ir, std::io::BufWriter::new(file), name)
+        minocrab_zkir::write_zkir(&compiled.ir, std::io::BufWriter::new(file), name)
             .map_err(|e| anyhow::anyhow!("writing {}: {e}", path.display()))?;
     }
 
     // 2. `zkir-v3 compile-many <zkir_dir> <key_dir>`: keygen for every
-    // `.zkir`/`.bzkir` found in `zkir_dir`, AND (as a side effect of the
+    // `.zkir`/`.bzkir` found in `zkir_dir`, and (as a side effect of the
     // binary's own `maybe_bzkir`, which writes a `.bzkir` sibling the first
     // time it loads a bare `.zkir`) the `.bzkir` files land in `zkir_dir`
     // too, so no separate `.bzkir` step exists.

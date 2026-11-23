@@ -2,9 +2,6 @@
 name = "minocrab-zkir"
 description = "MinoCrab L0: read, write and round-trip Midnight ZKIR v3, reusing midnight-zkir-v3's own types"
 version.workspace = true
-# Held until the owner lifts it (PUBLISHING.md); every `midnight-*` crate
-# it needs is on crates.io now.
-publish = false
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -16,7 +13,6 @@ categories = ["cryptography::cryptocurrencies", "api-bindings", "encoding"]
 # ../../corpus, which no downstream checkout has.
 include = [
     "src/**/*.rs",
-    "tests/fixtures/**",
     "README.md",
     "LICENSE-MIT",
     "LICENSE-APACHE",

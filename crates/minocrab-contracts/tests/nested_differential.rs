@@ -1,21 +1,21 @@
-//! `nested.compact` — the M22 stage B1 differential: NESTED LEDGER ADTs
+//! `nested.compact` — the differential: nested ledger ADTs
 //! against compactc's own artifacts (notes/coin-arms-nested-adts.org §2).
 //!
-//! WHY THE FIXTURE IS OURS, for the sixth milestone running. Nested
+//! Why the fixture is ours, for the sixth milestone running. Nested
 //! declarations have real third-party demand — OpenZeppelin's
 //! `ShieldedMultiSig` declares `Map<Uint<64>, Map<Either<..>, Boolean>>` and
 //! writes through it — and compactc's own test suite compiles two more
 //! (`map_boolean_map_field_counter`, `map_field_list_field`). Every one of
 //! those artifacts is ZKIR **v2**, and across the three
-//! `--feature-zkir-v3` corpus sources nested declarations are used ZERO
-//! times. So they are corroboration for the SHAPE and not a differential
+//! `--feature-zkir-v3` corpus sources nested declarations are used zero
+//! times. So they are corroboration for the shape and not a differential
 //! target (notes/ledger-adts.org finding (e)), and the target is our source,
-//! compiled with the PINNED compactc — the invocation is in the fixture's
+//! compiled with the pinned compactc — the invocation is in the fixture's
 //! header.
 //!
-//! WHAT THE HEADLINE PINS, and what nothing weaker would. A nested access is
-//! ONE `idx` with a longer path and ONE `insc` with a bigger `n`, so the only
-//! thing that can be wrong is the ARITHMETIC, and there are five distinct
+//! What the headline pins, and what nothing weaker would. A nested access is
+//! one `idx` with a longer path and one `insc` with a bigger `n`, so the only
+//! thing that can be wrong is the arithmetic, and there are five distinct
 //! answers:
 //!
 //! | closing `insc` | who |
@@ -23,24 +23,28 @@
 //! | `len(f)` | `insert`, `insertDefault`, `remove`, `increment`, `popFront`, `insertIndex` |
 //! | `len(f) + 1` | `List.pushFront`, `MerkleTree.insert`, `HistoricMerkleTree.insert` |
 //! | `len(f) + 2` | `HistoricMerkleTree.resetHistory` — alone |
-//! | `len(f) − 1`, SUPPRESSED at zero | the nine whole-field-replace ops |
-//! | a literal 1 or 2 | the `insc` in the MIDDLE of a tree insert, at every depth |
+//! | `len(f) − 1`, suppressed at zero | the nine whole-field-replace ops |
+//! | a literal 1 or 2 | the `insc` in the middle of a tree insert, at every depth |
 //!
 //! plus the leading `idxp`, which for those nine takes `f` minus its last
 //! element and disappears entirely at depth 1. Every one of those five is a
 //! circuit below, at depth 2, and `deepInsert` / `deepLookup` add depth 3 so
 //! that "tracks `len(f)`" is pinned as a relation rather than a constant.
 //!
-//! AND ONE FINDING THE DIFFERENTIAL EXISTS TO CATCH: `outerInsertDefault`.
+//! And one finding the differential exists to catch: `outerInsertDefault`.
 //! An `insertDefault` whose value type is an ADT pushes the ADT's own
 //! `(initial-value …)` — the empty map — and not a cell of zeros, because
 //! `assemble-operand-acc`'s `VMstate-value-ADT` case discards the value
 //! whenever the type is an ADT. The crate's pre-existing `map_insert_default`
 //! would have pushed zeros.
 
-use minocrab::v3::Compiled3;
+#[path = "support/common.rs"]
+mod common;
+use common::*;
+
+use minocrab::Compiled;
 use minocrab_contracts::nested::Nested;
-use minocrab_zkir::v3::{to_zkir_string, IrSource};
+use minocrab_zkir::IrSource;
 
 /// compactc's artifact for one fixture circuit.
 fn theirs(name: &str) -> IrSource {
@@ -48,51 +52,13 @@ fn theirs(name: &str) -> IrSource {
         "{}/tests/fixtures/nested/out/zkir/{name}.zkir",
         env!("CARGO_MANIFEST_DIR")
     );
-    minocrab_zkir::v3::read_zkir(&path).expect("the pinned compactc's artifact parses")
-}
-
-/// Serialized ZKIR with every `%name.index` identifier replaced by
-/// `%<order of first appearance>` — the same canonicalization every
-/// differential here uses.
-fn canonical(ir: &IrSource) -> String {
-    // BOTH SIDES are folded first (notes/ir-passes.org §2 ii): our builder
-    // inlines a `Copy` of an immediate at `finish`, and compactc names some of
-    // the constants it inlines elsewhere, so the comparison is instruction for
-    // instruction MODULO the naming of constants — a rename with no rows, no
-    // public input and no semantics. Everything else still compares exactly.
-    let ir = &minocrab_ir::v3::passes::folded(ir);
-    let text = to_zkir_string(ir).expect("serializes");
-    let mut renames: Vec<(String, String)> = Vec::new();
-    let mut out = String::with_capacity(text.len());
-    let mut rest = text.as_str();
-    while let Some(at) = rest.find('%') {
-        out.push_str(&rest[..at]);
-        rest = &rest[at..];
-        let end = rest[1..]
-            .find(|ch: char| !(ch.is_alphanumeric() || ch == '_' || ch == '.'))
-            .map(|i| i + 1)
-            .unwrap_or(rest.len());
-        let name = &rest[..end];
-        let next = renames.len();
-        let canon = match renames.iter().find(|(from, _)| from == name) {
-            Some((_, to)) => to.clone(),
-            None => {
-                let to = format!("%{next}");
-                renames.push((name.to_string(), to.clone()));
-                to
-            }
-        };
-        out.push_str(&canon);
-        rest = &rest[end..];
-    }
-    out.push_str(rest);
-    out
+    minocrab_zkir::read_zkir(&path).expect("the pinned compactc's artifact parses")
 }
 
 /// Every circuit of the fixture: compactc's artifact name and our builder.
-fn cases() -> Vec<(&'static str, fn() -> Compiled3)> {
+fn cases() -> Vec<(&'static str, fn() -> Compiled)> {
     vec![
-        ("mapInsert", Nested::map_insert as fn() -> Compiled3),
+        ("mapInsert", Nested::map_insert as fn() -> Compiled),
         ("mapInsertDefault", Nested::map_insert_default),
         ("mapLookup", Nested::map_lookup),
         ("mapMember", Nested::map_member),
@@ -125,7 +91,7 @@ fn cases() -> Vec<(&'static str, fn() -> Compiled3)> {
     ]
 }
 
-/// THE HEADLINE: for every nested operation, our serialized ZKIR IS
+/// The headline: for every nested operation, our serialized ZKIR is
 /// compactc's up to identifier renaming.
 #[test]
 fn identical_instruction_streams() {
@@ -138,8 +104,8 @@ fn identical_instruction_streams() {
     }
 }
 
-/// EVERY CIRCUIT THE CONTRACT EXPORTS IS IN THE DIFFERENTIAL, compared by
-/// FUNCTION POINTER rather than by count — the two lists name circuits
+/// Every circuit the contract exports is in the differential, compared by
+/// function pointer rather than by count — the two lists name circuits
 /// differently (`mapInsert` against `map_insert`), and a count would pass
 /// while two entries silently swapped.
 #[test]
@@ -182,7 +148,7 @@ fn every_fixture_circuit_is_covered() {
     assert_eq!(compiled, covered);
 }
 
-/// CLAIM 2 — the DEPTH is visible in the bytes, and it is the only thing that
+/// Claim 2 — the depth is visible in the bytes, and it is the only thing that
 /// moved.
 ///
 /// The headline compares whole streams and would pass if every depth were
@@ -240,8 +206,8 @@ fn the_depth_is_the_opcode_nibble_and_the_ins_operand() {
     assert_eq!(*opcodes("hmtInsert").1.last().unwrap(), 0xa3);
     assert_eq!(*opcodes("hmtResetHistory").1.last().unwrap(), 0xa4);
 
-    // SUPPRESSION, come alive: a nested `resetToDefault` leads with `idxp`
-    // over the path MINUS its last element — one element, so `0x70` — and
+    // Suppression, come alive: a nested `resetToDefault` leads with `idxp`
+    // over the path minus its last element — one element, so `0x70` — and
     // closes with the `insc 1` that a top-level reset suppresses away.
     let (lead, ins) = opcodes("mapReset");
     assert_eq!(lead, 0x70, "the CONTAINER's path, not the field's");
@@ -253,19 +219,19 @@ fn the_depth_is_the_opcode_nibble_and_the_ins_operand() {
     assert_eq!(opcodes("hmtReset").1, vec![0xa2, 0x91, 0xa1]);
 }
 
-/// CLAIM 3 — compactc's own ABI agrees with the argument types.
+/// Claim 3 — compactc's own ABI agrees with the argument types.
 ///
 /// The fixture's `contract-info.json`, flattened by `minocrab_abi::info`,
 /// against the `CircuitAbi` of the Rust types. Here it also pins that a
-/// nested declaration does not change a circuit's SIGNATURE at all — the
+/// nested declaration does not change a circuit's signature at all — the
 /// keys are ordinary arguments and the nesting is invisible above the
 /// transcript.
 #[test]
 fn compactc_s_abi_agrees_with_the_arguments() {
-    use minocrab::v3::CircuitAbi;
+    use minocrab::CircuitAbi;
     use minocrab::Public;
     use minocrab_abi::info::ContractInfo;
-    use minocrab_std::v3::{MerkleTreeDigest, Uint, B32};
+    use minocrab_std::{MerkleTreeDigest, Uint, B32};
 
     let text = std::fs::read_to_string(format!(
         "{}/tests/fixtures/nested/out/compiler/contract-info.json",

@@ -1,12 +1,12 @@
-//! M27 rung 1's gate, driven from `cargo test`: the Lean syntax under
+//! The Lean syntax gate, driven from `cargo test`: the Lean syntax under
 //! `lean/` (`MinocrabZkir`) must parse every v3 corpus artifact and print
-//! it back BYTE FOR BYTE (notes/zkir-semantics.org §1, §8). The Lean side
+//! it back byte for byte (notes/zkir-semantics.org §1, §8). The Lean side
 //! is the instrument; this test only builds it, runs it over the corpus,
 //! and asserts the count the way `corpus_roundtrip.rs` does, so a partial
 //! checkout cannot be green by silence.
 //!
-//! Needs `lake` on PATH (the nix devshell provides Lean 4) and a compiled
-//! corpus; without either it SKIPS with a loud message rather than fail,
+//! Needs `lake` on path (the nix devshell provides Lean 4) and a compiled
+//! corpus; without either it skips with a loud message rather than fail,
 //! the same policy as the Rust round-trip. CI's lean job runs the same
 //! executable directly.
 
@@ -18,7 +18,7 @@ fn lean_syntax_round_trips_the_v3_corpus_byte_for_byte() {
     let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let lean_dir = crate_dir.join("lean");
     let corpus = crate_dir.join("../../corpus/zkir");
-    if !corpus.join("signet-midnight-examples").exists() {
+    if !corpus.join("signet-midnight-examples-v070").exists() {
         eprintln!("skipping: no corpus at {} (run corpus/compile.sh)", corpus.display());
         return;
     }
@@ -52,7 +52,7 @@ fn lean_syntax_round_trips_the_v3_corpus_byte_for_byte() {
         run.status.success(),
         "zkir-roundtrip reported failures:\n{stdout}{stderr}"
     );
-    // THE COUNT IS ASSERTED, mirroring corpus_roundtrip.rs: the v3 count
+    // The count is asserted, mirroring corpus_roundtrip.rs: the v3 count
     // moves only when the corpus does; update both in the same commit.
     // 722 → 739 v2 skipped at the M31 compactc bump (0.33.0-rc.2 → 0.34.0):
     // compact/examples/types/examples.compact compiles under language 0.26.0
@@ -67,8 +67,13 @@ fn lean_syntax_round_trips_the_v3_corpus_byte_for_byte() {
     // 110 → 855 v3, 739 → 0 v2 at the compactc 0.36.0 bump: it writes only
     // ZKIR v3 (3.1); corpus_roundtrip.rs names the six new files.
     // 855 → 907 with passport-account-custody's 52 circuits.
+    // 907 → 897 when the compact source moved to compactc-v0.36.1 (7fa3a117);
+    // corpus_roundtrip.rs names what was added and removed.
+    // 897 → 938 with the mainnet pins (M48 L), named in corpus_roundtrip.rs;
+    // 938 → 925 when the v0.25.0 and fff3421c signers and test callers retired;
+    // 925 → 893 when the 375071b vault and the v0.24.1 pin retired.
     assert!(
-        stdout.starts_with("907 ok, 0 failed, 0 v2 skipped"),
+        stdout.starts_with("893 ok, 0 failed, 0 v2 skipped"),
         "unexpected round-trip summary (corpus size moved?): {stdout}"
     );
 

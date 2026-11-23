@@ -1,0 +1,127 @@
+{
+  "compiler-version": "0.36.1",
+  "compiler-commit": "7fa3a117c5e7efe9d2c51da04263e5f0b3509144",
+  "language-version": "0.28.0",
+  "runtime-version": "0.21.0",
+  "circuits": [
+    {
+      "name": "self_subtract",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "k",
+          "type": {
+            "type-name": "Secp256k1Scalar"
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Secp256k1Scalar"
+      }
+    },
+    {
+      "name": "inlined_self_subtract",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "k",
+          "type": {
+            "type-name": "Secp256k1Scalar"
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Secp256k1Scalar"
+      }
+    },
+    {
+      "name": "multiply_self_subtract",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "k",
+          "type": {
+            "type-name": "Secp256k1Scalar"
+          }
+        },
+        {
+          "name": "z",
+          "type": {
+            "type-name": "Secp256k1Scalar"
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Secp256k1Scalar"
+      }
+    },
+    {
+      "name": "secp256r1_self_subtract",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "k",
+          "type": {
+            "type-name": "Secp256r1Base"
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Secp256r1Base"
+      }
+    },
+    {
+      "name": "curve25519_self_subtract",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "k",
+          "type": {
+            "type-name": "Curve25519Scalar"
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Curve25519Scalar"
+      }
+    }
+  ],
+  "witnesses": [
+  ],
+  "contracts": [
+  ],
+  "ledger": [
+    {
+      "name": "k1",
+      "index": 0,
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Secp256k1Scalar"
+      }
+    },
+    {
+      "name": "r1",
+      "index": 1,
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Secp256r1Base"
+      }
+    },
+    {
+      "name": "c",
+      "index": 2,
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Curve25519Scalar"
+      }
+    }
+  ]
+}

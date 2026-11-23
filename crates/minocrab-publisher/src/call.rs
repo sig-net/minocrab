@@ -1,4 +1,4 @@
-//! M30 rung A — THE PUBLIC SURFACE: one function per signer circuit.
+//! The public surface: one function per signer circuit.
 //!
 //! Each takes the values the MPC actually holds — a request id and a
 //! signature (or a notification) — and returns everything a
@@ -11,18 +11,17 @@
 //! | the key location: address, circuit id, verifier-key hash | [`SignerCall::key_location`] |
 //!
 //! and [`SignerCall::prototype`] folds them into the prototype itself, given
-//! the two things that are NOT the publisher's to invent: the contract's
+//! the two things that are not the publisher's to invent: the contract's
 //! state and the chain's [`LedgerParameters`].
 //!
-//! This is M29 rung C's path made a library. `minocrab-contracts`'
-//! `tests/support/signet_call.rs` now calls these functions, so the
-//! construction, ledger-apply and real-proving gates run on the same
-//! preimages, byte for byte, that they pinned before the move.
+//! `minocrab-contracts`' `tests/support/signet_call.rs` calls these
+//! functions, so the construction, ledger-apply and real-proving gates run
+//! on the same preimages, byte for byte.
 //!
-//! # The parameters are an INPUT
+//! # The parameters are an input
 //!
-//! `partition_transcripts` computes the transcript's DECLARED gas against
-//! whatever `LedgerParameters` it is handed, and M29 D measured the
+//! `partition_transcripts` computes the transcript's declared gas against
+//! whatever `LedgerParameters` it is handed, and the measured
 //! consequence: the captured chain's respond transaction declares
 //! `compute_time` 2.208 ms where a transcript partitioned against
 //! `INITIAL_PARAMETERS` at our pin declares 1.303 ms. A publisher that
@@ -68,10 +67,10 @@ pub const SIGN_BIDIRECTIONAL: &str = "signBidirectional";
 pub const RESPOND: &str = "respond";
 pub const RESPOND_BIDIRECTIONAL: &str = "respondBidirectional";
 
-/// The three signer circuits' COMPACT names — what the `expectedVk` table and
+/// The three signer circuits' Compact names — what the `expectedVk` table and
 /// the former sidecar's `RESPOND_CIRCUITS` key by, what
 /// `crates/signet-artifacts/managed/` names its files, and what the captured
-/// on-chain transactions carry as entry points. NOT the Rust function names.
+/// on-chain transactions carry as entry points. Not the Rust function names.
 pub const SIGNER_CIRCUITS: [&str; 3] = [SIGN_BIDIRECTIONAL, RESPOND, RESPOND_BIDIRECTIONAL];
 
 /// The event name a circuit's Misc envelope opens with — the 32-byte field
@@ -120,9 +119,9 @@ fn is_hex64(s: &str) -> bool {
 ///
 /// # Which spelling goes into the preimage
 ///
-/// [`key_location`](ContractKeyLocation::key_location) — the BARE circuit id —
+/// [`key_location`](ContractKeyLocation::key_location) — the bare circuit id —
 /// is what this crate puts in a `ContractCallPrototype`, because that is what
-/// M29 C pinned and what `crates/signet-artifacts/managed/` names its files.
+/// the construction gate pins and what `crates/signet-artifacts/managed/` names its files.
 /// The field is not part of the proven statement and does not survive proving
 /// (a `Proof` carries no `key_location`), so it is a resolver-steering string
 /// and nothing more; [`encoded_key_location`](ContractKeyLocation::encoded_key_location)
@@ -202,7 +201,10 @@ impl ContractKeyLocation {
     }
 }
 
-/// The deployed signet signer a publisher builds calls against: its address, and
+/// The deployed contract a publisher builds calls against — since
+/// midnight-integration v0.26 the signet responder for `respond` /
+/// `respondBidirectional` and the signet signer for `signBidirectional` — its
+/// address, and
 /// the verifier-key hash per circuit.
 ///
 /// The hash table is the package's `expectedVk` — `{circuit ->
@@ -210,7 +212,7 @@ impl ContractKeyLocation {
 /// `crates/signet-artifacts` and checked by the former sidecar's build and
 /// prove paths before they used a key. Carrying it here means a publisher can
 /// make the same check: a respond transcript does not depend on contract
-/// state, so a lying endpoint's respond call fails safe ONLY while that gate
+/// state, so a lying endpoint's respond call fails safe only while that gate
 /// stays.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Deployment {
@@ -227,12 +229,12 @@ impl Deployment {
         Deployment { address, expected_vk: expected_vk.into_iter().collect() }
     }
 
-    /// THE `expectedVk` GATE: every circuit in the table is an operation on
+    /// The `expectedVk` gate: every circuit in the table is an operation on
     /// `state` whose v3 verifier key hashes to the value the table records.
     ///
     /// This was `sig-net/mpc`'s `prover.ts` check
     /// (`hashVerifierKey(verifierKey) !== verifierKeyHash` before it would
-    /// prove), moved to the side that matters more: `state` is what the NODE
+    /// prove), moved to the side that matters more: `state` is what the node
     /// says the contract carries, and this gate is the reason a lying
     /// endpoint's respond call fails safe. Nothing in the publish path calls
     /// it automatically — the pure core has no node — so a caller with a
@@ -302,7 +304,7 @@ pub struct EcdsaSignature {
 /// carried so a reader holding no output can check the signature.
 ///
 /// `output_kind` is Compact's `enum OutputKind { executed, failed, unviable
-/// }`, i.e. the variant INDEX (0, 1, 2); the circuit constrains it below 3.
+/// }`, i.e. the variant index (0, 1, 2); the circuit constrains it below 3.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Attestation {
     pub block_height: u64,
@@ -391,7 +393,7 @@ pub fn respond_misc(name: &str, request_id: &[u8; 32], sig: &EcdsaSignature) -> 
     bytes
 }
 
-/// A respond call's arguments with their COMPACT alignment: four `Bytes<32>`
+/// A respond call's arguments with their Compact alignment: four `Bytes<32>`
 /// then a one-byte `Uint<8>`. Nine field limbs.
 pub fn respond_input(request_id: &[u8; 32], sig: &EcdsaSignature) -> AlignedValue {
     AlignedValue::concat([
@@ -428,7 +430,7 @@ pub fn respond_bidirectional_misc(
     bytes
 }
 
-/// `respondBidirectional`'s arguments with their COMPACT alignment, in the
+/// `respondBidirectional`'s arguments with their Compact alignment, in the
 /// struct's field order: `Bytes<32>`, `Uint<64>` (an eight-byte atom),
 /// the enum (a one-byte atom), `Uint<64>`, `Bytes<32>` twice (the output
 /// hash, the digest), then the signature's four. Sixteen field limbs.
@@ -558,13 +560,13 @@ impl<'a> Fields<'a> {
 /// The signer event in `misc`, the 288 bytes of a `Misc` log item, or why
 /// it is not one.
 ///
-/// STRICT: the length must be [`MISC_SIZE`], the first 32 bytes must be one
+/// Strict: the length must be [`MISC_SIZE`], the first 32 bytes must be one
 /// of the three event names exactly as the circuits pad them, and every
 /// byte past the event's last field must be zero, as the circuits write
 /// them. A `Misc` of another contract, a name of another spelling, or an
 /// envelope with bytes where this layout has padding is `Err`, never a
 /// partial decode: a reader that accepted them would be reading a layout it
-/// does not know. `output_kind` is NOT checked below 3 here, since the
+/// does not know. `output_kind` is not checked below 3 here, since the
 /// circuit already constrains it; [`Attestation::typed`] is where it is
 /// read as an enum.
 ///
@@ -632,7 +634,7 @@ pub fn decode_misc(misc: &[u8]) -> Result<SignerEvent, PublishError> {
 ///
 /// In the TypeScript stack this comes out of compactc's generated JS
 /// executor. `minocrab-contracts`' `tests/signet_ledger_apply.rs` checks
-/// these two ops, op for op, against the ones `sig-net/mpc`'s CAPTURED
+/// these two ops, op for op, against the ones `sig-net/mpc`'s captured
 /// on-chain respond transactions carry — which is what licenses writing them
 /// here.
 pub fn log_ops<D: DB>(misc_bytes: &[u8]) -> Vec<VmOp<D>> {
@@ -719,7 +721,7 @@ impl<D: DB> SignerCall<D> {
     /// version), and the prototype carries the arguments beside it.
     ///
     /// `state` is the contract's state (empty for these three circuits — see
-    /// [`empty_state`]) and `parameters` is the CHAIN's, not a constant of
+    /// [`empty_state`]) and `parameters` is the chain's, not a constant of
     /// this crate: see the module header.
     pub fn prototype(
         &self,
@@ -754,7 +756,7 @@ pub fn respond<D: DB>(
 
 /// `respondBidirectional(respondBidirectionalEvent)` — the MPC's attestation
 /// of a foreign execution: the request id, the [`Attestation`] it signed
-/// over, and the signature. This is NOT [`respond`] under another name: the
+/// over, and the signature. This is not [`respond`] under another name: the
 /// payload carries the block height, output kind, output width, output hash
 /// and digest between the id and the signature.
 pub fn respond_bidirectional<D: DB>(
@@ -771,8 +773,8 @@ pub fn respond_bidirectional<D: DB>(
     )
 }
 
-/// `signBidirectional(requestId, notification)` — the REQUEST side. The MPC
-/// does not make this call (it reads it); it is here because M29 C's
+/// `signBidirectional(requestId, notification)` — the request side. The MPC
+/// does not make this call (it reads it); it is here because the
 /// construction gate covers all three signer circuits and a publisher's key
 /// material, key locations and resolver are keyed by the same three names.
 pub fn sign_bidirectional<D: DB>(
@@ -802,12 +804,12 @@ fn signer_call<D: DB>(
     Ok(SignerCall { circuit, input, ops: log_ops(&misc), misc, key_location })
 }
 
-/// The general form: ANY entry point, ANY argument value, ANY logged bytes.
+/// The general form: any entry point, any argument value, any logged bytes.
 ///
 /// The three typed builders above are what a publisher calls. This one exists
 /// because `minocrab-contracts`' differential suites need to build calls that
 /// a publisher never would — a tampered envelope, a swapped event name, a
-/// flat `[Field; n]` alignment over the same limbs — through the SAME ledger
+/// flat `[Field; n]` alignment over the same limbs — through the same ledger
 /// path, so that what they tamper with is the production preimage.
 ///
 /// The `op` field of the prototype is left empty (`ContractOperation::new

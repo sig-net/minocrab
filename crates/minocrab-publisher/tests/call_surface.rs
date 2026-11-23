@@ -1,9 +1,10 @@
-//! M30 rung A's gates: the public surface, on its own.
+//! The public surface's gates, on its own.
 //!
-//! What is NOT here, deliberately: that the prototype these functions build
+//! What is not here, deliberately: that the prototype these functions build
 //! is call-compatible with compactc's artifact, that it applies to a
-//! `LedgerState`, and that a proof of it verifies. Those are M29 C/D/E, they
-//! run in `minocrab-contracts`, and since rung A they run THROUGH this
+//! `LedgerState`, and that a proof of it verifies. Those are the signet
+//! construction, ledger-apply and real-proof gates; they
+//! run in `minocrab-contracts`, and they run through this
 //! crate — so the preimages they pin are this crate's output, checked
 //! against the corpus artifact and against two captured on-chain
 //! transactions. Repeating them here would add a second copy, not a second
@@ -27,8 +28,8 @@ use signet_protocol::circuits::{
 };
 use signet_protocol::misc::MISC_SIZE;
 
-/// The COMMITTED `expectedVk` table (M29 A/B,
-/// `crates/signet-artifacts/managed/expectedVk.json`) — real hashes, so the
+/// The committed `expectedVk` table
+/// (`crates/signet-artifacts/managed/expectedVk.json`) — real hashes, so the
 /// key locations these tests build are the ones a real deployment of our
 /// artifacts would carry.
 const EXPECTED_VK: [(&str, &str); 3] = [
@@ -163,7 +164,7 @@ fn a_circuit_outside_the_expected_vk_table_has_no_key_location() {
 #[test]
 fn a_respond_call_lays_its_signature_out_where_the_signet_signer_says() {
     let (rid, sig) = (request_id(), signature());
-    // ONE ROW TODAY: `respondBidirectional` has its own test below, since
+    // One row today: `respondBidirectional` has its own test below, since
     // its payload carries the attestation. The loop stays a table so
     // the next circuit with this layout is one line, and so this test reads
     // as the twin of the one below.
@@ -260,7 +261,7 @@ fn every_signer_circuit_has_an_event_name() {
 // ---- the prototype ---------------------------------------------------------
 
 /// The prototype carries the arguments, the program and the entry point, and
-/// its `key_location` is the BARE circuit id — the resolver-steering string
+/// its `key_location` is the bare circuit id — the resolver-steering string
 /// M29 C pinned and `crates/signet-artifacts/managed/` names its files by.
 #[test]
 fn the_prototype_carries_the_call() {
@@ -276,7 +277,7 @@ fn the_prototype_carries_the_call() {
     assert_eq!(proto.input, call.input);
     assert!(proto.private_transcript_outputs.is_empty());
 
-    // One guaranteed transcript, no fallible one: mpc's reader REFUSES a
+    // One guaranteed transcript, no fallible one: mpc's reader refuses a
     // signet signer call that carries a fallible transcript
     // (`UnsupportedFallibleCall`).
     let guaranteed = proto.guaranteed_public_transcript.expect("a guaranteed transcript");

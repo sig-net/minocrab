@@ -96,7 +96,7 @@ digest shape split only by which map holds the id); replace the two
 in-band ABI-JSON schema strings on the record (68/75 bytes) with that
 kind tag — this is what buys swap's k15.
 
-* Trait + derive (crates/minocrab-std/src/v3/borsh.rs + minocrab-macros)
+* Trait + derive (crates/minocrab-std/src/borsh.rs + minocrab-macros)
 CircuitBorsh<V>: CircuitArg — strict extension; one derive yields
 circuit args, hash-preimage alignment, packed serialization,
 deserialization, range constraints, exported layout:
@@ -355,7 +355,7 @@ caip2_id at 304, schemas at 336/370; swap record words[0..7] at
 239..463, schemas at 496/534.
 
 * As built — stage 1 (2026-08-15)
-=crates/minocrab-std/src/v3/borsh.rs= (a PUBLIC module, =minocrab_std::v3::borsh=,
+=crates/minocrab-std/src/borsh.rs= (a PUBLIC module, =minocrab_std::v3::borsh=,
 beside entry.rs): the trait, the leaf table, the two encoders, the
 layout table. NO circuit touched — row_snapshot and interface_snapshot
 bit-identical, =cargo test --workspace --release= green.
@@ -425,7 +425,7 @@ adds =less_than(tag, K)= + assert, which no Compact circuit emits (=K =
 exactly). The bound is also proven live: the circuit accepts variants
 0..3 of a =Tag<4>= and rejects 4/5/255 through the simulator.
 
-** Gates (crates/minocrab-std/tests/v3_borsh.rs, 12 tests)
+** Gates (crates/minocrab-std/tests/borsh.rs, 12 tests)
 - ZERO COST, as byte-identical ZKIR: =limbs_of(&record).keccak256(c)= vs a
   hand-written 11-atom alignment + hand operand list; =to_bytes::<204>= vs
   the hand-written =Serializer= push sequence. Describing the preimage
@@ -459,7 +459,7 @@ own schema of the deployed payload.
 
 * As built — stage 2 (2026-08-15)
 The deserializer, both modes, MEASURED. Same file
-(=crates/minocrab-std/src/v3/borsh.rs=); NO circuit uses it and none was
+(=crates/minocrab-std/src/borsh.rs=); NO circuit uses it and none was
 touched — row_snapshot and interface_snapshot bit-identical, workspace
 release suite green (51 test binaries).
 
@@ -529,7 +529,7 @@ WitnessCheck total; 2,587 vs 1,331 for the reads alone, 1.9×. The
 whole-record ratio is far below the per-leaf headline because the big
 byte arrays dominate and they are where the two modes converge.
 
-** Gates (20 tests in tests/v3_borsh.rs, 8 of them new)
+** Gates (20 tests in tests/borsh.rs, 8 of them new)
 - BOTH MODES PARSE NATIVE BORSH: a circuit takes the 204 bytes
   =borsh::to_vec= produced as its argument, reads the record, and outputs
   every leaf — the outputs equal the field values, slot for slot, in both
@@ -599,7 +599,7 @@ kind" for data-carrying, =Tag<K>= for fieldless). Unit-tested one by one.
 &<Name as CircuitBorsh<Private>>::layout())=. The STAGE-0 WALKER WAS
 EXTRACTED, not duplicated: =layout_rows=/=schema_len=/=Row= moved from
 =minocrab-contracts/tests/serialization/oracle.rs= into
-=minocrab-std/src/v3/borsh/schema.rs=, and oracle.rs is now a two-line
+=minocrab-std/src/borsh/schema.rs=, and oracle.rs is now a two-line
 =pub use= so stage 0's fifteen tests run against the same code.
 FEATURE POSTURE PRESERVED: the schema module is behind minocrab-std's
 off-by-default =borsh-schema= feature (optional dep), which
@@ -609,7 +609,7 @@ verified with =cargo tree=: the normal build of minocrab-std has features
 [dev-dependencies].
 
 ** Gates
-- THE REAL ONE, =crates/minocrab-std/tests/v3_borsh_derive.rs=: the same
+- THE REAL ONE, =crates/minocrab-std/tests/borsh_derive.rs=: the same
   9-field record declared TWICE — derived, and with stage 1's hand-written
   impls — and every circuit either can build compared as SERIALIZED ZKIR:
   the keccak preimage, =to_bytes::<204>=, =constrain_canonical=, a Split
@@ -1290,7 +1290,7 @@ serde+borsh derives on the same type declarations. README (M13) may
 then claim native parser generation in BOTH languages.
 
 * As built — stage 9 (2026-08-15)
-=minocrab_std::v3::hash= (crates/minocrab-std/src/v3/hash.rs): four functions,
+=minocrab_std::v3::hash= (crates/minocrab-std/src/hash.rs): four functions,
 two flavors, and a module doc that says which one to reach for. NO circuit
 moved — row_snapshot and interface_snapshot bit-identical, =cargo test
 --workspace --release= green (68 test binaries).
@@ -1343,7 +1343,7 @@ encoding has to be materialised and that is the M7 segment packing. Said in
 the doc comment, with the advice that a value which is only going to be
 hashed should take the persistent flavor.
 
-** Gates (4 new tests in crates/minocrab-std/tests/v3_borsh.rs, 24 total)
+** Gates (4 new tests in crates/minocrab-std/tests/borsh.rs, 24 total)
 - =persistent_hash_is_sha256_of_the_borsh_encoding= — THE ORACLE, through the
   simulator: the digest the chip produces IS =Sha256::digest(borsh::to_vec(
   &spec))= of the plain twin, all 32 bytes.

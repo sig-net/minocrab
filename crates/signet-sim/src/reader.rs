@@ -2,10 +2,10 @@
 //! MPC does between seeing `SignBidirectionalEvent` and knowing what to
 //! sign.
 //!
-//! MECHANICAL TRANSLATION of `chain-midnight/src/reader.rs` at `b940f0a7`
+//! Mechanical translation of `chain-midnight/src/reader.rs` at `b940f0a7`
 //! (the decode path; the emission decoders it also holds are not needed
 //! here), plus the stage-7 decode per the MPC's work order: one leading
-//! `uint<u8>` at atom 0 that must be `0x80` (dropped by NAME otherwise —
+//! `uint<u8>` at atom 0 that must be `0x80` (dropped by name otherwise —
 //! "record-version"), one trailing `uint<u8>` kind where the two schema
 //! atoms were, every other offset shifted by one atom.
 
@@ -39,7 +39,7 @@ const V2_TAIL_ATOMS: usize = 2;
 
 /// V1's head: `keyVersion, sender, path, algo, txParamType`, then the ten
 /// scalar `txParams` atoms — so the calldata words begin at atom 15, three
-/// in from the deployed record's 18. The V1 head is SHORTER because the
+/// in from the deployed record's 18. The V1 head is shorter because the
 /// request nonce is gone and `params` moved to the tail.
 const V1_HEAD_ATOMS: usize = 15;
 /// V1's tail after the access-list region: `executionDest, signatureDest,
@@ -108,7 +108,7 @@ struct EvmType2Capacities {
     max_storage_keys_per_entry: usize,
 }
 
-/// The capacities, from the widths BETWEEN the head and the tail: `head`
+/// The capacities, from the widths between the head and the tail: `head`
 /// atoms precede the calldata words, `tail` atoms follow the access list.
 fn evm_type2_capacities(widths: &[u32], head: usize, tail_atoms: usize) -> anyhow::Result<EvmType2Capacities> {
     let fixed = head + 4 + tail_atoms; // head, then count + (address, key count) ≥ 0, then tail
@@ -171,7 +171,7 @@ fn single_byte(atom: &ValueAtom, what: &str) -> anyhow::Result<u8> {
     }
 }
 
-/// Decode a stored DEPLOYED-format request record in one pass.
+/// Decode a stored deployed-format request record in one pass.
 pub fn decode_record(node: &Node) -> anyhow::Result<SignBidirectionalRecord> {
     let cell = cell_of(node, "request record")?;
     ensure_evm_type2_param_type(cell, TX_PARAM_TYPE_ATOM)?;
@@ -196,11 +196,11 @@ pub fn decode_record(node: &Node) -> anyhow::Result<SignBidirectionalRecord> {
     Ok(record)
 }
 
-/// Decode a stored STAGE-7 request record. The version byte is checked
+/// Decode a stored stage-7 request record. The version byte is checked
 /// first and by name, which is the point of the byte.
 pub fn decode_record_v2(node: &Node) -> anyhow::Result<SignBidirectionalRecordV2> {
     let cell = cell_of(node, "request record")?;
-    // The head check, by NAME: a one-byte atom holding 0x80. A deployed
+    // The head check, by name: a one-byte atom holding 0x80. A deployed
     // record (a 32-byte sender first) fails here too, as "record-version".
     let version_atom = cell.value.0.first().ok_or_else(|| anyhow::anyhow!("record-version: request record is empty"))?;
     let head_width = cell.alignment.0.first().and_then(|seg| match seg {
@@ -238,10 +238,10 @@ pub fn decode_record_v2(node: &Node) -> anyhow::Result<SignBidirectionalRecordV2
     Ok(record)
 }
 
-/// Decode a stored V1 request record in one pass (M44 rung D).
+/// Decode a stored V1 request record in one pass.
 ///
-/// NO FORMAT-VERSION BYTE to check by name: V1 leads with `keyVersion`, and
-/// what distinguishes it from the stage-7 record is the SHAPE — a one-byte
+/// No format-version byte to check by name: V1 leads with `keyVersion`, and
+/// what distinguishes it from the stage-7 record is the shape — a one-byte
 /// head whose `txParamType` sits at atom 4 rather than 8, and a five-atom
 /// tail. A stage-7 record offered here fails `tx_param_type` (it reads the
 /// 64-byte `params` atom where V1 expects one byte), which is the drop this
@@ -259,7 +259,7 @@ pub fn decode_record_v1(node: &Node) -> anyhow::Result<SignBidirectionalRecordV1
         algo: bounded_enum(cursor, "algo")?,
         tx_param_type: uint::<u8>(cursor, 1, "tx_param_type")?,
         tx_params: decode_tx_params(cursor, &caps)?,
-        execution_dest: bytes_n::<32>(cursor, "execution_dest")?,
+        execution_dest: bytes_n::<64>(cursor, "execution_dest")?,
         signature_dest: bounded_enum(cursor, "signature_dest")?,
         params: bytes_n::<64>(cursor, "params")?,
         output_deserialization_schema: bytes_dyn(cursor, "output_deserialization_schema")?,
@@ -275,10 +275,10 @@ pub fn decode_record_v1(node: &Node) -> anyhow::Result<SignBidirectionalRecordV1
     Ok(record)
 }
 
-/// The V1 lookup. The id is NOT a hash of the cell any more: it is
+/// The V1 lookup. The id is not a hash of the cell any more: it is
 /// `calculateRequestIdV1` over `RequestIdPreimageV1`, whose transaction
-/// enters as a digest over the USED calldata words — so the record has to be
-/// DECODED before its id can be recomputed, and two records differing only
+/// enters as a digest over the used calldata words — so the record has to be
+/// decoded before its id can be recomputed, and two records differing only
 /// in an unused word slot resolve to the same id.
 pub fn resolve_verified_record_v1(map: &Node, request_id: [u8; 32]) -> Resolved<SignBidirectionalRecordV1> {
     let entry = match map_entry(map, request_id) {
@@ -340,7 +340,7 @@ pub enum IdRule {
     LegacyKeccak,
 }
 
-/// The DEPLOYED-format lookup: the id must be present, decode, and hash back
+/// The deployed-format lookup: the id must be present, decode, and hash back
 /// to itself under `rule`.
 pub fn resolve_verified_record(map: &Node, request_id: [u8; 32], rule: IdRule) -> Resolved<SignBidirectionalRecord> {
     let entry = match map_entry(map, request_id) {
@@ -369,7 +369,7 @@ pub fn resolve_verified_record(map: &Node, request_id: [u8; 32], rule: IdRule) -
     Resolved::Found(Box::new(record))
 }
 
-/// The STAGE-7 lookup, under the transient rule (the cell's field
+/// The stage-7 lookup, under the transient rule (the cell's field
 /// representation — the format-version and kind bytes are limbs like any
 /// other).
 pub fn resolve_verified_record_v2(map: &Node, request_id: [u8; 32]) -> Resolved<SignBidirectionalRecordV2> {

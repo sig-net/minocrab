@@ -25,7 +25,7 @@ pub struct Signature {
 }
 
 impl Signature {
-    /// `verifyRespondBidirectionalEvent`'s CIRCUIT-INPUT form: `bigR.x` and
+    /// `verifyRespondBidirectionalEvent`'s circuit-input form: `bigR.x` and
     /// `s` byte-reversed into little-endian (the wire and the ledger carry
     /// them big-endian; since signet-midnight `fff3421c` the reversal is
     /// off-chain — the TS SDK's `respondBidirectionalEventToCircuitInput`).

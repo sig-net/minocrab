@@ -19,12 +19,16 @@
 //! amount: Uint<128>; recipient: Bytes<20> }`, 37 packed bytes,
 //! zero-padded), asserting `out.success`.
 
-use minocrab::v3::{Circuit3, FieldT, Wire3};
+use minocrab::{Circuit, FieldT, Wire};
 use minocrab::{label, Alignment, AlignmentAtom, AlignmentSegment, Fr, Private};
-use minocrab_ledger::{counter_increment, emit, map_insert, ImpactElem, LedgerValue};
-use minocrab_std::v3::{
-    contract, rebuild_limb, secp256k1_ecdsa_verify, BytesN, Disclose, Discloses,
-    Secp256k1EcdsaSignature, Secp256k1Point, Vis3, B32,
+use minocrab_experimental::impact::raw::{
+    counter_increment, emit, map_insert, ImpactElem, LedgerValue,
+};
+use minocrab_compat::deserialize::Packed;
+use minocrab_compat::secp::secp256k1_ecdsa_verify;
+use minocrab_std::{
+    contract, BytesN, Disclose, Discloses,
+    Secp256k1EcdsaSignature, Secp256k1Point, Vis, B32,
 };
 
 /// Ledger field indices, in declaration order.
@@ -39,11 +43,10 @@ label! {
 
 /// The shared tail: `verified.insert(disclose(requestId), true)` plus the
 /// call-count increment, emitted in source order (increment first).
-fn ledger_writes(c: &mut Circuit3, request_id: B32<Private>) {
+fn ledger_writes(c: &mut Circuit, request_id: B32<Private>) {
     let request_id = request_id.disclose_as::<AttestedRequestId>(c);
-    // Kept even though guard threading no longer uses it: dropping this
-    // `Copy` would renumber every later identifier, moving the ZKIR
-    // (notes/edsl-trim.org §B, the removal's zero-movement gate).
+    // The `one` compactc threads, unused here: dropping this `Copy` would
+    // renumber every later identifier, moving the ZKIR (notes/edsl-trim.org §B).
     let _ = c.constant(1u64);
 
     let key = LedgerValue::bytes(
@@ -56,44 +59,42 @@ fn ledger_writes(c: &mut Circuit3, request_id: B32<Private>) {
     emit(c, &ops);
 }
 
-/// `struct RespondOutput { success: Boolean; amount: Uint<128>;
-/// recipient: Bytes<20> }` as circuit wires.
-pub struct RespondOutput<V: Vis3> {
-    pub success: Wire3<FieldT, V>,
-    pub amount: Wire3<FieldT, V>,
-    pub recipient: Wire3<FieldT, V>,
+/// The fields of `struct RespondOutput { success: Boolean; amount:
+/// Uint<128>; recipient: Bytes<20> }` that the circuit reads, as wires.
+/// `recipient` is not among them: nothing reads it, and compactc emits
+/// nothing for it.
+pub struct RespondOutput<V: Vis> {
+    pub success: Wire<FieldT, V>,
+    pub amount: Wire<FieldT, V>,
 }
 
-/// `deserialize<RespondOutput, 128>(output)` (expand-serialize.ss
-/// build-deserialize): `success = (byte 0 == 1)`, `amount = bytes 1..17`
-/// (Uint<128>, LE), `recipient = bytes 17..37` (`Bytes<20>`, one limb);
-/// the 91 padding bytes are ignored. compactc 0.36 also constrains byte 0 to
-/// 0 or 1; the caller asserts `success`, which already rejects any byte but 1.
-fn deserialize_respond_output<V: Vis3>(
-    c: &mut Circuit3,
+/// `deserialize<RespondOutput, 128>(output)` in compactc's shape
+/// ([`Packed`]): `success` is byte 0 (constrained to 0 or 1, then `== 1`),
+/// `amount` is bytes 1..17 (`Uint<128>`, LE, range-checked to 128 bits).
+/// Only those 17 bytes are split. `recipient` (bytes 17..37) and the 91
+/// padding bytes are not: the circuit never reads them, and compactc's
+/// optimizer drops their splits. `amount` is read anyway because compactc
+/// keeps its range check, which is an effect.
+fn deserialize_respond_output<V: Vis>(
+    c: &mut Circuit,
     output: &BytesN<V, 128>,
 ) -> RespondOutput<V> {
-    let bytes = output.to_le_bytes(c);
-    let one = V::from_public(c.constant(1u64));
-    RespondOutput {
-        success: c.test_eq(bytes[0], one),
-        amount: rebuild_limb(c, &bytes[1..17]),
-        recipient: rebuild_limb(c, &bytes[17..37]),
-    }
+    let packed = Packed::new(output);
+    RespondOutput { success: packed.boolean::<0>(c), amount: packed.uint::<1, 16>(c) }
 }
 
 /// The shared body of `shaVerify` / `keccakVerify`, parameterized by the
 /// digest hash. The two circuits differ in the hash builtin alone, so the
 /// entry points are two `#[circuit]` functions over one body — an attribute
-/// generates a nullary constructor, so a body shared by a Rust PARAMETER
+/// generates a nullary constructor, so a body shared by a Rust parameter
 /// cannot itself be one.
 fn hash_verify(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     hash: impl FnOnce(
-        &mut Circuit3,
+        &mut Circuit,
         Alignment,
-        &[minocrab::v3::AnyWire3<Private>],
-    ) -> Wire3<minocrab::v3::Bytes32T, Private>,
+        &[minocrab::AnyWire<Private>],
+    ) -> Wire<minocrab::Bytes32T, Private>,
     request_id: B32<Private>,
     output: BytesN<Private, 128>,
     r: B32<Private>,
@@ -136,11 +137,11 @@ fn hash_verify(
 /// MPC attestation verification.
 pub struct Attest;
 
-#[contract]
+#[contract(lowering = minocrab_compat::profile)]
 impl Attest {
     /// `export circuit mapOnly(requestId: Bytes<32>): []`
     #[circuit]
-    pub fn map_only(c: &mut Circuit3, request_id: B32<Private>) -> Discloses<(AttestedRequestId,)> {
+    pub fn map_only(c: &mut Circuit, request_id: B32<Private>) -> Discloses<(AttestedRequestId,)> {
         c.region("ledger writes", |c| ledger_writes(c, request_id));
         Discloses::of(())
     }
@@ -148,7 +149,7 @@ impl Attest {
     /// `export circuit verifyOnly(requestId, digest, r, s, pk): []`
     #[circuit]
     pub fn verify_only(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         request_id: B32<Private>,
         digest: B32<Private>,
         r: B32<Private>,
@@ -177,14 +178,14 @@ impl Attest {
     /// `export circuit shaVerify(requestId, output, r, s, pk): []`
     #[circuit]
     pub fn sha_verify(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         request_id: B32<Private>,
         output: BytesN<Private, 128>,
         r: B32<Private>,
         s: B32<Private>,
         pk: Secp256k1Point,
     ) -> Discloses<(AttestedRequestId,)> {
-        let hash = |c: &mut Circuit3, alignment, inputs: &[_]| c.persistent_hash(alignment, inputs);
+        let hash = |c: &mut Circuit, alignment, inputs: &[_]| c.persistent_hash(alignment, inputs);
         hash_verify(c, hash, request_id, output, r, s, pk);
         Discloses::of(())
     }
@@ -192,14 +193,14 @@ impl Attest {
     /// `export circuit keccakVerify(requestId, output, r, s, pk): []`
     #[circuit]
     pub fn keccak_verify(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         request_id: B32<Private>,
         output: BytesN<Private, 128>,
         r: B32<Private>,
         s: B32<Private>,
         pk: Secp256k1Point,
     ) -> Discloses<(AttestedRequestId,)> {
-        let hash = |c: &mut Circuit3, alignment, inputs: &[_]| c.keccak256(alignment, inputs);
+        let hash = |c: &mut Circuit, alignment, inputs: &[_]| c.keccak256(alignment, inputs);
         hash_verify(c, hash, request_id, output, r, s, pk);
         Discloses::of(())
     }

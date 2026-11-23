@@ -1,0 +1,41 @@
+[package]
+name = "minocrab-compat"
+description = "MinoCrab's compactc-compatibility gadgets: the compactc-shaped lowerings a circuit ported from Compact uses so that it emits the compiler's instruction stream byte for byte"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+readme = "README.md"
+keywords = ["midnight", "zkir", "compact", "zero-knowledge", "circuit"]
+categories = ["cryptography::cryptocurrencies", "cryptography"]
+include = ["src/**/*.rs", "README.md", "LICENSE-MIT", "LICENSE-APACHE"]
+
+[lints]
+workspace = true
+
+[dependencies]
+# The circuit builder, and the lowering state `profile` sets.
+minocrab.workspace = true
+# The typed values and ledger slots the gadgets are written over.
+minocrab-std.workspace = true
+# The kernel's Impact ops (the guarded self read and the guarded claims).
+minocrab-ledger.workspace = true
+# `normalise::folded`: the copy fold, over a whole `IrSource`.
+minocrab-ir.workspace = true
+minocrab-zkir.workspace = true
+
+[dev-dependencies]
+# tests/same_as_std.rs: each lean std gadget and its compactc-shaped twin here
+# are run on the same inputs through the executor (`minocrab_sim::exec`,
+# Midnight's on-chain VM) and must agree on accept/reject, outputs, the
+# public-input vector, the transcript and the call's effects. The state
+# tree's own types seed the ledger; proptest draws the inputs; the zkir and
+# curve crates sign ECDSA test vectors off circuit.
+minocrab-sim = { path = "../minocrab-sim" }
+midnight-onchain-state.workspace = true
+midnight-storage.workspace = true
+midnight-transient-crypto.workspace = true
+midnight-zkir-v3.workspace = true
+midnight-curves.workspace = true
+proptest.workspace = true

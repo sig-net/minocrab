@@ -1,18 +1,18 @@
 //! The metadata beside every workspace circuit's ZKIR names instructions of
-//! the stream that SHIPS.
+//! the stream that ships.
 //!
-//! `Compiled3::assert_messages` and `Compiled3::regions` are taken while the
-//! circuit is built, and `Builder3::finish` deletes instructions after that
+//! `Compiled::assert_messages` and `Compiled::regions` are taken while the
+//! circuit is built, and `Builder::finish` deletes instructions after that
 //! (the copy fold on every circuit, the true-assert rule, the opt profile's
-//! dedup). `Circuit3::finish` moves both onto the finished stream through
-//! `Builder3::finish_kept` (notes/ir-passes.org §13). Before that move, 169
+//! dedup). `Circuit::finish` moves both onto the finished stream through
+//! `Builder::finish_kept` (notes/ir-passes.org §13). Before that move, 169
 //! of the 260 messages named an instruction that was not an `assert`, 12
-//! named a DIFFERENT assert, and 73 of the 348 regions ran past the end of
+//! named a different assert, and 73 of the 348 regions ran past the end of
 //! the stream, across 56 of the 214 circuits.
 //!
-//! THE EXACT CHECK runs inside the build. Under `debug_assertions`,
-//! `Builder3::finish_kept` checks every kept instruction against the one it
-//! became, operands included (`passes::check_kept`), and `Circuit3::finish`
+//! The exact check runs inside the build. Under `debug_assertions`,
+//! `Builder::finish_kept` checks every kept instruction against the one it
+//! became, operands included (`passes::check_kept`), and `Circuit::finish`
 //! checks that each message sits on its own assert's finished position and
 //! each region is exactly the run its surviving instructions landed on. So
 //! building all of `support::circuits()` here re-proves both on every real
@@ -23,15 +23,15 @@
 mod support;
 mod vault;
 
-use minocrab_sim::v3::{simulate_compiled, Sim3Error};
-use minocrab_zkir::v3::Instruction;
+use minocrab_sim::{simulate_compiled, SimError};
+use minocrab_zkir::Instruction;
 use vault::artifact::Circuit;
 use vault::model::InitialiseScenario;
 
 #[test]
 #[cfg_attr(
     not(debug_assertions),
-    ignore = "the exact check is the debug-build one in Circuit3::finish; run without --release"
+    ignore = "the exact check is the debug-build one in Circuit::finish; run without --release"
 )]
 fn every_circuit_s_messages_and_regions_name_its_finished_stream() {
     let mut wrong = Vec::new();
@@ -58,7 +58,7 @@ fn every_circuit_s_messages_and_regions_name_its_finished_stream() {
         }
 
         // Each region is in range, and any two are nested or disjoint, as
-        // they were when built (`Circuit3::region` is a scope).
+        // they were when built (`Circuit::region` is a scope).
         for r in &compiled.regions {
             if !(r.start <= r.end && r.end <= stream.len()) {
                 wrong.push(format!("{name}: region {:?} [{}, {}) of {}", r.label, r.start, r.end, stream.len()));
@@ -89,8 +89,21 @@ fn every_circuit_s_messages_and_regions_name_its_finished_stream() {
     // whose entry point is a constant of every call. 455 → 474 messages: the
     // identity-key assert of `secp256k1_ecdsa_verify` in its 18 callers and
     // of `secp256k1_ethereum_address` in `manager::execute` carry compactc
-    // 0.36's message.
-    assert_eq!((circuits, messages, regions), (227, 474, 411));
+    // 0.36's message. 411 → 412 regions: `serde_builtin::check_roundtrip`
+    // names its compactc-shaped deserialize ("deserialize Mixed"), which its
+    // differential compares with compactc's stream.
+    // 474 → 475 messages and 412 → 413 regions: the test caller's
+    // `initialise` at v0.26 asserts its response key is not the identity
+    // ("Response key must not be the identity point", region "identity-key gate").
+    // 475 → 480 messages, 413 → 440 regions with the v0.26.0-rc.15
+    // attestation (M48 L): every `Pending::refund` (the pending vault's four,
+    // the treasury's) asserts "Output does not match the attestation", and
+    // the attested-output hash and check are regions of their own in every
+    // settle that verifies one.
+    // 480 → 473 messages, 440 → 454 regions with the erc20 vault at
+    // 0.7.0-rc.2: three `queueAttestation*` became one, two admin circuits
+    // came in, and the four vault-paid starts gained the fee path's regions.
+    assert_eq!((circuits, messages, regions), (227, 473, 454));
     // The three messages that go: the `Always` outcome rule's `assert(imm 1)`,
     // deleted by the true-assert rule, takes its message with it.
     dropped.sort();
@@ -124,7 +137,7 @@ fn initialise_names_the_argument_check_that_failed() {
         let mut s = InitialiseScenario::new();
         zero(&mut s);
         match simulate_compiled(&compiled, &s.preimage()) {
-            Err(Sim3Error::Failed { op: "assert", message, .. }) => {
+            Err(SimError::Failed { op: "assert", message, .. }) => {
                 assert_eq!(message, format!("failed assertion: {want}"))
             }
             other => panic!("expected {want:?}, got {other:?}"),

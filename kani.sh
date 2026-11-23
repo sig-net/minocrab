@@ -1,10 +1,9 @@
 #!/bin/zsh
-# The Kani instrument (M23 R4): `./kani.sh [cargo-kani args]`.
-# Defaults to every harness in minocrab-ir. NEVER part of the routine loop —
+# The Kani instrument: `./kani.sh [cargo-kani args]`.
+# Defaults to every harness in minocrab-taint (the only crate with any). Never part of the routine loop —
 # plain `cargo test` compiles none of the #[cfg(kani)] modules.
 #
-# ONE-TIME SETUP, per machine (notes/formal-verification-options.org
-# §"As built — M23 R4"):
+# One-time setup, per machine (notes/formal-verification-options.org):
 #
 #   cargo install --locked kani-verifier   # the driver, into ~/.cargo/bin
 #   cargo kani setup                       # bundle + pinned nightly, via
@@ -13,7 +12,7 @@
 #                                          # first on PATH, which the
 #                                          # devshell ordering guarantees)
 #
-# TEMPORARY SHIMS, both of which die the day Kani's pinned nightly reaches
+# Temporary shims, both of which die the day Kani's pinned nightly reaches
 # rustc >= 1.95 (Kani 0.67 pins nightly-2025-11-21 = 1.93, and the
 # workspace's transitive dep `sysinfo 0.39` — via midnight-storage —
 # declares rust-version 1.95 and uses `cfg_select`, stabilized after 1.93):
@@ -24,7 +23,7 @@
 #    suffices; the stable host rustc probes pass through untouched).
 #
 # 2. Kani's toolchain cargo must pass `--ignore-rust-version` — Kani calls
-#    that cargo binary DIRECTLY (no $CARGO, no $PATH lookup), so the only
+#    that cargo binary directly (no $CARGO, no $PATH lookup), so the only
 #    lever is a shim at ~/.kani/kani-*/toolchain/bin/cargo. This script
 #    checks the shim is in place and prints the recipe if not; it does not
 #    install it.
@@ -76,5 +75,5 @@ export RUSTC_WRAPPER=${0:A}
 if (( $# )); then
   exec cargo kani "$@"
 else
-  exec cargo kani -p minocrab-ir
+  exec cargo kani -p minocrab-taint
 fi

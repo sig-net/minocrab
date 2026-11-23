@@ -1,20 +1,20 @@
 //! Mirrors of the Signet request record, as the MPC decodes it.
 //!
-//! MECHANICAL TRANSLATION of `sig-net/mpc` `chain-signatures/chain-midnight/
-//! src/records.rs` at `b940f0a7` (develop, 2026-09-05), plus the stage-7
+//! Mechanical translation of `sig-net/mpc` `chain-signatures/chain-midnight/
+//! src/records.rs` at `b940f0a7` (develop), plus the stage-7
 //! twin ([`SignBidirectionalRecordV2`]) the MPC's own work order describes
 //! (notes/borsh-format.org §"THE READER CONSTANTS"): a format-version byte
 //! at the head, one response-kind byte where the two schema strings were.
 //!
-//! AND THE V1 RECORD ([`SignBidirectionalRecordV1`], M44 rung D): the shape
+//! And the V1 record ([`SignBidirectionalRecordV1`]): the shape
 //! `@sig-net/midnight` 0.24.1 ships and the deployed flush-pattern vault
 //! files. It is translated from `minocrab_contracts::signet_v1` rather than
-//! from the MPC, because the MPC has NOT moved — `sig-net/mpc` at `0d1e5d6e`
-//! (develop, 2026-10) still decodes the `fff3421c` record, request nonce and
+//! from the MPC, because the MPC has not moved — `sig-net/mpc` at `0d1e5d6e`
+//! (develop) still decodes the `fff3421c` record, request nonce and
 //! caip2 field included. When its reader lands, this is the twin to diff
 //! against.
 
-/// One signing request, the DEPLOYED `SignBidirectionalEvent` record.
+/// One signing request, the deployed `SignBidirectionalEvent` record.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SignBidirectionalRecord {
     /// `ContractAddress { bytes: Bytes<32> }`.
@@ -40,7 +40,7 @@ pub struct SignBidirectionalRecord {
     pub respond_serialization_schema: Vec<u8>,
 }
 
-/// The STAGE-7 record: `formatVersion` first, `responseKind` last, every
+/// The stage-7 record: `formatVersion` first, `responseKind` last, every
 /// field between identical to the deployed one.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SignBidirectionalRecordV2 {
@@ -63,16 +63,16 @@ pub struct SignBidirectionalRecordV2 {
 /// The stage-7 format-version byte.
 pub const RECORD_FORMAT_VERSION: u8 = 0x80;
 
-/// The V1 record: `keyVersion` FIRST, no request nonce, the destination
+/// The V1 record: `keyVersion` first, no request nonce, the destination
 /// third from last, and the two schemas at the tail with
 /// `respondSerializationSchema` pinned to `Bytes<0>` — an atom with no bytes
 /// at all, which is why it has no field here.
 ///
 /// What a reader must do differently from the V2 twin, beyond the field
-/// order: the request id is NOT a hash of this record. It is
+/// order: the request id is not a hash of this record. It is
 /// [`crate::hashing::v1::request_id`] over a seven-field preimage whose
 /// transaction enters as [`crate::hashing::v1::tx_params_digest`], computed
-/// over the USED calldata words only — so two records differing in an unused
+/// over the used calldata words only — so two records differing in an unused
 /// word slot share an id, and a record cannot be verified by hashing its
 /// cell.
 #[derive(Debug, Clone, PartialEq)]
@@ -87,8 +87,9 @@ pub struct SignBidirectionalRecordV1 {
     /// `TxParamType`: evmType2 = 0, reserved = 1.
     pub tx_param_type: u8,
     pub tx_params: EvmType2TxParams,
-    /// `executionDest` — `pad(32, "eip155:1")` for every Ethereum network.
-    pub execution_dest: [u8; 32],
+    /// `executionDest` — `pad(64, "eip155:1")` for every Ethereum network
+    /// (`Bytes<64>` since `@sig-net/midnight` 0.25).
+    pub execution_dest: [u8; 64],
     /// `MPCDestination`: unused = 0, reserved = 1.
     pub signature_dest: u8,
     pub params: [u8; 64],

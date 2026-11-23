@@ -1,11 +1,11 @@
 /-
-The Lean warrant for `minocrab_std::v3`'s numeric leaves — `Uint<BITS, V>`
+The Lean warrant for `minocrab_std`'s numeric leaves — `Uint<BITS, V>`
 and `BoundedUint<BOUND, V>` — M25's construct-loop rows 1 and 2
 (design of record: notes/lean-port.org §3).
 
 THE MODEL GAP, stated once and inherited by everything here: these
 theorems warrant the ARITHMETIC RULES the types encode (the inline-const
-asserts in `v3.rs` and the free retypes `widen`/`to_uint`); the claim
+asserts in `leaves.rs` and the free retypes `widen`/`to_uint`); the claim
 that the Rust states those rules as written here rests on review — each
 theorem names the assert it warrants. Extraction (Aeneas) would close
 that gap; nothing else does.

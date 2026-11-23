@@ -18,7 +18,6 @@ pub mod disclosure;
 pub mod erc20_vault;
 pub mod erc20_vault_pending;
 pub mod evm;
-pub mod evm_flow;
 pub mod events;
 pub mod events_borsh;
 pub mod hashing;
@@ -30,8 +29,6 @@ pub mod nested;
 pub mod opaque;
 pub mod serde_builtin;
 pub mod signet;
-pub mod signet_v1;
-pub mod signet_flow;
 pub mod signet_contract;
 pub mod test_caller;
 pub mod treasury;
@@ -39,3 +36,6 @@ pub mod xcall;
 pub mod xcall_with_payment;
 pub mod xcontract_events;
 pub mod xcontract_events_borsh;
+
+// The Signet library, at the paths it had when it lived here.
+pub use minocrab_signet::{evm_flow, output_schema, signet_flow, signet_v1};

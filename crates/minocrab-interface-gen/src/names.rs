@@ -1,8 +1,8 @@
 //! Compact names → Rust names, and back.
 //!
-//! The mapping has to be a BIJECTION on the names it accepts, because
+//! The mapping has to be a bijection on the names it accepts, because
 //! `#[interface]` derives the Compact entry-point name back from the Rust
-//! method name by the inverse rule (M9's `snake_case → lowerCamelCase`).
+//! method name by the inverse rule (`snake_case → lowerCamelCase`).
 //! Where the round trip does not close — `respondV2`, say — the generator
 //! emits an explicit `#[entry_point(name = "…")]` rather than a name that
 //! would hash to the wrong entry point.

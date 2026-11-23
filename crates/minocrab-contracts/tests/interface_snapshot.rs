@@ -1,15 +1,14 @@
-//! A frozen snapshot of every circuit's ORDERED interface: arguments,
+//! A frozen snapshot of every circuit's ordered interface: arguments,
 //! outputs and witness reads.
 //!
 //! The differential comparator (`assert_call_compatible`) checks only the
 //! *type* column of the input schema — and nearly every argument is a
 //! `Scalar<BLS12-381>`, so a same-typed permutation of the argument list is
 //! invisible to it except through PI equality on the one honest preimage it
-//! runs. Argument ORDER is the real contract: it feeds the communications
+//! runs. Argument order is the real contract: it feeds the communications
 //! commitment and the preimage layout, so a reorder, rename or insertion
 //! silently breaks every caller. This test is the instrument that makes such
-//! movement mechanically visible before the M9 port starts rewriting the
-//! argument lists.
+//! movement mechanically visible.
 //!
 //! Per circuit it freezes, in order:
 //!   - `in  <label>: <type>` — one line per `IrSource::inputs` entry (the
@@ -21,11 +20,11 @@
 //!   - `wit <type>` — one line per `PrivateInput` instruction, i.e. per
 //!     private-transcript read, in execution order; `(guarded)` marks a
 //!     conditional read. Witnesses are not entry-point arguments, and
-//!     `Compiled3` only counts them, so the list is recovered from the
+//!     `Compiled` only counts them, so the list is recovered from the
 //!     instruction stream (the count is cross-checked against
-//!     `Compiled3::witnesses`).
+//!     `Compiled::witnesses`).
 //!
-//! To regenerate after an INTENTIONAL interface change (a toolchain bump
+//! To regenerate after an intentional interface change (a toolchain bump
 //! that moves a schema is one — notes/version-bump.org):
 //! `cargo test --release -p minocrab-contracts --test interface_snapshot -- \
 //!      --ignored regenerate_interface_snapshot`, or `./bump.sh accept` to
@@ -34,15 +33,15 @@
 
 mod support;
 
-use minocrab::v3::Compiled3;
+use minocrab::Compiled;
 use minocrab::DisclosureKind;
-use minocrab_zkir::v3::{Instruction, IrType};
+use minocrab_zkir::{Instruction, IrType};
 use support::{circuits, diff, rewrite_generated_region, test_source};
 
 /// `(circuit, interface)` — frozen at "M9 phase 0: freeze every circuit's
 /// ordered interface in a snapshot guard test".
 const SNAPSHOT: &[(&str, &str)] = &[
-    // GENERATED BEGIN — rewritten by `regenerate_interface_snapshot`
+    // Generated begin — rewritten by `regenerate_interface_snapshot`
     (
         "erc20_vault::initialise",
         "\
@@ -54,6 +53,18 @@ in  chainId: Scalar<BLS12-381>
 in  responseKey: Point<Secp256k1>
 in  responseKeyVersion: Scalar<BLS12-381>
 in  evmHeight: Scalar<BLS12-381>
+in  stataUnderlyingFees_withdraw: Scalar<BLS12-381>
+in  stataUnderlyingFees_swap: Scalar<BLS12-381>
+in  stataUnderlyingFees_supply: Scalar<BLS12-381>
+in  stataUnderlyingFees_redeem: Scalar<BLS12-381>
+in  stataTokenFees_withdraw: Scalar<BLS12-381>
+in  stataTokenFees_swap: Scalar<BLS12-381>
+in  stataTokenFees_supply: Scalar<BLS12-381>
+in  stataTokenFees_redeem: Scalar<BLS12-381>
+in  feeRecipientCoinKey_hi: Scalar<BLS12-381>
+in  feeRecipientCoinKey_lo: Scalar<BLS12-381>
+in  feeRecipientEncryptionKey_hi: Scalar<BLS12-381>
+in  feeRecipientEncryptionKey_lo: Scalar<BLS12-381>
 wit Scalar<BLS12-381>
 wit Scalar<BLS12-381>
 ",
@@ -76,6 +87,33 @@ wit Scalar<BLS12-381>
         "erc20_vault::add_allowed_token",
         "\
 in  erc20Address: Scalar<BLS12-381>
+in  fees_withdraw: Scalar<BLS12-381>
+in  fees_swap: Scalar<BLS12-381>
+in  fees_supply: Scalar<BLS12-381>
+in  fees_redeem: Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+",
+    ),
+    (
+        "erc20_vault::set_token_fees",
+        "\
+in  erc20Address: Scalar<BLS12-381>
+in  fees_withdraw: Scalar<BLS12-381>
+in  fees_swap: Scalar<BLS12-381>
+in  fees_supply: Scalar<BLS12-381>
+in  fees_redeem: Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+",
+    ),
+    (
+        "erc20_vault::set_fee_recipient",
+        "\
+in  coinPublicKey_hi: Scalar<BLS12-381>
+in  coinPublicKey_lo: Scalar<BLS12-381>
+in  encryptionPublicKey_hi: Scalar<BLS12-381>
+in  encryptionPublicKey_lo: Scalar<BLS12-381>
 wit Scalar<BLS12-381>
 wit Scalar<BLS12-381>
 ",
@@ -126,13 +164,15 @@ in  slots_9_requestId_lo: Scalar<BLS12-381>
 ",
     ),
     (
-        "erc20_vault::queue_attestation0",
+        "erc20_vault::queue_attestation",
         "\
 in  respondBidirectionalEvent_requestId_hi: Scalar<BLS12-381>
 in  respondBidirectionalEvent_requestId_lo: Scalar<BLS12-381>
 in  respondBidirectionalEvent_blockHeight: Scalar<BLS12-381>
 in  respondBidirectionalEvent_outputKind: Scalar<BLS12-381>
 in  respondBidirectionalEvent_serializedOutputLength: Scalar<BLS12-381>
+in  respondBidirectionalEvent_outputHash_hi: Scalar<BLS12-381>
+in  respondBidirectionalEvent_outputHash_lo: Scalar<BLS12-381>
 in  respondBidirectionalEvent_digest_hi: Scalar<BLS12-381>
 in  respondBidirectionalEvent_digest_lo: Scalar<BLS12-381>
 in  respondBidirectionalEvent_signature_bigR_x_hi: Scalar<BLS12-381>
@@ -142,47 +182,6 @@ in  respondBidirectionalEvent_signature_bigR_y_lo: Scalar<BLS12-381>
 in  respondBidirectionalEvent_signature_s_hi: Scalar<BLS12-381>
 in  respondBidirectionalEvent_signature_s_lo: Scalar<BLS12-381>
 in  respondBidirectionalEvent_signature_recoveryId: Scalar<BLS12-381>
-",
-    ),
-    (
-        "erc20_vault::queue_attestation1",
-        "\
-in  respondBidirectionalEvent_requestId_hi: Scalar<BLS12-381>
-in  respondBidirectionalEvent_requestId_lo: Scalar<BLS12-381>
-in  respondBidirectionalEvent_blockHeight: Scalar<BLS12-381>
-in  respondBidirectionalEvent_outputKind: Scalar<BLS12-381>
-in  respondBidirectionalEvent_serializedOutputLength: Scalar<BLS12-381>
-in  respondBidirectionalEvent_digest_hi: Scalar<BLS12-381>
-in  respondBidirectionalEvent_digest_lo: Scalar<BLS12-381>
-in  respondBidirectionalEvent_signature_bigR_x_hi: Scalar<BLS12-381>
-in  respondBidirectionalEvent_signature_bigR_x_lo: Scalar<BLS12-381>
-in  respondBidirectionalEvent_signature_bigR_y_hi: Scalar<BLS12-381>
-in  respondBidirectionalEvent_signature_bigR_y_lo: Scalar<BLS12-381>
-in  respondBidirectionalEvent_signature_s_hi: Scalar<BLS12-381>
-in  respondBidirectionalEvent_signature_s_lo: Scalar<BLS12-381>
-in  respondBidirectionalEvent_signature_recoveryId: Scalar<BLS12-381>
-in  serializedOutput: Scalar<BLS12-381>
-",
-    ),
-    (
-        "erc20_vault::queue_attestation32",
-        "\
-in  respondBidirectionalEvent_requestId_hi: Scalar<BLS12-381>
-in  respondBidirectionalEvent_requestId_lo: Scalar<BLS12-381>
-in  respondBidirectionalEvent_blockHeight: Scalar<BLS12-381>
-in  respondBidirectionalEvent_outputKind: Scalar<BLS12-381>
-in  respondBidirectionalEvent_serializedOutputLength: Scalar<BLS12-381>
-in  respondBidirectionalEvent_digest_hi: Scalar<BLS12-381>
-in  respondBidirectionalEvent_digest_lo: Scalar<BLS12-381>
-in  respondBidirectionalEvent_signature_bigR_x_hi: Scalar<BLS12-381>
-in  respondBidirectionalEvent_signature_bigR_x_lo: Scalar<BLS12-381>
-in  respondBidirectionalEvent_signature_bigR_y_hi: Scalar<BLS12-381>
-in  respondBidirectionalEvent_signature_bigR_y_lo: Scalar<BLS12-381>
-in  respondBidirectionalEvent_signature_s_hi: Scalar<BLS12-381>
-in  respondBidirectionalEvent_signature_s_lo: Scalar<BLS12-381>
-in  respondBidirectionalEvent_signature_recoveryId: Scalar<BLS12-381>
-in  serializedOutput_hi: Scalar<BLS12-381>
-in  serializedOutput_lo: Scalar<BLS12-381>
 ",
     ),
     (
@@ -489,6 +488,8 @@ in  ticket_respond_requestId_lo: Scalar<BLS12-381>
 in  ticket_respond_blockHeight: Scalar<BLS12-381>
 in  ticket_respond_outputKind: Scalar<BLS12-381>
 in  ticket_respond_serializedOutputLength: Scalar<BLS12-381>
+in  ticket_respond_outputHash_hi: Scalar<BLS12-381>
+in  ticket_respond_outputHash_lo: Scalar<BLS12-381>
 in  ticket_respond_digest_hi: Scalar<BLS12-381>
 in  ticket_respond_digest_lo: Scalar<BLS12-381>
 in  ticket_respond_signature_bigR_x_hi: Scalar<BLS12-381>
@@ -546,6 +547,8 @@ in  ticket_respond_requestId_lo: Scalar<BLS12-381>
 in  ticket_respond_blockHeight: Scalar<BLS12-381>
 in  ticket_respond_outputKind: Scalar<BLS12-381>
 in  ticket_respond_serializedOutputLength: Scalar<BLS12-381>
+in  ticket_respond_outputHash_hi: Scalar<BLS12-381>
+in  ticket_respond_outputHash_lo: Scalar<BLS12-381>
 in  ticket_respond_digest_hi: Scalar<BLS12-381>
 in  ticket_respond_digest_lo: Scalar<BLS12-381>
 in  ticket_respond_signature_bigR_x_hi: Scalar<BLS12-381>
@@ -566,6 +569,8 @@ in  ticket_respond_requestId_lo: Scalar<BLS12-381>
 in  ticket_respond_blockHeight: Scalar<BLS12-381>
 in  ticket_respond_outputKind: Scalar<BLS12-381>
 in  ticket_respond_serializedOutputLength: Scalar<BLS12-381>
+in  ticket_respond_outputHash_hi: Scalar<BLS12-381>
+in  ticket_respond_outputHash_lo: Scalar<BLS12-381>
 in  ticket_respond_digest_hi: Scalar<BLS12-381>
 in  ticket_respond_digest_lo: Scalar<BLS12-381>
 in  ticket_respond_signature_bigR_x_hi: Scalar<BLS12-381>
@@ -611,6 +616,8 @@ in  ticket_respond_requestId_lo: Scalar<BLS12-381>
 in  ticket_respond_blockHeight: Scalar<BLS12-381>
 in  ticket_respond_outputKind: Scalar<BLS12-381>
 in  ticket_respond_serializedOutputLength: Scalar<BLS12-381>
+in  ticket_respond_outputHash_hi: Scalar<BLS12-381>
+in  ticket_respond_outputHash_lo: Scalar<BLS12-381>
 in  ticket_respond_digest_hi: Scalar<BLS12-381>
 in  ticket_respond_digest_lo: Scalar<BLS12-381>
 in  ticket_respond_signature_bigR_x_hi: Scalar<BLS12-381>
@@ -638,6 +645,8 @@ in  ticket_respond_requestId_lo: Scalar<BLS12-381>
 in  ticket_respond_blockHeight: Scalar<BLS12-381>
 in  ticket_respond_outputKind: Scalar<BLS12-381>
 in  ticket_respond_serializedOutputLength: Scalar<BLS12-381>
+in  ticket_respond_outputHash_hi: Scalar<BLS12-381>
+in  ticket_respond_outputHash_lo: Scalar<BLS12-381>
 in  ticket_respond_digest_hi: Scalar<BLS12-381>
 in  ticket_respond_digest_lo: Scalar<BLS12-381>
 in  ticket_respond_signature_bigR_x_hi: Scalar<BLS12-381>
@@ -687,6 +696,8 @@ in  ticket_respond_requestId_lo: Scalar<BLS12-381>
 in  ticket_respond_blockHeight: Scalar<BLS12-381>
 in  ticket_respond_outputKind: Scalar<BLS12-381>
 in  ticket_respond_serializedOutputLength: Scalar<BLS12-381>
+in  ticket_respond_outputHash_hi: Scalar<BLS12-381>
+in  ticket_respond_outputHash_lo: Scalar<BLS12-381>
 in  ticket_respond_digest_hi: Scalar<BLS12-381>
 in  ticket_respond_digest_lo: Scalar<BLS12-381>
 in  ticket_respond_signature_bigR_x_hi: Scalar<BLS12-381>
@@ -714,6 +725,8 @@ in  ticket_respond_requestId_lo: Scalar<BLS12-381>
 in  ticket_respond_blockHeight: Scalar<BLS12-381>
 in  ticket_respond_outputKind: Scalar<BLS12-381>
 in  ticket_respond_serializedOutputLength: Scalar<BLS12-381>
+in  ticket_respond_outputHash_hi: Scalar<BLS12-381>
+in  ticket_respond_outputHash_lo: Scalar<BLS12-381>
 in  ticket_respond_digest_hi: Scalar<BLS12-381>
 in  ticket_respond_digest_lo: Scalar<BLS12-381>
 in  ticket_respond_signature_bigR_x_hi: Scalar<BLS12-381>
@@ -756,6 +769,8 @@ in  ticket_respond_requestId_lo: Scalar<BLS12-381>
 in  ticket_respond_blockHeight: Scalar<BLS12-381>
 in  ticket_respond_outputKind: Scalar<BLS12-381>
 in  ticket_respond_serializedOutputLength: Scalar<BLS12-381>
+in  ticket_respond_outputHash_hi: Scalar<BLS12-381>
+in  ticket_respond_outputHash_lo: Scalar<BLS12-381>
 in  ticket_respond_digest_hi: Scalar<BLS12-381>
 in  ticket_respond_digest_lo: Scalar<BLS12-381>
 in  ticket_respond_signature_bigR_x_hi: Scalar<BLS12-381>
@@ -783,6 +798,8 @@ in  ticket_respond_requestId_lo: Scalar<BLS12-381>
 in  ticket_respond_blockHeight: Scalar<BLS12-381>
 in  ticket_respond_outputKind: Scalar<BLS12-381>
 in  ticket_respond_serializedOutputLength: Scalar<BLS12-381>
+in  ticket_respond_outputHash_hi: Scalar<BLS12-381>
+in  ticket_respond_outputHash_lo: Scalar<BLS12-381>
 in  ticket_respond_digest_hi: Scalar<BLS12-381>
 in  ticket_respond_digest_lo: Scalar<BLS12-381>
 in  ticket_respond_signature_bigR_x_hi: Scalar<BLS12-381>
@@ -1458,6 +1475,8 @@ in  ticket_respond_requestId_lo: Scalar<BLS12-381>
 in  ticket_respond_blockHeight: Scalar<BLS12-381>
 in  ticket_respond_outputKind: Scalar<BLS12-381>
 in  ticket_respond_serializedOutputLength: Scalar<BLS12-381>
+in  ticket_respond_outputHash_hi: Scalar<BLS12-381>
+in  ticket_respond_outputHash_lo: Scalar<BLS12-381>
 in  ticket_respond_digest_hi: Scalar<BLS12-381>
 in  ticket_respond_digest_lo: Scalar<BLS12-381>
 in  ticket_respond_signature_bigR_x_hi: Scalar<BLS12-381>
@@ -1478,6 +1497,8 @@ in  ticket_respond_requestId_lo: Scalar<BLS12-381>
 in  ticket_respond_blockHeight: Scalar<BLS12-381>
 in  ticket_respond_outputKind: Scalar<BLS12-381>
 in  ticket_respond_serializedOutputLength: Scalar<BLS12-381>
+in  ticket_respond_outputHash_hi: Scalar<BLS12-381>
+in  ticket_respond_outputHash_lo: Scalar<BLS12-381>
 in  ticket_respond_digest_hi: Scalar<BLS12-381>
 in  ticket_respond_digest_lo: Scalar<BLS12-381>
 in  ticket_respond_signature_bigR_x_hi: Scalar<BLS12-381>
@@ -2557,7 +2578,7 @@ in  seed_hi: Scalar<BLS12-381>
 in  seed_lo: Scalar<BLS12-381>
 ",
     ),
-    // GENERATED END
+    // Generated end
 ];
 
 /// The serde name of an [`IrType`], i.e. the type column the differential
@@ -2570,7 +2591,7 @@ fn type_name(ty: &IrType) -> String {
 }
 
 /// `%evmNonce.3` → `evmNonce`. The `%` prefix and the `.index` suffix are
-/// `Builder3`'s uniquifiers, not part of the declared name; anything that
+/// `Builder`'s uniquifiers, not part of the declared name; anything that
 /// does not have that exact shape is kept verbatim.
 fn label(name: &str) -> &str {
     let name = name.strip_prefix('%').unwrap_or(name);
@@ -2583,7 +2604,7 @@ fn label(name: &str) -> &str {
 }
 
 /// One circuit's interface, one line per argument / output / witness read.
-fn interface(c: &Compiled3) -> Vec<String> {
+fn interface(c: &Compiled) -> Vec<String> {
     let mut lines = Vec::new();
 
     let inputs = serde_json::to_value(&c.ir.inputs).expect("inputs serialize");
@@ -2593,7 +2614,7 @@ fn interface(c: &Compiled3) -> Vec<String> {
         lines.push(format!("in  {}: {ty}", label(name)));
     }
 
-    // The IR's output signature is types only; `Circuit3::output` records one
+    // The IR's output signature is types only; `Circuit::output` records one
     // `Output` disclosure per queued output, in the same order.
     let out_labels: Vec<&str> = c
         .disclosures
@@ -2679,7 +2700,7 @@ fn diff_shows_reorders_renames_and_insertions() {
     );
 }
 
-/// Regeneration helper: rewrites the SNAPSHOT table in this file.
+/// Regeneration helper: rewrites the snapshot table in this file.
 #[test]
 #[ignore = "regeneration helper, not a check"]
 fn regenerate_interface_snapshot() {

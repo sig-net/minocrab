@@ -1,0 +1,23 @@
+[package]
+name = "minocrab-evm"
+description = "Typed EVM calls for MinoCrab circuits: Solidity ABI words, call types with their selectors and success rules, and the common interfaces (ERC-20, ERC-721, ERC-4626, WETH, USDT, Uniswap V3, Aave V3)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+readme = "README.md"
+keywords = ["midnight", "evm", "abi", "zero-knowledge", "solidity"]
+categories = ["cryptography::cryptocurrencies", "encoding"]
+include = ["src/**/*.rs", "README.md", "LICENSE-MIT", "LICENSE-APACHE"]
+
+[lints]
+workspace = true
+
+[dependencies]
+minocrab.workspace = true
+minocrab-std.workspace = true
+# `EvmCall::selector()` is the first four bytes of `keccak256("name(argtypes)")`,
+# hashed in Rust at circuit-build time and embedded as an immediate. Nothing
+# in-circuit hashes keccak.
+sha3.workspace = true

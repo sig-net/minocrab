@@ -12,11 +12,10 @@
 //! It is named for `signet_flow` because that is the module the surviving
 //! machinery lives in: the `Signet` configuration block, `file_request`, the
 //! `EventRecordV2` the drift gate is about, and the `Requested` / `Settled`
-//! label sets. M37 rung D retired that module's own `Pending` (and `Fired`,
-//! `Settle`, `Response`, `Commit`) in favour of the typed
-//! [`minocrab_contracts::evm_flow`] slots this file now uses.
+//! label sets. The slots this file uses are the typed
+//! [`minocrab_contracts::evm_flow`] ones.
 
-use minocrab::v3::Circuit3;
+use minocrab::Circuit;
 use minocrab::{Private, Public};
 use minocrab_contracts::common::{witness_sk, SecretKey, SigningPath};
 use minocrab_contracts::evm::erc20::{self, Erc20};
@@ -24,8 +23,8 @@ use minocrab_contracts::evm::{Envelope, Filing};
 use minocrab_contracts::evm_flow::{Commit, CommitTag, Contract, Failed, Pending, Succeeded};
 use minocrab_contracts::signet_flow::{Requested, Settled, Signet, Signing};
 use minocrab_contracts::signet_v1::schema;
-use minocrab_sim::v3::cost;
-use minocrab_std::v3::{
+use minocrab_sim::cost;
+use minocrab_std::{
     circuit, label, Bytes, Disclose, Discloses, Ledger, LedgerCounter, LedgerRepr, Uint, B32,
 };
 
@@ -37,7 +36,7 @@ struct DepositEnv {
     amount: Uint<64, Public>,
 }
 
-/// A withdrawal's environment: the amount, and a COMMITMENT to the
+/// A withdrawal's environment: the amount, and a commitment to the
 /// withdrawer's key — the one thing that survives privately.
 ///
 /// Written by hand rather than with `Owned`, so this file exercises the
@@ -49,7 +48,7 @@ struct WithdrawEnv {
     withdrawer: Commit<SecretKey<Private>, ToyWithdrawer>,
 }
 
-/// This contract's commitment domain — a TYPE, so a `to` and an `open` that
+/// This contract's commitment domain — a type, so a `to` and an `open` that
 /// disagree does not compile.
 struct ToyWithdrawer;
 
@@ -57,12 +56,12 @@ impl CommitTag for ToyWithdrawer {
     const PAD: &'static str = "toy:withdrawer:";
 }
 
-/// The toy's two FILINGS of ONE library call (M38 rung A): `erc20::Transfer`
+/// The toy's two filings of one library call: `erc20::Transfer`
 /// as a deposit and as a withdrawal, both decoded under the `success` schema
 /// the deployed records carry.
 ///
 /// Written as two `Filing` impls rather than as one `Filed` alias used twice
-/// because the two slots have to be DISTINCT TYPES: the tickets are typed by
+/// because the two slots have to be distinct types: the tickets are typed by
 /// the filing, so one alias in both slots would let a deposit's `Succeeded`
 /// settle a withdrawal. Since M44 rung D the two carry the same schema —
 /// what separates them is the slot, not a kind byte.
@@ -83,8 +82,8 @@ impl Filing for ToyWithdrawal {
 
 /// The ledger block: ten fields from four declarations.
 ///
-/// The two slots file the SAME Solidity call under the SAME schema, and
-/// differ only in the filing TYPE — which is the finding this block is also
+/// The two slots file the same Solidity call under the same schema, and
+/// differ only in the filing type — which is the finding this block is also
 /// a witness for: what keeps two filings of one call apart is the slot they
 /// sit in, not anything inside the record.
 #[derive(Ledger)]
@@ -103,7 +102,7 @@ label! {
 }
 
 /// The toy's callee and recipient: one constant address each.
-fn toy_address(c: &mut Circuit3, byte: u64) -> Bytes<20, Private> {
+fn toy_address(c: &mut Circuit, byte: u64) -> Bytes<20, Private> {
     Bytes::from_field_unchecked(c.constant(byte).private())
 }
 
@@ -111,7 +110,7 @@ fn toy_address(c: &mut Circuit3, byte: u64) -> Bytes<20, Private> {
 
 #[circuit]
 fn deposit(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     evm_nonce: Uint<64>,
     amount: Uint<64>,
 ) -> Discloses<(Amount, Requested)> {
@@ -123,8 +122,8 @@ fn deposit(
             Contract::<Erc20>::from_address(c, to)
         },
         (
-            |c: &mut Circuit3| toy_address(c, 0x43),
-            |_c: &mut Circuit3| amount.widen::<128>(),
+            |c: &mut Circuit| toy_address(c, 0x43),
+            |_c: &mut Circuit| amount.widen::<128>(),
         ),
         Envelope::fixed(),
         evm_nonce,
@@ -146,7 +145,7 @@ fn deposit(
 
 #[circuit]
 fn withdraw(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     evm_nonce: Uint<64>,
     amount: Uint<64>,
 ) -> Discloses<(Amount, WithdrawerCommitment, Requested)> {
@@ -158,8 +157,8 @@ fn withdraw(
             Contract::<Erc20>::from_address(c, to)
         },
         (
-            |c: &mut Circuit3| toy_address(c, 0x43),
-            |_c: &mut Circuit3| amount.widen::<128>(),
+            |c: &mut Circuit| toy_address(c, 0x43),
+            |_c: &mut Circuit| amount.widen::<128>(),
         ),
         Envelope::fixed(),
         evm_nonce,
@@ -176,7 +175,7 @@ fn withdraw(
 }
 
 #[circuit]
-fn claim(c: &mut Circuit3, ticket: Succeeded<ToyDeposit>) -> Discloses<Settled> {
+fn claim(c: &mut Circuit, ticket: Succeeded<ToyDeposit>) -> Discloses<Settled> {
     // `complete` asserts `erc20::Transfer::succeeded` — the attested
     // flag — so an attested `false` cannot arrive here at all.
     let outcome = TOY.deposits.complete(c, ticket);
@@ -186,13 +185,13 @@ fn claim(c: &mut Circuit3, ticket: Succeeded<ToyDeposit>) -> Discloses<Settled> 
 
 #[circuit]
 fn refund_withdrawal(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     ticket: Failed<ToyWithdrawal>,
 ) -> Discloses<Settled> {
     // Either the MPC's failure kind or a mined transfer that returned
     // `false`: one ticket for both non-successes.
     let outcome = TOY.withdrawals.refund(c, ticket);
-    // The withdrawer gate: a FRESH witness against the stored commitment.
+    // The withdrawer gate: a fresh witness against the stored commitment.
     let sk = witness_sk(c);
     outcome
         .env
@@ -205,7 +204,7 @@ fn refund_withdrawal(
 // ---- the tests ----------------------------------------------------------------------
 
 
-/// `initialized` is field 0, `signet` fields 1..5 (FOUR since M44 rung D —
+/// `initialized` is field 0, `signet` fields 1..5 (four since M44 rung D —
 /// the request nonce and the caip2 cell went with the V1 vocabulary),
 /// `deposits` 5 and 6, `withdrawals` 7 and 8 — a block of nine, so still
 /// one-element paths.
@@ -217,6 +216,52 @@ fn the_block_is_laid_out_by_slot_width() {
     assert_eq!(TOY.deposits.record_path().as_slice(), &[5]);
     assert_eq!(TOY.withdrawals.record_path().as_slice(), &[7]);
     assert_eq!(TOY.withdrawals.record_path().depth(), 1);
+}
+
+/// The derive reads types, not names. The same block as [`Toy`] with its
+/// slot types reached through `use … as` aliases, plus a field of a user
+/// type merely spelled `Pending`: `Signet` is the anchor because its type
+/// says `IS_ANCHOR`, the aliased `Pending` slots hang off it because theirs
+/// say `NEEDS_ANCHOR`, and the user's `Pending` (an ordinary counter) is
+/// laid out like any other field. A tenth field leaves every path of the
+/// first nine unchanged, so a settle on this block is the same circuit.
+mod user {
+    pub type Pending = minocrab_std::LedgerCounter;
+}
+
+#[derive(Ledger)]
+struct Aliased {
+    initialized: LedgerCounter,
+    signet: SigConfig,
+    deposits: Deferred<ToyDeposit, DepositEnv, 2>,
+    withdrawals: Deferred<ToyWithdrawal, WithdrawEnv, 2>,
+    tally: user::Pending,
+}
+
+use minocrab_contracts::evm_flow::Pending as Deferred;
+use minocrab_contracts::signet_flow::Signet as SigConfig;
+
+const ALIASED: Aliased = Aliased::new();
+
+#[circuit]
+fn claim_aliased(c: &mut Circuit, ticket: Succeeded<ToyDeposit>) -> Discloses<Settled> {
+    let outcome = ALIASED.deposits.complete(c, ticket);
+    let _amount = outcome.env.amount;
+    Discloses::of(())
+}
+
+#[test]
+fn an_aliased_anchor_works_and_a_type_named_pending_is_ordinary() {
+    assert_eq!(ALIASED.initialized.index(), 0);
+    assert_eq!(ALIASED.signet.signer.index(), 1);
+    assert_eq!(ALIASED.deposits.record_path().as_slice(), &[5]);
+    assert_eq!(ALIASED.withdrawals.record_path().as_slice(), &[7]);
+    assert_eq!(ALIASED.tally.index(), 9);
+    // The slot read its `Signet` at the anchor's offset: the settle, which
+    // reads the MPC key from it, is the same circuit as on `Toy`.
+    let (aliased, toy) = (format!("{:?}", claim_aliased().ir), format!("{:?}", claim().ir));
+    assert!(aliased.len() > 1000, "the IR's Debug form is its instructions");
+    assert_eq!(aliased, toy);
 }
 
 /// Each circuit builds, and at a cost a settle's secp256k1 verification
@@ -233,7 +278,7 @@ fn the_circuits_build_at_a_finite_cost() {
 
 // ---- the record the circuit files vs the reader the MPC runs ----------------------
 
-/// THE DRIFT GATE: the atoms `SignBidirectionalEventV2` declares (what a
+/// The drift gate: the atoms `SignBidirectionalEventV2` declares (what a
 /// `Pending` slot stores, limb for limb) are decoded by the MPC reader's
 /// stage-7 twin (`signet_sim::reader`, translated from the MPC's own code)
 /// into the same fields, and the id the reader recomputes — Poseidon over
@@ -279,7 +324,7 @@ fn the_filed_record_is_what_the_mpc_reader_decodes() {
         response_kind: 0,
     };
 
-    // The cell as the ledger holds it: the CIRCUIT's declared atoms, filled
+    // The cell as the ledger holds it: the circuit's declared atoms, filled
     // from the reader's own byte layout, trailing zeros trimmed.
     let atoms = SignBidirectionalEventV2::<Public, 2>::atoms();
     let bytes = binary_repr_v2(&record);
@@ -305,7 +350,7 @@ fn the_filed_record_is_what_the_mpc_reader_decodes() {
     let decoded = decode_record_v2(&cell).expect("the MPC reader decodes what the circuit files");
     assert_eq!(decoded, record);
 
-    // The MPC hashes the cell's FIELD representation; the circuit hashes the
+    // The MPC hashes the cell's field representation; the circuit hashes the
     // record's limbs in slot order. They must be the same field elements —
     // here reconstructed from the bytes exactly as `SignBidirectionalEventV2`
     // carries them (a `bytes<n>` atom: the leftover most-significant limb
@@ -321,7 +366,7 @@ fn the_filed_record_is_what_the_mpc_reader_decodes() {
         let midnight_base_crypto::fab::AlignmentAtom::Bytes { length } = atom else { unreachable!() };
         let width = *length as usize;
         let chunk = &bytes[at..at + width];
-        // FAB limbs of a `bytes<n>`: the leftover (n mod 31) MOST-significant
+        // FAB limbs of a `bytes<n>`: the leftover (n mod 31) most-significant
         // bytes first, then 31-byte limbs from the top down — `[hi, lo]` for
         // a `Bytes<32>`, three limbs for the 64-byte `params`.
         let r = width % 31;

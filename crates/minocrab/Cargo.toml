@@ -15,4 +15,4 @@ include = ["src/**/*.rs", "README.md", "LICENSE-MIT", "LICENSE-APACHE"]
 workspace = true
 
 [dependencies]
-minocrab-ir = { workspace = true, features = ["unstable"] }
+minocrab-ir.workspace = true

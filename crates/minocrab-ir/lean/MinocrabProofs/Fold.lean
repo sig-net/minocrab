@@ -1,5 +1,5 @@
 /-
-The Lean model of `minocrab_ir::v3::passes::fold_immediate_copies` —
+The Lean model of `minocrab_ir::passes::fold_immediate_copies` —
 the SYNTACTIC half (M25's ZKIR-pass prong; notes/lean-port.org §4).
 
 THE MODEL GAP: as in `Passes.lean` — these theorems warrant the
@@ -17,7 +17,7 @@ lists verbatim, only provably-immediate copies dropped, the non-copy
 skeleton preserved in kind and order, the substitution maps only folded
 names to their immediates — holds of EVERY stream. The SEMANTIC theorem
 (`fold_preserves_observables`: observable operand-VALUES preserved under
-the copy environment) holds under `WellFormed`, the SSA shape `Builder3`
+the copy environment) holds under `WellFormed`, the SSA shape `Builder`
 guarantees — copy destinations bound once and before use — and the fold
 NEEDS that hypothesis: it substitutes globally, so a rebound or
 use-before-def name really would change meaning.
@@ -202,7 +202,7 @@ theorem foldRun_is_filter_map (folded : Env) (l : List Instr) :
 
 The fold substitutes GLOBALLY — `folded` is computed from the whole
 stream and applied at every site — so its soundness rests on the SSA
-shape `Builder3` guarantees: every copy destination is bound ONCE (no
+shape `Builder` guarantees: every copy destination is bound ONCE (no
 rebinding) and bound BEFORE any use. `WellFormed` states exactly that
 much, and `fold_preserves_observables` shows it suffices.
 
@@ -236,7 +236,7 @@ def NoUseBeforeDef : List Instr → Prop
   | [] => True
   | i :: rest => (∀ n ∈ usesOf i, n ∉ copyDsts (i :: rest)) ∧ NoUseBeforeDef rest
 
-/-- The SSA shape `Builder3` guarantees (every wire born of exactly one
+/-- The SSA shape `Builder` guarantees (every wire born of exactly one
 instruction, streams emitted in definition order): copy destinations are
 bound once, and before any use. All the semantic theorem needs. -/
 structure WellFormed (l : List Instr) : Prop where

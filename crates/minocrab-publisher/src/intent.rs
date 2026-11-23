@@ -19,7 +19,7 @@ use midnight_storage::db::DB;
 use midnight_transient_crypto::commitment::{PedersenRandomness, PureGeneratorPedersen};
 use rand::{CryptoRng, Rng};
 
-/// An intent whose calls carry proof PREIMAGES.
+/// An intent whose calls carry proof preimages.
 pub type PreimageIntent<D> = Intent<Signature, ProofPreimageMarker, PedersenRandomness, D>;
 /// The transaction that intent goes into.
 pub type PreimageTx<D> = Transaction<Signature, ProofPreimageMarker, PedersenRandomness, D>;
@@ -49,7 +49,7 @@ pub fn build_intent<D: DB, R: Rng + CryptoRng + ?Sized>(
 
 /// One intent at one segment, as a transaction on `network_id`.
 ///
-/// Segment 0 is the GUARANTEED segment and the ledger refuses an intent
+/// Segment 0 is the guaranteed segment and the ledger refuses an intent
 /// there (`PartitionFailure::IllegalSegmentZero`); a publisher picks 1 unless
 /// it is merging with something else.
 pub fn preimage_tx<D: DB>(network_id: &str, segment: u16, intent: PreimageIntent<D>) -> PreimageTx<D> {

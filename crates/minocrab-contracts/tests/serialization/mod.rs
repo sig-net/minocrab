@@ -1,9 +1,9 @@
-//! The serialization-format conformance harness (M11 stage 0,
-//! notes/borsh-format.org).
+//! The serialization-format conformance harness
+//! (notes/borsh-format.org).
 //!
 //! Layering, outermost first:
 //!
-//! - [`spec_types`] — the DECLARATIONS: plain Rust structs for the payloads
+//! - [`spec_types`] — the declarations: plain Rust structs for the payloads
 //!   the deployed protocol already puts on the wire, deriving borsh's traits
 //!   and serde's.
 //! - [`oracle`] — the two independent encoders (borsh, serde+bincode-fixint)
@@ -11,20 +11,20 @@
 //!   offset, width)` rows.
 //! - [`deployed`] — the deployed bytes, built with the protocol's own code:
 //!   FAB `binary_repr` for the hash preimages, the `Misc` envelope for the
-//!   signet signer's logs, and the proof preimage that lets the CORPUS ARTIFACT
+//!   signet signer's logs, and the proof preimage that lets the corpus artifact
 //!   be asked whether it accepts them.
 //! - [`records`] — the bridge from the reference model's scenarios to the
 //!   spec types.
-//! - [`spec_doc`] — the PUBLISHED artifact (M11 stage 8): `spec/borsh-subset.md`'s
+//! - [`spec_doc`] — the published artifact: `spec/borsh-subset.md`'s
 //!   offset tables and `spec/vectors/*.json`, generated from the same schema
 //!   walk, so the document a TS or MPC implementer reads cannot drift from
 //!   the format the suite checks.
-//! - [`ts_codegen`] — the published DECODER (M11 stage 10): `spec/ts/`, the
+//! - [`ts_codegen`] — the published decoder: `spec/ts/`, the
 //!   dependency-free TypeScript reader/writer for those same types, generated
 //!   from the same walk so the code cannot drift from the document either.
 //!
 //! Not a test target (subdirectory of `tests/`). Requires `mod vault;` in
-//! the same binary: the deployed side reuses M10's reference model and
+//! the same binary: the deployed side reuses the vault reference model and
 //! generation strategies rather than growing a second one.
 #![allow(dead_code)]
 

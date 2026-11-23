@@ -1,7 +1,7 @@
 {
   "manifest-version": "1",
-  "compiler-version": "0.36.0",
-  "compiler-commit": "b5d9e4dfc532fe47011c4f6296e254f4853eb469",
+  "compiler-version": "0.36.1",
+  "compiler-commit": "7fa3a117c5e7efe9d2c51da04263e5f0b3509144",
   "language-version": "0.28.0",
   "runtime-version": "0.21.0",
   "compiler": {
@@ -9,7 +9,7 @@
     "contract-info.json": {
       "type": "file",
       "size": 690,
-      "hash": "4d478f66ff8795f8e7dbe0f685bb37d6eeda86119d442d87528c07b46c311172"
+      "hash": "d2d0bab662875e6f4f33b8b0ff476ba7dd053b04a93ae6bf2bbe17fc74f1ccdc"
     }
   },
   "contract": {

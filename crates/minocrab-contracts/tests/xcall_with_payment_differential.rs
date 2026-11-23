@@ -3,6 +3,10 @@
 //! receiveShielded + treasury.writeCoin): call-compatibility with the
 //! corpus artifacts per notes/ledger-abi.org §6.
 
+#[path = "support/common.rs"]
+mod common;
+use common::*;
+
 use std::borrow::Cow;
 
 use midnight_base_crypto::fab::{
@@ -23,27 +27,13 @@ use midnight_transient_crypto::repr::FieldRepr;
 use minocrab::Fr;
 use minocrab_contracts::xcall_with_payment as xwp;
 use minocrab_ledger::ep_hash;
-use minocrab_sim::v3::{assert_call_compatible, simulate};
-use minocrab_zkir::v3::IrSource;
+use minocrab_sim::{assert_call_compatible, simulate};
+use minocrab_zkir::IrSource;
 
 type VmOp = Op<ResultModeVerify, InMemoryDB>;
 
 fn corpus_zkir(side: &str, name: &str) -> IrSource {
-    let path = format!(
-        "{}/../../corpus/zkir/signet-midnight-experiments/experiments/xcall-with-payment/contract/src/{side}/zkir/{name}.zkir",
-        env!("CARGO_MANIFEST_DIR")
-    );
-    minocrab_zkir::v3::read_zkir(&path).expect("corpus golden parses")
-}
-
-fn bytesn_value(n: u32, bytes: &[u8]) -> AlignedValue {
-    AlignedValue::new(
-        Value(vec![ValueAtom(bytes.to_vec()).normalize()]),
-        Alignment(vec![AlignmentSegment::Atom(AlignmentAtom::Bytes {
-            length: n,
-        })]),
-    )
-    .unwrap()
+    common::corpus_zkir(&format!("signet-midnight-experiments/experiments/xcall-with-payment/contract/src/{side}/zkir"), name)
 }
 
 fn cell(av: AlignedValue) -> StateValue {
@@ -52,13 +42,6 @@ fn cell(av: AlignedValue) -> StateValue {
 
 fn key(i: u8) -> Key {
     Key::Value(bytesn_value(1, &[i]).try_into().expect("a canonical value"))
-}
-
-fn b32_slots(bytes: &[u8; 32]) -> (Fr, Fr) {
-    (
-        Fr::from(u64::from(bytes[31])),
-        Fr::from_le_bytes(&bytes[..31]).unwrap(),
-    )
 }
 
 fn addr_ep_comm_value(addr: &[u8; 32], ep: &[u8; 32], comm: Fr) -> AlignedValue {
@@ -148,7 +131,7 @@ fn target_addr() -> [u8; 32] {
     t
 }
 
-/// The entry-point hash, DERIVED from the callee circuit's name (M12
+/// The entry-point hash, derived from the callee circuit's name (M12
 /// stage 1). The claim carries it as a constant, so it appears only in the
 /// public transcript (`call_ops`).
 fn ep(name: &str) -> [u8; 32] {
@@ -209,10 +192,6 @@ fn request_matches_corpus() {
 }
 
 // --- notify / pay: root-call coin custody ------------------------------------
-
-fn atom(n: u32) -> AlignmentSegment {
-    AlignmentSegment::Atom(AlignmentAtom::Bytes { length: n })
-}
 
 /// SHA-256 over the FAB binary of `limbs` laid out per `segments` — the
 /// off-circuit persistent_hash (zkir-v3 ir_vm.rs:478-505).
@@ -434,7 +413,7 @@ fn pay_matches_corpus() {
     assert_call_compatible(&ours, &theirs, &s.pay_preimage(&request_id));
 }
 
-/// Criterion 3: tampering with ANY transcript element of the custody body
+/// Criterion 3: tampering with any transcript element of the custody body
 /// (the claimed commitment, the written coin, the self address…) must be
 /// rejected by both artifacts, with zero acceptance disagreements.
 #[test]

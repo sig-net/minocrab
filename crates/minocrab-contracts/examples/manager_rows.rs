@@ -5,7 +5,7 @@
 use minocrab_contracts::manager;
 
 fn main() {
-    let circuits: Vec<(&str, minocrab::v3::Compiled3)> = vec![
+    let circuits: Vec<(&str, minocrab::Compiled)> = vec![
         ("isRegistered", manager::Manager::is_registered()),
         ("accountRecord", manager::Manager::account_record()),
         ("shieldedAccountBalance", manager::Manager::shielded_account_balance()),
@@ -17,7 +17,7 @@ fn main() {
         ("execute", manager::Manager::execute()),
     ];
     for (name, compiled) in circuits {
-        let (k, rows) = minocrab_sim::v3::cost(&compiled.ir);
+        let (k, rows) = minocrab_sim::cost(&compiled.ir);
         println!("{name:28} k={k:2} rows={rows}");
     }
 }

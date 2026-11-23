@@ -1,20 +1,20 @@
-//! `pin.json` — the DISTILLED artifact an interface crate publishes.
+//! `pin.json` — the distilled artifact an interface crate publishes.
 //!
 //! An interface crate commits the callee's `contract-info.json` (small,
-//! reviewable, the typed schema) but NOT its `.zkir` files, which are
+//! reviewable, the typed schema) but not its `.zkir` files, which are
 //! megabytes of instruction stream. `pin.json` is what survives the
 //! distillation: the digests of both, the per-circuit facts the agreement
 //! check needs (input count, `do_communications_commitment`, the constraint
 //! prefix) and the compiler versions that produced them.
 //!
-//! It is a HASH PIN, not a fetch instruction. Nothing here downloads
+//! It is a hash pin, not a fetch instruction. Nothing here downloads
 //! anything: an offline `cargo test` checks the interface against the
 //! committed `contract-info.json` and the distilled facts, and the full
 //! `.zkir` check runs additionally when the artifact tree is at hand
 //! (`MINOCRAB_ARTIFACT_DIR`, or [`Pin::source`] resolved against the
 //! workspace root — in this workspace it always is).
 //!
-//! It is also REGENERABLE: [`Pin::distill`] builds one from an artifact
+//! It is also regenerable: [`Pin::distill`] builds one from an artifact
 //! directory, and `signet-signer-interface`'s agreement test asserts the
 //! committed file equals the distillation, so a re-pin is a diff rather
 //! than a hand edit.
@@ -32,7 +32,7 @@ use crate::zkir::ZkirFacts;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Pin {
     /// Where the artifact came from, relative to the workspace root.
-    /// PROVENANCE, and the fallback location of the `.zkir` tree; a
+    /// Provenance, and the fallback location of the `.zkir` tree; a
     /// published crate whose source is not in-tree simply finds nothing
     /// there and runs the offline half of the check.
     pub source: String,

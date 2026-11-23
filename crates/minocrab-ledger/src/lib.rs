@@ -19,8 +19,8 @@
 //! # Where this sits
 //!
 //! L2.5: above the [`minocrab`] eDSL (L2), whose wires it splices into op
-//! element streams, and below `minocrab-std` (L3), whose `v3::ledger` and
-//! `v3::kernel` types are one-line wrappers over the functions here. That
+//! element streams, and below `minocrab-std` (L3), whose `ledger` and
+//! `kernel` types are one-line wrappers over the functions here. That
 //! layering is deliberate — the ADTs sit *above* the ops, so this crate stays
 //! the pure op layer and gains no dependency of its own. Contract code should
 //! use the typed slots in `minocrab-std`; reach for this crate to emit an
@@ -39,11 +39,13 @@
 //! - [`contract_call`] — a cross-contract call, and the labels it discloses
 //!   ([`XcallCommitment`], [`XcallResult`])
 //!
-//! # Stability (M24 tier boundary)
+//! # Stability
 //!
-//! INTERNAL TIER, whole crate: the Impact op layer is the eDSL's
+//! Internal tier, whole crate: the Impact op layer is the eDSL's
 //! implementation detail (reached through `minocrab-std`'s typed ledger
-//! surface) and carries no stability promise.
+//! surface) and carries no stability promise. A contract author writing
+//! Impact ops by hand imports them from `minocrab-experimental`'s
+//! `impact::raw`, whose docs say what that bypasses.
 //!
 //! [`Op`]: midnight_onchain_vm::ops::Op
 
@@ -99,6 +101,6 @@ pub use reads::{
     set_is_empty_at, set_size, set_size_at,
 };
 
-pub use minocrab::v3::LimbConstraint;
+pub use minocrab::LimbConstraint;
 
-pub use minocrab::v3::ImpactElem;
+pub use minocrab::ImpactElem;

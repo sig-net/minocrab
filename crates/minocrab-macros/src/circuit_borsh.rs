@@ -5,7 +5,7 @@
 //! ```ignore
 //! #[derive(CircuitBorsh)]
 //! #[borsh(spec = spec_types::RespondMisc)]
-//! struct RespondPayload<V: Vis3> {
+//! struct RespondPayload<V: Vis> {
 //!     request_id: B32<V>,
 //!     recovery_id: Uint<8, V>,
 //! }
@@ -14,28 +14,30 @@
 //! the expansion is the `CircuitBorsh` impl (LEN, push_limbs, push_segments,
 //! constrain_canonical, read, push_layout — every field in declaration order,
 //! **which is the Borsh order**), the same `CircuitArg` + `CircuitArgs` impls
-//! `#[derive(CircuitArg)]` emits (from the SAME code path, so the two derives
+//! `#[derive(CircuitArg)]` emits (from the same code path, so the two derives
 //! cannot drift), and — from `#[borsh(spec = …)]` — a generated `#[test]`
 //! asserting the layout table IS `borsh::schema_container_of::<Spec>()`
 //! walked into rows.
 //!
 //! Two label namespaces, deliberately:
-//! - the ARGUMENT label is `lowerCamelCase` of the field name (Compact's
+//! - the argument label is `lowerCamelCase` of the field name (Compact's
 //!   convention), overridable with `#[arg(name = "…")]`;
-//! - the LAYOUT path segment is the field name VERBATIM, because it is
+//! - the layout path segment is the field name verbatim, because it is
 //!   compared against borsh's own schema of the spec type, whose paths are
 //!   the spec struct's Rust field names. `#[borsh(name = "…")]` overrides it
 //!   where the two structs name a field differently.
 //!
-//! THINNESS RULE, as for every derive here: the expansion contains no
-//! `Circuit3` method call at all — `c` is passed along and nothing else.
+//! Thinness rule, as for every derive here: the expansion contains no
+//! `Circuit` method call at all — `c` is passed along and nothing else.
 
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use syn::spanned::Spanned;
 use syn::{Attribute, Data, DeriveInput, Fields, GenericParam, Ident, LitStr, Path, Type};
 
-use crate::circuit_arg::{arg_fields, bounded_by_vis3, impl_arg_traits_for, ArgBounds, ArgField};
+use crate::circuit_arg::{
+    arg_fields, bounded_by_vis, impl_arg_traits_for, skipped_fields, ArgBounds, ArgField, Target,
+};
 
 pub fn expand(input: DeriveInput) -> syn::Result<TokenStream> {
     if let Data::Enum(_) = &input.data {
@@ -48,6 +50,13 @@ pub fn expand(input: DeriveInput) -> syn::Result<TokenStream> {
     }
 
     let spec = spec_attr(&input.attrs)?;
+    if let Some(skipped) = skipped_fields(&input)?.first() {
+        return Err(syn::Error::new(
+            skipped.span(),
+            "#[arg(skip)] has no Borsh meaning: every field of a serialized \
+             record is on the wire",
+        ));
+    }
     let fields = arg_fields(&input)?;
     let spec_labels = spec_labels(&input)?;
     for field in &fields {
@@ -55,7 +64,7 @@ pub fn expand(input: DeriveInput) -> syn::Result<TokenStream> {
     }
 
     let name = &input.ident;
-    let root = quote!(::minocrab_std::v3);
+    let root = quote!(::minocrab_std);
     let vis = visibility_param(&input)?;
 
     // `CircuitBorsh<V>` for the visibility the struct is written in, and the
@@ -63,32 +72,34 @@ pub fn expand(input: DeriveInput) -> syn::Result<TokenStream> {
     // at `Private`, since arguments are witness data. A visibility-generic
     // struct gets that as a where-clause rather than a substitution: the impl
     // is written once and rustc decides where it applies.
-    let types: Vec<&Type> = fields.iter().map(|f| &f.ty).collect();
-    // The ARGUMENT half — including its visibility-generic where-clauses —
-    // is `#[derive(CircuitArg)]`'s own code path, so the two derives cannot
-    // drift and a `CircuitBorsh` record is usable in both directions of a
-    // cross-contract call for free.
-    #[allow(clippy::type_complexity)]
-    let (borsh_generics, borsh_vis, self_ty, private_self_ty, arg_generics, bounds) = match &vis {
+    //
+    // The argument half is `#[derive(Value)]`'s own code path, so the two
+    // derives cannot drift and a visibility-generic `CircuitBorsh` record is
+    // usable in both directions of a cross-contract call for free.
+    let (borsh_generics, borsh_vis, self_ty, private_self_ty, bounds) = match &vis {
         Some(param) => (
-            quote!(<#param: #root::Vis3>),
+            quote!(<#param: #root::Vis>),
             quote!(#param),
             quote!(#name<#param>),
             quote!(#name<#root::__private::Private>),
-            quote!(<#param: #root::Vis3>),
-            ArgBounds::visibility_generic(&input.generics, &types),
+            ArgBounds::PerField,
         ),
         None => (
             quote!(),
             quote!(#root::__private::Private),
             quote!(#name),
             quote!(#name),
-            quote!(),
-            ArgBounds::plain(&quote!()),
+            ArgBounds::Plain,
         ),
     };
 
-    let arg_impls = impl_arg_traits_for(&arg_generics, &self_ty, &bounds, &fields);
+    let arg_impls = impl_arg_traits_for(&Target {
+        generics: &input.generics,
+        self_ty: self_ty.clone(),
+        fields: &fields,
+        skipped: &[],
+        bounds,
+    });
     let borsh_impl = impl_borsh(
         &root,
         &borsh_generics,
@@ -107,7 +118,7 @@ pub fn expand(input: DeriveInput) -> syn::Result<TokenStream> {
 }
 
 /// The `CircuitBorsh` impl: every method walks the fields in declaration
-/// order, which IS the Borsh order.
+/// order, which is the Borsh order.
 fn impl_borsh(
     root: &TokenStream,
     generics: &TokenStream,
@@ -146,7 +157,7 @@ fn impl_borsh(
                 )*
             }
 
-            fn constrain_canonical(&self, c: &mut #root::__private::Circuit3) {
+            fn constrain_canonical(&self, c: &mut #root::__private::Circuit) {
                 #(
                     <#types as #root::borsh::CircuitBorsh<#vis>>::constrain_canonical(
                         &self.#idents, c,
@@ -155,7 +166,7 @@ fn impl_borsh(
             }
 
             fn read<__R: #root::borsh::BorshReader<#vis>>(
-                c: &mut #root::__private::Circuit3,
+                c: &mut #root::__private::Circuit,
                 r: &mut __R,
             ) -> Self {
                 Self {
@@ -206,20 +217,20 @@ fn spec_check(
     }
 }
 
-/// The struct's visibility parameter, if it has one: `struct Payload<V: Vis3>`
+/// The struct's visibility parameter, if it has one: `struct Payload<V: Vis>`
 /// serializes at every visibility, a plain struct at `Private`. Unlike
-/// `#[derive(CircuitArg)]`, which simply declines visibility-generic mode
-/// for a shape it does not recognize, a serialized record has nothing else
-/// to be generic IN — so anything else is an error here.
+/// `#[derive(Value)]`, which takes any generic parameters, a serialized
+/// record has nothing else to be generic IN — so anything else is an error
+/// here.
 fn visibility_param(input: &DeriveInput) -> syn::Result<Option<Ident>> {
     let params: Vec<&GenericParam> = input.generics.params.iter().collect();
     match params.as_slice() {
         [] => Ok(None),
-        [GenericParam::Type(param)] if bounded_by_vis3(param) => Ok(Some(param.ident.clone())),
+        [GenericParam::Type(param)] if bounded_by_vis(param) => Ok(Some(param.ident.clone())),
         _ => Err(syn::Error::new(
             input.generics.span(),
             "CircuitBorsh derives for a plain struct or one generic in a \
-             single visibility parameter (`struct Payload<V: Vis3>`): a wire \
+             single visibility parameter (`struct Payload<V: Vis>`): a wire \
              type carries its visibility, and there is nothing else for a \
              serialized record to be generic in",
         )),
@@ -258,8 +269,8 @@ fn reject_variable_width(ty: &Type) -> syn::Result<()> {
             "maps and sets are not in the fixed-width subset: the length prefix \
              makes the layout value-dependent. Use [(K, V); N] plus a count"
         }
-        // M15. The only entry here that is not a std container, and the only
-        // one whose value-dependence is on the LEDGER's side rather than
+        // The only entry here that is not a std container, and the only
+        // one whose value-dependence is on the ledger's side rather than
         // Borsh's: a `compress` atom accepts a value of any length
         // (`AlignmentAtom::fits` is unconditionally true for it), so an opaque
         // has no width to declare and no bytes to declare one over. It is also
@@ -299,7 +310,7 @@ fn spec_attr(attrs: &[Attribute]) -> syn::Result<Option<Path>> {
     Ok(spec)
 }
 
-/// The LAYOUT path segment of each field: its name verbatim (the spec type's
+/// The layout path segment of each field: its name verbatim (the spec type's
 /// own field name), or the `#[borsh(name = "…")]` override.
 fn spec_labels(input: &DeriveInput) -> syn::Result<Vec<String>> {
     let Data::Struct(data) = &input.data else {
@@ -352,7 +363,7 @@ mod tests {
         expand(input).expect("expands").to_string()
     }
 
-    /// THINNESS RULE: the expansion may not build any circuit — `c` is
+    /// Thinness rule: the expansion may not build any circuit — `c` is
     /// passed along and never called on.
     #[test]
     fn the_expansion_calls_no_circuit_method() {
@@ -364,12 +375,12 @@ mod tests {
         });
         assert!(!expanded.contains("c ."), "expansion calls a method on the circuit:\n{expanded}");
         assert!(
-            !expanded.contains("Circuit3 ::"),
-            "expansion calls a Circuit3 associated function:\n{expanded}"
+            !expanded.contains("Circuit ::"),
+            "expansion calls a Circuit associated function:\n{expanded}"
         );
     }
 
-    /// One derive yields BOTH families: the argument impls (from the same
+    /// One derive yields both families: the argument impls (from the same
     /// code path `#[derive(CircuitArg)]` uses) and the serialization impl.
     #[test]
     fn one_derive_yields_both_families() {
@@ -388,16 +399,16 @@ mod tests {
     #[test]
     fn a_visibility_parameter_is_carried_into_the_impl() {
         let expanded = expansion(syn::parse_quote! {
-            struct Payload<V: Vis3> {
+            struct Payload<V: Vis> {
                 version: Uint<8, V>,
             }
         });
-        assert!(expanded.contains("impl < V : :: minocrab_std :: v3 :: Vis3 >"), "{expanded}");
+        assert!(expanded.contains("impl < V : :: minocrab_std :: Vis >"), "{expanded}");
         assert!(expanded.contains("CircuitBorsh < V > for Payload < V >"), "{expanded}");
         // The argument impls apply only where every field is an argument —
         // which is at Private, stated as a where-clause.
         assert!(
-            expanded.contains("CircuitArg for Payload < V > where Uint < 8 , V > : :: minocrab_std :: v3 :: CircuitArg"),
+            expanded.contains("CircuitArg for Payload < V > where for < '__w > Uint < 8 , V > : :: minocrab_std :: CircuitArg"),
             "{expanded}"
         );
     }
@@ -468,7 +479,7 @@ mod tests {
                 syn::parse_quote! { struct P { table: HashMap<u8, u8> } },
                 "maps and sets are not in the fixed-width subset",
             ),
-            // M15: the one exclusion with NO replacement — an opaque cannot be
+            // The one exclusion with no replacement — an opaque cannot be
             // serialized at all, so the message says so rather than offering a
             // substitute.
             (

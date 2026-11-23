@@ -1,33 +1,44 @@
 [package]
 name = "signet-signer-interface"
-# An EXAMPLE interface crate, in-tree so the mechanism has a worked case; its
-# agreement suite reads the artifact under ../../corpus. A real interface
-# crate is published by whoever owns the contract, not by us.
-publish = false
-# NOT the workspace version: versions here are PER CALLEE (the note's "one
-# crate per contract" rule — a callee that breaks its ABI must not force a
-# bump on an unrelated one). 0.3 follows the signet signer at midnight-integration
-# v0.25.0: `RespondBidirectionalEventV1` carries `outputHash` between
-# `serializedOutputLength` and `digest`, and both event structs carry the V1
-# suffix. That is a WIRE break, which is what the
-# `interface-wire-compat-semver` gate exists to make loud —
-# tests/artifact_agreement.rs holds it to the deployed artifact.
-version = "0.3.0"
+description = "The Sig Network signet signer's cross-contract interface, as an importable MinoCrab crate"
+# Published: minocrab-signet takes `RequestId`, `SignetSigner` and
+# `construct_notification_v1` from it.
+#
+# Versioned per callee, not by the workspace: 0.4 is the signet signer at
+# midnight-integration v0.26.0-rc.15 (`signBidirectional` only).
+# tests/artifact_agreement.rs holds it to the artifact.
+version = "0.4.0"
 edition.workspace = true
 license.workspace = true
-description = "The Sig Network signet signer's cross-contract interface, as an importable MinoCrab crate"
+repository.workspace = true
+rust-version.workspace = true
+readme = "README.md"
+keywords = ["midnight", "signet", "interface", "contract", "zero-knowledge"]
+categories = ["cryptography::cryptocurrencies"]
+# `artifact/` is the pin and the frozen wire schema the crate is held to; it
+# ships as reference data (nothing in `src` reads it). `tests/` does not ship:
+# the agreement suite needs `minocrab-abi`, a versionless dev-dependency that
+# cargo strips on publish, and the corpus artifact under ../../corpus.
+include = [
+    "src/**/*.rs",
+    "artifact/*.json",
+    "artifact/interface-schema.txt",
+    "README.md",
+    "LICENSE-MIT",
+    "LICENSE-APACHE",
+]
 
 [lints]
 workspace = true
 
 [dependencies]
-minocrab = { path = "../minocrab" }
-minocrab-std = { path = "../minocrab-std" }
+minocrab.workspace = true
+minocrab-std.workspace = true
 # `#[interface]`'s expansion names `::minocrab_ledger` paths (EntryPoint,
 # Callee, call), so a crate that uses the attribute depends on the ledger
 # layer as well as the stdlib.
-minocrab-ledger = { path = "../minocrab-ledger" }
+minocrab-ledger.workspace = true
 
 [dev-dependencies]
-# The agreement suite ONLY: nothing shipping links the artifact checker.
+# The agreement suite only: nothing shipping links the artifact checker.
 minocrab-abi = { path = "../minocrab-abi" }

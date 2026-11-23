@@ -1,38 +1,42 @@
-//! `bounded.compact` — the M14 differential: [`minocrab_std::v3::BoundedUint`]
+//! `bounded.compact` — the differential: [`minocrab_std::BoundedUint`]
 //! against compactc's own artifacts, for every shape a `Uint<0..n>` bound
 //! can take.
 //!
-//! WHY THE FIXTURE IS OURS. No compiled corpus artifact carries a
+//! Why the fixture is ours. No compiled corpus artifact carries a
 //! non-power-of-two bound. The scan: 788 `.zkir` files under `corpus/zkir`,
 //! 66 of them v3 (only the three sig-net sources are compiled with
 //! `--feature-zkir-v3`, and our IR is v3) — and none of the 66 has one. The
-//! corpus contracts that DO use such a bound are
+//! corpus contracts that do use such a bound are
 //! `compact/examples/multiconst` (whose `test5.zkir` really does contain
 //! `less_than x 0x0a bits=4` for an `x as Uint<0..10>`, but is v2 output) and
 //! midnight-serde's `serde-fixtures.compact` (`Uint<0..300>`, `<0..1000>`,
 //! `<0..70000>` — every circuit `pure`, and a pure exported circuit gets no
 //! `.zkir` at all). So this is the established tiny.compact-style fallback:
-//! `tests/fixtures/bounded/bounded.compact`, compiled with the PINNED
+//! `tests/fixtures/bounded/bounded.compact`, compiled with the pinned
 //! compactc, with the exact invocation in its header.
 //!
-//! THREE CLAIMS, in increasing strength:
+//! Three claims, in increasing strength:
 //!
 //! 1. [`assert_call_compatible`] — the notes/ledger-abi.org §6 criterion
 //!    every other differential in this crate uses: same typed input/output
 //!    schemas, same `pis` and `pi_skips` from the v3 simulator on one
 //!    preimage, and upstream `check()` agreeing with both.
-//! 2. `identical_instruction_streams` — the artifacts are the SAME CIRCUIT,
-//!    compared as serialized ZKIR up to identifier RENAMING (our
+//! 2. `identical_instruction_streams` — the artifacts are the same circuit,
+//!    compared as serialized ZKIR up to identifier renaming (our
 //!    temporaries are `%lt.N` where compactc's are `%tmp.N`, and a derived
 //!    struct's argument labels are the informative `%order_kind.0` where
 //!    compactc repeats `%order.0` — notes/contract-api.org §ArgPath). Every
 //!    op, every immediate, every width and every operand position is pinned.
-//!    That is what says the LOWERING of a bound is compactc's, not ours.
+//!    That is what says the lowering of a bound is compactc's, not ours.
 //! 3. `both_reject_the_first_illegal_value` / `both_accept_the_last_legal_value`
 //!    — the bound is exactly where the source says, and it is load-bearing.
 //!    Claims 1 and 2 are satisfied by honest preimages whatever the
 //!    constraint says; these two are the pair that an off-by-one in either
 //!    direction fails.
+
+#[path = "support/common.rs"]
+mod common;
+use common::*;
 
 use std::borrow::Cow;
 
@@ -46,11 +50,11 @@ use midnight_storage::db::InMemoryDB;
 use midnight_transient_crypto::hash::transient_commit;
 use midnight_transient_crypto::proofs::{KeyLocation, ProofPreimage, Zkir};
 use midnight_transient_crypto::repr::FieldRepr;
-use minocrab::v3::Compiled3;
+use minocrab::Compiled;
 use minocrab::Fr;
 use minocrab_contracts::bounded;
-use minocrab_sim::v3::{assert_call_compatible, simulate};
-use minocrab_zkir::v3::{to_zkir_string, IrSource};
+use minocrab_sim::{assert_call_compatible, simulate};
+use minocrab_zkir::IrSource;
 
 type VmOp = Op<ResultModeVerify, InMemoryDB>;
 
@@ -60,7 +64,7 @@ fn theirs(name: &str) -> IrSource {
         "{}/tests/fixtures/bounded/out/zkir/{name}.zkir",
         env!("CARGO_MANIFEST_DIR")
     );
-    minocrab_zkir::v3::read_zkir(&path).expect("the pinned compactc's artifact parses")
+    minocrab_zkir::read_zkir(&path).expect("the pinned compactc's artifact parses")
 }
 
 fn bytes1_value(v: u8) -> AlignedValue {
@@ -127,54 +131,11 @@ fn flag_write_transcript(less: bool) -> Vec<Fr> {
     ])
 }
 
-/// Serialized ZKIR with every `%name.index` identifier replaced by
-/// `%<order of first appearance>`.
-///
-/// Names are the ONLY thing the two artifacts are allowed to differ in, and
-/// they are cosmetic to the ledger ABI (order and type are the contract —
-/// notes/contract-api.org §ArgPath). Everything else — the op sequence, the
-/// immediates, the widths, which operand sits where — survives this and is
-/// therefore asserted.
-fn canonical(ir: &IrSource) -> String {
-    // BOTH SIDES are folded first (notes/ir-passes.org §2 ii): our builder
-    // inlines a `Copy` of an immediate at `finish`, and compactc names some of
-    // the constants it inlines elsewhere, so the comparison is instruction for
-    // instruction MODULO the naming of constants — a rename with no rows, no
-    // public input and no semantics. Everything else still compares exactly.
-    let ir = &minocrab_ir::v3::passes::folded(ir);
-    let text = to_zkir_string(ir).expect("serializes");
-    let mut renames: Vec<(String, String)> = Vec::new();
-    let mut out = String::with_capacity(text.len());
-    let mut rest = text.as_str();
-    while let Some(at) = rest.find('%') {
-        out.push_str(&rest[..at]);
-        rest = &rest[at..];
-        let end = rest[1..]
-            .find(|ch: char| !(ch.is_alphanumeric() || ch == '_' || ch == '.'))
-            .map(|i| i + 1)
-            .unwrap_or(rest.len());
-        let name = &rest[..end];
-        let next = renames.len();
-        let canon = match renames.iter().find(|(from, _)| from == name) {
-            Some((_, to)) => to.clone(),
-            None => {
-                let to = format!("%{next}");
-                renames.push((name.to_string(), to.clone()));
-                to
-            }
-        };
-        out.push_str(&canon);
-        rest = &rest[end..];
-    }
-    out.push_str(rest);
-    out
-}
-
 /// Every single-argument circuit of the fixture: our builder, compactc's
-/// artifact name, and a LARGEST-LEGAL witness.
-fn cases() -> Vec<(&'static str, fn() -> Compiled3, Vec<u128>)> {
+/// artifact name, and a largest-legal witness.
+fn cases() -> Vec<(&'static str, fn() -> Compiled, Vec<u128>)> {
     vec![
-        ("b10", bounded::Bounded::b10 as fn() -> Compiled3, vec![9]),
+        ("b10", bounded::Bounded::b10 as fn() -> Compiled, vec![9]),
         ("b300", bounded::Bounded::b300, vec![299]),
         ("b1000", bounded::Bounded::b1000, vec![999]),
         ("b70000", bounded::Bounded::b70000, vec![69_999]),
@@ -196,7 +157,7 @@ fn fr(v: u128) -> Fr {
     Fr::from_le_bytes(&v.to_le_bytes()).expect("16 bytes fit the native field")
 }
 
-/// Claim 2, and the headline: for every bound, our circuit IS compactc's,
+/// Claim 2, and the headline: for every bound, our circuit is compactc's,
 /// op for op and immediate for immediate.
 #[test]
 fn identical_instruction_streams() {
@@ -228,7 +189,7 @@ fn every_bound_is_call_compatible() {
 }
 
 /// Claim 1 for the comparing circuit, whose transcript carries the
-/// comparison's RESULT — so a comparison running at the wrong width would
+/// comparison's result — so a comparison running at the wrong width would
 /// show up as a differing `pis`, not merely as a differing stream.
 #[test]
 fn the_comparison_is_call_compatible_both_ways() {
@@ -245,8 +206,8 @@ fn the_comparison_is_call_compatible_both_ways() {
 /// arm (`b1`).
 #[test]
 fn both_reject_the_first_illegal_value() {
-    let over: Vec<(&str, fn() -> Compiled3, u128)> = vec![
-        ("b10", bounded::Bounded::b10 as fn() -> Compiled3, 10),
+    let over: Vec<(&str, fn() -> Compiled, u128)> = vec![
+        ("b10", bounded::Bounded::b10 as fn() -> Compiled, 10),
         ("b300", bounded::Bounded::b300, 300),
         ("b1000", bounded::Bounded::b1000, 1000),
         ("b70000", bounded::Bounded::b70000, 70_000),
@@ -276,22 +237,22 @@ fn both_reject_the_first_illegal_value() {
     }
 }
 
-/// THE ABI ROUND-TRIP, closing the loop the interface generator opens:
+/// The ABI round-trip, closing the loop the interface generator opens:
 /// compactc's own `contract-info.json` for this fixture, flattened by
 /// `minocrab_abi::info`, must agree slot for slot with the `CircuitAbi` of
-/// the Rust types the generator would emit for it — atoms AND primitive
-/// types. Those two lists agreeing IS the agreement check every interface
+/// the Rust types the generator would emit for it — atoms and primitive
+/// types. Those two lists agreeing is the agreement check every interface
 /// crate rests on (crates/minocrab-abi/src/check.rs).
 ///
-/// It also pins the EXCLUSIVE range end from the artifact side: compactc
+/// It also pins the exclusive range end from the artifact side: compactc
 /// publishes `maxval: 69999` for the source's `Uint<0..70000>`, and the type
 /// that agrees with it is `BoundedUint<70000>`.
 #[test]
 fn compactc_s_abi_agrees_with_the_leafs() {
     use minocrab_abi::info::ContractInfo;
-    use minocrab::v3::CircuitAbi;
+    use minocrab::CircuitAbi;
     use minocrab::Public;
-    use minocrab_std::v3::{BoundedUint, Bytes, Uint};
+    use minocrab_std::{BoundedUint, Bytes, Uint};
 
     let text = std::fs::read_to_string(format!(
         "{}/tests/fixtures/bounded/out/compiler/contract-info.json",
@@ -300,8 +261,8 @@ fn compactc_s_abi_agrees_with_the_leafs() {
     .expect("the pinned compactc's contract-info is committed");
     let info = ContractInfo::parse(&text).expect("contract-info parses");
 
-    /// The Rust type each fixture circuit's ONE argument has.
-    fn ours(name: &str) -> (Vec<minocrab::AlignmentAtom>, Vec<minocrab::v3::Prim>) {
+    /// The Rust type each fixture circuit's one argument has.
+    fn ours(name: &str) -> (Vec<minocrab::AlignmentAtom>, Vec<minocrab::Prim>) {
         macro_rules! abi {
             ($ty:ty) => {
                 (<$ty as CircuitAbi>::atoms(), <$ty as CircuitAbi>::prims())
@@ -315,7 +276,7 @@ fn compactc_s_abi_agrees_with_the_leafs() {
             "b1" => abi!(BoundedUint<1, Public>),
             "b2" => abi!(BoundedUint<2, Public>),
             // A power-of-two bound is a bit width, and the generator emits
-            // the SIZED leaf for it — which must agree with the artifact
+            // the sized leaf for it — which must agree with the artifact
             // just as the bounded one does.
             "b256" => abi!(Uint<8, Public>),
             "b255" => abi!(BoundedUint<255, Public>),
@@ -365,7 +326,7 @@ fn compactc_s_abi_agrees_with_the_leafs() {
     assert_eq!(flat.prims, prims, "Order: primitive types disagree");
 }
 
-/// ...and the LAST legal value is accepted by both, which is the other half
+/// ...and the last legal value is accepted by both, which is the other half
 /// of "the bound is exactly where the source says".
 #[test]
 fn both_accept_the_last_legal_value() {

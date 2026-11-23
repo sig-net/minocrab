@@ -1,0 +1,179 @@
+{
+  "compiler-version": "0.36.1",
+  "compiler-commit": "7fa3a117c5e7efe9d2c51da04263e5f0b3509144",
+  "language-version": "0.28.0",
+  "runtime-version": "0.21.0",
+  "circuits": [
+    {
+      "name": "none_point",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Struct",
+        "name": "Maybe",
+        "elements": [
+          {
+            "name": "is_some",
+            "type": {
+              "type-name": "Boolean"
+            }
+          },
+          {
+            "name": "value",
+            "type": {
+              "type-name": "Curve25519Point"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "none_scalar",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Struct",
+        "name": "Maybe",
+        "elements": [
+          {
+            "name": "is_some",
+            "type": {
+              "type-name": "Boolean"
+            }
+          },
+          {
+            "name": "value",
+            "type": {
+              "type-name": "Curve25519Scalar"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "right_of_base",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "x",
+          "type": {
+            "type-name": "Field"
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Struct",
+        "name": "Either",
+        "elements": [
+          {
+            "name": "is_left",
+            "type": {
+              "type-name": "Boolean"
+            }
+          },
+          {
+            "name": "left",
+            "type": {
+              "type-name": "Curve25519Base"
+            }
+          },
+          {
+            "name": "right",
+            "type": {
+              "type-name": "Field"
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "witnesses": [
+  ],
+  "contracts": [
+  ],
+  "ledger": [
+    {
+      "name": "point",
+      "index": 0,
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Struct",
+        "name": "Maybe",
+        "elements": [
+          {
+            "name": "is_some",
+            "type": {
+              "type-name": "Boolean"
+            }
+          },
+          {
+            "name": "value",
+            "type": {
+              "type-name": "Curve25519Point"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "scalar",
+      "index": 1,
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Struct",
+        "name": "Maybe",
+        "elements": [
+          {
+            "name": "is_some",
+            "type": {
+              "type-name": "Boolean"
+            }
+          },
+          {
+            "name": "value",
+            "type": {
+              "type-name": "Curve25519Scalar"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "base",
+      "index": 2,
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Struct",
+        "name": "Either",
+        "elements": [
+          {
+            "name": "is_left",
+            "type": {
+              "type-name": "Boolean"
+            }
+          },
+          {
+            "name": "left",
+            "type": {
+              "type-name": "Curve25519Base"
+            }
+          },
+          {
+            "name": "right",
+            "type": {
+              "type-name": "Field"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

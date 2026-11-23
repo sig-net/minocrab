@@ -1,12 +1,12 @@
 //! The vault's twenty-nine circuits, named independently of the module that
 //! builds them, with each one's compactc `.zkir` stem.
 //!
-//! One artifact since M28: the compat port, PI-equal to compactc's (the
-//! flush-pattern vault since M44).
+//! One artifact: the compat port, PI-equal to compactc's (the
+//! flush-pattern vault).
 
-use minocrab::v3::Compiled3;
+use minocrab::Compiled;
 use minocrab_contracts::erc20_vault;
-use minocrab_zkir::v3::IrSource;
+use minocrab_zkir::IrSource;
 
 /// One vault circuit.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -14,10 +14,10 @@ pub enum Circuit {
     Initialise,
     SetGasParams,
     AddAllowedToken,
+    SetTokenFees,
+    SetFeeRecipient,
     FlushQueue,
-    QueueAttestation0,
-    QueueAttestation1,
-    QueueAttestation32,
+    QueueAttestation,
     StartReplaceNonce,
     SendReplaceNonce,
     CompleteReplaceNonce,
@@ -47,10 +47,10 @@ impl Circuit {
         Circuit::Initialise,
         Circuit::SetGasParams,
         Circuit::AddAllowedToken,
+        Circuit::SetTokenFees,
+        Circuit::SetFeeRecipient,
         Circuit::FlushQueue,
-        Circuit::QueueAttestation0,
-        Circuit::QueueAttestation1,
-        Circuit::QueueAttestation32,
+        Circuit::QueueAttestation,
         Circuit::StartReplaceNonce,
         Circuit::SendReplaceNonce,
         Circuit::CompleteReplaceNonce,
@@ -82,10 +82,10 @@ impl Circuit {
             Circuit::Initialise => "initialise",
             Circuit::SetGasParams => "setGasParams",
             Circuit::AddAllowedToken => "addAllowedToken",
+            Circuit::SetTokenFees => "setTokenFees",
+            Circuit::SetFeeRecipient => "setFeeRecipient",
             Circuit::FlushQueue => "flushQueue",
-            Circuit::QueueAttestation0 => "queueAttestation0",
-            Circuit::QueueAttestation1 => "queueAttestation1",
-            Circuit::QueueAttestation32 => "queueAttestation32",
+            Circuit::QueueAttestation => "queueAttestation",
             Circuit::StartReplaceNonce => "startReplaceNonce",
             Circuit::SendReplaceNonce => "sendReplaceNonce",
             Circuit::CompleteReplaceNonce => "completeReplaceNonce",
@@ -111,15 +111,15 @@ impl Circuit {
         }
     }
 
-    pub fn build(self) -> Compiled3 {
+    pub fn build(self) -> Compiled {
         match self {
             Circuit::Initialise => erc20_vault::Vault::initialise(),
             Circuit::SetGasParams => erc20_vault::Vault::set_gas_params(),
             Circuit::AddAllowedToken => erc20_vault::Vault::add_allowed_token(),
+            Circuit::SetTokenFees => erc20_vault::Vault::set_token_fees(),
+            Circuit::SetFeeRecipient => erc20_vault::Vault::set_fee_recipient(),
             Circuit::FlushQueue => erc20_vault::Vault::flush_queue(),
-            Circuit::QueueAttestation0 => erc20_vault::Vault::queue_attestation0(),
-            Circuit::QueueAttestation1 => erc20_vault::Vault::queue_attestation1(),
-            Circuit::QueueAttestation32 => erc20_vault::Vault::queue_attestation32(),
+            Circuit::QueueAttestation => erc20_vault::Vault::queue_attestation(),
             Circuit::StartReplaceNonce => erc20_vault::Vault::start_replace_nonce(),
             Circuit::SendReplaceNonce => erc20_vault::Vault::send_replace_nonce(),
             Circuit::CompleteReplaceNonce => erc20_vault::Vault::complete_replace_nonce(),

@@ -1,19 +1,19 @@
-//! `treasury` — the README's cross-chain example, run (M37 rung C).
+//! `treasury` — the README's cross-chain example, run.
 //!
 //! The contract is notes/evm-calls.org §0's target shape as real code; this
 //! file is the evidence that it is not just a shape. Every case below builds
-//! a `ProofPreimage` BY HAND — the ledger op stream, the argument slots, the
+//! a `ProofPreimage` by hand — the ledger op stream, the argument slots, the
 //! witnesses, and a real secp256k1 signature over a real Poseidon
 //! attestation digest — and hands it to the simulator, the way
 //! `tests/vault_pending` does for the vault's seventeen circuits.
 //!
-//! What the round trips pin (notes/evm-calls.org §3, the SYMMETRIC tickets):
+//! What the round trips pin (notes/evm-calls.org §3, the symmetric tickets):
 //!
 //! | attestation                  | `complete` | `refund`, owner | `refund`, stranger |
 //! |------------------------------|-----------:|----------------:|-------------------:|
-//! | `executed`, flag `true`      |     ACCEPT |          reject |             reject |
-//! | `executed`, flag `false`     |     reject |          ACCEPT |             reject |
-//! | `failed` (the empty output)  |     reject |          ACCEPT |             reject |
+//! | `executed`, flag `true`      |     accept |          reject |             reject |
+//! | `executed`, flag `false`     |     reject |          accept |             reject |
+//! | `failed` (the empty output)  |     reject |          accept |             reject |
 //!
 //! The middle row is the one the deployed vault gets wrong: its
 //! `completeWithdraw` accepts an attested `false` and refunds inside the
@@ -23,10 +23,10 @@
 //! flag, and `complete` asserts `EvmCall::succeeded`.
 //!
 //! The third column is `Owned`: the environment carries a commitment to the
-//! SENDER's secret, and `refund_to_owner` opens it against a fresh witness.
+//! sender's secret, and `refund_to_owner` opens it against a fresh witness.
 
 use minocrab_contracts::treasury::Treasury;
-use minocrab_sim::v3::{cost, simulate};
+use minocrab_sim::{cost, simulate};
 
 #[path = "vault/prims.rs"]
 #[allow(dead_code)]
@@ -41,7 +41,7 @@ use model::{Attestation, SendScenario, SettleScenario};
 
 // ---- the layout the derive computes ------------------------------------------
 
-/// Six fields from two declarations — FOUR of `Signet` since V1, where the
+/// Six fields from two declarations — four of `Signet` since V1, where the
 /// `fff3421c` block had five — under the fifteen-field segment length, so
 /// the notification the MPC follows is one element deep and
 /// `#[derive(Ledger)]` found the `Signet` block at offset 0 without anyone
@@ -89,9 +89,9 @@ fn send_then_complete() {
         .expect("an attested success completes");
 }
 
-/// ANYONE MAY COMPLETE. The completion witnesses nothing at all — there is
+/// Anyone may complete. The completion witnesses nothing at all — there is
 /// no secret in the circuit to present — so a stranger's proof is the same
-/// proof. Pinned as the private transcript being EMPTY rather than as a
+/// proof. Pinned as the private transcript being empty rather than as a
 /// second accepted run, which would be the same run.
 #[test]
 fn anyone_can_complete() {
@@ -104,7 +104,7 @@ fn anyone_can_complete() {
     simulate(&Treasury::complete().ir, &s.complete_preimage()).expect("accepts");
 }
 
-/// THE HOLE THIS API CLOSES. A mined `transfer` that returned `false` is a
+/// The hole this API closes. A mined `transfer` that returned `false` is a
 /// perfectly valid `executed` attestation, correctly signed — and it cannot
 /// complete, because a `Bool` return's `success` is the flag and `complete`
 /// asserts it.
@@ -145,8 +145,8 @@ fn complete_rejects_an_unfiled_request() {
 
 // ---- send -> refund -----------------------------------------------------------
 
-/// A NEVER-EXECUTED request refunds — the `failed` verdict, whose signed
-/// preimage has width ZERO and no output limbs.
+/// A never-executed request refunds — the `failed` verdict, whose signed
+/// preimage has width zero and no output limbs.
 #[test]
 fn send_then_refund_a_never_executed_call() {
     let s = SettleScenario::new(Attestation::NeverExecuted);
@@ -155,7 +155,7 @@ fn send_then_refund_a_never_executed_call() {
         .expect("an attested failure refunds");
 }
 
-/// AND SO DOES AN EXECUTED `false` — the second disjunct, over the OTHER
+/// And so does an executed `false` — the second disjunct, over the other
 /// preimage width. That both are accepted by one circuit is what the
 /// two-digest selection in `Pending::refund` buys.
 #[test]
@@ -165,7 +165,7 @@ fn a_false_attestation_can_refund() {
         .expect("an attested `false` refunds");
 }
 
-/// A SUCCESS DOES NOT REFUND: the verdict is `executed`, the signature
+/// A success does not refund: the verdict is `executed`, the signature
 /// verifies, and the disjunction still fails because the flag is set.
 #[test]
 fn a_true_attestation_cannot_refund() {
@@ -176,7 +176,7 @@ fn a_true_attestation_cannot_refund() {
     );
 }
 
-/// ONLY THE OWNER. A stranger with a valid failure attestation cannot open
+/// Only the owner. A stranger with a valid failure attestation cannot open
 /// the environment's commitment, so the refund does not prove.
 #[test]
 fn a_stranger_cannot_refund() {
@@ -190,7 +190,7 @@ fn a_stranger_cannot_refund() {
     }
 }
 
-/// The failure attestation's signature is over the ZERO-WIDTH preimage;
+/// The failure attestation's signature is over the zero-width preimage;
 /// presenting it under the `executed` verdict selects the one-byte digest
 /// instead, which it does not verify against. The negative control for the
 /// digest selection: without it, one of the two branches would be verifying
@@ -208,7 +208,7 @@ fn a_failure_signature_does_not_verify_under_the_executed_verdict() {
 
 // ---- what the two settle circuits cost ----------------------------------------
 
-/// WHAT `Failed<Call>` COSTS, measured. `refund` does everything `complete`
+/// What `Failed<Call>` costs, measured. `refund` does everything `complete`
 /// does plus: a second Poseidon digest and a `cond_select` (the two
 /// preimage widths), the verdict disjunction, the owner commitment's
 /// opening, and `own_public_key`. The whole difference is a few hundred rows against
@@ -228,7 +228,7 @@ fn the_refund_pays_one_extra_digest() {
     );
 }
 
-/// The request circuit is CHEAP — no signature verification, no hash of a
+/// The request circuit is cheap — no signature verification, no hash of a
 /// witness beyond the one commitment.
 #[test]
 fn the_circuits_build_at_a_finite_cost() {

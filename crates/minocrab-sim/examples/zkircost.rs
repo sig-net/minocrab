@@ -5,9 +5,9 @@
 
 fn main() {
     for path in std::env::args().skip(1) {
-        match minocrab_zkir::v3::read_zkir(&path) {
+        match minocrab_zkir::read_zkir(&path) {
             Ok(ir) => {
-                let (k, rows) = minocrab_sim::v3::cost(&ir);
+                let (k, rows) = minocrab_sim::cost(&ir);
                 let name = std::path::Path::new(&path)
                     .file_stem()
                     .and_then(|s| s.to_str())

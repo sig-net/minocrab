@@ -2,11 +2,13 @@
 //! artifacts per notes/ledger-abi.org §6 — the `log` (emit) op and the
 //! serialize<T,N> layout against real compactc artifacts.
 
+#[path = "support/common.rs"]
+mod common;
+use common::*;
+
 use std::borrow::Cow;
 
-use midnight_base_crypto::fab::{
-    Alignment, AlignmentAtom, AlignmentSegment, AlignedValue, Value, ValueAtom,
-};
+use midnight_base_crypto::fab::AlignedValue;
 use midnight_onchain_state::state::StateValue;
 use midnight_onchain_vm::ops::{Key, Op};
 use midnight_onchain_vm::result_mode::ResultModeVerify;
@@ -18,38 +20,17 @@ use midnight_transient_crypto::proofs::{KeyLocation, ProofPreimage};
 use midnight_transient_crypto::repr::FieldRepr;
 use minocrab::Fr;
 use minocrab_contracts::events;
-use minocrab_sim::v3::{assert_call_compatible, simulate};
-use minocrab_zkir::v3::IrSource;
+use minocrab_sim::{assert_call_compatible, simulate};
+use minocrab_zkir::IrSource;
 
 type VmOp = Op<ResultModeVerify, InMemoryDB>;
 
 fn corpus_zkir(name: &str) -> IrSource {
-    let path = format!(
-        "{}/../../corpus/zkir/signet-midnight-experiments/experiments/events/contract/src/events/zkir/{name}.zkir",
-        env!("CARGO_MANIFEST_DIR")
-    );
-    minocrab_zkir::v3::read_zkir(&path).expect("corpus golden parses")
-}
-
-fn bytesn_value(n: u32, bytes: &[u8]) -> AlignedValue {
-    AlignedValue::new(
-        Value(vec![ValueAtom(bytes.to_vec()).normalize()]),
-        Alignment(vec![AlignmentSegment::Atom(AlignmentAtom::Bytes {
-            length: n,
-        })]),
-    )
-    .unwrap()
+    common::corpus_zkir("signet-midnight-experiments/experiments/events/contract/src/events/zkir", name)
 }
 
 fn cell(av: AlignedValue) -> StateValue {
     StateValue::Cell(Sp::new(av))
-}
-
-fn b32_slots(bytes: &[u8; 32]) -> (Fr, Fr) {
-    (
-        Fr::from(u64::from(bytes[31])),
-        Fr::from_le_bytes(&bytes[..31]).unwrap(),
-    )
 }
 
 struct Scenario {
@@ -227,7 +208,7 @@ fn emit4_matches_corpus() {
 
 /// Criterion 3: a transcript whose event payload disagrees with the
 /// circuit's emit (tampered amount inside the logged bytes) must be
-/// rejected by BOTH artifacts.
+/// rejected by both artifacts.
 #[test]
 fn emit1_rejects_tampered_event_payload() {
     let theirs = corpus_zkir("emit1");
@@ -265,21 +246,21 @@ fn emit1_rejects_tampered_event_payload() {
 
 // ---- M11 stage 6: the Borsh twin ---------------------------------------------
 
-/// `events_borsh` emits THE SAME BYTES as `events`, built out of declared
-/// [`minocrab_std::v3::borsh`] types instead of hand-rolled `Serializer`
-/// pushes — and the equality is BYTE-IDENTICAL ZKIR, not merely equal
+/// `events_borsh` emits the same bytes as `events`, built out of declared
+/// [`minocrab_std::borsh`] types instead of hand-rolled `Serializer`
+/// pushes — and the equality is byte-identical ZKIR, not merely equal
 /// payloads.
 ///
 /// That is the strongest form the claim can take: identical ZKIR means the
 /// twin is the same circuit, so the same rows, the same interface, the same
 /// PI vector and the same 288-byte `Misc` transcript, and compactc's own
 /// differential below covers it verbatim. Stage 0 had already proved the
-/// deployed payload IS canonical Borsh; this proves the API PRODUCES it, on a
+/// deployed payload is canonical Borsh; this proves the API produces it, on a
 /// real event shape, for nothing.
 #[test]
 fn borsh_twins_are_byte_identical_to_the_originals() {
     use minocrab_contracts::events_borsh;
-    use minocrab_zkir::v3::to_zkir_string;
+    use minocrab_zkir::to_zkir_string;
     for (name, original, twin) in [
         ("base", events::base(), events_borsh::base()),
         ("emit1", events::emit_n(1), events_borsh::emit_n(1)),
@@ -294,10 +275,10 @@ fn borsh_twins_are_byte_identical_to_the_originals() {
     }
 }
 
-/// ...and the twin is run against compactc's golden ITSELF, on the preimage
+/// ...and the twin is run against compactc's golden itself, on the preimage
 /// whose transcript carries the exact 288-byte `Misc` bytes. Redundant while
 /// the ZKIR is identical, and deliberately kept: the day the twin diverges,
-/// this is the test that says whether the BYTES still agree with the deployed
+/// this is the test that says whether the bytes still agree with the deployed
 /// artifact, which is the property stage 6 is actually about.
 #[test]
 fn borsh_twins_match_the_corpus() {

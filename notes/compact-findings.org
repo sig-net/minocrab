@@ -291,6 +291,8 @@ STATUS at compactc 0.35.0 (checked 2026-10-14, dmd: "make sure it's still a prob
 
 * 11. CRASH — a guarded =deserialize<Boolean>= crashes =missing-guard-workarounds= (compactc 0.36.0, 2026-11-10)
 
+STATUS 2026-11-21: FIXED at 0.36.1 (=expand-serialize.ss= types the guarded byte as =Uint<0..255>=). A minimal guarded read and the un-worked-around vault both compile; the vault's two settle circuits then check the byte under the branch's guard instead of on every call, three instructions more each. The workaround is no longer needed and stays in the pinned vault until rung L re-pins it (notes/version-bump.org "Bump 3").
+
 What: under compactc 0.36.0 a =deserialize<T, N>(bytes).flag= read inside an
 =if= fails to compile: the pass rewrites the guarded byte-to-=Uint<0..1>=
 downcast into =(< 4 (select <guard> <byte> 0) 2)= and the type check then

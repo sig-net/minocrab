@@ -1,7 +1,7 @@
 //! The in-process proving provider the real-proving gates share
-//! (`signet_real_proof.rs`, M29 E; `signet_posting.rs`, M43 D).
+//! (`signet_real_proof.rs`, `signet_posting.rs`).
 //!
-//! MECHANICAL TRANSLATION of `midnight_ledger::test_utilities`'
+//! Mechanical translation of `midnight_ledger::test_utilities`'
 //! `CombinedProofProvider`, v3 arm only (midnight-ledger `04c9c5d`,
 //! `ledger/src/test_utilities.rs:749-818`).
 //! The upstream one is a private struct behind the ledger's `test-utilities`
@@ -18,7 +18,7 @@ use midnight_transient_crypto::curve::Fr;
 use midnight_transient_crypto::proofs::{
     KeyLocation, Proof, ProofPreimage, ProvingKeyMaterial, ProvingProvider, Resolver, Zkir,
 };
-use minocrab_zkir::v3::IrSource;
+use minocrab_zkir::IrSource;
 use rand::{CryptoRng, Rng};
 
 /// Key material keyed by `KeyLocation` — which
@@ -76,7 +76,7 @@ impl<R: Rng + CryptoRng + SplittableRng> ProvingProvider for V3ProvingProvider<'
 }
 
 /// Peak RSS of this process, in bytes — `getrusage(RUSAGE_SELF)`, the same
-/// measurement `crates/minocrab-bench` reports. Process-wide and MONOTONIC.
+/// measurement `crates/minocrab-bench` reports. Process-wide and monotonic.
 pub fn peak_rss_bytes() -> u64 {
     let mut ru: libc::rusage = unsafe { std::mem::zeroed() };
     let rc = unsafe { libc::getrusage(libc::RUSAGE_SELF, &mut ru) };

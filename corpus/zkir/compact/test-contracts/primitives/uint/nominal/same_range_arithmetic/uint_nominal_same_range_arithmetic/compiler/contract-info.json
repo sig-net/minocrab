@@ -1,0 +1,199 @@
+{
+  "compiler-version": "0.36.1",
+  "compiler-commit": "7fa3a117c5e7efe9d2c51da04263e5f0b3509144",
+  "language-version": "0.28.0",
+  "runtime-version": "0.21.0",
+  "circuits": [
+    {
+      "name": "mul_bit",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "x",
+          "type": {
+            "type-name": "Alias",
+            "name": "Bit",
+            "type": {
+              "type-name": "Uint",
+              "maxval": 1
+            }
+          }
+        },
+        {
+          "name": "y",
+          "type": {
+            "type-name": "Alias",
+            "name": "Bit",
+            "type": {
+              "type-name": "Uint",
+              "maxval": 1
+            }
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Alias",
+        "name": "Bit",
+        "type": {
+          "type-name": "Uint",
+          "maxval": 1
+        }
+      }
+    },
+    {
+      "name": "mul_bit_range",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "x",
+          "type": {
+            "type-name": "Alias",
+            "name": "BitRange",
+            "type": {
+              "type-name": "Uint",
+              "maxval": 1
+            }
+          }
+        },
+        {
+          "name": "y",
+          "type": {
+            "type-name": "Alias",
+            "name": "BitRange",
+            "type": {
+              "type-name": "Uint",
+              "maxval": 1
+            }
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Alias",
+        "name": "BitRange",
+        "type": {
+          "type-name": "Uint",
+          "maxval": 1
+        }
+      }
+    },
+    {
+      "name": "add_zero",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "x",
+          "type": {
+            "type-name": "Alias",
+            "name": "Zero",
+            "type": {
+              "type-name": "Uint",
+              "maxval": 0
+            }
+          }
+        },
+        {
+          "name": "y",
+          "type": {
+            "type-name": "Alias",
+            "name": "Zero",
+            "type": {
+              "type-name": "Uint",
+              "maxval": 0
+            }
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Alias",
+        "name": "Zero",
+        "type": {
+          "type-name": "Uint",
+          "maxval": 0
+        }
+      }
+    },
+    {
+      "name": "mul_zero",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "x",
+          "type": {
+            "type-name": "Alias",
+            "name": "Zero",
+            "type": {
+              "type-name": "Uint",
+              "maxval": 0
+            }
+          }
+        },
+        {
+          "name": "y",
+          "type": {
+            "type-name": "Alias",
+            "name": "Zero",
+            "type": {
+              "type-name": "Uint",
+              "maxval": 0
+            }
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Alias",
+        "name": "Zero",
+        "type": {
+          "type-name": "Uint",
+          "maxval": 0
+        }
+      }
+    },
+    {
+      "name": "sub_bit",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "x",
+          "type": {
+            "type-name": "Alias",
+            "name": "Bit",
+            "type": {
+              "type-name": "Uint",
+              "maxval": 1
+            }
+          }
+        },
+        {
+          "name": "y",
+          "type": {
+            "type-name": "Alias",
+            "name": "Bit",
+            "type": {
+              "type-name": "Uint",
+              "maxval": 1
+            }
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Alias",
+        "name": "Bit",
+        "type": {
+          "type-name": "Uint",
+          "maxval": 1
+        }
+      }
+    }
+  ],
+  "witnesses": [
+  ],
+  "contracts": [
+  ],
+  "ledger": [
+  ]
+}

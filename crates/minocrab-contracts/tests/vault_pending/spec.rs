@@ -1,8 +1,8 @@
-//! The `erc20_vault_pending` SPEC: each of the seventeen circuits as a
+//! The `erc20_vault_pending` spec: each of the seventeen circuits as a
 //! total function from a scenario to an [`Outcome`] — the `Pending`-based
 //! twin of `tests/vault/spec.rs`. No compactc comparator exists for this
 //! lineage (notes/signet-async.org "Rung C as built"), so the oracle here
-//! is this spec alone, checked against `minocrab_sim::v3::simulate` and
+//! is this spec alone, checked against `minocrab_sim::simulate` and
 //! against the real ledger VM (`exec::run`) via [`check_effects`].
 
 use midnight_base_crypto::fab::AlignedValue;
@@ -56,7 +56,7 @@ pub enum GuardId {
     NotTheSupplier,
     RedeemNotFound,
     NotTheRedeemer,
-    // M37 rung D: the Succeeded / Failed split
+    // The Succeeded / Failed split
     /// `complete` was handed an attestation the call's `succeeded`
     /// predicate says is not a success.
     TheAttestedCallDidNotSucceed,
@@ -135,7 +135,7 @@ fn request_effects(
     effects
 }
 
-/// `burn_spend`'s ONE claimed spend of the evolved-nonce output.
+/// `burn_spend`'s one claimed spend of the evolved-nonce output.
 fn burn_effect(coin_nonce: &[u8; 32], color: &[u8; 32], value: u128) -> Effect {
     let evolved = evolved_nonce(coin_nonce);
     Effect::ClaimSpend(coin_commitment_of(&evolved, color, value, true, &[0u8; 32]))
@@ -177,7 +177,7 @@ pub fn spec_initialize(s: &InitializeScenario) -> Outcome {
     if pending_user_commitment(&s.sk) != s.env.deployer() {
         return Outcome::Reject(GuardId::NotTheDeployer);
     }
-    // The key-version guard lives HERE since M44 rung D, where it used to
+    // The key-version guard lives here since M44 rung D, where it used to
     // sit on every request: the version is a write-once cell, so this is the
     // only circuit that can choose it.
     if s.key_version == 0 {
@@ -318,7 +318,7 @@ pub fn spec_start_withdraw(s: &StartWithdrawScenario) -> Outcome {
     Outcome::Accept(effects)
 }
 
-/// M37 rung D: ANYONE'S, and successes only. The executed-`false` branch
+/// Anyone's, and successes only. The executed-`false` branch
 /// that used to live here — with its hoisted secret witness — is
 /// `refund_withdrawal`'s now.
 pub fn spec_complete_withdraw(s: &CompleteWithdrawScenario) -> Outcome {
@@ -335,7 +335,7 @@ pub fn spec_complete_withdraw(s: &CompleteWithdrawScenario) -> Outcome {
     Outcome::Accept(consume_effects(WITHDRAWALS_RECORDS, WITHDRAWALS_ENVS, rid))
 }
 
-/// M37 rung D: BOTH non-successes — the MPC's failure kind and a mined
+/// Both non-successes — the MPC's failure kind and a mined
 /// `transfer` that returned `false`.
 pub fn spec_refund_withdrawal(s: &RefundWithdrawalScenario) -> Outcome {
     if s.w.env.initialized < 1 {
@@ -417,7 +417,7 @@ pub fn spec_complete_swap(s: &CompleteSwapScenario) -> Outcome {
     Outcome::Accept(effects)
 }
 
-/// M37 rung D: the ticket is `Failed`, but this call's `succeeded` is
+/// The ticket is `Failed`, but this call's `succeeded` is
 /// `always`, so only the MPC's failure kind is refundable.
 pub fn spec_refund_swap(s: &RefundSwapScenario) -> Outcome {
     if s.s.env.initialized < 1 {
@@ -483,7 +483,7 @@ pub fn spec_complete_supply(s: &CompleteSupplyScenario) -> Outcome {
     Outcome::Accept(effects)
 }
 
-/// M37 rung D: the ticket is `Failed`, but this call's `succeeded` is
+/// The ticket is `Failed`, but this call's `succeeded` is
 /// `always`, so only the MPC's failure kind is refundable.
 pub fn spec_refund_supply(s: &RefundSupplyScenario) -> Outcome {
     if s.s.env.initialized < 1 {
@@ -549,7 +549,7 @@ pub fn spec_complete_redeem(s: &CompleteRedeemScenario) -> Outcome {
     Outcome::Accept(effects)
 }
 
-/// M37 rung D: the ticket is `Failed`, but this call's `succeeded` is
+/// The ticket is `Failed`, but this call's `succeeded` is
 /// `always`, so only the MPC's failure kind is refundable.
 pub fn spec_refund_redeem(s: &RefundRedeemScenario) -> Outcome {
     if s.s.env.initialized < 1 {

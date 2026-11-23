@@ -18,8 +18,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: >
           PROPTEST_CASES=100000 nix develop -c cargo test --release
-          -p minocrab-contracts --test erc20_vault_spec
-          --test erc20_vault_adversarial
+          -p minocrab-contracts --test erc20_vault_pending_spec
+          --test executor_vault
       - run: >
           PROPTEST_CASES=20000 nix develop -c cargo test --release
           -p minocrab-contracts --test serialization_conformance

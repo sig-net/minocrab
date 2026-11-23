@@ -1,17 +1,20 @@
-//! `signet-contract` (signet-midnight-integration) — the signet signer,
-//! the central Sig Network contract on Midnight that the erc20-vault calls
-//! cross-contract. Three stateless, unauthenticated emit-only circuits
-//! (verification is deliberately the reader's job — see the Compact
-//! original's header):
+//! The Sig Network contracts on Midnight (signet-midnight-integration
+//! v0.26.0-rc.15, `aa91570`): the Signet signer (`packages/signet-signer`),
+//! which a client contract such as the erc20-vault calls cross-contract to
+//! file a request, and the Signet responder (`packages/signet-responder`),
+//! which the MPC calls in its own transactions to post a signature or an
+//! attestation. Three stateless, unauthenticated emit-only circuits
+//! (verification is deliberately the reader's job; see the Compact
+//! originals' headers):
 //!
 //! ```text
-//! signBidirectional(requestId: Bytes<32>, notification: { version: Uint<8>, payload: Bytes<128> }):
+//! signer.signBidirectional(requestId: Bytes<32>, notification: { version: Uint<8>, payload: Bytes<128> }):
 //!   emit (Misc { name: pad(32, "SignBidirectionalEvent"),
 //!                payload: Bytes[version, ...requestId, ...payload, ...zeros(95)] })
-//! respond({ requestId, signature: { bigR: {x, y}, s, recoveryId } }):
+//! responder.respond({ requestId, signature: { bigR: {x, y}, s, recoveryId } }):
 //!   emit (Misc { name: pad(32, "SignatureRespondedEvent"),
 //!                payload: Bytes[...requestId, ...x, ...y, ...s, recoveryId, ...zeros(127)] })
-//! respondBidirectional({ requestId, blockHeight: Uint<64>, outputKind: OutputKind,
+//! responder.respondBidirectional({ requestId, blockHeight: Uint<64>, outputKind: OutputKind,
 //!                        serializedOutputLength: Uint<64>, outputHash: Bytes<32>,
 //!                        digest: Bytes<32>, signature }):
 //!   emit (Misc { name: pad(32, "RespondBidirectionalEvent"),
@@ -20,40 +23,38 @@
 //!                               ...x, ...y, ...s, recoveryId, ...zeros(46)] })
 //! ```
 //!
-//! The source is midnight-integration tag v0.25.0 (`b62e67e`), the
-//! signet signer `@sig-net/midnight-contract` 0.25.0 deploys: the request id is
-//! inside both event structs, and the bidirectional attestation carries the
-//! block height, the MPC's verdict, the output width, the output hash and
-//! the digest.
+//! Until v0.25.0 the three circuits were one contract
+//! (`packages/signet-contract`); v0.26 split them along who calls them and
+//! changed nothing else: compactc's artifacts of all three are byte-identical
+//! to v0.25.0's, so these ports, their ZKIR and their keys did not move
+//! (notes/mainnet-pin.org). The module keeps its name, which names the
+//! circuits in every snapshot.
 //!
 //! No ledger fields, no witnesses; every argument is disclosed into the
 //! 256-byte event payload. `Misc` is the same tag-10 event as the events
 //! experiment (name(32) ‖ payload(256) = 288 serialized bytes).
 
-use minocrab::v3::{Circuit3, FieldT, Wire3};
+use minocrab::{Circuit, FieldT, Wire};
 use minocrab::{Private, Public};
-use minocrab_ledger::{emit, emit_event, ImpactElem, LedgerValue};
-use minocrab_std::v3::{contract, label, Disclose, Discloses, Serializer, B32};
-use signet_signer_interface::{
-    RequestId, RespondBidirectionalEventV1, SignBidirectionalEventNotification, Signature,
-    SignatureRespondedEventV1,
-};
+use minocrab_std::{contract, event, label, Disclose, Discloses, Serializer, B32};
+use signet_responder_interface::{RespondBidirectionalEventV1, Signature, SignatureRespondedEventV1};
+use signet_signer_interface::{RequestId, SignBidirectionalEventNotification};
 
 use signet_protocol::misc::{MISC_SIZE, MISC_TAG, MISC_VERSION};
 
-/// The three event names, `pad(32, …)` — DEFINED in `signet-protocol`
-/// (M30 C1), where the publisher that BUILDS these envelopes reads them; the
-/// contract that EMITS them reads the same definition. Re-exported so the
+/// The three event names, `pad(32, …)` — defined in `signet-protocol`,
+/// where the publisher that builds these envelopes reads them; the
+/// contract that emits them reads the same definition. Re-exported so the
 /// suites keep their spelling.
 pub use signet_protocol::circuits::{
     RESPOND_BIDIRECTIONAL_EVENT, SIGNATURE_RESPONDED_EVENT, SIGN_BIDIRECTIONAL_EVENT,
 };
 
 // Every argument of these three circuits goes into the event payload, so
-// the declarations below ARE the parameter lists — which is exactly what a
+// the declarations below are the parameter lists — which is exactly what a
 // disclosure declaration is for. `EmittedRequestId` rather than
 // `RequestId`: that name is already the interface crate's type for the
-// value being disclosed. The labels are the field paths WITHIN the event
+// value being disclosed. The labels are the field paths within the event
 // struct, as they were when the id was a separate argument.
 label! {
     EmittedRequestId = "requestId";
@@ -72,20 +73,15 @@ label! {
 
 /// `emit (Misc { name: pad(32, name), payload })` — the serializer holds
 /// name ‖ payload bytes, zero-padded to the 288-byte Misc.
-fn emit_misc(c: &mut Circuit3, s: Serializer<Public>) {
-    // Kept even though guard threading no longer uses it: dropping this
-    // `Copy` would renumber every later identifier, moving the ZKIR
-    // (notes/edsl-trim.org §B, the removal's zero-movement gate).
+fn emit_misc(c: &mut Circuit, s: Serializer<Public>) {
+    // The `one` compactc threads, unused here: dropping this `Copy` would
+    // renumber every later identifier, moving the ZKIR (notes/edsl-trim.org §B).
     let _ = c.constant(1u64);
     let serialized = s.finish::<MISC_SIZE>(c);
-    let payload = LedgerValue::bytes(
-        MISC_SIZE as u32,
-        serialized.limbs().iter().map(|&w| ImpactElem::Wire(w)).collect(),
-    );
-    emit(c, &emit_event(MISC_VERSION, MISC_TAG, &payload));
+    event::emit(c, MISC_VERSION, MISC_TAG, &serialized);
 }
 
-fn misc_name(c: &mut Circuit3, name: &str) -> Serializer<Public> {
+fn misc_name(c: &mut Circuit, name: &str) -> Serializer<Public> {
     let mut padded = [0u8; 32];
     padded[..name.len()].copy_from_slice(name.as_bytes());
     let mut s = Serializer::<Public>::new();
@@ -97,9 +93,9 @@ fn misc_name(c: &mut Circuit3, name: &str) -> Serializer<Public> {
 /// circuits share, ready to push: `x`, `y`, `s` as `Bytes<32>`, `recoveryId`
 /// as a one-byte `Uint<8>`.
 ///
-/// The arguments are the interface crate's own types — `Signature`, wrapped
+/// The arguments are the responder interface crate's own types — `Signature`, wrapped
 /// in `SignatureRespondedEventV1` / `RespondBidirectionalEventV1` exactly as
-/// the Compact signature nests them: the argument IS the struct, at
+/// the Compact signature nests them: the argument is the struct, at
 /// `Private` here and `Public` for any caller, one declaration.
 /// `tests/contract_matches_its_interface.rs` checks the built IR against
 /// the interface slot for slot.
@@ -107,10 +103,10 @@ struct DisclosedSignature {
     x: B32<Public>,
     y: B32<Public>,
     s: B32<Public>,
-    recovery_id: Wire3<FieldT, Public>,
+    recovery_id: Wire<FieldT, Public>,
 }
 
-fn disclose_signature(c: &mut Circuit3, sig: Signature<Private>) -> DisclosedSignature {
+fn disclose_signature(c: &mut Circuit, sig: Signature<Private>) -> DisclosedSignature {
     DisclosedSignature {
         x: sig.big_r.x.disclose_as::<SignatureBigRx>(c),
         y: sig.big_r.y.disclose_as::<SignatureBigRy>(c),
@@ -129,24 +125,24 @@ impl DisclosedSignature {
     }
 }
 
-/// The signet signer — three stateless, unauthenticated emit-only
-/// circuits.
-pub struct SignetContract;
+/// The signet signer: one stateless, unauthenticated emit-only circuit,
+/// the one client contracts call.
+pub struct Signer;
 
-#[contract]
-impl SignetContract {
+#[contract(lowering = minocrab_compat::profile)]
+impl Signer {
     /// `export circuit signBidirectional(requestId: RequestId,
     /// notification: SignBidirectionalEventNotification): []`
     ///
-    /// The notification's type comes from `signet-signer-interface` — THE
-    /// CRATE THIS CONTRACT'S OWN CALLERS IMPORT. There is one declaration of
+    /// The notification's type comes from `signet-signer-interface` — the
+    /// crate this contract's own callers import. There is one declaration of
     /// the record, used at `Private` here (the callee witnesses its arguments)
     /// and at `Public` by every caller, so the two sides of the wire cannot
     /// disagree about its layout; `tests/contract_matches_its_interface.rs`
     /// checks the whole signature the same way.
     #[circuit]
     pub fn sign_bidirectional(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         request_id: RequestId<Private>,
         notification: SignBidirectionalEventNotification<Private>,
     ) -> Discloses<(EmittedRequestId, NotificationVersion, NotificationPayload)> {
@@ -167,13 +163,20 @@ impl SignetContract {
         });
         Discloses::of(())
     }
+}
 
+/// The signet responder: the two stateless, unauthenticated emit-only
+/// circuits the MPC posts its responses through.
+pub struct Responder;
+
+#[contract(lowering = minocrab_compat::profile)]
+impl Responder {
     /// `export circuit respond(signatureRespondedEvent:
     /// SignatureRespondedEventV1): []` — `{ requestId, signature }`, nine
     /// field limbs.
     #[circuit]
     pub fn respond(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         signature_responded_event: SignatureRespondedEventV1<Private>,
     ) -> Discloses<(
         EmittedRequestId,
@@ -205,7 +208,7 @@ impl SignetContract {
     /// emitted as eight little-endian bytes each, Compact's `as Bytes<8>`.
     #[circuit]
     pub fn respond_bidirectional(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         respond_bidirectional_event: RespondBidirectionalEventV1<Private>,
     ) -> Discloses<(
         EmittedRequestId,

@@ -1,0 +1,26 @@
+{
+  "version": { "major": 3, "minor": 1 },
+  "do_communications_commitment": true,
+  "inputs": [
+    { "name": "%k.0", "type": "Scalar<Secp256k1>" },
+    { "name": "%z.1", "type": "Scalar<Secp256k1>" }
+  ],
+  "outputs": [
+    "Scalar<Secp256k1>"
+  ],
+  "instructions": [
+    { "op": "neg", "output": "%neg.2", "a": "%z.1" },
+    { "op": "add", "output": "%t.3", "a": "%z.1", "b": "%neg.2" },
+    { "op": "mul", "output": "%tmp.4", "a": "%k.0", "b": "%t.3" },
+    { "op": "encode", "outputs": ["%fld.5", "%fld.6"], "input": "%tmp.4" },
+    { "op": "impact", "guard": "0x01", "inputs": ["0x10", "0x01", "0x01", "0x01", "0x00"] },
+    { "op": "impact", "guard": "0x01", "inputs": ["0x11", "0x01", "0x02", "0x18", "0x08", "%fld.5", "%fld.6"] },
+    { "op": "impact", "guard": "0x01", "inputs": ["0x91"] },
+    { "op": "public_input", "type": "Scalar<Secp256k1>", "output": "%t.7", "guard": null },
+    { "op": "encode", "outputs": ["%fld.8", "%fld.9"], "input": "%t.7" },
+    { "op": "impact", "guard": "0x01", "inputs": ["0x30"] },
+    { "op": "impact", "guard": "0x01", "inputs": ["0x50", "0x01", "0x01", "0x00"] },
+    { "op": "impact", "guard": "0x01", "inputs": ["0x0c", "0x02", "0x18", "0x08", "%fld.8", "%fld.9"] },
+    { "op": "output", "vals": ["%t.7"] }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "version": { "major": 3, "minor": 1 },
+  "do_communications_commitment": true,
+  "inputs": [
+  ],
+  "outputs": [
+    "Scalar<BLS12-381>",
+    "Scalar<Curve25519>"
+  ],
+  "instructions": [
+    { "op": "to_bytes", "output": "%tmp.0", "input": "0x00" },
+    { "op": "from_bytes", "type": "Scalar<Curve25519>", "output": "%t.1", "bytes": "%tmp.0" },
+    { "op": "encode", "outputs": ["%fld.2", "%fld.3"], "input": "%t.1" },
+    { "op": "impact", "guard": "0x01", "inputs": ["0x10", "0x01", "0x01", "0x01", "0x01"] },
+    { "op": "impact", "guard": "0x01", "inputs": ["0x11", "0x01", "0x03", "0x01", "0x1a", "0x07", "0x00", "%fld.2", "%fld.3"] },
+    { "op": "impact", "guard": "0x01", "inputs": ["0x91"] },
+    { "op": "public_input", "type": "Scalar<BLS12-381>", "output": "%t.4", "guard": null },
+    { "op": "public_input", "type": "Scalar<Curve25519>", "output": "%t.5", "guard": null },
+    { "op": "encode", "outputs": ["%fld.6", "%fld.7"], "input": "%t.5" },
+    { "op": "impact", "guard": "0x01", "inputs": ["0x30"] },
+    { "op": "impact", "guard": "0x01", "inputs": ["0x50", "0x01", "0x01", "0x01"] },
+    { "op": "impact", "guard": "0x01", "inputs": ["0x0c", "0x03", "0x01", "0x1a", "0x07", "%t.4", "%fld.6", "%fld.7"] },
+    { "op": "output", "vals": ["%t.4", "%t.5"] }
+  ]
+}

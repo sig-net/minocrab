@@ -1,26 +1,26 @@
 //! A frozen `(k, rows)` snapshot of every circuit in this crate.
 //!
-//! The const-generic refactor of M7 is a TYPE-level change: the sequence,
-//! order and arguments of the `Circuit3` builder calls must not move, so
+//! A type-level change (a const-generic refactor, say) must not move the
+//! sequence, order and arguments of the `Circuit` builder calls, so
 //! every circuit's cost must stay bit-identical. This test is the guard —
 //! it prices each circuit with the same cost model the benchmark harness
-//! uses (`minocrab_sim::v3::cost`, i.e. Midnight's own model) and compares
+//! uses (`minocrab_sim::cost`, i.e. Midnight's own model) and compares
 //! against the table below, generated at the commit that introduced it.
 //!
 //! The twelve benchmark circuits agree with the published numbers in
 //! `BENCHMARK.md`.
 //!
-//! To regenerate after an INTENTIONAL cost change (a toolchain bump that
+//! To regenerate after an intentional cost change (a toolchain bump that
 //! moves lowering is one — notes/version-bump.org):
 //! `cargo test --release -p minocrab-contracts --test row_snapshot -- \
 //!      --ignored regenerate_row_snapshot`, or `./bump.sh accept` to run
 //! every regenerator at once. It rewrites the table below in place, so the
 //! new baseline arrives as a reviewable diff.
 //!
-//! WHEN IT FIRES it says WHICH INSTRUCTIONS MOVED, not just that the rows
+//! When it fires it says which instructions moved, not just that the rows
 //! did. `(k, rows)` is a number, and a number is not a diagnosis; the
 //! instruction-level answer is one dump comparison away, so this test runs it
-//! itself. Every PASSING run refreshes a ZKIR baseline under the target
+//! itself. Every passing run refreshes a ZKIR baseline under the target
 //! directory (`support::zkir_lines`, the `zkir_dump` rendering), and a
 //! failing run diffs each moved circuit against it. Point
 //! `MINOCRAB_ZKIR_BASELINE=<dir>` at a `zkir_dump` directory to diff against
@@ -36,60 +36,60 @@ use support::{
 /// `(circuit, k, rows)` — frozen at "M7: freeze per-circuit (k, rows) in a
 /// row-snapshot guard test".
 const SNAPSHOT: &[(&str, u8, usize)] = &[
-    // GENERATED BEGIN — rewritten by `regenerate_row_snapshot`
-    ("erc20_vault::initialise", 12, 2241),
+    // Generated begin — rewritten by `regenerate_row_snapshot`
+    ("erc20_vault::initialise", 12, 2709),
     ("erc20_vault::set_gas_params", 10, 664),
-    ("erc20_vault::add_allowed_token", 9, 374),
-    ("erc20_vault::flush_queue", 13, 7078),
-    ("erc20_vault::queue_attestation0", 16, 37799),
-    ("erc20_vault::queue_attestation1", 16, 37847),
-    ("erc20_vault::queue_attestation32", 16, 37933),
-    ("erc20_vault::start_replace_nonce", 11, 1838),
-    ("erc20_vault::send_replace_nonce", 11, 1099),
-    ("erc20_vault::complete_replace_nonce", 10, 879),
+    ("erc20_vault::add_allowed_token", 9, 495),
+    ("erc20_vault::set_token_fees", 10, 510),
+    ("erc20_vault::set_fee_recipient", 10, 521),
+    ("erc20_vault::flush_queue", 13, 7128),
+    ("erc20_vault::queue_attestation", 16, 37706),
+    ("erc20_vault::start_replace_nonce", 11, 1850),
+    ("erc20_vault::send_replace_nonce", 11, 1120),
+    ("erc20_vault::complete_replace_nonce", 10, 842),
     ("erc20_vault::start_approve_router", 11, 1064),
     ("erc20_vault::start_approve_stata", 10, 1014),
-    ("erc20_vault::send_approve", 11, 1323),
-    ("erc20_vault::complete_approve", 10, 908),
+    ("erc20_vault::send_approve", 11, 1344),
+    ("erc20_vault::complete_approve", 10, 849),
     ("erc20_vault::start_deposit", 11, 1240),
-    ("erc20_vault::send_deposit", 11, 1367),
-    ("erc20_vault::complete_deposit", 14, 11011),
-    ("erc20_vault::start_withdraw", 15, 22237),
-    ("erc20_vault::send_withdraw", 11, 1343),
-    ("erc20_vault::complete_withdraw", 14, 10768),
-    ("erc20_vault::start_swap", 15, 22388),
-    ("erc20_vault::send_swap", 11, 1943),
-    ("erc20_vault::complete_swap", 15, 30347),
-    ("erc20_vault::start_supply", 15, 22112),
-    ("erc20_vault::send_supply", 11, 1363),
-    ("erc20_vault::complete_supply", 15, 20566),
-    ("erc20_vault::start_redeem", 15, 22112),
-    ("erc20_vault::send_redeem", 11, 1567),
-    ("erc20_vault::complete_redeem", 15, 20566),
+    ("erc20_vault::send_deposit", 11, 1388),
+    ("erc20_vault::complete_deposit", 14, 10953),
+    ("erc20_vault::start_withdraw", 15, 32195),
+    ("erc20_vault::send_withdraw", 11, 1367),
+    ("erc20_vault::complete_withdraw", 14, 10713),
+    ("erc20_vault::start_swap", 15, 32346),
+    ("erc20_vault::send_swap", 11, 1967),
+    ("erc20_vault::complete_swap", 15, 30311),
+    ("erc20_vault::start_supply", 15, 32096),
+    ("erc20_vault::send_supply", 11, 1387),
+    ("erc20_vault::complete_supply", 15, 20530),
+    ("erc20_vault::start_redeem", 15, 32096),
+    ("erc20_vault::send_redeem", 11, 1591),
+    ("erc20_vault::complete_redeem", 15, 20530),
     ("erc20_vault_pending::initialize", 12, 2110),
-    ("erc20_vault_pending::deposit", 11, 1716),
-    ("erc20_vault_pending::claim", 16, 47647),
-    ("erc20_vault_pending::approve_router", 11, 1216),
-    ("erc20_vault_pending::withdraw", 14, 11451),
-    ("erc20_vault_pending::complete_withdraw", 16, 37528),
-    ("erc20_vault_pending::refund_withdrawal", 16, 47497),
-    ("erc20_vault_pending::swap", 14, 12116),
-    ("erc20_vault_pending::complete_swap", 16, 57048),
-    ("erc20_vault_pending::refund_swap", 16, 47636),
-    ("erc20_vault_pending::approve_stata", 11, 1163),
-    ("erc20_vault_pending::supply", 14, 11380),
-    ("erc20_vault_pending::complete_supply", 16, 47567),
-    ("erc20_vault_pending::refund_supply", 16, 47640),
-    ("erc20_vault_pending::redeem", 14, 11557),
-    ("erc20_vault_pending::complete_redeem", 16, 47567),
-    ("erc20_vault_pending::refund_redeem", 16, 47640),
+    ("erc20_vault_pending::deposit", 11, 1735),
+    ("erc20_vault_pending::claim", 16, 47896),
+    ("erc20_vault_pending::approve_router", 11, 1237),
+    ("erc20_vault_pending::withdraw", 14, 11459),
+    ("erc20_vault_pending::complete_withdraw", 16, 37789),
+    ("erc20_vault_pending::refund_withdrawal", 16, 47854),
+    ("erc20_vault_pending::swap", 14, 12124),
+    ("erc20_vault_pending::complete_swap", 16, 57325),
+    ("erc20_vault_pending::refund_swap", 16, 48013),
+    ("erc20_vault_pending::approve_stata", 11, 1184),
+    ("erc20_vault_pending::supply", 14, 11388),
+    ("erc20_vault_pending::complete_supply", 16, 47846),
+    ("erc20_vault_pending::refund_supply", 16, 48017),
+    ("erc20_vault_pending::redeem", 14, 11565),
+    ("erc20_vault_pending::complete_redeem", 16, 47846),
+    ("erc20_vault_pending::refund_redeem", 16, 48017),
     ("signet_contract::sign_bidirectional", 11, 1205),
     ("signet_contract::respond", 10, 1004),
     ("signet_contract::respond_bidirectional", 11, 1567),
     ("attest::map_only", 8, 135),
     ("attest::verify_only", 16, 37058),
-    ("attest::sha_verify", 16, 65429),
-    ("attest::keccak_verify", 17, 59646),
+    ("attest::sha_verify", 16, 49999),
+    ("attest::keccak_verify", 16, 52777),
     ("events::base", 8, 180),
     ("events::emit_n(1)", 9, 368),
     ("events::emit_n(2)", 10, 544),
@@ -133,11 +133,11 @@ const SNAPSHOT: &[(&str, u8, usize)] = &[
     ("xcontract_events_borsh::token_deposit", 14, 10940),
     ("mint_tokens::mint_with_recipient_argument", 14, 9663),
     ("mint_tokens::mint_with_recipient_own_public_key", 14, 9807),
-    ("serde_builtin::check_roundtrip", 15, 24573),
-    ("test_caller::initialise", 11, 1720),
-    ("treasury::send", 11, 1551),
-    ("treasury::complete", 16, 37486),
-    ("treasury::refund", 16, 37903),
+    ("serde_builtin::check_roundtrip", 15, 21319),
+    ("test_caller::initialise", 14, 13728),
+    ("treasury::send", 11, 1572),
+    ("treasury::complete", 16, 37747),
+    ("treasury::refund", 16, 38262),
     ("bounded::b10", 6, 41),
     ("bounded::b300", 6, 41),
     ("bounded::b1000", 6, 41),
@@ -264,7 +264,7 @@ const SNAPSHOT: &[(&str, u8, usize)] = &[
     ("manager::execute", 18, 220606),
     ("disclosure::register", 10, 1006),
     ("disclosure::disclose_to", 14, 12796),
-    // GENERATED END
+    // Generated end
 ];
 
 #[test]
@@ -283,7 +283,7 @@ fn every_circuit_matches_its_frozen_cost() {
     let mut moved: Vec<Circuit> = Vec::new();
     for ((name, build), &(snap_name, k, rows)) in circuits.iter().zip(SNAPSHOT) {
         assert_eq!(*name, snap_name, "snapshot table out of order");
-        let (got_k, got_rows) = minocrab_sim::v3::cost(&build().ir);
+        let (got_k, got_rows) = minocrab_sim::cost(&build().ir);
         if (got_k, got_rows) != (k, rows) {
             failures.push(format!(
                 "  {name}: expected k={k} rows={rows}, got k={got_k} rows={got_rows} \
@@ -376,13 +376,13 @@ fn the_instruction_diff_keeps_only_the_movement_and_caps_it() {
     );
 }
 
-/// Regeneration helper: rewrites the SNAPSHOT table in this file.
+/// Regeneration helper: rewrites the snapshot table in this file.
 #[test]
 #[ignore = "regeneration helper, not a check"]
 fn regenerate_row_snapshot() {
     let mut body = String::new();
     for (name, build) in circuits() {
-        let (k, rows) = minocrab_sim::v3::cost(&build().ir);
+        let (k, rows) = minocrab_sim::cost(&build().ir);
         body.push_str(&format!("    (\"{name}\", {k}, {rows}),\n"));
     }
     rewrite_generated_region(&test_source("row_snapshot.rs"), &body);

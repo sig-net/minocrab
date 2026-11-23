@@ -1,13 +1,13 @@
-//! The PUBLISHED TypeScript decoder: `spec/ts/` (M11 stage 10,
-//! notes/borsh-format.org).
+//! The published TypeScript decoder: `spec/ts/`
+//! (notes/borsh-format.org).
 //!
 //! Stage 8 published the offset tables and the vectors; this generates the
-//! CODE that reads them, from the same schema walk, so a TS implementer does
+//! code that reads them, from the same schema walk, so a TS implementer does
 //! not transcribe a table by hand. `spec/ts/borsh-subset.ts` is walked out of
 //! `borsh::schema_container_of` exactly as §9's tables are — every offset in
 //! it is a literal from the same rows — and the rest of the directory is
 //! copied from `tests/serialization/ts/`, which is where those files are
-//! EDITED. Two of them carry a substituted region walked out of the same
+//! edited. Two of them carry a substituted region walked out of the same
 //! schema: the README's type table, and `vectors.test.ts`'s
 //! version-rejection tests.
 //!
@@ -24,7 +24,7 @@ use std::fmt::Write as _;
 
 use borsh::schema::BorshSchemaContainer;
 use borsh::BorshSchema;
-use minocrab_std::v3::borsh::schema::{layout_rows, Row};
+use minocrab_std::borsh::schema::{layout_rows, Row};
 
 use super::spec_types::{schema_containers, ByteArray, Flagged, RECORD_FORMAT_VERSION};
 
@@ -35,7 +35,7 @@ fn container<T: BorshSchema>() -> BorshSchemaContainer {
 }
 
 /// Every type `spec/ts/borsh-subset.ts` gets a reader and a writer for: the
-/// LEAF TABLE as types (`spec/vectors/leaves.json`) followed by every type
+/// leaf table as types (`spec/vectors/leaves.json`) followed by every type
 /// the spec's offset tables cover (`schema_containers`, which is §9's list).
 ///
 /// The names are the spec's own, so a vector's `type` — with its parenthetical
@@ -114,7 +114,7 @@ fn screaming(name: &str) -> String {
 }
 
 /// A Rust field name as a TypeScript one: `no_words` ↦ `noWords`. The
-/// generated `FieldSpec` keeps the SPEC's path, so the two spellings sit
+/// generated `FieldSpec` keeps the spec's path, so the two spellings sit
 /// beside each other in the published file.
 fn camel(snake: &str) -> String {
     let mut words = snake.split('_');
@@ -126,7 +126,7 @@ fn camel(snake: &str) -> String {
 
 /// Is this type a stage-7 record — a `format_version: u8` leaf at offset 0?
 ///
-/// DERIVED from the schema walk, not listed: a third versioned record gets its
+/// Derived from the schema walk, not listed: a third versioned record gets its
 /// version check and its rejection test without anybody editing this file, and
 /// a record that loses the byte loses both, loudly.
 fn is_versioned(rows: &[Row]) -> bool {
@@ -136,7 +136,7 @@ fn is_versioned(rows: &[Row]) -> bool {
     )
 }
 
-/// Every versioned record as `(the spec's name — which is the `CODECS` key —
+/// Every versioned record as `(the spec's name — which is the `codecs` key —
 /// and the TypeScript one)`, in `ts_types` order.
 fn versioned_records() -> Vec<(&'static str, String)> {
     ts_types()
@@ -496,7 +496,7 @@ pub fn module_source() -> String {
         );
         let _ = writeln!(out, "  const view = checkedView(bytes, offset, {upper}_LEN);");
         if is_versioned(&rows) {
-            // THE NAMED REJECTION `spec/borsh-subset.md` §6 requires: byte 0
+            // The named rejection `spec/borsh-subset.md` §6 requires: byte 0
             // first, before any offset that a format change may have moved.
             let _ = writeln!(
                 out,
@@ -589,7 +589,7 @@ pub fn module_source() -> String {
 // ---- the whole published directory ----------------------------------------------------
 
 /// The static files of `spec/ts/`, copied from `tests/serialization/ts/` —
-/// THE PLACE THEY ARE EDITED — verbatim but for their `{{…}}` placeholders
+/// the place they are edited — verbatim but for their `{{…}}` placeholders
 /// (the README's type table, `vectors.test.ts`'s rejection tests). Published as
 /// generator output like everything else in the directory, so the committed
 /// tree is checkable with one rule: `spec/ts/` is what the generator says it
@@ -614,7 +614,7 @@ fn readme_types_table() -> String {
 /// `vectors.test.ts`'s generated section: one version-rejection test per
 /// versioned record reader.
 ///
-/// The vectors only ever carry a WELL-FORMED record, so nothing in the
+/// The vectors only ever carry a well-formed record, so nothing in the
 /// vector-driven half of the suite exercises the §6 rejection; these are the
 /// negative cases, and they are generated from [`versioned_records`] so the
 /// set of readers under test cannot fall behind the set of readers that check.

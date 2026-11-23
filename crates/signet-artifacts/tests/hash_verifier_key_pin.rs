@@ -1,5 +1,5 @@
-//! M29 rung B: pin `signet_protocol::hash_verifier_key` (M30 C1 moved it
-//! out of this crate; the pin stays here beside the key files) to
+//! Pin `signet_protocol::hash_verifier_key` (defined in `signet-protocol`;
+//! the pin stays here beside the key files) to
 //! `@midnight-ntwrk/compact-js`'s `hashVerifierKey`
 //! (`ContractKeyLocation.js`: `createHash('sha256').update(bytes).digest
 //! ('hex')`, read directly).
@@ -9,13 +9,13 @@
 //! carries `expectedVk`) is not vendored in `~/mpc` — nothing there has
 //! `node_modules` installed — and the signet signer is not deployed yet,
 //! so no `expectedVk` table with real values exists. So the pin is made
-//! real the other way the milestone allows: actually RUN the TypeScript
+//! real the other way the milestone allows: actually run the TypeScript
 //! implementation, via node, on one of our own committed `.verifier` files,
 //! and assert the Rust function agrees.
 //!
 //! Skips loudly (not a hard failure) if `node` is not on `PATH` or the
 //! compact-js checkout is not where `$MIDNIGHT_EXAMPLES_NODE_MODULES` (or
-//! its default, `~/midnight-examples/node_modules`) says — both ARE present
+//! its default, `~/midnight-examples/node_modules`) says — both are present
 //! in this workspace's environment, so the ordinary run exercises the real
 //! TypeScript source, not a re-implementation of it.
 

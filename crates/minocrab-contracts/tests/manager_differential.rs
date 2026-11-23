@@ -10,6 +10,7 @@
 //! free to differ, which they deliberately do (the port uses the keccak
 //! chip's in-chip packing where compactc splices bytes).
 
+
 use std::borrow::Cow;
 
 use midnight_base_crypto::fab::{
@@ -24,8 +25,8 @@ use midnight_transient_crypto::proofs::{KeyLocation, ProofPreimage};
 use midnight_transient_crypto::repr::FieldRepr;
 use minocrab::Fr;
 use minocrab_contracts::manager;
-use minocrab_sim::v3::{assert_call_compatible, simulate};
-use minocrab_zkir::v3::IrSource;
+use minocrab_sim::{assert_call_compatible, simulate};
+use minocrab_zkir::IrSource;
 use sha2::{Digest, Sha256};
 
 mod support;
@@ -34,14 +35,10 @@ mod vault;
 use vault::prims::{atom, b32_slots, bytesn_value, cell, VmOp};
 
 fn corpus_zkir(name: &str) -> IrSource {
-    let path = format!(
-        "{}/../../corpus/zkir/aa-midnight-evm-experiment/contracts/manager/zkir/{name}.zkir",
-        env!("CARGO_MANIFEST_DIR")
-    );
-    minocrab_zkir::v3::read_zkir(&path).expect("corpus golden parses")
+    support::common::corpus_zkir("aa-midnight-evm-experiment/contracts/manager/zkir", name)
 }
 
-/// Both artifacts must REJECT the preimage.
+/// Both artifacts must reject the preimage.
 fn assert_both_reject(ours: &IrSource, theirs: &IrSource, pi: &ProofPreimage, what: &str) {
     assert!(simulate(ours, pi).is_err(), "ours accepts: {what}");
     assert!(simulate(theirs, pi).is_err(), "corpus accepts: {what}");
@@ -283,7 +280,7 @@ fn qualified_coin_av(nonce: &[u8; 32], color: &[u8; 32], value: u128, mt_index: 
     .unwrap()
 }
 
-/// An UNQUALIFIED coin as the runtime pushes it into `insertCoin`:
+/// An unqualified coin as the runtime pushes it into `insertCoin`:
 /// `[nonce b32, color b32, value b16]`.
 fn coin_av(nonce: &[u8; 32], color: &[u8; 32], value: u128) -> AlignedValue {
     AlignedValue::new(
@@ -396,7 +393,7 @@ fn preimage(inputs: Vec<Fr>, witnesses: Vec<Fr>, ops: &[VmOp], outputs: Vec<Alig
     preimage_returning(inputs, witnesses, ops, outputs, vec![])
 }
 
-/// [`preimage`] for a circuit RETURNING values: the communications
+/// [`preimage`] for a circuit returning values: the communications
 /// commitment covers the inputs followed by the encoded outputs
 /// (ir_vm.rs:662-681).
 fn preimage_returning(
@@ -804,7 +801,7 @@ fn deposit_shielded_matches_corpus() {
     // under 2^64 so the shared helper applies.
     let cm = coin_commitment_of(&nonce_slots, &colour1(), u128::from(value as u64), false, &me);
 
-    // FIRST CREDIT of this colour: pools.member false, insertCoin of the
+    // First credit of this colour: pools.member false, insertCoin of the
     // deposited coin itself.
     let mut ops = member(manager::ACCOUNTS, bytesn_value(32, &acct1()), true);
     ops.extend(receive_shielded(&me, &cm));
@@ -954,7 +951,7 @@ use midnight_zkir_v3::ir_instructions::ec_mul::ec_mul_offcircuit;
 use midnight_zkir_v3::ir_instructions::to_bytes::to_bytes_offcircuit;
 use midnight_zkir_v3::ir_instructions::into_coordinates::into_coordinates_offcircuit;
 use midnight_curves::k256;
-use minocrab_zkir::v3::IrValue;
+use minocrab_zkir::IrValue;
 use vault::prims::{coin_commitment_of, coin_nullifier_of, evolved_nonce, natives, scalar, sign};
 
 fn keccak(data: &[u8]) -> [u8; 32] {
@@ -1038,7 +1035,7 @@ fn nonce_bytes(slots: &(Fr, Fr)) -> [u8; 32] {
     b
 }
 
-/// `evolveNonce(index, nonce)` — the EXPORTED stdlib circuit:
+/// `evolveNonce(index, nonce)` — the exported stdlib circuit:
 /// `transientHash<Vector<3, Field>>([tag, index, degrade(nonce)])`.
 fn evolve_nonce_indexed(index: u64, nonce: &[u8; 32]) -> (Fr, Fr) {
     use midnight_transient_crypto::hash::transient_hash;
@@ -1050,7 +1047,7 @@ fn evolve_nonce_indexed(index: u64, nonce: &[u8; 32]) -> (Fr, Fr) {
     (Fr::from(0u64), Fr::from_le_bytes(&le[..31]).unwrap())
 }
 
-/// `sendShielded`'s CHANGE nonce — the "/2" domain.
+/// `sendShielded`'s change nonce — the "/2" domain.
 fn evolved_nonce_change(nonce: &[u8; 32]) -> (Fr, Fr) {
     use midnight_transient_crypto::hash::transient_hash;
     let tag = Fr::from_le_bytes(b"midnight:kernel:nonce_evolve/2").unwrap();
@@ -1299,7 +1296,7 @@ impl MPayload {
     }
 }
 
-/// A throwaway-but-valid signature/key for NATIVE calls: the ECDSA chain
+/// A throwaway-but-valid signature/key for native calls: the ECDSA chain
 /// runs straight-line whatever the mode, so `s` must be invertible and `pk`
 /// must not be the identity.
 fn dummy_sig_inputs() -> Vec<Fr> {
@@ -1318,7 +1315,7 @@ fn evm_sig_inputs(digest: &[u8; 32], d: u64) -> (Vec<Fr>, [u8; 20]) {
     let k = scalar(0x517e_c0de_u64);
     let (r_le, s_le, pk) = sign(digest, &d, &k);
     use midnight_zkir_v3::ir_instructions::from_bytes::from_bytes_offcircuit;
-    use minocrab_zkir::v3::IrType;
+    use minocrab_zkir::IrType;
     let r = from_bytes_offcircuit(&IrType::Secp256k1Scalar, &r_le).unwrap();
     let s = from_bytes_offcircuit(&IrType::Secp256k1Scalar, &s_le).unwrap();
     let mut v = natives(&r);
@@ -1432,8 +1429,8 @@ fn execute_evm_registration_matches_corpus() {
         false,
         bytesn_value(32, &domain),
     ));
-    // assertLiveDeadline: blockTimeGte(validUntil - 3600) → lt is FALSE;
-    // blockTimeLt(validUntil) → TRUE.
+    // assertLiveDeadline: blockTimeGte(validUntil - 3600) → lt is false;
+    // blockTimeLt(validUntil) → true.
     ops.extend(blocktime_lt(p.valid_until - 3600, false));
     ops.extend(blocktime_lt(p.valid_until, true));
     // registerAccount(account, 1)
@@ -2065,9 +2062,9 @@ fn execute_rejects_guard_failures() {
     assert_both_reject(&ours, &theirs, &pi, "account already registered");
 }
 
-/// Named swap (recipientKind 1): the give leg pays a NAMED user key through
+/// Named swap (recipientKind 1): the give leg pays a named user key through
 /// `sendShielded` rather than releasing an open imbalance, and spends the
-/// pool EXACTLY (no change → the colour leaves the pool).
+/// pool exactly (no change → the colour leaves the pool).
 #[test]
 fn execute_native_named_swap_exact_spend_matches_corpus() {
     let theirs = corpus_zkir("execute");
@@ -2109,8 +2106,8 @@ fn execute_native_named_swap_exact_spend_matches_corpus() {
     let debit_key = shielded_key(&na, &colour1());
     let credit_key = shielded_key(&acct2(), &want_colour);
 
-    // sendShielded to left(taker): nullifier, output spend, NO auto-receive,
-    // change == 0 so no change claims and the pool entry is REMOVED.
+    // sendShielded to left(taker): nullifier, output spend, no auto-receive,
+    // change == 0 so no change claims and the pool entry is removed.
     let nul = coin_nullifier_of(
         &b32_slots(&pooled_nonce),
         &colour1(),
@@ -2147,7 +2144,7 @@ fn execute_native_named_swap_exact_spend_matches_corpus() {
     ));
     ops.extend(member(manager::ACCOUNTS, bytesn_value(32, &acct2()), true));
     // sendShielded: self, nullifier, output spend; change == 0 → the
-    // repool REMOVES the colour.
+    // repool removes the colour.
     ops.extend(kernel_self(&me));
     ops.extend(kernel_claim(0, &nul));
     ops.extend(kernel_claim(2, &out_cm));

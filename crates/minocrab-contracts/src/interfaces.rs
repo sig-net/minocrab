@@ -2,8 +2,8 @@
 //!
 //! One trait per contract we call, one bodyless `fn` per callee circuit —
 //! the Compact `contract Token { circuit deposit(…): Bytes<32>; }` block,
-//! transliterated. Each expands to the handle struct M12 stage 2 wrote by
-//! hand: an [`EntryPoint`](minocrab_ledger::EntryPoint) const per circuit
+//! transliterated. Each expands to a handle struct: an
+//! [`EntryPoint`](minocrab_ledger::EntryPoint) const per circuit
 //! derived from the Compact name, `at_field(index)` / `at(address)`
 //! constructors, `pin`, and one typed method per circuit over
 //! `minocrab_ledger::call`.
@@ -14,21 +14,21 @@
 //!
 //! Arguments and results are `Public`, and the macro says so: passing a
 //! value to another contract discloses it, so a parameter written at
-//! `Private` — or left to DEFAULT to it, which `Uint<128>` does — is a
+//! `Private` — or left to default to it, which `Uint<128>` does — is a
 //! compile error naming `disclose()`.
 //!
-//! AN INTERFACE CONTAINS NO ADDRESS. `at_field` names a ledger field and
+//! An interface contains no address. `at_field` names a ledger field and
 //! `at` takes one at runtime, which is why a trait here lifts into a
 //! published crate unchanged — which is what happened to `SignetSigner`
 //! (now the `signet-signer-interface` crate) and to `XcallTarget` (now
-//! `xcall-target-interface`, GENERATED from the callee's artifact by
+//! `xcall-target-interface`, generated from the callee's artifact by
 //! `minocrab-interface-gen`). Both are ordinary dependencies of this crate.
 
 use minocrab::Public;
-use minocrab_std::v3::{interface, ContractAddress, ShieldedCoinInfo3, Uint, B32};
+use minocrab_std::{interface, ContractAddress, ShieldedCoinInfo, Uint, B32};
 
 /// The `xcontract-events` token — the one callee in the corpus with a
-/// RETURN VALUE, and so the one that exercises `CallResult`:
+/// return value, and so the one that exercises `Decode<Public>`:
 ///
 /// ```text
 /// contract Token { circuit deposit(amount: Uint<128>, caller: ContractAddress): Bytes<32>; }
@@ -51,6 +51,6 @@ pub trait Token {
 /// ```
 #[interface]
 pub trait PaymentTarget {
-    fn notify(coin: ShieldedCoinInfo3<Public>);
+    fn notify(coin: ShieldedCoinInfo<Public>);
     fn confirm_request(request_id: B32<Public>);
 }

@@ -2,6 +2,10 @@
 //! circuits (controls, persistentHash, keccak256, transientHash,
 //! persistentVec8) per notes/ledger-abi.org §6.
 
+#[path = "support/common.rs"]
+mod common;
+use common::*;
+
 use std::borrow::Cow;
 
 use midnight_base_crypto::fab::{
@@ -17,28 +21,14 @@ use midnight_transient_crypto::proofs::{KeyLocation, ProofPreimage, Zkir};
 use midnight_transient_crypto::repr::FieldRepr;
 use minocrab::Fr;
 use minocrab_contracts::hashing;
-use minocrab_sim::v3::simulate;
-use minocrab_zkir::v3::IrSource;
+use minocrab_sim::simulate;
+use minocrab_zkir::IrSource;
 use sha2::Digest as _;
 
 type VmOp = Op<ResultModeVerify, InMemoryDB>;
 
 fn corpus_zkir(experiment: &str, name: &str) -> IrSource {
-    let path = format!(
-        "{}/../../corpus/zkir/signet-midnight-experiments/experiments/{experiment}/contract/src/{experiment}/zkir/{name}.zkir",
-        env!("CARGO_MANIFEST_DIR")
-    );
-    minocrab_zkir::v3::read_zkir(&path).expect("corpus golden parses")
-}
-
-fn bytesn_value(n: u32, bytes: &[u8]) -> AlignedValue {
-    AlignedValue::new(
-        Value(vec![ValueAtom(bytes.to_vec()).normalize()]),
-        Alignment(vec![AlignmentSegment::Atom(AlignmentAtom::Bytes {
-            length: n,
-        })]),
-    )
-    .unwrap()
+    common::corpus_zkir(&format!("signet-midnight-experiments/experiments/{experiment}/contract/src/{experiment}/zkir"), name)
 }
 
 fn field_value(f: Fr) -> AlignedValue {
@@ -174,7 +164,7 @@ fn hashing_persistent_matches_corpus() {
 fn hashing_persistent_vec8_matches_corpus() {
     // The same 256 bytes, hashed as 8 × Bytes<32> — the FAB binary is the
     // concatenated bytes, so the digest equals the flat sha256; but the
-    // ARGUMENTS are 16 limbs ([hi, lo] per Bytes<32>), not 9.
+    // arguments are 16 limbs ([hi, lo] per Bytes<32>), not 9.
     let digest = sha(&data(256));
     check_with_inputs(
         hashing::Hashing::persistent_vec8().ir,

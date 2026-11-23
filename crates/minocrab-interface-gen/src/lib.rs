@@ -1,4 +1,4 @@
-//! THE IMPORTER: a compactc artifact becomes an interface crate.
+//! The importer: a compactc artifact becomes an interface crate.
 //!
 //! This is the package-manager answer for the contracts that already
 //! exist. Any deployed Midnight contract publishes a `contract-info.json`
@@ -13,7 +13,7 @@
 //! is wired as `tests/regenerate.rs` here, over every generated crate in
 //! the workspace.)
 //!
-//! It reads the SAME parse the agreement checker reads
+//! It reads the same parse the agreement checker reads
 //! (`minocrab_abi::info`), so the generator and the test that validates its
 //! output cannot disagree about what the artifact says.
 //!
@@ -24,7 +24,7 @@
 //!
 //! Each generated crate commits `artifact/generator.json`, which records
 //! exactly how it was produced — the interface name, the source artifact,
-//! the one-sentence summary, and any HAND-WRITTEN modules the crate also
+//! the one-sentence summary, and any hand-written modules the crate also
 //! carries (a constructor is Compact source, and no artifact has one).
 //!
 //! # Where this sits
@@ -47,10 +47,10 @@
 //! - [`names`] — the `snake_case` / `lowerCamelCase` mapping, shared with the
 //!   derives so a label never disagrees
 //!
-//! # Stability (M24 tier boundary)
+//! # Stability
 //!
-//! INTERNAL TIER, whole crate: the generator's API serves this workspace's
-//! interface crates and carries no stability promise (the GENERATED crates
+//! Internal tier, whole crate: the generator's API serves this workspace's
+//! interface crates and carries no stability promise (the generated crates
 //! are the product; their surface is governed by the callee's artifact).
 
 use std::collections::BTreeSet;
@@ -76,7 +76,7 @@ pub struct Options {
     pub summary: String,
     /// The artifact directory, relative to the workspace root.
     pub source: String,
-    /// Read the CALLER's `contracts[]` declaration of this name instead of
+    /// Read the caller's `contracts[]` declaration of this name instead of
     /// the artifact's own `circuits[]` — how a contract becomes importable
     /// from a caller's artifact alone. Declarations carry no argument
     /// names, so parameters are named `arg0`, `arg1`, …
@@ -152,8 +152,8 @@ enum Item {
     /// `pub type Name<V> = Target<V>;`
     Alias { name: String, target: String, doc: String },
     /// `b32_newtype! { Name }` — a Compact `Alias` whose target is
-    /// `Bytes<32>`, which is the one alias shape that gets a NEWTYPE rather
-    /// than a `pub type` (M23 R2, notes/newtype-survey.org §A1).
+    /// `Bytes<32>`, which is the one alias shape that gets a newtype rather
+    /// than a `pub type` (notes/newtype-survey.org §A1).
     ///
     /// A `pub type` is a newtype with the safety removed: `RequestId` was one,
     /// so a commitment, a nonce or a digest type-checked wherever an id
@@ -164,12 +164,12 @@ enum Item {
     /// therefore does not move `artifact/interface-schema.txt` (slots,
     /// alignment, constraints and the entry-point hash are all `B32`'s).
     B32Newtype { name: String, doc: String },
-    /// `pub struct Name<V: Vis3> { … }`
+    /// `pub struct Name<V: Vis> { … }`
     Struct { name: String, fields: Vec<(String, String)>, doc: String },
     /// `ts_type!(Name = "ts-name");` — the marker type for one distinct
     /// `Opaque<'ts-name'>` the interface mentions. One line per name, so the
     /// mapping from a Compact ts-type to a Rust type is something a reader of
-    /// the generated crate can SEE.
+    /// the generated crate can see.
     TsType { name: String, ts_name: String },
 }
 
@@ -189,7 +189,7 @@ impl Item {
 /// `pascal` everywhere except `"string"`, whose `pascal` is `String` — and a
 /// generated crate that declares its own `String` shadowing
 /// `std::string::String` is a genuinely nasty import to inherit. `Str` matches
-/// `minocrab_std::v3::ts::Str`, and `TsType::TS_NAME` carries `"string"`
+/// `minocrab_std::ts::Str`, and `TsType::TS_NAME` carries `"string"`
 /// verbatim either way, so nothing is lost (notes/opaque-bridging.org §8 Q2).
 fn ts_marker(ts_type: &str) -> String {
     if ts_type == "string" {
@@ -210,7 +210,7 @@ impl Registry {
     /// The Rust type of a Compact type, at visibility parameter `V`,
     /// registering whatever it needs along the way.
     ///
-    /// THE TABLE:
+    /// The table:
     /// | Compact                 | Rust                    |
     /// |-------------------------|-------------------------|
     /// | `Bytes<n>`, n ≤ 31      | `Bytes<n, V>`           |
@@ -232,22 +232,22 @@ impl Registry {
     /// | `JubjubPoint`           | `JubjubPoint<V>`        |
     ///
     /// The two unsigned rows are one decision (`unsigned_type`), and the
-    /// range end is EXCLUSIVE: compactc's `maxval` is `n − 1`, so a
+    /// range end is exclusive: compactc's `maxval` is `n − 1`, so a
     /// `maxval` of 69999 generates `BoundedUint<70000, V>`
     /// (notes/bounded-integers.org §0). An `enum` of k names is
     /// `Uint<0..k>`, so it takes whichever unsigned row k lands on.
     ///
-    /// The last two rows are how compactc SPELLS a curve point — as an
+    /// The last two rows are how compactc spells a curve point — as an
     /// `Opaque` under an `Alias` of the same name — so they are matched before
-    /// either the `Alias` row or the `Opaque` one (M15,
-    /// notes/opaque-bridging.org §0b). Before M15 they were refused, which is
-    /// why the erc20-vault's own `initialize` could not be imported.
+    /// either the `Alias` row or the `Opaque` one
+    /// (notes/opaque-bridging.org §0b); the erc20-vault's own `initialize`
+    /// takes one.
     ///
-    /// THE TWO ALIAS ROWS (M23 R2, notes/newtype-survey.org §A1): an alias
-    /// over `Bytes<32>` generates a NEWTYPE, not a `pub type`. A `pub type`
+    /// The two alias rows (notes/newtype-survey.org §A1): an alias
+    /// over `Bytes<32>` generates a newtype, not a `pub type`. A `pub type`
     /// is a newtype with the safety removed, and `Bytes<32>` is the shape
     /// every same-shaped-different-meaning family in this codebase takes — so
-    /// `RequestId = Bytes<32>` used to accept any commitment, nonce or digest,
+    /// `RequestId = Bytes<32>` would accept any commitment, nonce or digest,
     /// including at a cross-contract call. `b32_newtype!` delegates every impl
     /// to `B32` and declares with the caller's `ArgPath` verbatim, so the
     /// generated crate's `artifact/interface-schema.txt` — slots, alignment,
@@ -255,13 +255,13 @@ impl Registry {
     ///
     /// What remains an error, with a reason: a bare `Field` (every MinoCrab
     /// leaf is range-constrained and a `Field` carries no range — note this is
-    /// a DIFFERENT reason from the one `Opaque` used to be refused for, and
-    /// only this one was ever true), a `Contract` handle passed as data, a
+    /// a different reason from "no in-circuit representation", which is
+    /// false of `Opaque`), a `Contract` handle passed as data, a
     /// `Tuple` other than Compact's empty `[]`, or one of the three curve
     /// scalar/base types, which are native ZKIR values with no leaf yet.
     fn rust_type(&mut self, ty: &CompactType) -> Result<String, Unsupported> {
-        // The two curve POINT types, which compactc spells as an `Opaque`
-        // under an `Alias` of the same name. This MUST precede the `Alias`
+        // The two curve point types, which compactc spells as an `Opaque`
+        // under an `Alias` of the same name. This must precede the `Alias`
         // arm, and not only for tidiness: that arm emits `pub type Name<V> =
         // target`, so `Alias { Secp256k1Point, Opaque { Secp256k1Point } }`
         // would generate `pub type Secp256k1Point<V> = Secp256k1Point<V>` —
@@ -299,7 +299,7 @@ impl Registry {
             }
             CompactType::Struct { name, elements } => self.rust_struct(name, elements)?,
             CompactType::Alias { name, ty } => {
-                // Whether `B32` was already reachable BEFORE walking the
+                // Whether `B32` was already reachable before walking the
                 // target, so a `Bytes<32>` alias that is the only mention of
                 // the leaf does not leave an unused import behind: the
                 // newtype's impls reach `B32` through `$crate` paths, not
@@ -308,7 +308,7 @@ impl Registry {
                 let target = self.rust_type(ty)?;
                 let name = pascal(name);
                 let doc = format!("Compact `{name} = {}`.", render(ty));
-                // An alias over `Bytes<32>` is the one that gets a NEWTYPE:
+                // An alias over `Bytes<32>` is the one that gets a newtype:
                 // see `Item::B32Newtype`. Every other alias stays a `pub
                 // type`, unchanged — a `Uint<64>` alias has no swap to close
                 // that the width does not already close, and an alias over a
@@ -329,7 +329,7 @@ impl Registry {
             // two-way choice an unsigned type is: a bit width where k is a
             // power of two, a bounded leaf otherwise. `_name` is the
             // Compact type's name, which has no Rust representation — the
-            // variant INDEX is the whole value.
+            // variant index is the whole value.
             CompactType::Enum { name: _name, elements } => {
                 unsigned_type(elements.len().saturating_sub(1) as u128, &mut self.std_imports)
             }
@@ -350,7 +350,7 @@ impl Registry {
                         .into(),
                 ))
             }
-            // `Opaque<'ts'>` — one unconstrained slot, and it DOES cross a
+            // `Opaque<'ts'>` — one unconstrained slot, and it does cross a
             // boundary (notes/opaque-bridging.org §0a). Each distinct ts-type
             // gets one generated `ts_type!` marker, so `Opaque<Str>` and
             // `Opaque<Uint8Array>` are types that do not unify, exactly as
@@ -391,8 +391,8 @@ impl Registry {
         })
     }
 
-    /// A Compact struct: the three the stdlib already has, matched by NAME
-    /// AND SHAPE, and everything else generated.
+    /// A Compact struct: the three the stdlib already has, matched by name
+    /// and shape, and everything else generated.
     fn rust_struct(&mut self, name: &str, elements: &[Element]) -> Result<String, Unsupported> {
         let fields: Vec<String> = elements.iter().map(|e| e.name.clone()).collect();
         let names: Vec<&str> = fields.iter().map(String::as_str).collect();
@@ -429,7 +429,7 @@ impl Registry {
         }
         let name = pascal(name);
         self.std_imports.insert("CircuitArg");
-        self.std_imports.insert("Vis3");
+        self.std_imports.insert("Vis");
         self.declare(Item::Struct {
             doc: format!(
                 "Compact `struct {name} {{ {} }}`.",
@@ -446,7 +446,7 @@ impl Registry {
     }
 
     /// Register an item, deduplicating by name. The same name with a
-    /// different shape is an ERROR rather than a silent pick: two Compact
+    /// different shape is an error rather than a silent pick: two Compact
     /// structs that share a name and not a layout cannot both be this
     /// crate's `Foo`.
     fn declare(&mut self, item: Item) -> Result<(), Unsupported> {
@@ -464,8 +464,8 @@ impl Registry {
     }
 }
 
-/// `2^k − 1` → `k`; anything else is a bound no SIZED leaf type carries, and
-/// becomes a [`minocrab_std::v3::BoundedUint`] instead (M14).
+/// `2^k − 1` → `k`; anything else is a bound no sized leaf type carries, and
+/// becomes a [`minocrab_std::BoundedUint`] instead.
 ///
 /// `Err` here is not a rejection any more, it is the fork in
 /// [`Gen::rust_type`]: the error text survives only as the reason a bound
@@ -484,8 +484,8 @@ fn power_of_two_bits(maxval: u128) -> Result<u32, Unsupported> {
 /// the sized leaf where the bound is a bit width, the bounded leaf
 /// otherwise.
 ///
-/// The BOUND in the generated type is `maxval + 1`, because Compact's range
-/// end is EXCLUSIVE (notes/bounded-integers.org §0) — `maxval = 69999` is
+/// The bound in the generated type is `maxval + 1`, because Compact's range
+/// end is exclusive (notes/bounded-integers.org §0) — `maxval = 69999` is
 /// `Uint<0..70000>` is `BoundedUint<70000, V>`.
 fn unsigned_type(maxval: u128, std_imports: &mut BTreeSet<&'static str>) -> String {
     match power_of_two_bits(maxval) {
@@ -501,7 +501,7 @@ fn unsigned_type(maxval: u128, std_imports: &mut BTreeSet<&'static str>) -> Stri
 }
 
 /// The trait's signatures are the item types at `Public`. The
-/// substitution is on the IDENTIFIER `V`, not on the letter: a generated
+/// substitution is on the identifier `V`, not on the letter: a generated
 /// `VaultRecord<V>` must not become `PublicaultRecord<Public>`.
 fn at_public(ty: &str) -> String {
     let bytes: Vec<char> = ty.chars().collect();
@@ -528,7 +528,7 @@ fn render(ty: &CompactType) -> String {
         // Compact source writes the bit width where there is one
         // (`Uint<128>`), and the range otherwise — 2^128 − 1 spelled out is
         // 39 digits of noise.
-        // The range end Compact writes is EXCLUSIVE, so it is `maxval + 1`
+        // The range end Compact writes is exclusive, so it is `maxval + 1`
         // (notes/bounded-integers.org §0).
         CompactType::Uint { maxval } => match power_of_two_bits(*maxval) {
             Ok(bits) => format!("Uint<{bits}>"),
@@ -553,7 +553,7 @@ fn render(ty: &CompactType) -> String {
         CompactType::Secp256k1Base => "Secp256k1Base".into(),
         CompactType::Secp256k1Scalar => "Secp256k1Scalar".into(),
         // compactc >= 0.34.0's first-class spelling for the two curve
-        // POINT types (see `CompactType::curve_point`) — same source name
+        // point types (see `CompactType::curve_point`) — same source name
         // as the `Alias`-of-`Opaque` spelling renders via the `Alias` arm
         // above, since both spellings are the same Compact type.
         CompactType::Secp256k1Point => "Secp256k1Point".into(),
@@ -609,7 +609,7 @@ impl From<&DeclaredCircuit> for Declared {
     }
 }
 
-/// THE GENERATOR: an artifact and its options become one `src/lib.rs`.
+/// The generator: an artifact and its options become one `src/lib.rs`.
 pub fn generate(info: &ContractInfo, options: &Options) -> Result<String, Error> {
     let declared = select(info, options).map_err(Error::Unsupported)?;
     let mut registry = Registry::default();
@@ -641,7 +641,7 @@ pub fn generate(info: &ContractInfo, options: &Options) -> Result<String, Error>
     out.push('\n');
     out.push_str("use minocrab::Public;\n");
     out.push_str(&format!(
-        "use minocrab_std::v3::{{{}}};\n",
+        "use minocrab_std::{{{}}};\n",
         import_list(&registry.std_imports)
     ));
 
@@ -656,7 +656,7 @@ pub fn generate(info: &ContractInfo, options: &Options) -> Result<String, Error>
             }
             Item::Struct { name, fields, doc } => {
                 out.push_str(&format!(
-                    "/// {doc}\n#[derive(Clone, CircuitArg)]\npub struct {name}<V: Vis3> {{\n"
+                    "/// {doc}\n#[derive(Clone, CircuitArg)]\npub struct {name}<V: Vis> {{\n"
                 ));
                 for (field, ty) in fields {
                     out.push_str(&format!("    pub {field}: {ty},\n"));
@@ -761,7 +761,7 @@ fn compact_signature(circuit: &Declared) -> String {
 /// reproducibility depend on a toolchain version).
 ///
 /// Three groups, each alphabetical: names with no uppercase letter
-/// (`interface`), then mixed-case names (`BytesN`, `Vis3`), then names with
+/// (`interface`), then mixed-case names (`BytesN`, `Vis`), then names with
 /// no lowercase letter (`B32`) — which is why `B32` lands last rather than
 /// first.
 fn import_list(names: &BTreeSet<&'static str>) -> String {
@@ -875,7 +875,7 @@ pub fn write_crate(crate_dir: &Path) -> Result<(), Error> {
     })
 }
 
-/// `--check`: regenerate and diff. THE CODEGEN SNAPSHOT GUARD.
+/// `--check`: regenerate and diff. The codegen snapshot guard.
 pub fn check_crate(crate_dir: &Path) -> Result<(), Error> {
     let expected = render_crate(crate_dir)?;
     let path = crate_dir.join("src/lib.rs");
@@ -931,7 +931,7 @@ mod tests {
         Registry::default().rust_type(&ty(json))
     }
 
-    /// THE TABLE, row by row.
+    /// The table, row by row.
     #[test]
     fn the_type_mapping_is_the_documented_table() {
         assert_eq!(rust(r#"{"type-name":"Bytes","length":4}"#).unwrap(), "Bytes<4, V>");
@@ -949,14 +949,14 @@ mod tests {
                 .unwrap(),
             "[B32<V>; 3]"
         );
-        // `enum E { A, B }` — two variants, so the bound IS a bit width.
+        // `enum E { A, B }` — two variants, so the bound is a bit width.
         assert_eq!(
             rust(r#"{"type-name":"Enum","name":"E","elements":["A","B"]}"#).unwrap(),
             "Uint<1, V>"
         );
     }
 
-    /// The three stdlib types matched by NAME AND SHAPE.
+    /// The three stdlib types matched by name and shape.
     #[test]
     fn the_stdlib_structs_are_matched_not_regenerated() {
         assert_eq!(
@@ -986,7 +986,7 @@ mod tests {
             .unwrap(),
             "Either<B32<V>, B32<V>, V>"
         );
-        // A matched struct declares NOTHING — it is the stdlib's.
+        // A matched struct declares nothing — it is the stdlib's.
         let mut matched = Registry::default();
         matched
             .rust_type(&ty(
@@ -996,8 +996,8 @@ mod tests {
             .unwrap();
         assert!(matched.items.is_empty(), "a matched struct must not be regenerated");
 
-        // The NAME alone is not enough: a struct that merely calls itself
-        // `ContractAddress` and holds 20 bytes is a DIFFERENT type, and is
+        // The name alone is not enough: a struct that merely calls itself
+        // `ContractAddress` and holds 20 bytes is a different type, and is
         // generated like any other.
         let mut mismatched = Registry::default();
         mismatched
@@ -1019,7 +1019,7 @@ mod tests {
                 r#"{"type-name":"Tuple","types":[{"type-name":"Boolean"},{"type-name":"Boolean"}]}"#,
                 "name the fields",
             ),
-            // Native ZKIR values with no leaf to name their slot (M15).
+            // Native ZKIR values with no leaf to name their slot.
             (r#"{"type-name":"JubjubScalar"}"#, "no MinoCrab leaf type yet"),
             (r#"{"type-name":"Secp256k1Base"}"#, "no MinoCrab leaf type yet"),
             (r#"{"type-name":"Secp256k1Scalar"}"#, "no MinoCrab leaf type yet"),
@@ -1029,7 +1029,7 @@ mod tests {
         }
     }
 
-    /// `Opaque` is no longer inexpressible (M15): each distinct ts-type gets a
+    /// `Opaque` is expressible: each distinct ts-type gets a
     /// `ts_type!` marker, so two opaques of different TS types are Rust types
     /// that do not unify — compactc's own rule.
     #[test]
@@ -1044,7 +1044,7 @@ mod tests {
             reg.rust_type(&ty(r#"{"type-name":"Opaque","tsType":"Uint8Array"}"#)).unwrap(),
             "Opaque<Uint8Array, V>"
         );
-        // One marker per DISTINCT ts-type, declared once however often used.
+        // One marker per distinct ts-type, declared once however often used.
         reg.rust_type(&ty(r#"{"type-name":"Opaque","tsType":"string"}"#)).unwrap();
         assert_eq!(
             reg.items,
@@ -1055,8 +1055,8 @@ mod tests {
         );
     }
 
-    /// The curve POINT types map to their leaves — and the BARE `Opaque` of
-    /// the same ts-type does NOT, because only the full
+    /// The curve point types map to their leaves — and the bare `Opaque` of
+    /// the same ts-type does not, because only the full
     /// `Alias { name, Opaque { tsType: name } }` spelling is compactc's way of
     /// publishing a curve type. Getting this backwards would silently give a
     /// user's `Opaque<"Secp256k1Point">` five atoms and a point slot.
@@ -1079,7 +1079,7 @@ mod tests {
             assert_eq!(rust(json).unwrap(), wanted, "for {json}");
         }
 
-        // Aliased under a DIFFERENT name: still an opaque, and the user's
+        // Aliased under a different name: still an opaque, and the user's
         // alias is preserved over it rather than being collapsed to a point.
         let mut reg = Registry::default();
         assert_eq!(
@@ -1107,7 +1107,7 @@ mod tests {
         );
     }
 
-    /// The curve rows emit NO generated item — in particular no
+    /// The curve rows emit no generated item — in particular no
     /// `pub type Secp256k1Point<V> = Secp256k1Point<V>`, which is what the
     /// generic `Alias` arm would have produced (E0391 in the generated crate).
     #[test]
@@ -1122,8 +1122,8 @@ mod tests {
         assert!(reg.std_imports.contains("Secp256k1Point"));
     }
 
-    /// An alias over `Bytes<32>` is a NEWTYPE, and every other alias is still
-    /// a `pub type` (M23 R2, notes/newtype-survey.org §A1). The second half
+    /// An alias over `Bytes<32>` is a newtype, and every other alias is still
+    /// a `pub type` (notes/newtype-survey.org §A1). The second half
     /// matters as much as the first: narrowing the alias row too far would
     /// silently retype a `Uint` or a struct alias.
     #[test]
@@ -1177,7 +1177,7 @@ mod tests {
             ]
         );
 
-        // `B32` STAYS imported when something else reaches the leaf.
+        // `B32` stays imported when something else reaches the leaf.
         let mut reg = Registry::default();
         reg.rust_type(&ty(r#"{"type-name":"Bytes","length":32}"#)).unwrap();
         reg.rust_type(&ty(
@@ -1188,9 +1188,9 @@ mod tests {
         assert!(reg.std_imports.contains("B32"));
     }
 
-    /// A bound that is not a bit width is no longer a refusal: it is the
-    /// bounded leaf, carrying the EXCLUSIVE range end compactc's source
-    /// spelling uses (M14, notes/bounded-integers.org §0 — `maxval: 999` is
+    /// A bound that is not a bit width is not a refusal: it is the
+    /// bounded leaf, carrying the exclusive range end compactc's source
+    /// spelling uses (notes/bounded-integers.org §0 — `maxval: 999` is
     /// `Uint<0..1000>`). An `enum` of k names is `Uint<0..k>`, so it takes
     /// whichever unsigned row k lands on.
     #[test]
@@ -1199,7 +1199,7 @@ mod tests {
             (r#"{"type-name":"Uint","maxval":999}"#, "BoundedUint<1000, V>"),
             (r#"{"type-name":"Uint","maxval":69999}"#, "BoundedUint<70000, V>"),
             (r#"{"type-name":"Uint","maxval":9}"#, "BoundedUint<10, V>"),
-            // 254 is one BELOW a power of two minus one: `Uint<0..255>`.
+            // 254 is one below a power of two minus one: `Uint<0..255>`.
             (r#"{"type-name":"Uint","maxval":254}"#, "BoundedUint<255, V>"),
             // …and 255 IS one less than a power of two, so it stays sized.
             (r#"{"type-name":"Uint","maxval":255}"#, "Uint<8, V>"),

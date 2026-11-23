@@ -1,0 +1,46 @@
+{
+  "compiler-version": "0.36.1",
+  "compiler-commit": "7fa3a117c5e7efe9d2c51da04263e5f0b3509144",
+  "language-version": "0.28.0",
+  "runtime-version": "0.21.0",
+  "circuits": [
+    {
+      "name": "vector_slice_from_parameter",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "vector",
+          "type": {
+            "type-name": "Tuple",
+            "types": [
+              {
+                "type-name": "Boolean"
+              },
+              {
+                "type-name": "Boolean"
+              },
+              {
+                "type-name": "Field"
+              }
+            ]
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+          {
+            "type-name": "Field"
+          }
+        ]
+      }
+    }
+  ],
+  "witnesses": [
+  ],
+  "contracts": [
+  ],
+  "ledger": [
+  ]
+}

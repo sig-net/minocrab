@@ -11,6 +11,10 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
+# No job writes to the repository; the token is read-only.
+permissions:
+  contents: read
+
 # A newer push to the same ref supersedes the run in flight.
 concurrency:
   group: ci-${{ github.ref }}
@@ -100,6 +104,32 @@ jobs:
             nix develop -c cargo semver-checks check-release -p "$crate" \
               --baseline-rustdoc "$BASELINE/target/doc/${crate//-/_}.json"
           done
+
+  # The publish set (PUBLISHING.md): the fourteen crates must package and
+  # verify against the registry, dry-run publish, and document warning-free
+  # as docs.rs builds them. The excluded crates are the unpublished ones.
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeterminateSystems/nix-installer-action@v16
+      - uses: DeterminateSystems/magic-nix-cache-action@v9
+      - uses: Swatinem/rust-cache@v2
+      - run: >
+          nix develop -c cargo package --workspace
+          --exclude minocrab-contracts --exclude minocrab-bench --exclude signet-artifacts
+          --exclude xcall-target-interface --exclude signet-sim --exclude minocrab-abi
+          --exclude minocrab-interface-gen --exclude minocrab-publisher --exclude signet-hashing
+      - run: >
+          nix develop -c cargo publish --dry-run --workspace
+          --exclude minocrab-contracts --exclude minocrab-bench --exclude signet-artifacts
+          --exclude xcall-target-interface --exclude signet-sim --exclude minocrab-abi
+          --exclude minocrab-interface-gen --exclude minocrab-publisher --exclude signet-hashing
+      - run: >
+          RUSTDOCFLAGS="-D warnings" nix develop -c cargo doc --no-deps
+          -p minocrab-zkir -p minocrab-ir -p minocrab -p minocrab-macros -p minocrab-ledger
+          -p minocrab-experimental -p minocrab-std -p minocrab-sim -p minocrab-taint -p minocrab-compat
+          -p minocrab-evm -p signet-protocol -p signet-signer-interface -p minocrab-signet
 
   # The heavy gates: the frozen (k, rows) and interface tables, --release
   # as the testing docs prescribe.

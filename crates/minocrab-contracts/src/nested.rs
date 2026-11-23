@@ -1,7 +1,7 @@
-//! `nested.compact` — NESTED LEDGER ADTs at the RAW op layer (M22 stage B1,
-//! notes/coin-arms-nested-adts.org §2).
+//! `nested.compact` — nested ledger ADTs at the raw op layer
+//! (notes/coin-arms-nested-adts.org §2).
 //!
-//! DELIBERATELY UNTYPED, and kept that way. Stage B1 built the LOWERING —
+//! Deliberately untyped, and kept that way. Stage B1 built the lowering —
 //! [`LedgerKey`], the general-path encoder, and the `_at` twin of every op
 //! builder — and every circuit here reaches into `minocrab_ledger` and hands
 //! it a `&[LedgerKey]` by hand. That proved the encoding before any API was
@@ -9,36 +9,35 @@
 //!
 //! Stage B2 then built the surface (`at_key` handles, the `LedgerSlot` split)
 //! and re-expressed every circuit below through it in
-//! `tests/nested_typed.rs`, asserted BYTE-IDENTICAL to these. This module is
+//! `tests/nested_typed.rs`, asserted byte-identical to these. This module is
 //! what that comparison is against, so it stays raw: it is the only place in
 //! the workspace where the nested path is written out rather than derived,
 //! and a typed-layer bug that moved the path would move only one side.
 //!
-//! WHAT A NESTED ACCESS ACTUALLY IS. compactc's `propagate-ledger-paths.ss`
+//! What a nested access actually is. compactc's `propagate-ledger-paths.ss`
 //! walks the accessor chain `mm.lookup(k).insert(k2, v)`, folds every
-//! INTERMEDIATE `lookup` into the path `f` at compile time, and runs only the
-//! LAST accessor's vm-code. So the nested form emits the same five
+//! intermediate `lookup` into the path `f` at compile time, and runs only the
+//! last accessor's vm-code. So the nested form emits the same five
 //! instructions the flat form does, with `f = [field, k]` instead of
 //! `f = [field]`: the `idxp` gains a low nibble and the closing `insc` a
 //! bigger `n`. There is no new opcode, no new instruction, and no branch.
 //!
-//! MAP IS THE ONLY NESTABLE ADT, and that is compactc's kind-checker rather
+//! Map is the only nestable ADT, and that is compactc's kind-checker rather
 //! than our choice — `Set<List<T>>` is "expected non-ADT type but received
 //! ledger ADT type". The fixture declares every shape the checker accepts.
 
-use minocrab::v3::Circuit3;
+use minocrab::Circuit;
 use minocrab::{Private, Public};
-use minocrab_ledger::{
+use minocrab_experimental::impact::raw::{
     counter_increment_at, counter_read_at, counter_reset_at, emit, empty_map,
-    historic_merkle_tree_insert_at,
-    historic_merkle_tree_reset_at, historic_merkle_tree_reset_history_at, list_head_at,
-    list_is_empty_at, list_length_at, list_pop_front_at, list_push_front_at, list_reset_at,
-    map_insert_adt_default_at, map_insert_at, map_insert_default_at, map_is_empty_at,
-    map_lookup_at, map_member_at, map_remove_at, map_reset_at, map_size_at,
-    merkle_tree_check_root_at, merkle_tree_insert_at, merkle_tree_reset_at, set_insert_at,
-    set_remove_at, set_reset_at, LedgerKey,
+    historic_merkle_tree_insert_at, historic_merkle_tree_reset_at,
+    historic_merkle_tree_reset_history_at, list_head_at, list_is_empty_at, list_length_at,
+    list_pop_front_at, list_push_front_at, list_reset_at, map_insert_adt_default_at, map_insert_at,
+    map_insert_default_at, map_is_empty_at, map_lookup_at, map_member_at, map_remove_at,
+    map_reset_at, map_size_at, merkle_tree_check_root_at, merkle_tree_insert_at,
+    merkle_tree_reset_at, set_insert_at, set_remove_at, set_reset_at, LedgerKey,
 };
-use minocrab_std::v3::{
+use minocrab_std::{
     contract, label, leaf_hash, Bool, Disclose, Discloses, LedgerRepr, Maybe,
     MerkleTreeDigest, Uint, B32,
 };
@@ -52,7 +51,7 @@ label! {
     Root = "root";
 }
 
-// THE LEDGER BLOCK — declaration order is the field index, matching the
+// The ledger block — declaration order is the field index, matching the
 // fixture's `export ledger` block one for one. Plain `u8` constants rather
 // than a `#[derive(Ledger)]` struct, because the handle types that could name
 // a nested field are stage B2's and inventing them here would pre-empt the
@@ -68,14 +67,14 @@ const MMM: u8 = 6; // Map<Bytes<32>, Map<Bytes<32>, Map<Bytes<32>, Uint<64>>>>
 /// The tree depth both nested trees are declared at.
 const DEPTH: u8 = 8;
 
-/// The path `[field, k]` — one `Map.lookup` deep. THIS IS THE WHOLE OF THE
-/// NESTED API at the raw layer: build the list, hand it to the op.
-fn under(c: &mut Circuit3, field: u8, k: &B32<Public>) -> [LedgerKey; 2] {
+/// The path `[field, k]` — one `Map.lookup` deep. This is the whole of the
+/// nested API at the raw layer: build the list, hand it to the op.
+fn under(c: &mut Circuit, field: u8, k: &B32<Public>) -> [LedgerKey; 2] {
     [LedgerKey::Field(field), LedgerKey::Value(k.ledger_value(c))]
 }
 
 /// The path `[field, k, k2]` — two `Map.lookup`s deep.
-fn under2(c: &mut Circuit3, field: u8, k: &B32<Public>, k2: &B32<Public>) -> [LedgerKey; 3] {
+fn under2(c: &mut Circuit, field: u8, k: &B32<Public>, k2: &B32<Public>) -> [LedgerKey; 3] {
     [
         LedgerKey::Field(field),
         LedgerKey::Value(k.ledger_value(c)),
@@ -88,7 +87,7 @@ fn under2(c: &mut Circuit3, field: u8, k: &B32<Public>, k2: &B32<Public>) -> [Le
 /// [`Nested::CIRCUITS`], which is what the snapshots enumerate.
 pub struct Nested;
 
-#[contract]
+#[contract(lowering = minocrab_compat::profile)]
 impl Nested {
     // ---- Map<K, Map<K2, V>> -------------------------------------------------
 
@@ -98,7 +97,7 @@ impl Nested {
     /// 0xa2`, the pair the note read off OpenZeppelin's `ShieldedMultiSig`.
     #[circuit]
     pub fn map_insert(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         k: B32<Private>,
         k2: B32<Private>,
         v: Uint<64, Private>,
@@ -114,11 +113,11 @@ impl Nested {
 
     /// `mm.lookup(disclose(k)).insertDefault(disclose(k2));`
     ///
-    /// The INNER value type is `Uint<64>`, not an ADT, so the pushed default
+    /// The inner value type is `Uint<64>`, not an ADT, so the pushed default
     /// is a cell of zeros — contrast [`Nested::outer_insert_default`].
     #[circuit]
     pub fn map_insert_default(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         k: B32<Private>,
         k2: B32<Private>,
     ) -> Discloses<(Key, Key2)> {
@@ -135,13 +134,13 @@ impl Nested {
 
     /// `return mm.lookup(disclose(k)).lookup(disclose(k2));`
     ///
-    /// TWO `idx` instructions, and the second is not part of `f`: the path
+    /// Two `idx` instructions, and the second is not part of `f`: the path
     /// reaches the inner map (`0x51`) and the leaf key descends with its own
-    /// one-element `idx` (`0x50`). Only an INTERMEDIATE `lookup` folds into
+    /// one-element `idx` (`0x50`). Only an intermediate `lookup` folds into
     /// the path.
     #[circuit(output = "value")]
     pub fn map_lookup(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         k: B32<Private>,
         k2: B32<Private>,
     ) -> Discloses<(Key, Key2), Uint<64, Public>> {
@@ -161,7 +160,7 @@ impl Nested {
     /// `return mm.lookup(disclose(k)).member(disclose(k2));`
     #[circuit(output = "member")]
     pub fn map_member(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         k: B32<Private>,
         k2: B32<Private>,
     ) -> Discloses<(Key, Key2), Bool<Public>> {
@@ -179,7 +178,7 @@ impl Nested {
     /// `mm.lookup(disclose(k)).remove(disclose(k2));`
     #[circuit]
     pub fn map_remove(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         k: B32<Private>,
         k2: B32<Private>,
     ) -> Discloses<(Key, Key2)> {
@@ -193,7 +192,7 @@ impl Nested {
 
     /// `return mm.lookup(disclose(k)).size();`
     #[circuit(output = "size")]
-    pub fn map_size(c: &mut Circuit3, k: B32<Private>) -> Discloses<(Key,), Uint<64, Public>> {
+    pub fn map_size(c: &mut Circuit, k: B32<Private>) -> Discloses<(Key,), Uint<64, Public>> {
         let k = k.disclose_as::<Key>(c);
         let path = under(c, MM, &k);
         Discloses::of(Uint::from_field_unchecked(map_size_at(
@@ -204,7 +203,7 @@ impl Nested {
 
     /// `return mm.lookup(disclose(k)).isEmpty();`
     #[circuit(output = "empty")]
-    pub fn map_is_empty(c: &mut Circuit3, k: B32<Private>) -> Discloses<(Key,), Bool<Public>> {
+    pub fn map_is_empty(c: &mut Circuit, k: B32<Private>) -> Discloses<(Key,), Bool<Public>> {
         let k = k.disclose_as::<Key>(c);
         let path = under(c, MM, &k);
         Discloses::of(Bool::from_field_unchecked(map_is_empty_at(
@@ -215,28 +214,28 @@ impl Nested {
 
     /// `mm.lookup(disclose(k)).resetToDefault();`
     ///
-    /// PATH SUPPRESSION COMES ALIVE. At depth 1 the leading `idxp` and the
+    /// Path suppression comes alive. At depth 1 the leading `idxp` and the
     /// closing `insc` are both suppressed and a reset is three instructions;
     /// at depth 2 both reappear — `idxp [field]; push k; pushs (empty map);
-    /// ins 1; insc 1` — and what gets PUSHED is the last path element, the
+    /// ins 1; insc 1` — and what gets pushed is the last path element, the
     /// key, not the field index.
     #[circuit]
-    pub fn map_reset(c: &mut Circuit3, k: B32<Private>) -> Discloses<(Key,)> {
+    pub fn map_reset(c: &mut Circuit, k: B32<Private>) -> Discloses<(Key,)> {
         let k = k.disclose_as::<Key>(c);
         let path = under(c, MM, &k);
         emit(c, &map_reset_at(&path));
         Discloses::of(())
     }
 
-    /// `mm.insertDefault(disclose(k));` — the OUTER map, at depth 1.
+    /// `mm.insertDefault(disclose(k));` — the outer map, at depth 1.
     ///
-    /// The value type IS an ADT here, and `VMstate-value-ADT` discards the
+    /// The value type is an ADT here, and `VMstate-value-ADT` discards the
     /// value and pushes the ADT's own `(initial-value …)`: `0x11 0x02`, the
     /// empty map, where the flat `insertDefault` would push a cell of zeros.
-    /// The one place stage B1 found the crate would have been WRONG rather
+    /// The one place stage B1 found the crate would have been wrong rather
     /// than merely unable.
     #[circuit]
-    pub fn outer_insert_default(c: &mut Circuit3, k: B32<Private>) -> Discloses<(Key,)> {
+    pub fn outer_insert_default(c: &mut Circuit, k: B32<Private>) -> Discloses<(Key,)> {
         let k = k.disclose_as::<Key>(c);
         let k = k.ledger_value(c);
         emit(
@@ -254,7 +253,7 @@ impl Nested {
     /// here is `0xa2`; the `insc 1` in the middle stays a literal 1.
     #[circuit]
     pub fn list_push_front(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         k: B32<Private>,
         v: B32<Private>,
     ) -> Discloses<(Key, Val)> {
@@ -268,7 +267,7 @@ impl Nested {
 
     /// `ml.lookup(disclose(k)).popFront();`
     #[circuit]
-    pub fn list_pop_front(c: &mut Circuit3, k: B32<Private>) -> Discloses<(Key,)> {
+    pub fn list_pop_front(c: &mut Circuit, k: B32<Private>) -> Discloses<(Key,)> {
         let k = k.disclose_as::<Key>(c);
         let path = under(c, ML, &k);
         emit(c, &list_pop_front_at(&path));
@@ -277,7 +276,7 @@ impl Nested {
 
     /// `return ml.lookup(disclose(k)).length();`
     #[circuit(output = "length")]
-    pub fn list_length(c: &mut Circuit3, k: B32<Private>) -> Discloses<(Key,), Uint<64, Public>> {
+    pub fn list_length(c: &mut Circuit, k: B32<Private>) -> Discloses<(Key,), Uint<64, Public>> {
         let k = k.disclose_as::<Key>(c);
         let path = under(c, ML, &k);
         Discloses::of(Uint::from_field_unchecked(list_length_at(
@@ -292,7 +291,7 @@ impl Nested {
     /// unchanged by nesting: only its leading `idx` grew.
     #[circuit(output = "head")]
     pub fn list_head(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         k: B32<Private>,
     ) -> Discloses<(Key,), Maybe<B32<Public>, Public>> {
         let k = k.disclose_as::<Key>(c);
@@ -307,7 +306,7 @@ impl Nested {
 
     /// `return ml.lookup(disclose(k)).isEmpty();`
     #[circuit(output = "empty")]
-    pub fn list_is_empty(c: &mut Circuit3, k: B32<Private>) -> Discloses<(Key,), Bool<Public>> {
+    pub fn list_is_empty(c: &mut Circuit, k: B32<Private>) -> Discloses<(Key,), Bool<Public>> {
         let k = k.disclose_as::<Key>(c);
         let path = under(c, ML, &k);
         Discloses::of(Bool::from_field_unchecked(list_is_empty_at(
@@ -318,7 +317,7 @@ impl Nested {
 
     /// `ml.lookup(disclose(k)).resetToDefault();`
     #[circuit]
-    pub fn list_reset(c: &mut Circuit3, k: B32<Private>) -> Discloses<(Key,)> {
+    pub fn list_reset(c: &mut Circuit, k: B32<Private>) -> Discloses<(Key,)> {
         let k = k.disclose_as::<Key>(c);
         let path = under(c, ML, &k);
         emit(c, &list_reset_at(&path));
@@ -330,7 +329,7 @@ impl Nested {
     /// `ms.lookup(disclose(k)).insert(disclose(e));`
     #[circuit]
     pub fn set_insert(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         k: B32<Private>,
         e: B32<Private>,
     ) -> Discloses<(Key, Elem)> {
@@ -345,7 +344,7 @@ impl Nested {
     /// `ms.lookup(disclose(k)).remove(disclose(e));`
     #[circuit]
     pub fn set_remove(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         k: B32<Private>,
         e: B32<Private>,
     ) -> Discloses<(Key, Elem)> {
@@ -364,7 +363,7 @@ impl Nested {
     /// `minocrab_ledger::set_remove` documents.
     #[circuit(output = "member")]
     pub fn set_member(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         k: B32<Private>,
         e: B32<Private>,
     ) -> Discloses<(Key, Elem), Bool<Public>> {
@@ -383,10 +382,10 @@ impl Nested {
     ///
     /// The seventh whole-field-replace op, and stage B1 left it uncovered
     /// (its depth-1 twin is in the `adts` fixture). It is [`Nested::map_reset`]
-    /// instruction for instruction — a `Set`'s initial value IS the empty map
+    /// instruction for instruction — a `Set`'s initial value is the empty map
     /// — which is why `set_reset_at` delegates.
     #[circuit]
-    pub fn set_reset(c: &mut Circuit3, k: B32<Private>) -> Discloses<(Key,)> {
+    pub fn set_reset(c: &mut Circuit, k: B32<Private>) -> Discloses<(Key,)> {
         let k = k.disclose_as::<Key>(c);
         let path = under(c, MS, &k);
         emit(c, &set_reset_at(&path));
@@ -397,7 +396,7 @@ impl Nested {
 
     /// `mc.lookup(disclose(k)).increment(1);`
     #[circuit]
-    pub fn counter_increment(c: &mut Circuit3, k: B32<Private>) -> Discloses<(Key,)> {
+    pub fn counter_increment(c: &mut Circuit, k: B32<Private>) -> Discloses<(Key,)> {
         let k = k.disclose_as::<Key>(c);
         let path = under(c, MC, &k);
         emit(c, &counter_increment_at(&path, 1));
@@ -406,7 +405,7 @@ impl Nested {
 
     /// `return mc.lookup(disclose(k)).read();`
     #[circuit(output = "count")]
-    pub fn counter_read(c: &mut Circuit3, k: B32<Private>) -> Discloses<(Key,), Uint<64, Public>> {
+    pub fn counter_read(c: &mut Circuit, k: B32<Private>) -> Discloses<(Key,), Uint<64, Public>> {
         let k = k.disclose_as::<Key>(c);
         let path = under(c, MC, &k);
         Discloses::of(Uint::from_field_unchecked(counter_read_at(
@@ -420,7 +419,7 @@ impl Nested {
     /// A `Counter`'s initial value is `cell 0u64`, so this is [`map_reset`]'s
     /// shape with a different constant pushed.
     #[circuit]
-    pub fn counter_reset(c: &mut Circuit3, k: B32<Private>) -> Discloses<(Key,)> {
+    pub fn counter_reset(c: &mut Circuit, k: B32<Private>) -> Discloses<(Key,)> {
         let k = k.disclose_as::<Key>(c);
         let path = under(c, MC, &k);
         emit(c, &counter_reset_at(&path));
@@ -435,7 +434,7 @@ impl Nested {
     /// are literal 1s at every depth.
     #[circuit]
     pub fn mt_insert(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         k: B32<Private>,
         item: B32<Private>,
     ) -> Discloses<(Key, Elem)> {
@@ -451,7 +450,7 @@ impl Nested {
     /// `return mt.lookup(disclose(k)).checkRoot(disclose(rt));`
     #[circuit(output = "ok")]
     pub fn mt_check_root(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         k: B32<Private>,
         rt: MerkleTreeDigest<Private>,
     ) -> Discloses<(Key, Root), Bool<Public>> {
@@ -472,7 +471,7 @@ impl Nested {
     /// pushed constant apart: a blank tree of this depth and index 0, where
     /// [`Nested::map_reset`] pushes the empty map.
     #[circuit]
-    pub fn mt_reset(c: &mut Circuit3, k: B32<Private>) -> Discloses<(Key,)> {
+    pub fn mt_reset(c: &mut Circuit, k: B32<Private>) -> Discloses<(Key,)> {
         let k = k.disclose_as::<Key>(c);
         let path = under(c, MT, &k);
         emit(c, &merkle_tree_reset_at(&path, DEPTH));
@@ -482,7 +481,7 @@ impl Nested {
     /// `mh.lookup(disclose(k)).insert(disclose(item));`
     #[circuit]
     pub fn hmt_insert(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         k: B32<Private>,
         item: B32<Private>,
     ) -> Discloses<(Key, Elem)> {
@@ -500,10 +499,10 @@ impl Nested {
 
     /// `mh.lookup(disclose(k)).resetHistory();`
     ///
-    /// THE ONE OPERATION whose closing depth is `len(f) + 2` — `0xa4` at
+    /// The one operation whose closing depth is `len(f) + 2` — `0xa4` at
     /// depth 2, where `0xa3` was the deepest anything else reached.
     #[circuit]
-    pub fn hmt_reset_history(c: &mut Circuit3, k: B32<Private>) -> Discloses<(Key,)> {
+    pub fn hmt_reset_history(c: &mut Circuit, k: B32<Private>) -> Discloses<(Key,)> {
         let k = k.disclose_as::<Key>(c);
         let path = under(c, MH, &k);
         emit(
@@ -519,7 +518,7 @@ impl Nested {
     /// suppression: its closing pair is `insc 2; ins 1` where every other
     /// reset's is `ins 1; insc len(f)-1`.
     #[circuit]
-    pub fn hmt_reset(c: &mut Circuit3, k: B32<Private>) -> Discloses<(Key,)> {
+    pub fn hmt_reset(c: &mut Circuit, k: B32<Private>) -> Discloses<(Key,)> {
         let k = k.disclose_as::<Key>(c);
         let path = under(c, MH, &k);
         emit(
@@ -537,7 +536,7 @@ impl Nested {
     /// track `len(f)`, and nothing else about the stream changed.
     #[circuit]
     pub fn deep_insert(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         k: B32<Private>,
         k2: B32<Private>,
         k3: B32<Private>,
@@ -556,7 +555,7 @@ impl Nested {
     /// `return mmm.lookup(disclose(k)).lookup(disclose(k2)).lookup(disclose(k3));`
     #[circuit(output = "value")]
     pub fn deep_lookup(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         k: B32<Private>,
         k2: B32<Private>,
         k3: B32<Private>,

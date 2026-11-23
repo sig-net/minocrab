@@ -1,0 +1,23 @@
+[package]
+name = "minocrab-taint"
+description = "MinoCrab's taint lint: every byte-atom hash-preimage limb in a ZKIR v3 stream must be provably bounded to its byte width, or constant"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+readme = "README.md"
+keywords = ["midnight", "zkir", "lint", "zero-knowledge", "static-analysis"]
+categories = ["cryptography::cryptocurrencies", "development-tools"]
+include = ["src/**/*.rs", "README.md", "LICENSE-MIT", "LICENSE-APACHE"]
+
+[lints]
+workspace = true
+
+[dependencies]
+# The dataflow helpers (`operands`, `returned`, `defined_identifiers`) the
+# lint walks the stream with: one exhaustive list per question, shared with
+# the passes.
+minocrab-ir.workspace = true
+minocrab-zkir.workspace = true
+midnight-base-crypto.workspace = true

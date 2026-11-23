@@ -9,11 +9,11 @@ Every protocol hash is `upgradeFromTransient(transientHash([HashDomain.x, …]))
 - `attested_output_hash(&[u8])` — `calculateAttestedOutputHashV1`.
 - `attestation_digest(…)` and `Attestation::over(request_id, height, kind, output)` — `calculateSignetAttestationDigestV1`, and the attestation half of a `respondBidirectional` built in one step.
 
-Pinned against the compiled Compact circuits: `tests/fixtures/api-parity-vectors.json` holds request ids and transaction digests of nine records at four struct shapes and ten attestation digests, produced by compactc 0.33.0-rc.2 over `@sig-net/midnight@0.25.0-rc.1` and captured by sig-net/mpc, with no Rust hash in the loop.
+Pinned against the compiled Compact circuits: `tests/fixtures/api-parity-vectors.json` holds request ids and transaction digests of nine records at four struct shapes and ten attestation digests, produced by compactc 0.33.0-rc.2 over `@sig-net/midnight@0.25.0-rc.1` and captured by sig-net/mpc, with no Rust hash in the loop. The hashing is unchanged at `@sig-net/midnight` 0.26.0-rc.15, the version erc20-vault v0.7.0-rc.2 pins.
 
 Who reads it: sig-net/mpc (which carried its own copy as `compact-hashing`), `minocrab-publisher` (re-exported as `minocrab_publisher::hashing`), and the contract tests that drive a request → respond → settle round trip.
 
-`publish = false` until the `midnight-*` line is on crates.io at the pinned tags (see PUBLISHING.md).
+Not on crates.io (`publish = false`): its consumers link it by git, and no published crate depends on it (see PUBLISHING.md).
 
 [Repository README](https://github.com/sig-net/minocrab#readme)
 

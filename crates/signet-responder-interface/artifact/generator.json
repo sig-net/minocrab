@@ -1,0 +1,6 @@
+{
+  "interface": "SignetResponder",
+  "summary": "the interface of the Sig Network signet responder, the contract the MPC posts its responses to, as an importable crate.",
+  "source": "corpus/zkir/signet-midnight-integration-v026/packages/signet-responder/src/signet-responder",
+  "modules": []
+}

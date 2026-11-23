@@ -3,7 +3,7 @@
 Design of record for M14. Compact's =Uint<0..n>= takes ANY bound; our only
 unsigned leaf is =Uint<BITS>=, which can say =0..2^BITS= and nothing else.
 The interop side already models the general case (=Prim::UintMax= →
-=LimbConstraint::Bounded=, crates/minocrab/src/v3/abi.rs); this milestone
+=LimbConstraint::Bounded=, crates/minocrab/src/abi.rs); this milestone
 makes it DECLARABLE — a leaf type whose =constrain_input= emits that same
 lowering, carried through =CircuitArg=, the derives, the predicates, Borsh,
 the interface crates and the interface generator.
@@ -142,7 +142,7 @@ pub fn constrain_input(self, c: &mut Circuit3) {
 }
 #+end_src
 
-=Prim::unsigned= (crates/minocrab/src/v3/abi.rs) is compactc's
+=Prim::unsigned= (crates/minocrab/src/abi.rs) is compactc's
 =emit-constraints-for= (reduce-to-zkir.ss:640-667) ported once; it
 normalizes the maxval into =Prim::Uint { bits }= or =Prim::UintMax {
 maxval }= and =constraint()= dispatches:
@@ -183,7 +183,7 @@ described here as a ZERO-byte atom, mirroring compactc <= 0.33.107. Issue
 sits in LEDGER position — it still writes one always-zero value in the
 transcript, and the Impact push's alignment operand moves =0x00= ->
 =0x01= for it — while leaving argument position unaffected (no compiled
-artifact's =.zkir= moves). =uint_atom_bytes= (crates/minocrab/src/v3/abi.rs)
+artifact's =.zkir= moves). =uint_atom_bytes= (crates/minocrab/src/abi.rs)
 followed: see notes/version-bump.org "Bump 1" §"Family E" and the new
 =crates/minocrab-contracts/tests/fixtures/bounded_ledger/= fixture, which
 pins the byte against a compiled artifact rather than recomputing it.
@@ -207,7 +207,7 @@ PROVIDED method — never overridden, so the constraint comes from
 =#[derive(CircuitArg)]= and =#[circuit]= need NO change: they are generic
 over the field types and only join label paths.
 
-=CallArg= / =CallResult= (crates/minocrab/src/v3/abi.rs, the caller's side
+=CallArg= / =CallResult= (crates/minocrab/src/abi.rs, the caller's side
 of a cross-contract call) come the same way — one =push_call_slots= and one
 =from_call_slots= — so a bounded value passed to another contract is
 constrained on the callee's side by the same table entry that constrains
@@ -358,8 +358,8 @@ not say.
 ** The code
 | file | what |
 |------+------|
-| crates/minocrab/src/v3/abi.rs | =uint_atom_bytes= / =uint_compare_bits= as =const fn=s beside the constraint table, with the three-widths test; the =Prim= doc-comments corrected |
-| crates/minocrab-std/src/v3.rs | =BoundedUint<const BOUND: u128, V = Private>= — =MAX=, =from_field=, =field=, =constrain_input=, =widen=, =to_uint=, =constant= |
+| crates/minocrab/src/abi.rs | =uint_atom_bytes= / =uint_compare_bits= as =const fn=s beside the constraint table, with the three-widths test; the =Prim= doc-comments corrected |
+| crates/minocrab-std/src/leaves.rs | =BoundedUint<const BOUND: u128, V = Private>= — =MAX=, =from_field=, =field=, =constrain_input=, =widen=, =to_uint=, =constant= |
 | .../v3/entry.rs | =CircuitAbi= (1 slot, =Bytes { uint_atom_bytes(BOUND-1) }=, =Prim::unsigned(BOUND-1)=) + =CircuitArg= at =Private= |
 | .../v3/call.rs | =CallArg= / =CallResult= at =Public= |
 | .../v3/ledger.rs | one line in =ledger_repr_via_abi!= — so a bounded value is a =LedgerCell=/=LedgerMap= value |
@@ -370,7 +370,7 @@ not say.
 | crates/minocrab-interface-gen/src/lib.rs | =unsigned_type= — one decision for =Uint= and =Enum=; =render= off-by-one fixed |
 | crates/minocrab-contracts/src/bounded.rs | the port: eleven =#[circuit]=s, a =#[derive(Ledger)]= block, a =#[derive(CircuitArg)]= struct |
 | crates/minocrab-contracts/tests/fixtures/bounded/ | the Compact source + the pinned compactc's artifacts |
-| crates/minocrab-std/tests/v3_bounded.rs (8) | the leaf's own gates |
+| crates/minocrab-std/tests/bounded.rs (8) | the leaf's own gates |
 | crates/minocrab-contracts/tests/bounded_differential.rs (6) | the differential, plus the ABI round-trip |
 
 `#[derive(CircuitArg)]`, `#[circuit]` and `#[derive(Ledger)]` needed NO
@@ -496,7 +496,7 @@ cost. (Reference: `less_than` is 8 rows at ≤32 bits, 11 at 64, 17 at 128;
    The message is prescriptive and names both fixes (a constant in range, or
    a wider type) and explains why the width check let it through.
    COST: zero rows — it is a build-time check over a literal.
-   Gate: four tests in `tests/v3_predicates.rs`, including dmd's own example
+   Gate: four tests in `tests/predicates.rs`, including dmd's own example
    and the exclusive-bound edge (`b.lt(299)` on a `BoundedUint<300>` is a real
    question and is accepted).
 3. `BoundedUint<256>` AND `Uint<8>` ARE DIFFERENT RUST TYPES that emit the

@@ -23,15 +23,15 @@
 
         # Pinned Compact toolchain, from the LFDT-Minokawa/compact release
         # binaries (recipe + verified hashes: notes/zkir.org "Option B").
-        # 0.36.0 (language 0.28.0, runtime 0.21.0, released 2026-11-04) — the
-        # toolchain Midnight's compatibility matrix lists for ledger 9.1.0.1
-        # (Mainnet since 2026-11-06). It emits ZKIR v3 only.
-        # Its own flake.lock pins zkir-v3 at midnight-zkir eeb8a316
-        # (zkir-3.2.0-rc.2), whose zkir/ the crates.io midnight-zkir 3.2.0 our
-        # Cargo.toml names carries unchanged (manifest version aside), so the
-        # binaries and the crate speak one ZKIR (hazard 1).
+        # 0.36.1 (language 0.28.0, runtime 0.21.0), the toolchain Midnight's
+        # compatibility matrix lists for ledger 9.1.0.1. It emits ZKIR v3 only
+        # and fixes compact#616 and #856.
+        # Its own flake.lock pins zkir-v3 at midnight-zkir 7a51b338
+        # (zkir-3.2.1, the #616 key-generation fix); our Cargo.toml names the
+        # crates.io midnight-zkir 3.2.0 that midnight-node locks
+        # (notes/version-bump.org).
         # To bump: change version + hash below; hashes per arch in notes/zkir.org.
-        compactcVersion = "0.36.0";
+        compactcVersion = "0.36.1";
         # The release zips name linux targets `-unknown-linux-musl`.
         compactcTarget = {
           aarch64-darwin = "aarch64-darwin";
@@ -40,10 +40,10 @@
           x86_64-linux = "x86_64-unknown-linux-musl";
         };
         compactcHashes = {
-          aarch64-darwin = "sha256-qBJrLMBiMO0sZVgFmolFEZ43D/Iikw5qUvkIcOjMPF0=";
-          x86_64-darwin = "sha256-LGca7R1lsnlF8/MrrRCZcc4fJvUO4jhTjSaQUOQEO/8=";
-          aarch64-linux = "sha256-h3QMokx/mfwiAP05jFfd+qVetg9r3PlxhpsLVDp3Iq0=";
-          x86_64-linux = "sha256-cBe2Eh67nVOlYphLymFtFD74T8fuGLTabDoKZhXLXpc=";
+          aarch64-darwin = "sha256-lu5opZ2eiwk/Bcl0eaTPCMeXYAFdzCbsx5fsAWDKJ/k=";
+          x86_64-darwin = "sha256-wz7XXSKCU8j2R5YMyQgslGlswegadBZD/E2iM7Ii1WQ=";
+          aarch64-linux = "sha256-fwcwTYGNK6tvlgEyd3ISOLu5aQjti/eSc0BNg6ZFyEQ=";
+          x86_64-linux = "sha256-nV/t/smud1oeR9XG94UTCzFMHFxSzRpOufxW0fxh0jo=";
         };
         compactc = pkgs.stdenvNoCC.mkDerivation {
           pname = "compactc";
@@ -67,15 +67,14 @@
             true
           '';
         };
-        # NO flake package for the `minocrab` CLI, decided rather than
-        # missing (M24 §5; dmd pre-authorised the skip): the crate build is
-        # plain cargo (CLAUDE.md), and the CLI stays a cargo binary:
+        # No flake package for the `minocrab` CLI, deliberately: the crate
+        # build is plain cargo, and the CLI stays a cargo binary:
         # `cargo build --release -p minocrab-sim --bin minocrab`.
       in
       {
         packages.compactc = compactc;
 
-        # M6 baseline benchmark, from a clean checkout: `nix run .#bench`.
+        # Baseline benchmark, from a clean checkout: `nix run .#bench`.
         # Nix only supplies the binaries (toolchain, compactc); the build
         # itself is plain cargo via ./bench.sh.
         apps.bench = {
@@ -91,35 +90,26 @@
           packages = [
             rustToolchain
             pkgs.cargo-nextest
-            # M34 B: the interface crates' wire-compatibility instrument
-            # (`cargo semver-checks`, the `interface-wire-compat-semver` CI
-            # job). A tool, not packaging — the nix-light-touch rule.
+            # The interface crates' wire-compatibility instrument
+            # (`cargo semver-checks`, the `interface-wire-compat-semver` CI job).
             pkgs.cargo-semver-checks
-            # M38 D2: the supply-chain gate (`cargo deny check`, the `deny:`
+            # The supply-chain gate (`cargo deny check`, the `deny:`
             # CI job) — advisories/licenses/bans/sources per deny.toml.
             pkgs.cargo-deny
-            # Pruning target/ (dmd, 2026-10-14, at 74 GB). The dev profile
-            # already carries `debug = "line-tables-only"` — the 2026-08-16
-            # fix, still doing its job — so what grows now is pure
-            # ACCUMULATION: cargo never prunes target/, so every fingerprint
-            # change leaves its old generation behind, and heavy branch and
-            # worktree switching makes that unbounded. Measured: 349,276
-            # files under target/debug/deps, 223,815 of them older than two
-            # weeks. `cargo sweep --time 14` collects exactly those; a plain
-            # `cargo clean` is the blunt alternative and costs a full rebuild
-            # of dependencies at opt-level 3. A tool, not packaging — the
-            # nix-light-touch rule, same as the three above.
+            # Pruning target/: cargo never prunes it, so every fingerprint
+            # change leaves its old generation behind. `cargo sweep --time 14`
+            # collects the stale ones without the full rebuild `cargo clean` costs.
             pkgs.cargo-sweep
             compactc
-            # M11 stage 10: the published TypeScript decoder in spec/ts/ and
-            # its vector-driven tests. BINARIES ONLY, as ever — node runs the
+            # The published TypeScript decoder in spec/ts/ and
+            # its vector-driven tests. Binaries only — node runs the
             # tests (`node --test`, no test framework) and tsc type-checks
             # them; neither the crate build nor the generated TS depends on
             # them, and spec/ts/ has no npm dependencies at all.
             pkgs.nodejs_22
             pkgs.typescript
-            # M23 R4: the Kani instrument (`./kani.sh`, opt-in — never part
-            # of the routine loop). rustup comes LAST so its proxy shims sit
+            # The Kani instrument (`./kani.sh`, opt-in — never part
+            # of the routine loop). rustup comes last so its proxy shims sit
             # behind rustToolchain on PATH: it exists only to serve Kani's
             # pinned nightly, and the pinned rust above must keep winning
             # for every ordinary `cargo` invocation. The gcc alias serves
@@ -127,7 +117,7 @@
             # machine's /usr/bin/gcc is an xcrun shim with no CLT behind it.
             (pkgs.writeShellScriptBin "gcc" ''exec ${pkgs.clang}/bin/clang "$@"'')
             pkgs.rustup
-            # M25: the Lean proofs under crates/minocrab-ir/lean/ (passes)
+            # The Lean proofs under crates/minocrab-ir/lean/ (passes)
             # and crates/minocrab-std/lean/ (numeric/visibility) —
             # nix-provisioned (no elan).
             pkgs.lean4

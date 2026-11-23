@@ -1,0 +1,41 @@
+{
+  "manifest-version": "1",
+  "compiler-version": "0.36.1",
+  "compiler-commit": "7fa3a117c5e7efe9d2c51da04263e5f0b3509144",
+  "language-version": "0.28.0",
+  "runtime-version": "0.21.0",
+  "compiler": {
+    "type": "directory",
+    "contract-info.json": {
+      "type": "file",
+      "size": 749,
+      "hash": "c4f898c5bc849e2686e9f912393c26ab3b0ac07017df74ce2aa4c2fa97563795"
+    }
+  },
+  "contract": {
+    "type": "directory",
+    "index.d.ts": {
+      "type": "file",
+      "size": 1599,
+      "hash": "a2d260296f60bb59c502f981acea541ddc3353d7eaf7a2fa19e36ffee6ceb6cd"
+    },
+    "index.js": {
+      "type": "file",
+      "size": 14978,
+      "hash": "d20e5836d6666f46221a9918d332d0b65d7c121b9f34bc4105b5953db37a22ce"
+    },
+    "index.js.map": {
+      "type": "file",
+      "size": 1085,
+      "hash": "6b94d58a715d6132939401ddf5db862f8371b5ae2854a12b97ba3b3b1b807975"
+    }
+  },
+  "zkir": {
+    "type": "directory",
+    "storeEthereumAddress.zkir": {
+      "type": "file",
+      "size": 19127,
+      "hash": "2e2086c29ab752cc9504479a7941654dfd4b18481a7b805ab8834df18226b418"
+    }
+  }
+}

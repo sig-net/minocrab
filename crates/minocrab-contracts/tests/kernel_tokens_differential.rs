@@ -1,20 +1,24 @@
-//! `kernel.compact` — the M17 differential: the kernel primitives and the
+//! `kernel.compact` — the differential: the kernel primitives and the
 //! token-stdlib circuits built on them, against compactc's own artifacts
 //! (notes/kernel-tokens.org).
 //!
-//! WHY THE FIXTURE IS OURS, measured for the fourth milestone running: across
+//! Why the fixture is ours, measured for the fourth milestone running: across
 //! the three `--feature-zkir-v3` corpus sources the kernel/token surface used
 //! is `kernel.self` (25), `receiveShielded` (10), `mintShieldedToken` (7) and
-//! `sendImmediateShielded` (6) — all SHIELDED, and not one v3 use of an
+//! `sendImmediateShielded` (6) — all shielded, and not one v3 use of an
 //! unshielded primitive, of `balance*`, of `blockTime*` or of `mergeCoin`.
 //!
-//! `kernel.checkpoint()` IS NOT HERE: before compactc 0.36 the ZKIR-v3
+//! `kernel.checkpoint()` is not here: before compactc 0.36 the ZKIR-v3
 //! backend had no `ckpt` case (the fixture's header quotes the failure);
 //! compactc 0.36.0 compiles it, and it is not ported yet.
 
-use minocrab::v3::Compiled3;
+#[path = "support/common.rs"]
+mod common;
+use common::*;
+
+use minocrab::Compiled;
 use minocrab_contracts::kernel_tokens::KernelTokens;
-use minocrab_zkir::v3::{to_zkir_string, IrSource};
+use minocrab_zkir::IrSource;
 
 /// compactc's artifact for one fixture circuit.
 fn theirs(name: &str) -> IrSource {
@@ -22,51 +26,14 @@ fn theirs(name: &str) -> IrSource {
         "{}/tests/fixtures/kernel/out/zkir/{name}.zkir",
         env!("CARGO_MANIFEST_DIR")
     );
-    minocrab_zkir::v3::read_zkir(&path).expect("the pinned compactc's artifact parses")
-}
-
-/// Serialized ZKIR with every `%name.index` identifier canonicalized — the
-/// same renaming every differential here uses.
-fn canonical(ir: &IrSource) -> String {
-    // BOTH SIDES are folded first (notes/ir-passes.org §2 ii): our builder
-    // inlines a `Copy` of an immediate at `finish`, and compactc names some of
-    // the constants it inlines elsewhere, so the comparison is instruction for
-    // instruction MODULO the naming of constants — a rename with no rows, no
-    // public input and no semantics. Everything else still compares exactly.
-    let ir = &minocrab_ir::v3::passes::folded(ir);
-    let text = to_zkir_string(ir).expect("serializes");
-    let mut renames: Vec<(String, String)> = Vec::new();
-    let mut out = String::with_capacity(text.len());
-    let mut rest = text.as_str();
-    while let Some(at) = rest.find('%') {
-        out.push_str(&rest[..at]);
-        rest = &rest[at..];
-        let end = rest[1..]
-            .find(|ch: char| !(ch.is_alphanumeric() || ch == '_' || ch == '.'))
-            .map(|i| i + 1)
-            .unwrap_or(rest.len());
-        let name = &rest[..end];
-        let next = renames.len();
-        let canon = match renames.iter().find(|(from, _)| from == name) {
-            Some((_, to)) => to.clone(),
-            None => {
-                let to = format!("%{next}");
-                renames.push((name.to_string(), to.clone()));
-                to
-            }
-        };
-        out.push_str(&canon);
-        rest = &rest[end..];
-    }
-    out.push_str(rest);
-    out
+    minocrab_zkir::read_zkir(&path).expect("the pinned compactc's artifact parses")
 }
 
 /// The circuits ported so far: compactc's artifact name and our builder.
-fn cases() -> Vec<(&'static str, fn() -> Compiled3)> {
+fn cases() -> Vec<(&'static str, fn() -> Compiled)> {
     vec![
         // the nine kernel primitives that have vm-code and can be compiled
-        ("kMintUnshielded", KernelTokens::k_mint_unshielded as fn() -> Compiled3),
+        ("kMintUnshielded", KernelTokens::k_mint_unshielded as fn() -> Compiled),
         ("kClaimUnshieldedCoinSpend", KernelTokens::k_claim_unshielded_coin_spend),
         ("kIncUnshieldedOutputs", KernelTokens::k_inc_unshielded_outputs),
         ("kIncUnshieldedInputs", KernelTokens::k_inc_unshielded_inputs),
@@ -96,12 +63,12 @@ fn cases() -> Vec<(&'static str, fn() -> Compiled3)> {
     ]
 }
 
-/// THE HEADLINE: for every kernel primitive and every stdlib circuit ported,
-/// our lowering IS compactc's — op for op, immediate for immediate.
+/// The headline: for every kernel primitive and every stdlib circuit ported,
+/// our lowering is compactc's — op for op, immediate for immediate.
 ///
 /// What that pins: the effects-array slot each primitive writes (4-8), the
 /// accumulator's `member`/`branch`/`idxc [stack]`/`add` upsert, the
-/// zero-default in the balance lookup, the OPERAND-ORDER trick that turns a
+/// zero-default in the balance lookup, the operand-order trick that turns a
 /// `lt` into a `gt` in both `balanceGreaterThan` and `blockTimeGreaterThan`,
 /// and the `cond_select(b, 0, 1)` compactc lowers `!b` to.
 #[test]
@@ -115,7 +82,7 @@ fn identical_instruction_streams() {
     }
 }
 
-/// EVERY CIRCUIT THE CONTRACT EXPORTS IS IN THE DIFFERENTIAL — the check the
+/// Every circuit the contract exports is in the differential — the check the
 /// hand-written lists could never make.
 ///
 /// `KernelTokens::CIRCUITS` is derived by `#[contract]` from the file itself,
@@ -123,7 +90,7 @@ fn identical_instruction_streams() {
 /// against another hand-written list. Add a circuit to the contract and forget
 /// this file, and the assertion names it.
 ///
-/// Compared by FUNCTION POINTER, not by count: the two lists name circuits
+/// Compared by function pointer, not by count: the two lists name circuits
 /// differently (compactc's `sMergeCoin` against our `s_merge_coin`), and a
 /// count would pass while two entries silently swapped.
 #[test]
@@ -143,10 +110,10 @@ fn every_exported_circuit_is_in_the_differential() {
     );
 }
 
-/// What the fixture compiles that is NOT yet ported, named so the gap is a
+/// What the fixture compiles that is not yet ported, named so the gap is a
 /// list rather than an absence.
 ///
-/// EMPTY since the shielded compositions landed: every circuit `kernel.compact`
+/// Empty since the shielded compositions landed: every circuit `kernel.compact`
 /// compiles is ported and agrees with compactc instruction for instruction.
 /// `kernel.checkpoint()` is not here because it is not in the fixture (see
 /// this file's header).

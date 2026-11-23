@@ -1,20 +1,20 @@
 //! `manager.compact` (acedward/AA-midnight-evm-experiment-v3) — an
 //! account-abstraction custody contract: dual-mode authorization (a Midnight
 //! witness secret, or an Ethereum EOA signing EIP-712), family-separated
-//! shielded/unshielded custody, and ONE write gateway (`execute`) whose
+//! shielded/unshielded custody, and one write gateway (`execute`) whose
 //! `selector` picks among seven actions. Pinned in `corpus/sources.json`;
 //! the compiled artifacts live under
 //! `corpus/zkir/aa-midnight-evm-experiment/contracts/manager/`.
 //!
-//! THE PORT IS SEMANTIC, NOT INSTRUCTION-MIRRORING: the ledger-op stream —
+//! The port is semantic, not instruction-mirroring: the ledger-op stream —
 //! the PI contract — reproduces compactc's exactly (read off the vm-code in
 //! the compiled `contract/index.js`, function by function), while the
 //! in-circuit arithmetic uses this workspace's own lowerings: the keccak
 //! chip's in-chip byte packing where compactc splices `Bytes<N>` values byte
 //! by byte, `div_mod` shifts for the big-endian ABI words where compactc
 //! reverses byte vectors, and shared std gadgets (`send_shielded`,
-//! `merge_coin_immediate`, the claims) that M17 proved equal to compactc's
-//! stdlib instruction for instruction. Equivalence criterion is M3's:
+//! `merge_coin_immediate`, the claims) that are differential-checked equal to compactc's
+//! stdlib instruction for instruction. The equivalence criterion:
 //! same typed I/O schema + equal `pis`/`pi_skips` on a shared
 //! `ProofPreimage` (tests/manager_differential.rs).
 //!
@@ -31,7 +31,7 @@
 //! witness localOwnerSecret(): Bytes<32>;
 //! ```
 //!
-//! Of the contract's 22 exported circuits only NINE read ledger state and
+//! Of the contract's 22 exported circuits only nine read ledger state and
 //! are provable (emit `.zkir`): `execute`, `depositShielded`,
 //! `depositUnshielded`, `isRegistered`, `accountRecord`,
 //! `shieldedAccountBalance`, `unshieldedAccountBalance`, `poolValue`,
@@ -39,17 +39,18 @@
 //! transcriptions, the semantic commitment) emit no artifact and are ported
 //! only where a provable circuit calls them.
 
-use minocrab::v3::{Circuit3, FieldT, Wire3};
+use minocrab::{Circuit, FieldT, Wire};
 use minocrab::{Alignment, AlignmentAtom, AlignmentSegment, Fr, Private, Public};
-use minocrab_std::v3::kernel;
-use minocrab_std::v3::kernel::SelfAddress;
-use minocrab_std::v3::{
+use minocrab_compat as compat;
+use minocrab_std::kernel;
+use minocrab_std::kernel::SelfAddress;
+use minocrab_std::{
     Assumed,
     CoinColor, CoinNonce,
     contract, coin_commitment_to_contract, coin_nullifier_contract, ge, greater_than as gt, is_true, label, le,
     Bool, Bytes, CircuitArg, CoinRecipient, ContractAddress, Disclose, Discloses, Either, Ledger,
-    LedgerCell, LedgerMap, LedgerRepr, LedgerSet, QualifiedShieldedCoinInfo3, Secp256k1Point, Secp256k1Scalar,
-    ShieldedCoinInfo3, Uint, UserAddress, B32,
+    LedgerCell, LedgerMap, LedgerRepr, LedgerSet, QualifiedShieldedCoinInfo, Secp256k1Point, Secp256k1Scalar,
+    ShieldedCoinInfo, Uint, UserAddress, B32,
 };
 
 use crate::common;
@@ -65,11 +66,11 @@ label! {
     QueriedColour = "queried colour";
 }
 
-/// THE LEDGER BLOCK — declaration order is the field index, matching the
+/// The ledger block — declaration order is the field index, matching the
 /// Compact `export ledger` block one for one.
 #[derive(Ledger)]
 pub struct Manager {
-    pub pools: LedgerMap<CoinColor<Public>, QualifiedShieldedCoinInfo3<Public>>,
+    pub pools: LedgerMap<CoinColor<Public>, QualifiedShieldedCoinInfo<Public>>,
     pub accounts: LedgerSet<B32<Public>>,
     pub shielded_balances: LedgerMap<B32<Public>, Uint<128, Public>>,
     pub unshielded_balances: LedgerMap<B32<Public>, Uint<128, Public>>,
@@ -91,9 +92,9 @@ pub const EVM_OWNERS: u8 = MANAGER.evm_owners.index();
 pub const EVM_NONCES: u8 = MANAGER.evm_nonces.index();
 pub const DEPLOYMENT_DOMAIN: u8 = MANAGER.deployment_domain.index();
 
-// --- FROZEN DOMAIN SEPARATORS (consensus-critical byte constants) -----------
+// --- frozen domain separators (consensus-critical byte constants) -----------
 
-/// `persistentCommit<Bytes<21>>`'s tag — must be EXACTLY 21 bytes.
+/// `persistentCommit<Bytes<21>>`'s tag — must be exactly 21 bytes.
 pub const OWNER_TAG: &[u8; 21] = b"aa:manager:owner:v1.0";
 /// `pad(32, "aa:manager:shielded:v1")`.
 pub const SHIELDED_FAMILY_TAG: &str = "aa:manager:shielded:v1";
@@ -160,26 +161,15 @@ fn atom(n: u32) -> AlignmentSegment {
 }
 
 /// A frozen 32-byte constant as a `B32<Public>` (two constant limbs).
-fn b32_const(c: &mut Circuit3, bytes: &[u8; 32]) -> B32<Public> {
+fn b32_const(c: &mut Circuit, bytes: &[u8; 32]) -> B32<Public> {
     B32 {
         hi: c.constant(Fr::from(u64::from(bytes[31]))),
         lo: c.constant(Fr::from_le_bytes(&bytes[..31]).expect("31 bytes fit")),
     }
 }
 
-/// `a == b` on two `B32`s of any (equal) visibility — limb equality, joined.
-fn b32_eq<V: minocrab_std::v3::Vis3>(
-    c: &mut Circuit3,
-    a: &B32<V>,
-    b: &B32<V>,
-) -> Wire3<FieldT, V> {
-    let eq_hi = c.test_eq(a.hi, b.hi);
-    let eq_lo = c.test_eq(a.lo, b.lo);
-    c.mul(eq_hi, eq_lo)
-}
-
 /// `b == default<Bytes<32>>` — both limbs zero.
-fn b32_is_zero<V: minocrab_std::v3::Vis3>(c: &mut Circuit3, b: &B32<V>) -> Wire3<FieldT, V> {
+fn b32_is_zero<V: minocrab_std::Vis>(c: &mut Circuit, b: &B32<V>) -> Wire<FieldT, V> {
     let hi0 = c.test_eq(b.hi, 0u64);
     let lo0 = c.test_eq(b.lo, 0u64);
     c.mul(hi0, lo0)
@@ -187,11 +177,11 @@ fn b32_is_zero<V: minocrab_std::v3::Vis3>(c: &mut Circuit3, b: &B32<V>) -> Wire3
 
 /// `right<ZswapCoinPublicKey, ContractAddress>(addr)` as the tag-and-arms
 /// shape the coin gadgets select over.
-fn contract_recipient(c: &mut Circuit3, me: SelfAddress) -> CoinRecipient<Public> {
+fn contract_recipient(c: &mut Circuit, me: SelfAddress) -> CoinRecipient<Public> {
     let zero = c.constant(0u64);
     CoinRecipient {
         is_left: zero,
-        left: minocrab_std::v3::ZswapCoinPublicKey(B32 { hi: zero, lo: zero }),
+        left: minocrab_std::ZswapCoinPublicKey(B32 { hi: zero, lo: zero }),
         right: me.address(),
     }
 }
@@ -199,7 +189,7 @@ fn contract_recipient(c: &mut Circuit3, me: SelfAddress) -> CoinRecipient<Public
 /// `persistentHash<Vector<3, Bytes<32>>>([acct, colour, tag])` — the
 /// family-scoped storage key with the tag already selected.
 fn family_key(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     acct: &B32<Public>,
     colour: &CoinColor<Public>,
     tag: &B32<Public>,
@@ -220,13 +210,13 @@ fn family_key(
 }
 
 /// `shieldedKey(acct, colour)`.
-fn shielded_key(c: &mut Circuit3, acct: &B32<Public>, colour: &CoinColor<Public>) -> B32<Public> {
+fn shielded_key(c: &mut Circuit, acct: &B32<Public>, colour: &CoinColor<Public>) -> B32<Public> {
     let tag = B32::pad(c, SHIELDED_FAMILY_TAG);
     family_key(c, acct, colour, &tag)
 }
 
 /// `unshieldedKey(acct, colour)`.
-fn unshielded_key(c: &mut Circuit3, acct: &B32<Public>, colour: &CoinColor<Public>) -> B32<Public> {
+fn unshielded_key(c: &mut Circuit, acct: &B32<Public>, colour: &CoinColor<Public>) -> B32<Public> {
     let tag = B32::pad(c, UNSHIELDED_FAMILY_TAG);
     family_key(c, acct, colour, &tag)
 }
@@ -235,55 +225,55 @@ fn unshielded_key(c: &mut Circuit3, acct: &B32<Public>, colour: &CoinColor<Publi
 /// guarded by the member result. A skipped read's wires already hold zero,
 /// which is compactc's own lowering of this shape (no select) — the member
 /// result already carries whatever ambient guard is in scope, so no further
-/// conjunction is LOGICALLY needed.
+/// conjunction is logically needed.
 ///
 /// Not spelled as `c.when(member, |c| map.lookup(c, k)).or_default()`: this
-/// call NESTS under an outer `c.when` at its one non-straight-line call site
+/// call nests under an outer `c.when` at its one non-straight-line call site
 /// (`custody_dispatch`'s debit read), and the scope conjoins once on entry
-/// (`Circuit3::when`'s doc) where the old `_guarded` primitives conjoined
-/// PER EFFECT (`Circuit3::effect_guard`, once per read and once for the
+/// (`Circuit::when`'s doc) where the old `_guarded` primitives conjoined
+/// per effect (`Circuit::effect_guard`, once per read and once for the
 /// Impact op) — fewer rows, so not zero-movement. This calls the same core
 /// primitives the deleted `LedgerMap::lookup_guarded` did, so the row count
 /// is unchanged whether or not an outer scope is active.
 fn balance_at(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     map: &LedgerMap<B32<Public>, Uint<128, Public>>,
     k: &B32<Public>,
-) -> Assumed<Wire3<FieldT, Public>> {
+) -> Assumed<Wire<FieldT, Public>> {
     let member = map.member(c, k).field();
     let key = k.ledger_value(c);
     let atoms = <Uint<128, Public> as LedgerRepr>::atoms();
     Assumed::of_read(guarded_map_lookup_field(c, member, map.index(), &key, atoms))
 }
 
-/// The one Impact op [`LedgerMap::lookup`] emits, under an EXPLICIT guard
-/// resolved against the ambient scope PER EFFECT — [`Circuit3::
-/// public_transcript_input_guarded`] for each limb, [`Circuit3::impact_mixed`]
+/// The one Impact op [`LedgerMap::lookup`] emits, under an explicit guard
+/// resolved against the ambient scope per effect — [`Circuit::
+/// public_transcript_input_guarded`] for each limb, [`Circuit::impact_mixed`]
 /// for the op — exactly what the deleted `map_lookup_guarded_at` did. Kept
 /// as the one caller ([`balance_at`]) that nests an explicit data-dependent
 /// guard under another scope and needs the per-effect conjunction, not the
 /// once-on-entry one `c.when` gives.
 fn guarded_map_lookup_field(
-    c: &mut Circuit3,
-    guard: Wire3<FieldT, Public>,
+    c: &mut Circuit,
+    guard: Wire<FieldT, Public>,
     index: u8,
-    key: &minocrab_ledger::LedgerValue,
+    key: &minocrab_experimental::impact::raw::LedgerValue,
     atoms: Vec<AlignmentAtom>,
-) -> Wire3<FieldT, Public> {
-    let limbs: usize = atoms.iter().map(minocrab_ledger::atom_limbs).sum();
-    let wires: Vec<Wire3<FieldT, Public>> = (0..limbs)
+) -> Wire<FieldT, Public> {
+    let limbs: usize = atoms.iter().map(minocrab_experimental::impact::raw::atom_limbs).sum();
+    let wires: Vec<Wire<FieldT, Public>> = (0..limbs)
         .map(|_| c.public_transcript_input_guarded::<FieldT, Public>(guard))
         .collect();
-    let value = minocrab_ledger::LedgerValue::new(
+    let value = minocrab_experimental::impact::raw::LedgerValue::new(
         atoms,
-        wires.iter().map(|&w| minocrab::v3::ImpactElem::Wire(w)).collect(),
+        wires.iter().map(|&w| minocrab_experimental::impact::raw::ImpactElem::Wire(w)).collect(),
     );
-    let path = [minocrab_ledger::LedgerKey::Field(index)];
+    let path = [minocrab_experimental::impact::raw::LedgerKey::Field(index)];
     for op in [
-        minocrab_ledger::dup(0),
-        minocrab_ledger::idx_path(false, false, &path),
-        minocrab_ledger::idx_key(key),
-        minocrab_ledger::popeq(false, &value),
+        minocrab_experimental::impact::raw::dup(0),
+        minocrab_experimental::impact::raw::idx_path(false, false, &path),
+        minocrab_experimental::impact::raw::idx_key(key),
+        minocrab_experimental::impact::raw::popeq(false, &value),
     ] {
         c.impact_mixed(guard, &op.0);
     }
@@ -293,9 +283,9 @@ fn guarded_map_lookup_field(
 /// `ownerCommitment(sk)` — `persistentCommit<Bytes<21>>(OWNER_TAG, sk)`:
 /// one `persistent_hash` whose preimage is sk-then-tag, alignment
 /// `[bytes 32, bytes 21]` (the stdlib's `persistentCommit` is
-/// rand-then-value; here the VALUE is the 21-byte tag and the RAND the
+/// rand-then-value; here the value is the 21-byte tag and the rand the
 /// secret).
-fn owner_commitment(c: &mut Circuit3, sk: &common::SecretKey<Private>) -> B32<Private> {
+fn owner_commitment(c: &mut Circuit, sk: &common::SecretKey<Private>) -> B32<Private> {
     let sk = sk.bytes();
     let tag = c.constant(Fr::from_le_bytes(OWNER_TAG).expect("21 bytes fit"));
     let alignment = Alignment(vec![atom(32), atom(21)]);
@@ -308,30 +298,30 @@ fn owner_commitment(c: &mut Circuit3, sk: &common::SecretKey<Private>) -> B32<Pr
 
 // --- the EIP-712 byte codec --------------------------------------------------
 //
-// Every preimage is assembled as an ALIGNMENT plus the values' limbs — the
+// Every preimage is assembled as an alignment plus the values' limbs — the
 // keccak chip packs the bytes in-chip, so a preimage of k 32-byte words
 // costs the words' construction and nothing per byte. compactc builds each
 // `Bytes<N>` by byte explosion and rebuild before hashing it, which is the
 // dominant cost of its `execute` (see the row comparison in the report).
 
 /// `uint*Word(value)` — the value as a 32-byte big-endian ABI word.
-fn numeric_word<V: minocrab_std::v3::Vis3>(
-    c: &mut Circuit3,
-    value: Wire3<FieldT, V>,
+fn numeric_word<V: minocrab_std::Vis>(
+    c: &mut Circuit,
+    value: Wire<FieldT, V>,
 ) -> B32<V> {
-    crate::signet::numeric_abi_word(c, value)
+    crate::evm::numeric_word(c, value)
 }
 
 /// `addressWord(addr)` — the 20-byte address at bytes 12..31 of a word.
-fn address_word<V: minocrab_std::v3::Vis3>(
-    c: &mut Circuit3,
-    addr: Wire3<FieldT, V>,
+fn address_word<V: minocrab_std::Vis>(
+    c: &mut Circuit,
+    addr: Wire<FieldT, V>,
 ) -> B32<V> {
-    crate::signet::evm_address_abi_word(c, addr)
+    crate::evm::address_word(c, addr)
 }
 
 /// keccak256 over a list of 32-byte words.
-fn keccak_words<V: minocrab_std::v3::Vis3>(c: &mut Circuit3, words: &[&B32<V>]) -> B32<V> {
+fn keccak_words<V: minocrab_std::Vis>(c: &mut Circuit, words: &[&B32<V>]) -> B32<V> {
     let alignment = Alignment(words.iter().map(|_| atom(32)).collect());
     let mut limbs = Vec::with_capacity(words.len() * 2);
     for w in words {
@@ -345,9 +335,9 @@ fn keccak_words<V: minocrab_std::v3::Vis3>(c: &mut Circuit3, words: &[&B32<V>]) 
 /// `evmAccountIdFor(manager, owner, salt)` —
 /// `keccak256<Bytes<128>>(accountTag ‖ manager ‖ addressWord(owner) ‖ salt)`.
 fn evm_account_id_for(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     manager: &B32<Public>,
-    owner: Wire3<FieldT, Public>,
+    owner: Wire<FieldT, Public>,
     salt: &B32<Public>,
 ) -> B32<Public> {
     c.region("eip712: account id", |c| {
@@ -357,14 +347,14 @@ fn evm_account_id_for(
     })
 }
 
-/// `evmDomainSeparatorFor(manager, domain)`: the contract-address ALIAS is
+/// `evmDomainSeparatorFor(manager, domain)`: the contract-address alias is
 /// the low 20 bytes of `keccak256(manager)` — bytes 12..31 of the digest,
 /// recovered algebraically (`div_mod` at bit 96 of the low limb, the high
 /// byte rejoined at 2^152) — then
 /// `keccak256<Bytes<160>>(domainType ‖ domainName ‖ domainVersion ‖
 /// addressWord(alias) ‖ domain)`.
 fn evm_domain_separator_for(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     manager: &B32<Public>,
     domain: &B32<Public>,
 ) -> B32<Public> {
@@ -398,7 +388,7 @@ fn pow2_bytes(bytes: usize) -> Vec<u8> {
 /// `eip712Digest(domain, structHash)` —
 /// `keccak256<Bytes<66>>(0x19 ‖ 0x01 ‖ domain ‖ structHash)`.
 fn eip712_digest(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     domain: &B32<Public>,
     struct_hash: &B32<Public>,
 ) -> B32<Public> {
@@ -449,30 +439,30 @@ struct SignatureArg {
     s: Secp256k1Scalar<Private>,
 }
 
-/// The whole payload, DISCLOSED (`const p = disclose(payload)`) — every
+/// The whole payload, disclosed (`const p = disclose(payload)`) — every
 /// field crosses the gate under the one [`Payload`] label, and the public
 /// copies are what the guards, keys and ledger ops read.
 struct PublicPayload {
-    selector: Wire3<FieldT, Public>,
-    auth_mode: Wire3<FieldT, Public>,
+    selector: Wire<FieldT, Public>,
+    auth_mode: Wire<FieldT, Public>,
     account: B32<Public>,
-    owner: Wire3<FieldT, Public>,
+    owner: Wire<FieldT, Public>,
     account_salt: B32<Public>,
-    nonce: Wire3<FieldT, Public>,
-    valid_until: Wire3<FieldT, Public>,
+    nonce: Wire<FieldT, Public>,
+    valid_until: Wire<FieldT, Public>,
     primary_color: CoinColor<Public>,
-    primary_amount: Wire3<FieldT, Public>,
-    recipient_kind: Wire3<FieldT, Public>,
+    primary_amount: Wire<FieldT, Public>,
+    recipient_kind: Wire<FieldT, Public>,
     recipient: B32<Public>,
     to_account: B32<Public>,
     want_nonce: CoinNonce<Public>,
     want_color: CoinColor<Public>,
-    want_amount: Wire3<FieldT, Public>,
+    want_amount: Wire<FieldT, Public>,
     credit_account: B32<Public>,
 }
 
 impl ExecutePayloadArg {
-    fn disclose(self, c: &mut Circuit3) -> PublicPayload {
+    fn disclose(self, c: &mut Circuit) -> PublicPayload {
         PublicPayload {
             selector: self.selector.disclose_as::<Payload>(c).field(),
             auth_mode: self.auth_mode.disclose_as::<Payload>(c).field(),
@@ -496,12 +486,12 @@ impl ExecutePayloadArg {
 
 // --- readers -----------------------------------------------------------------
 
-#[contract]
+#[contract(lowering = minocrab_compat::profile)]
 impl Manager {
     /// `export circuit isRegistered(owner: Bytes<32>): Boolean`.
     #[circuit(output = "registered")]
     pub fn is_registered(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         owner: B32<Private>,
     ) -> Discloses<(QueriedAccount,), Bool<Public>> {
         let owner = owner.disclose_as::<QueriedAccount>(c);
@@ -511,18 +501,18 @@ impl Manager {
     /// `export circuit accountRecord(account: Bytes<32>): AccountRecord` — one
     /// policy query covering registration, mode, EVM owner and next nonce.
     /// Unknown accounts return the all-zero inactive record; native records
-    /// return zero owner/nonce WITHOUT reading the EVM maps' values (only their
+    /// return zero owner/nonce without reading the EVM maps' values (only their
     /// membership, asserted absent).
     #[circuit(output = "record")]
     pub fn account_record(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         account: B32<Private>,
     ) -> Discloses<(QueriedAccount,), AccountRecordOut> {
         let acct = account.disclose_as::<QueriedAccount>(c);
 
         let registered = MANAGER.accounts.member(c, &acct).field();
 
-        // The mode read carries `registered`, and a SKIPPED read's zero IS the
+        // The mode read carries `registered`, and a skipped read's zero is the
         // inactive record's mode — no select anywhere in this circuit, which is
         // compactc's own shape for the early-return ladder.
         let mode = c
@@ -579,7 +569,7 @@ impl Manager {
     /// `export circuit shieldedAccountBalance(owner, colour): Uint<128>`.
     #[circuit(output = "balance")]
     pub fn shielded_account_balance(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         owner: B32<Private>,
         colour: CoinColor<Private>,
     ) -> Discloses<(QueriedAccount, QueriedColour), Uint<128, Public>> {
@@ -593,7 +583,7 @@ impl Manager {
     /// `export circuit unshieldedAccountBalance(owner, colour): Uint<128>`.
     #[circuit(output = "balance")]
     pub fn unshielded_account_balance(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         owner: B32<Private>,
         colour: CoinColor<Private>,
     ) -> Discloses<(QueriedAccount, QueriedColour), Uint<128, Public>> {
@@ -608,7 +598,7 @@ impl Manager {
     /// 0 for a colour this contract has never seen.
     #[circuit(output = "value")]
     pub fn pool_value(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         colour: CoinColor<Private>,
     ) -> Discloses<(QueriedColour,), Uint<128, Public>> {
         let col = colour.disclose_as::<QueriedColour>(c);
@@ -620,7 +610,7 @@ impl Manager {
     /// `export circuit poolHasColour(colour): Boolean`.
     #[circuit(output = "present")]
     pub fn pool_has_colour(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         colour: CoinColor<Private>,
     ) -> Discloses<(QueriedColour,), Bool<Public>> {
         let col = colour.disclose_as::<QueriedColour>(c);
@@ -633,21 +623,20 @@ impl Manager {
     /// pooled coin (created here on first credit).
     #[circuit]
     pub fn deposit_shielded(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         coin: ShieldedCoinArg,
         account: B32<Private>,
     ) -> Discloses<(DepositCoin, CreditAccount)> {
         let coin_value = coin.value;
-        let coin = ShieldedCoinInfo3 {
+        let coin = ShieldedCoinInfo {
             nonce: coin.nonce.disclose_as::<DepositCoin>(c),
             color: coin.color.disclose_as::<DepositCoin>(c),
             value: coin_value.disclose_as::<DepositCoin>(c).field(),
         };
         let acct = account.disclose_as::<CreditAccount>(c);
 
-        // Kept even though guard threading no longer uses it: dropping this
-        // `Copy` would renumber every later identifier, moving the ZKIR
-        // (notes/edsl-trim.org §B, the removal's zero-movement gate).
+        // The `one` compactc threads, unused here: dropping this `Copy` would
+        // renumber every later identifier, moving the ZKIR (notes/edsl-trim.org §B).
         let _ = c.constant(1u64);
 
         // assert(c.value > 0, "deposit must be positive")
@@ -671,7 +660,7 @@ impl Manager {
         let member = MANAGER.pools.member(c, &coin.color).field();
         c.when(member, |c| {
             let pooled = MANAGER.pools.lookup(c, &coin.color);
-            let merged = kernel::merge_coin_immediate(c, &pooled, &coin);
+            let merged = compat::kernel::merge_coin_immediate(c, &pooled, &coin);
             let me = kernel::self_address(c);
             let recipient = contract_recipient(c, me);
             MANAGER.pools.insert_coin(c, &coin.color, &merged, &recipient);
@@ -688,8 +677,7 @@ impl Manager {
         let k = shielded_key(c, &acct, &coin.color);
         let prior = balance_at(c, &MANAGER.shielded_balances, &k).stale(c);
         let sum = c.add(prior, coin.value);
-        let new_balance = Uint::<128, Public>::from_field_unchecked(sum);
-        new_balance.constrain_input(c);
+        let new_balance = Uint::<128, Public>::from_field_checked(c, sum);
         MANAGER.shielded_balances.insert(c, &k, &new_balance);
 
         Discloses::of(())
@@ -700,7 +688,7 @@ impl Manager {
     /// balancing enforces the deposit's honesty.
     #[circuit]
     pub fn deposit_unshielded(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         colour: CoinColor<Private>,
         amount: Uint<128>,
         account: B32<Private>,
@@ -713,26 +701,25 @@ impl Manager {
         let known = MANAGER.accounts.member(c, &acct);
         c.assert(is_true(known).message("credit account is not registered"));
 
-        kernel::receive_unshielded(c, col, amt);
+        compat::kernel::receive_unshielded(c, col, amt);
 
         let k = unshielded_key(c, &acct, &col);
         let prior = balance_at(c, &MANAGER.unshielded_balances, &k).stale(c);
         let sum = c.add(prior, amt.field());
-        let new_balance = Uint::<128, Public>::from_field_unchecked(sum);
-        new_balance.constrain_input(c);
+        let new_balance = Uint::<128, Public>::from_field_checked(c, sum);
         MANAGER.unshielded_balances.insert(c, &k, &new_balance);
 
         Discloses::of(())
     }
 
-    /// `export circuit execute(payload, sig, pk): []` — THE gateway: validate
+    /// `export circuit execute(payload, sig, pk): []` — the gateway: validate
     /// the envelope, compute the EIP-712 digest (all four struct-hash branches
     /// — a circuit has no control flow), run the ECDSA check straight-line,
     /// resolve the acting account through the witness choke point, enforce the
-    /// deadline, then register OR dispatch custody, then write the nonce.
+    /// deadline, then register or dispatch custody, then write the nonce.
     #[circuit]
     pub fn execute(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         payload: ExecutePayloadArg,
         sig: SignatureArg,
         pk: Secp256k1Point,
@@ -748,7 +735,7 @@ impl Manager {
 
         // const digest = p.selector == 0 ? default<Bytes<32>>
         //   : evmDigestFor(manager, deploymentDomain, p)
-        // — the deploymentDomain READ is guarded by the branch; the keccak
+        // — the deploymentDomain read is guarded by the branch; the keccak
         // chain runs unconditionally (a circuit has no control flow).
         let not_native_reg = c.not(f.is0);
         let domain = {
@@ -765,16 +752,14 @@ impl Manager {
         let struct_hash = evm_struct_hash_for(c, &manager, &p, &f);
         let evm_digest = eip712_digest(c, &domain_separator, &struct_hash);
         let zero = c.constant(0u64);
-        let digest = B32 {
-            hi: c.cond_select(f.is0, zero, evm_digest.hi),
-            lo: c.cond_select(f.is0, zero, evm_digest.lo),
-        };
+        let zeros = B32 { hi: zero, lo: zero };
+        let digest = B32::cond_select(c, f.is0, &zeros, &evm_digest);
 
         // const signatureOk = secp256k1EcdsaVerify(digest, sig, pk)
         // const signer = secp256k1EthereumAddress(pk)
-        // STRAIGHT-LINE, exactly as the source demands (the pinned proving
+        // straight-line, exactly as the source demands (the pinned proving
         // backend cannot lower guarded secp256k1 operations).
-        let signature = minocrab_std::v3::Secp256k1EcdsaSignature {
+        let signature = minocrab_std::Secp256k1EcdsaSignature {
             r: sig.r.scalar(),
             s: sig.s.scalar(),
         };
@@ -782,8 +767,8 @@ impl Manager {
             hi: digest.hi.private(),
             lo: digest.lo.private(),
         };
-        let signature_ok = minocrab_std::v3::secp256k1_ecdsa_verify(c, &digest_priv, &signature, pk.point());
-        let signer = minocrab_std::v3::secp256k1_ethereum_address(c, pk.point());
+        let signature_ok = compat::secp::secp256k1_ecdsa_verify(c, &digest_priv, &signature, pk.point());
+        let signer = minocrab_std::secp256k1_ethereum_address(c, pk.point());
 
         let is_evm_action = c.mul(f.is_evm_authorized, f.is_action);
 
@@ -797,7 +782,7 @@ impl Manager {
 
         // assert(!isEvmRegistration || evmRegistrationAccount == p.account)
         c.when(f.is1, |c| {
-            let same = b32_eq(c, &evm_registration_account, &p.account);
+            let same = evm_registration_account.eq(c, p.account).field();
             c.assert_with(same, Some("EVM registration account id mismatch"));
         });
 
@@ -810,13 +795,11 @@ impl Manager {
             // authenticatedNativeAccount(nativeAccount)
             let known = MANAGER.accounts.member(c, &native_account).field();
             c.assert_with(known, Some("caller's owner witness matches no registered account"));
-            let has_mode = MANAGER.account_modes.member(c, &native_account).field();
-            c.assert_with(has_mode, Some("registered account has no authorization mode"));
-            let mode = MANAGER.account_modes.lookup(c, &native_account).field();
+            let mode = MANAGER.account_modes.lookup_required(c, &native_account, "registered account has no authorization mode").field();
             let native_mode = c.test_eq(mode, 0u64);
             c.assert_with(native_mode, Some("EVM account cannot enter native authorization"));
             // …then the action-level checks.
-            let same = b32_eq(c, &native_account, &p.account);
+            let same = native_account.eq(c, p.account).field();
             c.assert_with(same, Some("native witness does not match supplied account transcript"));
             let mode_again = MANAGER.account_modes.lookup(c, &native_account).field();
             let mode_matches = c.test_eq(mode_again, p.auth_mode);
@@ -838,9 +821,7 @@ impl Manager {
         c.when(g_evm_action, |c| {
             let known = MANAGER.accounts.member(c, &p.account).field();
             c.assert_with(known, Some("gateway account is not registered"));
-            let has_mode = MANAGER.account_modes.member(c, &p.account).field();
-            c.assert_with(has_mode, Some("registered account has no authorization mode"));
-            let mode = MANAGER.account_modes.lookup(c, &p.account).field();
+            let mode = MANAGER.account_modes.lookup_required(c, &p.account, "registered account has no authorization mode").field();
             let evm_mode = c.test_eq(mode, 1u64);
             c.assert_with(evm_mode, Some("authorization mode does not match account record"));
             // assert(evmOwners.member && evmNonces.member) — short-circuit.
@@ -871,18 +852,18 @@ impl Manager {
             // Compact's subtraction guard, folded with this branch.
             let no_underflow = ge(until, 3600u64).eval(c).field();
             c.assert_with(no_underflow, Some("result of subtraction would be negative"));
-            // HAZARD kept as-is from the source: on a NATIVE call this
+            // Hazard kept as-is from the source: on a native call this
             // subtraction underflows into a negative field element — safe only
             // because its single consumer is the guarded blockTimeGte below.
             let minus = c.constant(3600u64);
             let neg = c.neg(minus);
             let earliest = c.add(p.valid_until, neg);
-            let not_expired_early = kernel::block_time_gte(c, Uint::from_field_unchecked(earliest));
+            let not_expired_early = compat::kernel::block_time_gte(c, Uint::from_field_unchecked(earliest));
             c.assert(
                 is_true(not_expired_early)
                     .message("EVM authorization deadline exceeds 3600-second horizon"),
             );
-            let not_expired = kernel::block_time_lt(c, until);
+            let not_expired = compat::kernel::block_time_lt(c, until);
             c.assert(is_true(not_expired).message("EVM authorization has expired"));
         });
 
@@ -925,11 +906,10 @@ impl Manager {
             custody_dispatch(c, &p, &f, &account);
         });
 
-        // The checked nonce write, AFTER the custody dispatch.
+        // The checked nonce write, after the custody dispatch.
         let one_c = c.constant(1u64);
         let incremented = c.add(p.nonce, one_c);
-        let inc_u64 = Uint::<64, Public>::from_field_unchecked(incremented);
-        inc_u64.constrain_input(c);
+        let inc_u64 = Uint::<64, Public>::from_field_checked(c, incremented);
         c.when(is_evm_action, |c| {
             let grows = gt(inc_u64, Uint::<64, Public>::from_field_unchecked(p.nonce))
                 .eval(c)
@@ -955,10 +935,10 @@ pub struct AccountRecordOut {
     pub next_nonce: Uint<64, Public>,
 }
 
-impl minocrab_std::v3::CircuitOut for AccountRecordOut {
+impl minocrab_std::CircuitOut for AccountRecordOut {
     const SLOTS: usize = 4;
 
-    fn emit(self, c: &mut Circuit3, label: &str) {
+    fn emit(self, c: &mut Circuit, label: &str) {
         self.registered.emit(c, &format!("{label} registered"));
         self.mode.emit(c, &format!("{label} mode"));
         self.owner.emit(c, &format!("{label} owner"));
@@ -981,21 +961,21 @@ struct ShieldedCoinArg {
 /// The selector/mode flags every `execute` stage muxes on. All Public — the
 /// payload is disclosed before anything reads it.
 struct Flags {
-    is0: Wire3<FieldT, Public>,
-    is1: Wire3<FieldT, Public>,
-    is2: Wire3<FieldT, Public>,
-    is3: Wire3<FieldT, Public>,
-    is4: Wire3<FieldT, Public>,
-    is5: Wire3<FieldT, Public>,
-    is6: Wire3<FieldT, Public>,
-    is_registration: Wire3<FieldT, Public>,
-    is_action: Wire3<FieldT, Public>,
-    is_evm_authorized: Wire3<FieldT, Public>,
-    is_native_authorized: Wire3<FieldT, Public>,
+    is0: Wire<FieldT, Public>,
+    is1: Wire<FieldT, Public>,
+    is2: Wire<FieldT, Public>,
+    is3: Wire<FieldT, Public>,
+    is4: Wire<FieldT, Public>,
+    is5: Wire<FieldT, Public>,
+    is6: Wire<FieldT, Public>,
+    is_registration: Wire<FieldT, Public>,
+    is_action: Wire<FieldT, Public>,
+    is_evm_authorized: Wire<FieldT, Public>,
+    is_native_authorized: Wire<FieldT, Public>,
 }
 
 impl Flags {
-    fn of(c: &mut Circuit3, p: &PublicPayload) -> Flags {
+    fn of(c: &mut Circuit, p: &PublicPayload) -> Flags {
         let is0 = c.test_eq(p.selector, 0u64);
         let is1 = c.test_eq(p.selector, 1u64);
         let is2 = c.test_eq(p.selector, 2u64);
@@ -1023,12 +1003,12 @@ impl Flags {
     }
 }
 
-/// `assertActionEnvelope(p)` — canonical-zero envelope validation: ONE
-/// selector implies ONE field set; everything inactive is constrained to
+/// `assertActionEnvelope(p)` — canonical-zero envelope validation: one
+/// selector implies one field set; everything inactive is constrained to
 /// its canonical zero before authentication or custody logic runs. Pure
 /// arithmetic (no ledger reads), so it is exactly its assert list, each
 /// folded with its branch's guard.
-fn assert_action_envelope(c: &mut Circuit3, p: &PublicPayload, f: &Flags) {
+fn assert_action_envelope(c: &mut Circuit, p: &PublicPayload, f: &Flags) {
     let sel = Uint::<8, Public>::from_field_unchecked(p.selector);
     let auth = Uint::<8, Public>::from_field_unchecked(p.auth_mode);
     let kind = Uint::<8, Public>::from_field_unchecked(p.recipient_kind);
@@ -1122,7 +1102,7 @@ fn assert_action_envelope(c: &mut Circuit3, p: &PublicPayload, f: &Flags) {
             c.assert_with(positive, Some("withdraw amount must be positive"));
             let in_range = le(kind, 1u64).eval(c).field();
             c.assert_with(in_range, Some("withdraw recipient kind is invalid"));
-            // Kind 1 is the CONTRACT recipient — refused (the ledger's
+            // Kind 1 is the contract recipient — refused (the ledger's
             // effects check makes it unsatisfiable at these pins).
             c.assert_with(kind0, Some("withdraw to a contract recipient is not supported"));
             let rcpt_set = c.not(rcpt0);
@@ -1156,7 +1136,7 @@ fn assert_action_envelope(c: &mut Circuit3, p: &PublicPayload, f: &Flags) {
             c.assert_with(positive, Some("swap must give a positive amount"));
             let in_range = le(kind, 2u64).eval(c).field();
             c.assert_with(in_range, Some("swap recipient kind is invalid"));
-            // Kind 2 is the CONTRACT taker — refused.
+            // Kind 2 is the contract taker — refused.
             let user_only = le(kind, 1u64).eval(c).field();
             c.assert_with(user_only, Some("swap to a contract taker is not supported"));
             c.when(kind0, |c| {
@@ -1170,7 +1150,7 @@ fn assert_action_envelope(c: &mut Circuit3, p: &PublicPayload, f: &Flags) {
             c.assert_with(to0, Some("swap transfer target must be inactive"));
             let want_positive = gt(want, 0u64).eval(c).field();
             c.assert_with(want_positive, Some("swap must want a positive amount"));
-            let same = b32_eq(c, &p.primary_color.bytes(), &p.want_color.bytes());
+            let same = p.primary_color.bytes().eq(c, p.want_color.bytes()).field();
             let distinct = c.not(same);
             c.assert_with(distinct, Some("swap legs must be different colours"));
             let credit_set = c.not(credit0);
@@ -1181,11 +1161,11 @@ fn assert_action_envelope(c: &mut Circuit3, p: &PublicPayload, f: &Flags) {
 
 /// `evmStructHashFor(manager, payload)` — one branch per action shape, each
 /// opening with its own frozen type hash. A circuit has no control flow, so
-/// ALL FOUR keccak preimages are computed and the digest selected; the
+/// all four keccak preimages are computed and the digest selected; the
 /// `assert(p.selector == 6)` of the fall-through arm binds only when the
 /// call reaches it (selector not in 0..5).
 fn evm_struct_hash_for(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     manager: &B32<Public>,
     p: &PublicPayload,
     f: &Flags,
@@ -1299,10 +1279,10 @@ fn evm_struct_hash_for(
     })
 }
 
-/// `custodyDispatch(p, account)` — selectors 2..6 as ONE debit leg, ONE
+/// `custodyDispatch(p, account)` — selectors 2..6 as one debit leg, one
 /// credit leg and shared sends, with family, recipient, account and colour
 /// muxed in. Emitted under the caller's `!isRegistration` guard (ambient).
-fn custody_dispatch(c: &mut Circuit3, p: &PublicPayload, f: &Flags, account: &B32<Public>) {
+fn custody_dispatch(c: &mut Circuit, p: &PublicPayload, f: &Flags, account: &B32<Public>) {
     let is_transfer = c.add(f.is4, f.is5);
     let debit_shielded = {
         let a = c.add(f.is2, f.is4);
@@ -1327,7 +1307,7 @@ fn custody_dispatch(c: &mut Circuit3, p: &PublicPayload, f: &Flags, account: &B3
         .eval(c)
         .field();
         c.assert_with(want_positive, Some("swap must want a positive amount"));
-        let same = b32_eq(c, &p.primary_color.bytes(), &p.want_color.bytes());
+        let same = p.primary_color.bytes().eq(c, p.want_color.bytes()).field();
         let distinct = c.not(same);
         c.assert_with(distinct, Some("swap legs must be different colours"));
     });
@@ -1336,19 +1316,19 @@ fn custody_dispatch(c: &mut Circuit3, p: &PublicPayload, f: &Flags, account: &B3
     c.when(is_transfer, |c| {
         let known = MANAGER.accounts.member(c, &p.to_account).field();
         c.assert_with(known, Some("destination account is not registered"));
-        let same = b32_eq(c, account, &p.to_account);
+        let same = account.eq(c, p.to_account).field();
         let different = c.not(same);
         c.assert_with(different, Some("internal transfer to the same account"));
         let positive = gt(val_u128, 0u64).eval(c).field();
         c.assert_with(positive, Some("internal transfer must be positive"));
     });
 
-    // --- 2. THE PER-(ACCOUNT, COLOUR) GUARD ---
+    // --- 2. The per-(account, colour) guard ---
     let shielded_tag = B32::pad(c, SHIELDED_FAMILY_TAG);
     let unshielded_tag = B32::pad(c, UNSHIELDED_FAMILY_TAG);
     let debit_tag = B32::cond_select(c, debit_shielded, &shielded_tag, &unshielded_tag);
     let debit_key = family_key(c, account, &p.primary_color, &debit_tag);
-    // Each family's read fires under its arm and reads back ZERO on the
+    // Each family's read fires under its arm and reads back zero on the
     // other, so the mux is one `add` of two values at most one of which is
     // live — no select chain.
     let zero = c.constant(0u64);
@@ -1371,9 +1351,7 @@ fn custody_dispatch(c: &mut Circuit3, p: &PublicPayload, f: &Flags, account: &B3
 
     // --- 3. the pool guard and the shielded give leg (selectors 2 and 6) ---
     c.when(needs_pool, |c| {
-        let pooled_present = MANAGER.pools.member(c, &p.primary_color).field();
-        c.assert_with(pooled_present, Some("no pooled coin for this colour"));
-        let pooled = MANAGER.pools.lookup(c, &p.primary_color);
+        let pooled = MANAGER.pools.lookup_required(c, &p.primary_color, "no pooled coin for this colour");
         let pool_covers = ge(
             Uint::<128, Public>::from_field_unchecked(pooled.value),
             val_u128,
@@ -1382,7 +1360,7 @@ fn custody_dispatch(c: &mut Circuit3, p: &PublicPayload, f: &Flags, account: &B3
         .field();
         c.assert_with(pool_covers, Some("pooled colour balance too low"));
 
-        // THE CLAMP: on a run that reaches this block `safeGive == val`; on
+        // The clamp: on a run that reaches this block `safeGive == val`; on
         // a guarded-off run the zeroed pool read makes `pooled.value - val`
         // negative, and both change computations below must stay in range.
         let safe_give = c.cond_select(pool_covers, val, 0u64);
@@ -1403,7 +1381,7 @@ fn custody_dispatch(c: &mut Circuit3, p: &PublicPayload, f: &Flags, account: &B3
             c.add(f.is2, named)
         };
         c.when(send_arm, |c| {
-            // ONE sendShielded shared by the withdrawal and the named-swap
+            // One sendShielded shared by the withdrawal and the named-swap
             // shape; the recipient discriminant is muxed (withdraw kind 0 =
             // user key; named swap kind 1 = user key). Both arms carry the
             // same 32 recipient bytes, so the unused arm needs no zeroing.
@@ -1411,14 +1389,14 @@ fn custody_dispatch(c: &mut Circuit3, p: &PublicPayload, f: &Flags, account: &B3
             let k1 = c.test_eq(p.recipient_kind, 1u64);
             let use_left = c.cond_select(f.is2, k0, k1);
             // `p.recipient` is genuinely dual-use — a wallet key or a
-            // contract address, selected by the kind bit — so BOTH arms
+            // contract address, selected by the kind bit — so both arms
             // carry the same limbs and the wrap is per-arm.
             let recipient = CoinRecipient {
                 is_left: use_left,
-                left: minocrab_std::v3::ZswapCoinPublicKey(p.recipient),
-                right: minocrab_std::v3::ContractAddress(p.recipient),
+                left: minocrab_std::ZswapCoinPublicKey(p.recipient),
+                right: minocrab_std::ContractAddress(p.recipient),
             };
-            let result = kernel::send_shielded(
+            let result = compat::kernel::send_shielded(
                 c,
                 &pooled,
                 &recipient,
@@ -1440,7 +1418,7 @@ fn custody_dispatch(c: &mut Circuit3, p: &PublicPayload, f: &Flags, account: &B3
         });
         let open_arm = c.not(send_arm);
         c.when(open_arm, |c| {
-            // THE OPEN OFFER: consume the pooled coin as a zswap input,
+            // The open offer: consume the pooled coin as a zswap input,
             // claim its nullifier, and create only the change back to this
             // contract — the released value stands as a positive imbalance.
             let me = kernel::self_address(c);
@@ -1477,7 +1455,7 @@ fn custody_dispatch(c: &mut Circuit3, p: &PublicPayload, f: &Flags, account: &B3
                 let evolved = c.transient_hash(&[tag, two, pooled.nonce.bytes().lo]);
                 let (_overflow, lo) = c.div_mod_power_of_two(evolved, 248);
                 let zero = c.constant(0u64);
-                let change_coin = ShieldedCoinInfo3 {
+                let change_coin = ShieldedCoinInfo {
                     nonce: CoinNonce(B32 { hi: zero, lo }),
                     color: p.primary_color,
                     value: change_value,
@@ -1498,32 +1476,27 @@ fn custody_dispatch(c: &mut Circuit3, p: &PublicPayload, f: &Flags, account: &B3
 
     // --- the unshielded give leg (selector 3) ---
     c.when(f.is3, |c| {
-        let funded = kernel::unshielded_balance_gte(c, p.primary_color, val_u128);
+        let funded = compat::kernel::unshielded_balance_gte(c, p.primary_color, val_u128);
         c.assert(is_true(funded).message("contract unshielded balance too low"));
         // sendUnshielded's recipient is Either<ContractAddress, UserAddress>:
-        // LEFT = contract, RIGHT = user; envelope kind 0 = user key. The
-        // UNUSED arm must be the type default (zero) — the claim embeds both
+        // Left = contract, right = user; envelope kind 0 = user key. The
+        // unused arm must be the type default (zero) — the claim embeds both
         // arms' bytes in the effects transcript, so this is PI-visible.
         let k0 = c.test_eq(p.recipient_kind, 0u64);
         let is_left = c.not(k0);
         let zero = c.constant(0u64);
-        let left = B32 {
-            hi: c.cond_select(k0, zero, p.recipient.hi),
-            lo: c.cond_select(k0, zero, p.recipient.lo),
-        };
-        let right = B32 {
-            hi: c.cond_select(k0, p.recipient.hi, zero),
-            lo: c.cond_select(k0, p.recipient.lo, zero),
-        };
+        let zeros = B32 { hi: zero, lo: zero };
+        let left = B32::cond_select(c, k0, &zeros, &p.recipient);
+        let right = B32::cond_select(c, k0, &p.recipient, &zeros);
         let recipient = Either {
             is_left: Bool::from_field_unchecked(is_left),
             left: ContractAddress(left),
             right: UserAddress(right),
         };
-        kernel::send_unshielded(c, p.primary_color, val_u128, &recipient);
+        compat::kernel::send_unshielded(c, p.primary_color, val_u128, &recipient);
     });
 
-    // --- ONE debit write, into the muxed family ---
+    // --- one debit write, into the muxed family ---
     let covered_again = ge(
         Uint::<128, Public>::from_field_unchecked(debit_balance),
         val_u128,
@@ -1542,22 +1515,21 @@ fn custody_dispatch(c: &mut Circuit3, p: &PublicPayload, f: &Flags, account: &B3
         MANAGER.unshielded_balances.insert(c, &debit_key, &new_debit);
     });
 
-    // --- the swap WANT leg: claim wantCoin into custody ---
+    // --- the swap want leg: claim wantCoin into custody ---
     c.when(f.is6, |c| {
-        let want_coin = ShieldedCoinInfo3 {
+        let want_coin = ShieldedCoinInfo {
             nonce: p.want_nonce,
             color: p.want_color,
             value: p.want_amount,
         };
-        // Kept even though guard threading no longer uses it: dropping this
-        // `Copy` would renumber every later identifier, moving the ZKIR
-        // (notes/edsl-trim.org §B, the removal's zero-movement gate).
+        // The `one` compactc threads, unused here: dropping this `Copy` would
+        // renumber every later identifier, moving the ZKIR (notes/edsl-trim.org §B).
         let _ = c.constant(1u64);
         common::receive_shielded(c, &want_coin);
         let member = MANAGER.pools.member(c, &p.want_color).field();
         c.when(member, |c| {
             let pooled = MANAGER.pools.lookup(c, &p.want_color);
-            let merged = kernel::merge_coin_immediate(c, &pooled, &want_coin);
+            let merged = compat::kernel::merge_coin_immediate(c, &pooled, &want_coin);
             let me = kernel::self_address(c);
             let recipient = contract_recipient(c, me);
             MANAGER
@@ -1574,7 +1546,7 @@ fn custody_dispatch(c: &mut Circuit3, p: &PublicPayload, f: &Flags, account: &B3
         });
     });
 
-    // --- ONE credit write (selectors 4, 5, 6) ---
+    // --- one credit write (selectors 4, 5, 6) ---
     c.when(has_credit, |c| {
         let credit_acct = B32::cond_select(c, f.is6, &p.credit_account, &p.to_account);
         let credit_colour = CoinColor::cond_select(c, f.is6, &p.want_color, &p.primary_color);

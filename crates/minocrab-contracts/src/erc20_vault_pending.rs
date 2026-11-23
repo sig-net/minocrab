@@ -1,18 +1,15 @@
-//! The erc20-vault on the TYPED EVM-CALL API — M37 rung D: every Sig
+//! The erc20-vault on the typed evm-call API: every Sig
 //! Network suspension owned by an [`crate::evm_flow::Pending`] slot whose
-//! type is the CALL it makes. (It was written as the twin of the
-//! `erc20_vault_modern` fork; that fork and its two parents were retired in
-//! M28 — notes/vault-refresh.org §0 — and this lineage is the one place
-//! their constructions live on.)
+//! type is the call it makes.
 //!
-//! WHAT THIS LINEAGE IS. A NEW DEPLOYMENT LAYOUT, not a byte-twin: its
+//! What this lineage is. A new deployment layout, not a byte-twin: its
 //! ledger block declares twenty-two fields (so compactc-style segmentation
 //! is live — every path is two elements), its request records and
 //! environments sit in `Pending` slots, and its settle circuits take one
-//! typed TICKET each. It has no compactc twin to differential against; the
+//! typed ticket each. It has no compactc twin to differential against; the
 //! spec harness's shared model is the oracle for it, as for the opt lineage.
 //!
-//! WHAT MOVED OUT OF THE CIRCUITS, and where it went:
+//! What moved out of the circuits, and where it went:
 //!
 //! | invariant                        | now                                     |
 //! |----------------------------------|-----------------------------------------|
@@ -30,48 +27,48 @@
 //! | refund commitment hash + gate    | `Owned` + `request_owned` / `refund_to_owner` |
 //! | "a `false` must not complete"    | `EvmCall::succeeded`, asserted          |
 //!
-//! THE OUTCOME PICKS THE CIRCUIT (M37 rung D, notes/evm-calls.org §3). The
+//! The outcome picks the circuit (notes/evm-calls.org §3). The
 //! two tickets are symmetric and neither stands in for the other:
 //!
 //! - `complete_withdraw` takes a `Succeeded<Withdrawal>`, and
 //!   `Pending::complete` asserts the call's own success predicate — for an
-//!   ERC-20 `transfer` that is the attested flag. So a `transfer` that MINED
-//!   AND RETURNED `false` cannot complete, whoever presents it. It is also
-//!   ANYONE'S: no secret is witnessed, and there is nothing to mint (the
+//!   ERC-20 `transfer` that is the attested flag. So a `transfer` that mined
+//!   and returned `false` cannot complete, whoever presents it. It is also
+//!   anyone's: no secret is witnessed, and there is nothing to mint (the
 //!   tokens left the vault's EVM account).
-//! - `refund_withdrawal` takes a `Failed<…>` and accepts BOTH non-successes
+//! - `refund_withdrawal` takes a `Failed<…>` and accepts both non-successes
 //!   — the MPC's failure kind (reverted, never mined, or an undecodable
 //!   return) and the executed-`false` — opening the owner commitment with a
 //!   fresh witness before it re-mints.
 //!
 //! The deployed lineage put the executed-`false` case in a `when(!succeeded)`
-//! branch INSIDE `completeWithdraw`, hoisting a secret witness for a branch
+//! branch inside `completeWithdraw`, hoisting a secret witness for a branch
 //! it might not take. That is Gap 2; this is its repair, and the API has no
 //! method that lets it be written again.
 //!
-//! WHY THE OTHER THREE COMPLETIONS ARE STILL THE OWNER'S. `complete_swap`,
+//! Why the other three completions are still the owner's. `complete_swap`,
 //! `complete_supply` and `complete_redeem` mint their proceeds to
 //! `own_public_key` — the caller's. Making them anyone's would make the
 //! proceeds anyone's, so each still opens its stored commitment with a fresh
-//! witness. That is a CHECKED consumption of a secret, not the hoisted one
+//! witness. That is a checked consumption of a secret, not the hoisted one
 //! Gap 2 is about; nothing in them runs before the check. (Their `refund_*`
 //! twins take a `Failed` ticket whose executed branch is unreachable: the
-//! attested value is a NUMBER, so `EvmCall::succeeded` is `always` and only
+//! attested value is a number, so `EvmCall::succeeded` is `always` and only
 //! the MPC's failure kind refunds — the deployed semantics exactly.)
 //!
-//! THE IDENTITY COMMITMENT follows upstream's protocol move (`0d9c1660`):
+//! The identity commitment follows upstream's protocol move (`0d9c1660`):
 //! `userCommitment` is `upgradeFromTransient(transientHash([pad, sk]))`,
 //! not the SHA-256 forms the older lineages keep — ~1,500 rows out of
 //! `initialize`, `deposit` and `claim` each, and the same bytes the deployed
 //! vault derives keys from.
 //!
-//! WHAT STAYED, deliberately: the initialization gate, the deployer gate,
+//! What stayed, deliberately: the initialization gate, the deployer gate,
 //! the business guards, the coin burns and mints, and every authorization
-//! with a FRESH witness (`witness_sk` in `claim`, the three owner-gated
+//! with a fresh witness (`witness_sk` in `claim`, the three owner-gated
 //! completions, and every refund).
 //!
-//! ONE DEVIATION IN CIRCUIT COUNT from the deployed contract: `refund`
-//! routed a failure over BOTH request maps in one circuit with guarded
+//! One deviation in circuit count from the deployed contract: `refund`
+//! routed a failure over both request maps in one circuit with guarded
 //! lookups; a `Pending` slot settles its own entries, so there is one refund
 //! circuit per flow here. Seventeen circuits in total, on twenty-two ledger
 //! fields; `approveRouter` and `approveStata` file into a
@@ -80,11 +77,11 @@
 
 use core::cell::Cell;
 
-use minocrab::v3::{Circuit3, FieldT, Wire3};
+use minocrab::{Circuit, FieldT, Wire};
 use minocrab::{Private, Public};
-use minocrab_std::v3::kernel;
-use minocrab_std::v3::{
-    contract, eq, label, own_public_key, Bytes, Check, CircuitArg, CoinColor, CoinNonce,
+use minocrab_std::kernel;
+use minocrab_std::{
+    contract, eq, label, own_public_key, Bytes, CircuitArg, CoinColor, CoinNonce,
     CoinRecipient, Disclose, Discloses, Either, Ledger, LedgerCell, LedgerCounter, LedgerRepr,
     Maybe, Secp256k1Point, TokenDomainSeparator, Uint, B32,
 };
@@ -100,7 +97,7 @@ use crate::signet;
 use crate::signet_flow::{Requested, Settled, Signet, Signing};
 use crate::signet_v1::schema;
 
-// ---- the wire: constants inherited from the retired borsh fork ---------------------
+// ---- the wire: constants shared with the Borsh lineage ---------------------------
 
 /// The vault's two Borsh-format (V2) event instantiations: the versioned,
 /// kind-tagged record the `Pending` slots write (`signet::SignBidirectionalEventV2`).
@@ -110,7 +107,7 @@ pub type SwapEventV2<V> = signet::SignBidirectionalEventV2<V, SWAP_WORDS>;
 
 /// Byte 31 of `vault_token_domain_separator`'s encoding: the kind tag of
 /// "the vault token of an EVM ERC-20". The separator is the injective
-/// encoding `[hi: TAG, lo: erc20]` rather than a hash (M10 rung iii): a
+/// encoding `[hi: TAG, lo: erc20]` rather than a hash: a
 /// pre-token only has to be distinct per ERC-20 and the ledger hashes it
 /// again in `tokenType`.
 pub const VAULT_TOKEN_TAG: u8 = 0x01;
@@ -118,40 +115,40 @@ pub const VAULT_TOKEN_TAG: u8 = 0x01;
 /// The number of response kinds — `Tag<RESPONSE_KINDS>` is one Borsh byte.
 pub const RESPONSE_KINDS: u32 = 7;
 
-/// Response kinds, at BYTE 0 of every attested output AND in the last byte of
-/// every V2 request record (M11 stages 5 and 7; the format is specified in
+/// Response kinds, at byte 0 of every attested output and in the last byte of
+/// every V2 request record (the format is specified in
 /// spec/borsh-subset.md and notes/borsh-format.org).
 ///
 /// The discriminant is what makes cross-circuit attestation replay
-/// STRUCTURALLY impossible: the kind is inside the signed preimage, so two
+/// structurally impossible: the kind is inside the signed preimage, so two
 /// settle circuits' digests differ for the same request id and outcome, and
-/// each circuit asserts its own kind (`EvmCall::KIND`, checked by
-/// `Pending::complete`).
+/// each circuit asserts its own kind (the `RESPONSE_KIND_*` constants below,
+/// which this lineage's `Filing` impls name).
 ///
-/// Since M37 rung D the CALL TYPE names the kind, so this table's last
+/// The call type names the kind, so this table's last
 /// column is a type in [`crate::evm`] rather than a response struct here:
 ///
 /// | kind | name | recorded by | settled by | attested | filing → call |
 /// |------|------|-------------|------------|----------|---------------|
-/// | 0 | CLAIM | `deposit` | `claim` | `bool success` | [`Deposit`] → `erc20::Transfer` |
-/// | 1 | WITHDRAW | `withdraw` | `complete_withdraw` | `bool success` | [`Withdrawal`] → `erc20::Transfer` |
-/// | 2 | SWAP | `swap` | `complete_swap` | `uint64 amountIn` | [`Swap`] → `uniswap_v3::ExactOutputSingle` |
-/// | 3 | FAILURE | — | `refund_*` | — | `evm_flow::FAILURE_KIND` |
-/// | 4 | APPROVE | `approve_router`, `approve_stata` | — | `bool` | [`Approval`] → `erc20::Approve` |
-/// | 5 | SUPPLY | `supply` | `complete_supply` | `uint64 shares` | [`Supply`] → `erc4626::Deposit` |
-/// | 6 | REDEEM | `redeem` | `complete_redeem` | `uint64 assets` | [`Redeem`] → `erc4626::Redeem` |
+/// | 0 | claim | `deposit` | `claim` | `bool success` | [`Deposit`] → `erc20::Transfer` |
+/// | 1 | withdraw | `withdraw` | `complete_withdraw` | `bool success` | [`Withdrawal`] → `erc20::Transfer` |
+/// | 2 | swap | `swap` | `complete_swap` | `uint64 amountIn` | [`Swap`] → `uniswap_v3::ExactOutputSingle` |
+/// | 3 | failure | — | `refund_*` | — | — (response-only) |
+/// | 4 | approve | `approve_router`, `approve_stata` | — | `bool` | [`Approval`] → `erc20::Approve` |
+/// | 5 | supply | `supply` | `complete_supply` | `uint64 shares` | [`Supply`] → `erc4626::Deposit` |
+/// | 6 | redeem | `redeem` | `complete_redeem` | `uint64 assets` | [`Redeem`] → `erc4626::Redeem` |
 ///
-/// FAILURE is response-only (an outcome, not a request) and APPROVE is
+/// Failure is response-only (an outcome, not a request) and approve is
 /// request-only (fire-and-forget); giving the approve request its own kind
-/// is what makes an approve RESPONSE a kind no settle circuit accepts.
-/// `approveStata` reuses the APPROVE kind — it is request-only, like
+/// is what makes an approve response a kind no settle circuit accepts.
+/// `approveStata` reuses the approve kind — it is request-only, like
 /// `approveRouter`.
 ///
-/// THE FIRST TWO ROWS ARE ONE SOLIDITY FUNCTION FILED TWICE:
+/// The first two rows are one Solidity function filed twice:
 /// `transfer(address,uint256)` under two kinds, because a deposit's inbound
-/// transfer and a withdrawal's outbound one are two OPERATIONS of the
-/// protocol and the kind byte is what says so. Since M38 rung A that is one
-/// LIBRARY call ([`erc20::Transfer`]) and two FILINGS of it ([`Deposit`],
+/// transfer and a withdrawal's outbound one are two operations of the
+/// protocol and the kind byte is what says so. That is one
+/// library call ([`erc20::Transfer`]) and two filings of it ([`Deposit`],
 /// [`Withdrawal`]) rather than two call types — the kind and the record's
 /// field name are the deployment's, and this module is the deployment.
 pub const RESPONSE_KIND_CLAIM: u32 = 0;
@@ -161,7 +158,7 @@ pub const RESPONSE_KIND_WITHDRAW: u32 = 1;
 pub const RESPONSE_KIND_SWAP: u32 = 2;
 /// See [`RESPONSE_KIND_CLAIM`].
 pub const RESPONSE_KIND_FAILURE: u32 = 3;
-/// The REQUEST-ONLY kind — see [`RESPONSE_KIND_CLAIM`]'s table.
+/// The request-only kind — see [`RESPONSE_KIND_CLAIM`]'s table.
 pub const RESPONSE_KIND_APPROVE: u32 = 4;
 /// See [`RESPONSE_KIND_CLAIM`].
 pub const RESPONSE_KIND_SUPPLY: u32 = 5;
@@ -170,23 +167,20 @@ pub const RESPONSE_KIND_REDEEM: u32 = 6;
 
 // ---- the environments -------------------------------------------------------------------
 //
-// THE RESPONSE TYPES ARE GONE (M37 rung D). `ClaimResponse`,
-// `WithdrawResponse`, `SwapResponse`, `Failure`, `ApproveResponse`,
-// `SupplyResponse` and `RedeemResponse` each existed to carry one kind byte
-// and one attested field. Since M38 rung A the kind byte and the field name
-// are this lineage's own `Filing` impls below, and the attested TYPE is the
-// library call's `EvmCall::Return`. The kind CONSTANTS above stay — they are
+// There are no response types: the kind byte and the field name
+// are this lineage's own `Filing` impls below, and the attested type is the
+// library call's `EvmCall::Return`. The kind constants above are
 // the wire, and the filings name them.
 
-// ---- the filings: how THIS deployment files the library's calls ------------------------
+// ---- the filings: how this deployment files the library's calls ------------------------
 
-/// `erc20::Transfer` AS A DEPOSIT'S INBOUND TRANSFER — the depositor's own
-/// account paying tokens in, filed under CLAIM, with the deployed record's
+/// `erc20::Transfer` AS A deposit's inbound transfer — the depositor's own
+/// account paying tokens in, filed under claim, with the deployed record's
 /// name for the flag.
 ///
 /// The record is `{ kind, success }`, so `claim`'s ticket reads
 /// `serializedOutput.output.success`. A Solidity `transfer` return is
-/// anonymous; this name is the DEPLOYMENT's, which is exactly why it lives
+/// anonymous; this name is the deployment's, which is exactly why it lives
 /// here and not on [`erc20::Transfer`].
 pub struct Deposit;
 
@@ -195,8 +189,8 @@ impl Filing for Deposit {
     type Schema = schema::Success;
 }
 
-/// `erc20::Transfer` AS A WITHDRAWAL — the vault's outbound transfer, filed
-/// under WITHDRAW. Same Solidity function as [`Deposit`], same record shape,
+/// `erc20::Transfer` as a withdrawal — the vault's outbound transfer, filed
+/// under withdraw. Same Solidity function as [`Deposit`], same record shape,
 /// different protocol operation.
 pub struct Withdrawal;
 
@@ -205,7 +199,7 @@ impl Filing for Withdrawal {
     type Schema = schema::Success;
 }
 
-/// `uniswap_v3::ExactOutputSingle` under SWAP; the record is
+/// `uniswap_v3::ExactOutputSingle` under swap; the record is
 /// `{ kind, amountIn }`.
 pub struct Swap;
 
@@ -214,7 +208,7 @@ impl Filing for Swap {
     type Schema = schema::AmountIn;
 }
 
-/// `erc4626::Deposit` on the stata wrapper, under SUPPLY; the record is
+/// `erc4626::Deposit` on the stata wrapper, under supply; the record is
 /// `{ kind, shares }`.
 pub struct Supply;
 
@@ -223,7 +217,7 @@ impl Filing for Supply {
     type Schema = schema::Shares;
 }
 
-/// `erc4626::Redeem` on the stata wrapper, under REDEEM; the record is
+/// `erc4626::Redeem` on the stata wrapper, under redeem; the record is
 /// `{ kind, assets }`.
 pub struct Redeem;
 
@@ -232,14 +226,14 @@ impl Filing for Redeem {
     type Schema = schema::Assets;
 }
 
-/// `erc20::Approve` — the ONE filing with nothing to say beyond its schema,
+/// `erc20::Approve` — the one filing with nothing to say beyond its schema,
 /// so it is the off-the-shelf [`Filed`] rather than an impl: the slot is
 /// [`Fired`], nothing settles it, and the attested `bool` is never read.
 pub type Approval = Filed<erc20::Approve, schema::Success>;
 
 /// What `claim` needs back: who may claim, which token, how much.
 ///
-/// Not [`Owned`]: a deposit's gate is the depositor's IDENTITY commitment
+/// Not [`Owned`]: a deposit's gate is the depositor's identity commitment
 /// (`userCommitment`, unbound to the request), which is what the deployed
 /// protocol derives the depositor's own EVM account from — not the
 /// request-bound refund commitment the other four flows carry.
@@ -288,10 +282,10 @@ pub struct RedeemEnv {
 
 // ---- the ledger block ---------------------------------------------------------------------
 
-/// Twenty-two ledger fields from thirteen declarations — SEGMENTED by
+/// Twenty-two ledger fields from thirteen declarations — segmented by
 /// compactc's rule (past fifteen), so every path here is two elements and
 /// every cell write is nested, as the upstream vault's own block is since
-/// its lending extension (M28). The layout is this lineage's own.
+/// its lending extension. The layout is this lineage's own.
 #[derive(Ledger)]
 pub struct Vault {
     pub initialized: LedgerCounter,
@@ -299,7 +293,7 @@ pub struct Vault {
     pub deployer: LedgerCell<common::UserCommitment<Public>>,
     pub vault_evm_address: LedgerCell<Bytes<20, Public>>,
     pub uniswap_router: LedgerCell<Bytes<20, Public>>,
-    /// signer, mpcResponseKey, mpcKeyVersion, evmChainId — FOUR fields
+    /// signer, mpcResponseKey, mpcKeyVersion, evmChainId — four fields
     /// under V1, where the V2 vocabulary had six.
     pub signet: Signet,
     pub deposits: Pending<Deposit, DepositEnv, VAULT_WORDS>,
@@ -364,27 +358,23 @@ label! {
 
 // ---- shared pieces ------------------------------------------------------------------------
 
-fn assert_initialized(c: &mut Circuit3) {
+fn assert_initialized(c: &mut Circuit) {
     let init = VAULT.initialized.read(c);
     c.assert(init.gt(0u64).message("Not initialized"));
 }
 
-fn b32_eq(a: &B32<Private>, b: &B32<Private>) -> Check<Private> {
-    eq(a.hi, b.hi).and(eq(a.lo, b.lo))
-}
-
-fn assert_deployer(c: &mut Circuit3) {
+fn assert_deployer(c: &mut Circuit) {
     let sk = common::witness_sk(c);
     let digest = common::commitment_transient(c, &sk);
     let stored = VAULT.deployer.read(c);
-    c.assert(b32_eq(&digest.bytes(), &stored.private().bytes()).message("Not the deployer"));
+    c.assert(digest.bytes().equals(stored.private().bytes()).message("Not the deployer"));
 }
 
 /// The vault token's pre-token for an ERC-20 (see
 /// `erc20_vault_modern::vault_token_domain_separator`).
 fn vault_token_domain_separator(
-    c: &mut Circuit3,
-    erc20_address: Wire3<FieldT, Public>,
+    c: &mut Circuit,
+    erc20_address: Wire<FieldT, Public>,
 ) -> TokenDomainSeparator<Public> {
     c.region("token domain separator", |c| {
         TokenDomainSeparator(B32 {
@@ -395,9 +385,9 @@ fn vault_token_domain_separator(
 }
 
 /// The private `Bytes<20>` an ABI `address` argument takes, from a ledger
-/// cell read HERE — inside an argument builder, so the read emits where the
+/// cell read here — inside an argument builder, so the read emits where the
 /// deployed circuit reads it (`crate::evm::AbiArgs`).
-fn cell_address(c: &mut Circuit3, cell: &LedgerCell<Bytes<20, Public>>) -> Bytes<20, Private> {
+fn cell_address(c: &mut Circuit, cell: &LedgerCell<Bytes<20, Public>>) -> Bytes<20, Private> {
     Bytes::from_field_unchecked(cell.read(c).stale(c).field().private())
 }
 
@@ -412,18 +402,18 @@ struct ShieldedCoinArg {
 /// The surrendered coin must be the vault token for `erc20` of exactly
 /// `amount`; then it is burned. Returns nothing: the checks assert.
 fn burn_vault_coin(
-    c: &mut Circuit3,
-    one: Wire3<FieldT, Public>,
-    erc20: Wire3<FieldT, Public>,
-    amount: Wire3<FieldT, Private>,
+    c: &mut Circuit,
+    one: Wire<FieldT, Public>,
+    erc20: Wire<FieldT, Public>,
+    amount: Wire<FieldT, Private>,
     coin: ShieldedCoinArg,
 ) {
     let domain_sep = vault_token_domain_separator(c, erc20);
     let me = kernel::cache_self_address(c);
-    let color = minocrab_std::v3::token_type(c, &domain_sep, &me.bytes());
-    c.assert(b32_eq(&coin.color.bytes(), &color.private().bytes()));
+    let color = minocrab_std::token_type(c, &domain_sep, &me.bytes());
+    c.assert(coin.color.bytes().equals(color.private().bytes()));
     c.assert(eq(coin.value.field(), amount));
-    let coin = minocrab_std::v3::ShieldedCoinInfo3 {
+    let coin = minocrab_std::ShieldedCoinInfo {
         nonce: coin.nonce.disclose_as::<SurrenderedCoinNonce>(c),
         color: coin.color.disclose_as::<SurrenderedCoinColor>(c),
         value: coin.value.field().disclose_as::<SurrenderedCoinValue>(c),
@@ -433,7 +423,7 @@ fn burn_vault_coin(
 
 /// completeSwap's change-coin nonce: `[255 − hi, lo]` (see
 /// `erc20_vault_modern::change_nonce`).
-fn change_nonce(c: &mut Circuit3, mint_nonce: &CoinNonce<Public>) -> CoinNonce<Public> {
+fn change_nonce(c: &mut Circuit, mint_nonce: &CoinNonce<Public>) -> CoinNonce<Public> {
     c.region("change nonce", |c| {
         let neg_hi = c.neg(mint_nonce.bytes().hi);
         CoinNonce(B32 {
@@ -445,7 +435,7 @@ fn change_nonce(c: &mut Circuit3, mint_nonce: &CoinNonce<Public>) -> CoinNonce<P
 
 /// `numericAbiWord(unlimitedAllowance())` — 2^128 − 1 as an ABI word: 16
 /// zero bytes then 16 `0xff` bytes.
-fn unlimited_allowance_word(c: &mut Circuit3) -> B32<Private> {
+fn unlimited_allowance_word(c: &mut Circuit) -> B32<Private> {
     let mut max_word = [0u8; 32];
     max_word[16..].copy_from_slice(&[0xff; 16]);
     B32 {
@@ -492,7 +482,7 @@ impl Vault {
     /// place, as a cell, so no later circuit takes one.
     #[circuit]
     pub fn initialize(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         vault_evm: Bytes<20>,
         swap_router: Bytes<20>,
         stata_underlying_addr: Bytes<20>,
@@ -514,18 +504,17 @@ impl Vault {
             c.assert(count.eq(0u64).message("Already initialized"));
         });
         c.region("deployer gate", assert_deployer);
-        // THE KEY VERSION IS GUARDED HERE, and only here: it is a write-once
+        // The key version is guarded here, and only here: it is a write-once
         // cell under V1, so this is the one circuit that can choose it. The
         // compat lineage carries the same assert on its own `initialize`
-        // (`erc20_vault::initialize`), and before M44 rung D every request
-        // circuit repeated it because every request took a version.
+        // (`erc20_vault::initialize`).
         c.assert(key_version.ge(1u64).message("keyVersion must be >= 1"));
         c.assert(chain_id.gt(0u64).message("Chain ID must be positive"));
         c.assert(swap_router.ne(0u64).message("Router cannot be zero"));
         c.assert(stata_underlying_addr.ne(0u64).message("stataUnderlying cannot be zero"));
         c.assert(stata_token_addr.ne(0u64).message("stataToken cannot be zero"));
         // An identity key authenticates anything; extracting coordinates IS
-        // the check (external review §4.5).
+        // the check.
         c.region("response key is a point", |c| {
             let _ = c.into_coordinates(response_key.point());
         });
@@ -556,7 +545,7 @@ impl Vault {
     /// under the depositor's identity commitment and notify the MPC.
     #[circuit]
     pub fn deposit(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         evm_nonce: Uint<64>,
         gas_limit: Uint<64>,
         max_fee_per_gas: Uint<128>,
@@ -574,7 +563,7 @@ impl Vault {
         let sk = common::witness_sk(c);
         let caller = common::commitment_transient(c, &sk).disclose_as::<DepositorCommitment>(c);
 
-        // transfer(vaultEvmAddress, amount), paid from the DEPOSITOR's own EVM
+        // transfer(vaultEvmAddress, amount), paid from the depositor's own EVM
         // account: the gas envelope is the caller's, and the signing path is
         // the depositor's identity commitment rather than the contract's pad.
         let erc20 = deposit_request.erc20_address.disclose_as::<DepositedErc20>(c);
@@ -583,8 +572,8 @@ impl Vault {
             c,
             |c| Contract::<Erc20>::from_address(c, deposit_request.erc20_address),
             (
-                |c: &mut Circuit3| cell_address(c, &VAULT.vault_evm_address),
-                |_c: &mut Circuit3| deposit_request.amount,
+                |c: &mut Circuit| cell_address(c, &VAULT.vault_evm_address),
+                |_c: &mut Circuit| deposit_request.amount,
             ),
             Envelope::caller(max_priority_fee_per_gas, max_fee_per_gas, gas_limit),
             evm_nonce,
@@ -603,13 +592,13 @@ impl Vault {
     /// tokens to the recipient (depositor-only).
     #[circuit]
     pub fn claim(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         ticket: Succeeded<Deposit>,
         mint_nonce: CoinNonce<Private>,
         recipient: Maybe<
             Either<
-                minocrab_std::v3::ZswapCoinPublicKey<Private>,
-                minocrab_std::v3::ContractAddress<Private>,
+                minocrab_std::ZswapCoinPublicKey<Private>,
+                minocrab_std::ContractAddress<Private>,
                 Private,
             >,
         >,
@@ -629,12 +618,12 @@ impl Vault {
         // the mint below, and nothing in this body has to remember to look.
         let outcome = VAULT.deposits.complete(c, ticket);
 
-        // Depositor gate: a FRESH witness against the filed commitment.
+        // Depositor gate: a fresh witness against the filed commitment.
         c.region("depositor gate", |c| {
             let sk = common::witness_sk(c);
             let caller = common::commitment_transient(c, &sk).bytes();
             c.assert(
-                b32_eq(&caller, &outcome.env.depositor.private().bytes()).message("Not the depositor"),
+                caller.equals(outcome.env.depositor.private().bytes()).message("Not the depositor"),
             );
         });
 
@@ -650,11 +639,8 @@ impl Vault {
             let rec_left = recipient.value.left.disclose_as::<ClaimRecipientKey>(c);
             let rec_right = recipient.value.right.disclose_as::<ClaimRecipientContract>(c);
             let is_left = c.cond_select(rec_is_some, rec_is_left, one);
-            let left = minocrab_std::v3::ZswapCoinPublicKey(B32 {
-                hi: c.cond_select(rec_is_some, rec_left.bytes().hi, own_pk.bytes().hi),
-                lo: c.cond_select(rec_is_some, rec_left.bytes().lo, own_pk.bytes().lo),
-            });
-            let right = minocrab_std::v3::ContractAddress(B32 {
+            let left = minocrab_std::ZswapCoinPublicKey::cond_select(c, rec_is_some, &rec_left, &own_pk);
+            let right = minocrab_std::ContractAddress(B32 {
                 hi: c.cond_select(rec_is_some, rec_right.bytes().hi, 0u64),
                 lo: c.cond_select(rec_is_some, rec_right.bytes().lo, 0u64),
             });
@@ -670,10 +656,10 @@ impl Vault {
 
     /// `withdraw(evmNonce, keyVersion, withdrawRequest, coin)`: burn the
     /// surrendered vault tokens and file `transfer(destEvmAddress, amount)`
-    /// signed by the VAULT's account, the withdrawer kept as a commitment.
+    /// signed by the vault's account, the withdrawer kept as a commitment.
     #[circuit]
     pub fn withdraw(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         evm_nonce: Uint<64>,
         withdraw_request: WithdrawRequest,
         coin: ShieldedCoinArg,
@@ -702,12 +688,12 @@ impl Vault {
             c,
             |c| Contract::<Erc20>::from_address(c, erc20),
             (
-                |_c: &mut Circuit3| withdraw_request.dest_evm_address,
-                |_c: &mut Circuit3| withdraw_request.amount,
+                |_c: &mut Circuit| withdraw_request.dest_evm_address,
+                |_c: &mut Circuit| withdraw_request.amount,
             ),
             Envelope::fixed(),
             evm_nonce,
-            // The secret is witnessed HERE — after the transaction, before
+            // The secret is witnessed here — after the transaction, before
             // the record is filed, which is where the deployed circuit
             // witnesses it.
             |c| {
@@ -726,18 +712,18 @@ impl Vault {
         Discloses::of(())
     }
 
-    /// `completeWithdraw(ticket)`: the withdrawal EXECUTED AND SUCCEEDED —
+    /// `completeWithdraw(ticket)`: the withdrawal executed and succeeded —
     /// the tokens left the vault's EVM account, and there is nothing to mint.
     ///
-    /// ANYONE MAY CALL IT (M37 rung D): the attestation is the gate, there is
+    /// Anyone may call it: the attestation is the gate, there is
     /// no witness in the circuit, and the attested `false` case cannot reach
     /// here at all — it is a [`Failed`] ticket and `refund_withdrawal`'s
     /// business. The deployed lineage put that case in a `when(!succeeded)`
-    /// branch INSIDE this circuit, hoisting a secret witness for a branch it
+    /// branch inside this circuit, hoisting a secret witness for a branch it
     /// might not take; that is Gap 2, and this is its repair.
     #[circuit]
     pub fn complete_withdraw(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         ticket: Succeeded<Withdrawal>,
     ) -> Discloses<Settled> {
         assert_initialized(c);
@@ -745,16 +731,16 @@ impl Vault {
         Discloses::of(())
     }
 
-    /// `refundWithdrawal(ticket, mintNonce)`: the withdrawal DID NOT SUCCEED —
+    /// `refundWithdrawal(ticket, mintNonce)`: the withdrawal DID not succeed —
     /// either the MPC attested its failure kind (reverted, never mined, or an
     /// undecodable return) or the transfer mined and returned `false` — so
     /// re-mint the surrendered value to the withdrawer.
     ///
-    /// ONLY THE ORIGINAL WITHDRAWER: `refund_to_owner` witnesses a fresh
+    /// Only the original withdrawer: `refund_to_owner` witnesses a fresh
     /// secret and opens the environment's commitment against it.
     #[circuit]
     pub fn refund_withdrawal(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         ticket: Failed<Withdrawal>,
         mint_nonce: CoinNonce<Private>,
     ) -> Discloses<(Settled, RefundRecipient, RefundMintNonce)> {
@@ -772,10 +758,10 @@ impl Vault {
 
     /// `swap(evmNonce, keyVersion, swapRequest, coin)`: burn the surrendered
     /// tokenIn (amountInMaximum) and file `exactOutputSingle` on the pinned
-    /// router, signed by the VAULT's account.
+    /// router, signed by the vault's account.
     #[circuit]
     pub fn swap(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         evm_nonce: Uint<64>,
         swap_request: SwapRequest,
         coin: ShieldedCoinArg,
@@ -817,15 +803,15 @@ impl Vault {
                 Contract::<UniswapV3Router>::from_address(c, router)
             },
             (
-                |_c: &mut Circuit3| Bytes::from_field_unchecked(token_in.field().private()),
-                |_c: &mut Circuit3| Bytes::from_field_unchecked(token_out.field().private()),
-                |_c: &mut Circuit3| swap_request.fee,
-                |c: &mut Circuit3| cell_address(c, &VAULT.vault_evm_address),
-                |_c: &mut Circuit3| swap_request.amount_out,
-                |_c: &mut Circuit3| swap_request.amount_in_maximum,
-                // `sqrtPriceLimitX96 = 0`: a `U256`/`U160` wire IS the
+                |_c: &mut Circuit| Bytes::from_field_unchecked(token_in.field().private()),
+                |_c: &mut Circuit| Bytes::from_field_unchecked(token_out.field().private()),
+                |_c: &mut Circuit| swap_request.fee,
+                |c: &mut Circuit| cell_address(c, &VAULT.vault_evm_address),
+                |_c: &mut Circuit| swap_request.amount_out,
+                |_c: &mut Circuit| swap_request.amount_in_maximum,
+                // `sqrtPriceLimitX96 = 0`: a `U256`/`U160` wire is the
                 // already-encoded word, so this emits nothing.
-                |_c: &mut Circuit3| B32::<Private> {
+                |_c: &mut Circuit| B32::<Private> {
                     hi: zero.private(),
                     lo: zero.private(),
                 },
@@ -856,22 +842,22 @@ impl Vault {
         Discloses::of(())
     }
 
-    /// `completeSwap(ticket, mintNonce)`: the swap EXECUTED; mint the exact
+    /// `completeSwap(ticket, mintNonce)`: the swap executed; mint the exact
     /// amountOut of tokenOut and the unspent tokenIn as change, to the swapper
     /// (fresh witness against the commitment).
     #[circuit]
     pub fn complete_swap(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         ticket: Succeeded<Swap>,
         mint_nonce: CoinNonce<Private>,
     ) -> Discloses<(Settled, SwapRecipient, SwapMintNonce, AttestedAmountIn)> {
         assert_initialized(c);
         let outcome = VAULT.swaps.complete(c, ticket);
-        // STILL THE SWAPPER'S, deliberately (see the module docs): the
+        // Still the swapper's, deliberately (see the module docs): the
         // proceeds are minted to `own_public_key`, so "anyone may complete"
         // would be "anyone may take the proceeds". The secret is opened
-        // against the stored commitment, so this is a CHECKED consumption,
-        // not the hoisted one `complete_withdraw` used to have.
+        // against the stored commitment, so this is a checked consumption,
+        // not a hoisted one.
         let sk = common::witness_sk(c);
         outcome
             .env
@@ -892,7 +878,7 @@ impl Vault {
         let change = env
             .amount_in_maximum
             .sub_with(c, amount_in, "Attested amountIn exceeds amountInMaximum");
-        // CHECKED: the difference is re-bounded to 64 bits where it enters the
+        // Checked: the difference is re-bounded to 64 bits where it enters the
         // coin commitment (one `constrain_bits 64`), as the modern lineage does
         // — the taint lint's warrant for the 16-byte value atom.
         let change = Uint::<64, Public>::from_field_checked(c, change.field());
@@ -902,14 +888,14 @@ impl Vault {
         Discloses::of(())
     }
 
-    /// `refundSwap(ticket, mintNonce)`: the swap DID NOT SUCCEED — for this
+    /// `refundSwap(ticket, mintNonce)`: the swap DID not succeed — for this
     /// call that is the MPC's failure kind alone, because
     /// `uniswap_v3::ExactOutputSingle::succeeded` is `always` (the `amountIn` IS
     /// the outcome; there is no failure flag to read). Re-mint the
     /// surrendered amountInMaximum of tokenIn to the swapper.
     #[circuit]
     pub fn refund_swap(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         ticket: Failed<Swap>,
         mint_nonce: CoinNonce<Private>,
     ) -> Discloses<(Settled, RefundRecipient, RefundMintNonce)> {
@@ -930,11 +916,11 @@ impl Vault {
     // ---- approveRouter / approveStata --------------------------------------------------------------
 
     /// `approveRouter(erc20Address, evmNonce, keyVersion)`: file
-    /// `approve(uniswapRouter, 2^128−1)` signed by the VAULT's account.
+    /// `approve(uniswapRouter, 2^128−1)` signed by the vault's account.
     /// Request-only.
     #[circuit]
     pub fn approve_router(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         erc20_address: Bytes<20>,
         evm_nonce: Uint<64>,
     ) -> Discloses<(ApprovedErc20, Requested)> {
@@ -948,8 +934,8 @@ impl Vault {
             c,
             |c| Contract::<Erc20>::from_address(c, erc20),
             (
-                |c: &mut Circuit3| cell_address(c, &VAULT.uniswap_router),
-                |c: &mut Circuit3| unlimited_allowance_word(c),
+                |c: &mut Circuit| cell_address(c, &VAULT.uniswap_router),
+                |c: &mut Circuit| unlimited_allowance_word(c),
             ),
             Envelope::fixed(),
             evm_nonce,
@@ -959,11 +945,11 @@ impl Vault {
     }
 
     /// `approveStata(evmNonce, keyVersion)`: file `approve(stataToken,
-    /// 2^128−1)` ON the underlying USDC, signed by the VAULT's account, so the
+    /// 2^128−1)` on the underlying USDC, signed by the vault's account, so the
     /// wrapper can pull it during a supply. Request-only.
     #[circuit]
     pub fn approve_stata(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         evm_nonce: Uint<64>,
     ) -> Discloses<(Requested,)> {
         assert_initialized(c);
@@ -971,15 +957,15 @@ impl Vault {
         VAULT.approvals.request_with(
             c,
             |c| {
-                // THE CALLEE IS THE UNDERLYING ERC-20, and the stata
-                // token is the SPENDER argument: this approval lets the
+                // The callee is the underlying ERC-20, and the stata
+                // token is the spender argument: this approval lets the
                 // wrapper pull the underlying during a supply.
                 let underlying = VAULT.stata_underlying.read(c).stale(c);
                 Contract::<Erc20>::from_address(c, underlying)
             },
             (
-                |c: &mut Circuit3| cell_address(c, &VAULT.stata_token),
-                |c: &mut Circuit3| unlimited_allowance_word(c),
+                |c: &mut Circuit| cell_address(c, &VAULT.stata_token),
+                |c: &mut Circuit| unlimited_allowance_word(c),
             ),
             Envelope::fixed(),
             evm_nonce,
@@ -992,10 +978,10 @@ impl Vault {
 
     /// `supply(evmNonce, keyVersion, amount, coin)`: burn the surrendered USDC
     /// vault coin and file `stataToken.deposit(amount, vaultEvmAddress)`,
-    /// signed by the VAULT's account (exact-input, so no change).
+    /// signed by the vault's account (exact-input, so no change).
     #[circuit]
     pub fn supply(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         evm_nonce: Uint<64>,
         amount: Uint<128>,
         coin: ShieldedCoinArg,
@@ -1027,8 +1013,8 @@ impl Vault {
                 Contract::<Erc4626>::from_address(c, stata)
             },
             (
-                |_c: &mut Circuit3| amount,
-                |c: &mut Circuit3| cell_address(c, &VAULT.vault_evm_address),
+                |_c: &mut Circuit| amount,
+                |c: &mut Circuit| cell_address(c, &VAULT.vault_evm_address),
             ),
             Envelope::fixed(),
             evm_nonce,
@@ -1047,12 +1033,12 @@ impl Vault {
         Discloses::of(())
     }
 
-    /// `completeSupply(ticket, mintNonce)`: the supply EXECUTED; mint the
+    /// `completeSupply(ticket, mintNonce)`: the supply executed; mint the
     /// attested shares as shielded stataToken to the supplier (fresh witness
     /// against the commitment).
     #[circuit]
     pub fn complete_supply(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         ticket: Succeeded<Supply>,
         mint_nonce: CoinNonce<Private>,
     ) -> Discloses<(Settled, SupplyRecipient, SupplyMintNonce, AttestedShares)> {
@@ -1074,12 +1060,12 @@ impl Vault {
         Discloses::of(())
     }
 
-    /// `refundSupply(ticket, mintNonce)`: the supply DID NOT SUCCEED (for an
+    /// `refundSupply(ticket, mintNonce)`: the supply DID not succeed (for an
     /// ERC-4626 `deposit`, the MPC's failure kind — the attested share count
     /// IS the outcome); re-mint the surrendered USDC amount to the supplier.
     #[circuit]
     pub fn refund_supply(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         ticket: Failed<Supply>,
         mint_nonce: CoinNonce<Private>,
     ) -> Discloses<(Settled, RefundRecipient, RefundMintNonce)> {
@@ -1096,14 +1082,14 @@ impl Vault {
 
     /// `redeem(evmNonce, keyVersion, shares, coin)`: burn the surrendered
     /// stataToken vault coin and file `stataToken.redeem(shares,
-    /// vaultEvmAddress, vaultEvmAddress)`, signed by the VAULT's account.
+    /// vaultEvmAddress, vaultEvmAddress)`, signed by the vault's account.
     ///
-    /// CAUTION (upstream's): the bound is on `shares`, not the assets that come
+    /// Caution (upstream's): the bound is on `shares`, not the assets that come
     /// back — Aave's exchange rate only grows, and `complete_redeem` mints
     /// assets through the same `Uint<64>` API after the coin is already burned.
     #[circuit]
     pub fn redeem(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         evm_nonce: Uint<64>,
         shares: Uint<128>,
         coin: ShieldedCoinArg,
@@ -1136,13 +1122,13 @@ impl Vault {
             c,
             |_c| Contract::<Erc4626>::from_address(_c, stata_token),
             (
-                |_c: &mut Circuit3| shares,
-                |c: &mut Circuit3| {
+                |_c: &mut Circuit| shares,
+                |c: &mut Circuit| {
                     let read = cell_address(c, &VAULT.vault_evm_address);
                     vault_evm.set(Some(read));
                     read
                 },
-                |_c: &mut Circuit3| {
+                |_c: &mut Circuit| {
                     vault_evm
                         .get()
                         .expect("the second address builder runs after the first")
@@ -1167,12 +1153,12 @@ impl Vault {
         Discloses::of(())
     }
 
-    /// `completeRedeem(ticket, mintNonce)`: the redeem EXECUTED; mint the
+    /// `completeRedeem(ticket, mintNonce)`: the redeem executed; mint the
     /// attested assets as shielded stataUnderlying to the redeemer (fresh
     /// witness against the commitment).
     #[circuit]
     pub fn complete_redeem(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         ticket: Succeeded<Redeem>,
         mint_nonce: CoinNonce<Private>,
     ) -> Discloses<(Settled, RedeemRecipient, RedeemMintNonce, AttestedAssets)> {
@@ -1194,12 +1180,12 @@ impl Vault {
         Discloses::of(())
     }
 
-    /// `refundRedeem(ticket, mintNonce)`: the redeem DID NOT SUCCEED (for an
+    /// `refundRedeem(ticket, mintNonce)`: the redeem DID not succeed (for an
     /// ERC-4626 `redeem`, the MPC's failure kind); re-mint the surrendered
     /// stataToken shares to the redeemer.
     #[circuit]
     pub fn refund_redeem(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         ticket: Failed<Redeem>,
         mint_nonce: CoinNonce<Private>,
     ) -> Discloses<(Settled, RefundRecipient, RefundMintNonce)> {

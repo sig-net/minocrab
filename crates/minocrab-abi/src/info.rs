@@ -1,19 +1,19 @@
-//! `contract-info.json`, as compactc writes it — and the FLATTENING of its
+//! `contract-info.json`, as compactc writes it — and the flattening of its
 //! typed tree into the native slots a ZKIR circuit actually declares.
 //!
 //! This is the artifact side of the agreement check. The MinoCrab side is a
-//! [`CircuitAbi`](minocrab::v3::CircuitAbi) impl, which reports the same two
-//! lists ([`atoms`](minocrab::v3::CircuitAbi::atoms) and
-//! [`prims`](minocrab::v3::CircuitAbi::prims)); agreement is those lists
+//! [`CircuitAbi`](minocrab::CircuitAbi) impl, which reports the same two
+//! lists ([`atoms`](minocrab::CircuitAbi::atoms) and
+//! [`prims`](minocrab::CircuitAbi::prims)); agreement is those lists
 //! being equal.
 //!
-//! THE FLATTENING RULES ARE NOT INVENTED HERE — each is the rule the leaf
-//! types in `minocrab_std::v3` already implement, written once more against
+//! The flattening rules are not invented here — each is the rule the leaf
+//! types in `minocrab_std` already implement, written once more against
 //! compactc's own vocabulary so the two can be compared. Where a rule was
 //! not already implied by a leaf it is justified from a compiled artifact
 //! (see [`CompactType::flatten`]).
 
-use minocrab::v3::Prim;
+use minocrab::Prim;
 use minocrab::AlignmentAtom;
 use serde::Deserialize;
 
@@ -26,9 +26,9 @@ pub struct ContractInfo {
     pub language_version: String,
     #[serde(rename = "runtime-version")]
     pub runtime_version: String,
-    /// The contract's OWN circuits, fully typed with argument names.
+    /// The contract's own circuits, fully typed with argument names.
     pub circuits: Vec<Circuit>,
-    /// The interfaces this contract CALLS (`contract Target { … }`
+    /// The interfaces this contract calls (`contract Target { … }`
     /// declarations). A caller's artifact is therefore a second source for
     /// a callee's ABI — one without argument names, which is what
     /// `minocrab-interface-gen --from-caller` reads.
@@ -60,7 +60,7 @@ pub struct Circuit {
     pub name: String,
     #[serde(default)]
     pub pure: bool,
-    /// Whether this circuit is PROVED. A `proof: false` circuit has no
+    /// Whether this circuit is proved. A `proof: false` circuit has no
     /// verifier key and no `.zkir`, so it cannot be the target of a
     /// cross-contract call — the whole `Signet` module is `proof: false`,
     /// which is why this is a real check and not a formality.
@@ -86,7 +86,7 @@ pub struct ContractDecl {
     pub circuits: Vec<DeclaredCircuit>,
 }
 
-/// A circuit of a DECLARED interface: same shape as [`Circuit`] minus the
+/// A circuit of a declared interface: same shape as [`Circuit`] minus the
 /// argument names (a declaration lists types only) and minus `proof`.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct DeclaredCircuit {
@@ -101,18 +101,18 @@ pub struct DeclaredCircuit {
 
 /// A Compact type, in compactc's own JSON vocabulary.
 ///
-/// Every `type-name` that occurs in a position THIS CRATE PARSES — a
+/// Every `type-name` that occurs in a position this crate parses — a
 /// circuit's arguments and result, and the same for a declared `contract`
 /// interface — is a variant here, so a parse failure in one of those means a
-/// NEW compactc type rather than a gap in this list.
+/// new compactc type rather than a gap in this list.
 ///
 /// The qualifier is load-bearing and was once missing (this doc claimed the
 /// whole corpus). Scanning every `type-name` in all 312 artifacts gives
-/// sixteen distinct names, and four are NOT modelled: `Map`, `Counter`,
-/// `List`, and — before M15 — `JubjubScalar`. All four occur only under
+/// sixteen distinct names, and four are not modelled: `Map`, `Counter`,
+/// `List`, and `JubjubScalar`. All four occur only under
 /// `ledger`, which [`ContractInfo`] does not deserialize at all, so nothing
 /// breaks. But "the corpus covers it" was the wrong warrant: no corpus
-/// contract takes a `JubjubScalar` ARGUMENT and one perfectly well could, so
+/// contract takes a `JubjubScalar` argument and one perfectly well could, so
 /// the three curve scalar/base names are modelled below on the strength of a
 /// compiled fixture rather than of corpus frequency
 /// (notes/opaque-bridging.org §0c).
@@ -120,7 +120,7 @@ pub struct DeclaredCircuit {
 pub enum CompactType {
     /// `Bytes<length>`.
     Bytes { length: usize },
-    /// Compact's `Uint<0..maxval + 1>`: `maxval` is the INCLUSIVE largest
+    /// Compact's `Uint<0..maxval + 1>`: `maxval` is the inclusive largest
     /// legal value (compactc's `(tunsigned nat)`), while the range end the
     /// source writes is exclusive (notes/bounded-integers.org §0).
     Uint { maxval: u128 },
@@ -131,8 +131,8 @@ pub enum CompactType {
     Vector { length: usize, ty: Box<CompactType> },
     Alias { name: String, ty: Box<CompactType> },
     Enum { name: String, elements: Vec<String> },
-    /// `Opaque<'ts-type'>` — and ALSO, under an [`CompactType::Alias`] of the
-    /// same name, compactc's spelling for the two curve POINT types. See
+    /// `Opaque<'ts-type'>` — and also, under an [`CompactType::Alias`] of the
+    /// same name, compactc's spelling for the two curve point types. See
     /// [`CompactType::curve_point`].
     Opaque { ts_type: String },
     /// `JubjubScalar` — one native `Scalar<Jubjub>` slot, one `field` atom.
@@ -141,7 +141,7 @@ pub enum CompactType {
     Secp256k1Base,
     /// `Secp256k1Scalar` — one native `Scalar<Secp256k1>` slot, atoms `b24, b8`.
     Secp256k1Scalar,
-    /// `Point<Secp256k1>`, compactc 0.34.0's FIRST-CLASS spelling
+    /// `Point<Secp256k1>`, compactc 0.34.0's first-class spelling
     /// (CHANGELOG 0.33.118). Older artifacts still spell this
     /// `Alias { name: "Secp256k1Point", Opaque { tsType: "Secp256k1Point" } }`,
     /// which [`CompactType::curve_point`] also recognises.
@@ -152,7 +152,7 @@ pub enum CompactType {
     Contract { name: String, circuits: Vec<DeclaredCircuit> },
 }
 
-/// Which curve type an `Opaque` spelling denotes, if any — the two POINT
+/// Which curve type an `Opaque` spelling denotes, if any — the two point
 /// types, which compactc publishes as `Opaque` and which have perfectly
 /// ordinary in-circuit representations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -165,7 +165,7 @@ pub enum CurvePoint {
 
 impl CurvePoint {
     /// The FAB atoms the point's `encode` produces (notes/ledger-abi.org §3),
-    /// matching `minocrab_std::v3::{Secp256k1Point, JubjubPoint}`'s
+    /// matching `minocrab_std::{Secp256k1Point, JubjubPoint}`'s
     /// `CircuitAbi::push_atoms` one for one.
     pub fn atoms(self) -> Vec<AlignmentAtom> {
         match self {
@@ -181,14 +181,14 @@ impl CurvePoint {
     }
 }
 
-/// HAND-WRITTEN, for ONE field: a `Uint<128>`'s `maxval` is 2^128 − 1,
+/// Hand-written, for one field: a `Uint<128>`'s `maxval` is 2^128 − 1,
 /// which `serde_json`'s `Number` cannot hold — it degrades to `f64` and
 /// silently loses the low bits, which would make a `Uint<128>` argument
 /// compare unequal to itself. `#[serde(tag = …)]` cannot help either: an
-/// internally-tagged enum BUFFERS its input, and the buffer is where the
+/// internally-tagged enum buffers its input, and the buffer is where the
 /// precision goes.
 ///
-/// So each type node is taken as RAW JSON TEXT and dispatched by hand;
+/// So each type node is taken as raw JSON text and dispatched by hand;
 /// `maxval` is then parsed from its own digits and is exact. Every other
 /// field goes back through `serde_json` (and so, recursively, through this
 /// impl).
@@ -232,7 +232,7 @@ fn parse_type(text: &str) -> Result<CompactType, serde_json::Error> {
         "JubjubScalar" => CompactType::JubjubScalar,
         "Secp256k1Base" => CompactType::Secp256k1Base,
         "Secp256k1Scalar" => CompactType::Secp256k1Scalar,
-        // compactc 0.34.0 (CHANGELOG 0.33.118): the two curve POINT types
+        // compactc 0.34.0 (CHANGELOG 0.33.118): the two curve point types
         // stopped being spelled `Alias { name, Opaque { tsType: name } }`
         // and became first-class `type-name`s of their own, same as the
         // scalar/base types just above. See `CompactType::curve_point`.
@@ -286,7 +286,7 @@ pub struct Element {
 ///
 /// The two lists have different lengths on purpose — a `Bytes<32>` is one
 /// atom (`bytes 32`) across two slots — which is the same split
-/// [`CircuitAbi`](minocrab::v3::CircuitAbi) makes.
+/// [`CircuitAbi`](minocrab::CircuitAbi) makes.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Flattened {
     pub atoms: Vec<AlignmentAtom>,
@@ -307,22 +307,18 @@ impl Flattened {
 
 /// A Compact type an interface crate cannot express.
 ///
-/// There used to be an `Opaque` variant here, saying that an `Opaque` "has no
-/// in-circuit representation, so it cannot cross a contract boundary". It was
-/// wrong twice over — an opaque is one unconstrained slot and does cross a
-/// boundary, and half the corpus's `Opaque` nodes are curve points — and the
-/// concrete cost was that the erc20-vault's own `initialize` could not be
-/// flattened. M15 DELETED the variant rather than rewording it: there is no
-/// longer a Compact type spelled `Opaque` that cannot cross a boundary, and a
+/// There is no `Opaque` variant: an opaque is one unconstrained slot and does
+/// cross a boundary, and half the corpus's `Opaque` nodes are curve points.
+/// There is no Compact type spelled `Opaque` that cannot cross a boundary, and a
 /// variant nothing constructs is worse than no variant at all
 /// (notes/opaque-bridging.org §0b).
 #[derive(Debug, Clone, thiserror::Error, PartialEq, Eq)]
 pub enum TypeError {
-    /// A `Contract` reference as a VALUE (a contract handle passed as data).
+    /// A `Contract` reference as a value (a contract handle passed as data).
     #[error("a `Contract` value (`{name}`) cannot cross a contract boundary: an interface names circuits, not handles")]
     ContractValue { name: String },
-    /// A Compact type that IS a native ZKIR value but has no
-    /// `minocrab_std::v3` leaf yet, so nothing can name its slot.
+    /// A Compact type that is a native ZKIR value but has no
+    /// `minocrab_std` leaf yet, so nothing can name its slot.
     ///
     /// The three curve scalar/base types. They are modelled as
     /// [`CompactType`] variants — a `JubjubScalar` circuit argument compiles,
@@ -330,8 +326,8 @@ pub enum TypeError {
     /// this crate does not model" — and refused here, because flattening one
     /// means giving it a [`Prim`], and the only honest `Prim` for a slot whose
     /// wire is not a field element is a new variant with a leaf behind it.
-    /// M15 declined to invent that row for a type no corpus artifact takes as
-    /// an argument (notes/opaque-bridging.org §6, corrected as built).
+    /// That row is not invented for a type no corpus artifact takes as
+    /// an argument (notes/opaque-bridging.org §6).
     #[error("`{compact_type}` is a native ZKIR value with no MinoCrab leaf type yet, so an interface cannot name its slot")]
     NoLeaf { compact_type: &'static str },
 }
@@ -343,24 +339,24 @@ impl CompactType {
     ///
     /// - `Bytes<n>` → one `bytes n` atom over `⌈n/31⌉` slots, the first
     ///   holding the leftover `n mod 31` bytes and the rest 31 each
-    ///   (`minocrab_std::v3::BytesN`; `Bytes<32>` is the familiar
+    ///   (`minocrab_std::BytesN`; `Bytes<32>` is the familiar
     ///   `[8, 248]`).
     /// - `Uint<0..maxval + 1>` → one slot, [`Prim::unsigned`] — compactc's
     ///   own partition of the bound — over a `bytes ⌈bits/8⌉` atom. The
-    ///   `maxval` this ABI publishes is INCLUSIVE, while the range end
+    ///   `maxval` this ABI publishes is inclusive, while the range end
     ///   Compact writes is exclusive (notes/bounded-integers.org §0), so
     ///   the source spelling of `maxval: 69999` is `Uint<0..70000>`.
     /// - `Boolean` → one slot, `Uint { bits: 1 }`, `bytes 1`.
     /// - `Field` → one slot, no constraint, the `field` atom.
     /// - `Struct` / `Tuple` / `Vector` → their members back to back, in
-    ///   declaration order. Compact structs FLATTEN: they add no slot of
+    ///   declaration order. Compact structs flatten: they add no slot of
     ///   their own, which is why `ContractAddress` and its inner
     ///   `Bytes<32>` have the same layout.
-    /// - `Alias` → the aliased type, unchanged — EXCEPT the two curve-point
+    /// - `Alias` → the aliased type, unchanged — except the two curve-point
     ///   spellings, which [`CompactType::curve_point`] catches first.
     /// - `Opaque<'ts'>` → one slot, [`Prim::Opaque`] (so no constraint at all,
     ///   which is compactc's `[(topaque …) instr*]` line) over one `compress`
-    ///   atom. NOT an error: an opaque enters circuits, it just carries no
+    ///   atom. Not an error: an opaque enters circuits, it just carries no
     ///   range (notes/opaque-bridging.org §0a).
     /// - `Alias { name, Opaque { tsType: name } }` for `Secp256k1Point` /
     ///   `JubjubPoint` → one slot, [`Prim::Point`], over that point's `encode`
@@ -381,7 +377,7 @@ impl CompactType {
         Ok(out)
     }
 
-    /// The curve POINT type this spelling denotes, if it is one.
+    /// The curve point type this spelling denotes, if it is one.
     ///
     /// Two spellings denote the same thing, and both must answer the same
     /// [`CurvePoint`]:
@@ -390,14 +386,14 @@ impl CompactType {
     ///   `Alias { name, type: Opaque { tsType: name } }` — the ts-type is how
     ///   the runtime names the value, and the alias name is the Compact
     ///   type. Both halves are required to match, and the name must be one
-    ///   of the two: an `Opaque<"Secp256k1Point">` under a DIFFERENT alias,
+    ///   of the two: an `Opaque<"Secp256k1Point">` under a different alias,
     ///   or a bare one, is a user-declared opaque that happens to share a
     ///   string and must stay one.
     /// - compactc >= 0.34.0 (CHANGELOG 0.33.118) publishes them as
     ///   first-class `type-name`s, [`CompactType::Secp256k1Point`] /
     ///   [`CompactType::JubjubPoint`], with no alias wrapper to check.
     ///
-    /// Only the two POINT types get either treatment, because only they
+    /// Only the two point types get either treatment, because only they
     /// were ever spelled `Opaque`. `JubjubScalar` and the secp256k1
     /// base/scalar types publish under their own `type-name` on both
     /// compilers (verified against a compiled fixture), so they are
@@ -425,7 +421,7 @@ impl CompactType {
     }
 
     fn push_flat(&self, out: &mut Flattened) -> Result<(), TypeError> {
-        // The curve-point spellings, BEFORE the generic `Alias` arm below
+        // The curve-point spellings, before the generic `Alias` arm below
         // would look through to a bare `Opaque`.
         if let Some(point) = self.curve_point() {
             out.atoms.extend(point.atoms());
@@ -472,7 +468,7 @@ impl CompactType {
                 out.atoms.push(AlignmentAtom::Bytes { length: uint_bytes(maxval) });
                 out.prims.push(Prim::unsigned(maxval));
             }
-            // One slot, one `compress` atom, and NO constraint — the prim
+            // One slot, one `compress` atom, and no constraint — the prim
             // says so, not this arm. The `ts_type` does not enter the
             // flattening at all: two opaques of different TS types have the
             // same layout, and it is the Rust type parameter that keeps them
@@ -481,7 +477,7 @@ impl CompactType {
                 out.atoms.push(AlignmentAtom::Compress);
                 out.prims.push(Prim::Opaque);
             }
-            // PARSED so the error can name the type, but NOT flattened — see
+            // Parsed so the error can name the type, but not flattened — see
             // `TypeError::NoLeaf`. Their atoms are known
             // (notes/ledger-abi.org §3: `field` resp. `b24, b8`) and are
             // deliberately not written here, because atoms without a `Prim`
@@ -533,7 +529,7 @@ pub fn flatten_all<'a>(
 }
 
 /// Bytes per native slot of a `Bytes<len>`, slot order (the leftover chunk
-/// first). Mirrors `minocrab_std::v3`'s limbing rule, which is compactc's.
+/// first). Mirrors `minocrab_std`'s limbing rule, which is compactc's.
 pub fn bytes_limb_lens(len: usize) -> Vec<usize> {
     if len <= 31 {
         return vec![len];
@@ -554,12 +550,12 @@ pub fn bytes_limb_lens(len: usize) -> Vec<usize> {
 }
 
 /// The FAB byte width of a `(tunsigned maxval)` slot — `⌈bits/8⌉`, matching
-/// `minocrab_std::v3::Uint<BITS>`'s and `BoundedUint<BOUND>`'s atoms.
+/// `minocrab_std::Uint<BITS>`'s and `BoundedUint<BOUND>`'s atoms.
 ///
 /// One statement of the rule, in the frontend beside the constraint table
 /// it belongs with (notes/bounded-integers.org §2).
 fn uint_bytes(maxval: u128) -> u32 {
-    minocrab::v3::uint_atom_bytes(maxval)
+    minocrab::uint_atom_bytes(maxval)
 }
 
 #[cfg(test)]
@@ -632,7 +628,7 @@ mod tests {
         assert_eq!(flat.prims, vec![Prim::UintMax { maxval: 2 }]);
         assert_eq!(
             flat.prims[0].constraint(),
-            minocrab::v3::LimbConstraint::Bounded { bound: 3, bits: 2 }
+            minocrab::LimbConstraint::Bounded { bound: 3, bits: 2 }
         );
     }
 
@@ -649,7 +645,7 @@ mod tests {
         let flat = ty.flatten().unwrap();
         assert_eq!(flat.atoms, vec![AlignmentAtom::Compress]);
         assert_eq!(flat.prims, vec![Prim::Opaque]);
-        assert_eq!(flat.prims[0].constraint(), minocrab::v3::LimbConstraint::None);
+        assert_eq!(flat.prims[0].constraint(), minocrab::LimbConstraint::None);
 
         // The ts-type does not enter the layout: two opaques of different TS
         // types flatten identically, and it is the Rust type parameter that
@@ -658,7 +654,7 @@ mod tests {
         assert_eq!(other.flatten().unwrap(), flat);
     }
 
-    /// The two curve POINT types, which compactc spells `Opaque` under an
+    /// The two curve point types, which compactc spells `Opaque` under an
     /// `Alias` of the same name — the erc20-vault's `initialize` shape.
     #[test]
     fn the_curve_point_spellings_are_points() {
@@ -685,10 +681,10 @@ mod tests {
         );
     }
 
-    /// compactc >= 0.34.0's FIRST-CLASS spelling for the same two types
+    /// compactc >= 0.34.0's first-class spelling for the same two types
     /// (CHANGELOG 0.33.118) — no `Alias` wrapper, no `Opaque` underneath,
     /// just `"type-name": "Secp256k1Point"` / `"JubjubPoint"`. Must produce
-    /// the SAME `CurvePoint` and the same flattening as the older
+    /// the same `CurvePoint` and the same flattening as the older
     /// `Alias`-of-`Opaque` spelling above, since both name the same Compact
     /// type — only compactc's own JSON framing of it moved.
     #[test]
@@ -714,7 +710,7 @@ mod tests {
         assert_eq!(secp.flatten().unwrap(), secp_alias.flatten().unwrap());
     }
 
-    /// BOTH halves of the curve spelling must match, or it is a user's opaque
+    /// Both halves of the curve spelling must match, or it is a user's opaque
     /// that happens to share a string. This is the test that stops the
     /// recognition from being a substring match on a name we like.
     #[test]

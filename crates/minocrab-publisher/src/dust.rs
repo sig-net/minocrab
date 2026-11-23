@@ -1,4 +1,4 @@
-//! THE DUST SEAM — where a DUST wallet plugs in, and nothing more.
+//! The DUST seam — where a DUST wallet plugs in, and nothing more.
 //!
 //! A transaction on Midnight pays its fee in DUST. Every primitive for that
 //! exists in `midnight_ledger::dust` — `DustLocalState::{replay_events, spend,
@@ -17,7 +17,7 @@
 //!
 //! 1. `tx.balance(Some(tx.fees_with_impl(parameters, …)))` → the DUST deficit
 //!    at segment 0. Fees depend on the transaction's own size, so this runs on
-//!    the PROVEN transaction and iterates until the deficit closes.
+//!    the proven transaction and iterates until the deficit closes.
 //! 2. Pick UTXOs out of a `DustLocalState` replayed from ledger events, value
 //!    each with `DustOutput::updated_value(gen_info, now, &parameters.dust)`,
 //!    and `spend` them.
@@ -26,14 +26,14 @@
 //! 4. `process_ttls`, and only report ready when the replayed state has caught
 //!    up past the block the publisher pinned.
 //!
-//! and the policies it does NOT settle, which are the wallet's: the state must
-//! be REBUILDABLE FROM GENESIS (the event source is untrusted —
+//! and the policies it does not settle, which are the wallet's: the state must
+//! be rebuildable from genesis (the event source is untrusted —
 //! `79b2add:notes/mpc-publisher.org` §5.3), one submit at a time while there
 //! is a single DUST UTXO, and the funding seed is a hot key either way.
 //!
 //! # Why the seam is here and not at the call site
 //!
-//! Because the ORDER matters and this is where it is decided: build, prove,
+//! Because the order matters and this is where it is decided: build, prove,
 //! balance, sign, seal. Balancing after proving is what the wallet SDK does
 //! (`prove` then `balanceUnboundTransaction`) and it is forced — the fee
 //! depends on the proof sizes. Signing after balancing is forced too: a dust
@@ -71,7 +71,7 @@ pub trait DustBalancer<D: DB> {
 /// The balancer that does not balance: it hands the transaction straight back.
 ///
 /// Everything downstream of it works — signing, sealing, `well_formed`,
-/// `apply` — as long as `WellFormedStrictness::enforce_balancing` is OFF. On a
+/// `apply` — as long as `WellFormedStrictness::enforce_balancing` is off. On a
 /// real chain it is on, so a transaction published through [`NoDust`] pays no
 /// fee and is rejected. That gap is a DUST wallet's to close, and it is
 /// named in the type rather than left as a comment somewhere.

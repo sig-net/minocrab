@@ -1,8 +1,12 @@
 //! xcall caller (localBase/callOnce/callTwice/callBig/callEmit) and target
 //! (deposit/depositEmit/depositBig): call-compatibility with the corpus
-//! artifacts per notes/ledger-abi.org §6 — the M5 cross-contract layer
+//! artifacts per notes/ledger-abi.org §6 — the cross-contract layer
 //! (caller-side commitment + kernel.claimContractCall) against real
 //! compactc artifacts, plus rejection agreement on tampering.
+
+#[path = "support/common.rs"]
+mod common;
+use common::*;
 
 use std::borrow::Cow;
 
@@ -21,27 +25,13 @@ use midnight_transient_crypto::repr::FieldRepr;
 use minocrab::Fr;
 use minocrab_contracts::{events, xcall};
 use minocrab_ledger::ep_hash;
-use minocrab_sim::v3::{assert_call_compatible, simulate};
-use minocrab_zkir::v3::{to_zkir_string, IrSource};
+use minocrab_sim::{assert_call_compatible, simulate};
+use minocrab_zkir::{to_zkir_string, IrSource};
 
 type VmOp = Op<ResultModeVerify, InMemoryDB>;
 
 fn corpus_zkir(side: &str, name: &str) -> IrSource {
-    let path = format!(
-        "{}/../../corpus/zkir/signet-midnight-experiments/experiments/xcall/contract/src/{side}/zkir/{name}.zkir",
-        env!("CARGO_MANIFEST_DIR")
-    );
-    minocrab_zkir::v3::read_zkir(&path).expect("corpus golden parses")
-}
-
-fn bytesn_value(n: u32, bytes: &[u8]) -> AlignedValue {
-    AlignedValue::new(
-        Value(vec![ValueAtom(bytes.to_vec()).normalize()]),
-        Alignment(vec![AlignmentSegment::Atom(AlignmentAtom::Bytes {
-            length: n,
-        })]),
-    )
-    .unwrap()
+    common::corpus_zkir(&format!("signet-midnight-experiments/experiments/xcall/contract/src/{side}/zkir"), name)
 }
 
 fn cell(av: AlignedValue) -> StateValue {
@@ -50,13 +40,6 @@ fn cell(av: AlignedValue) -> StateValue {
 
 fn key(i: u8) -> Key {
     Key::Value(bytesn_value(1, &[i]).try_into().expect("a canonical value"))
-}
-
-fn b32_slots(bytes: &[u8; 32]) -> (Fr, Fr) {
-    (
-        Fr::from(u64::from(bytes[31])),
-        Fr::from_le_bytes(&bytes[..31]).unwrap(),
-    )
 }
 
 /// Value-only FAB limbs of a `Bytes<n>` in slot order: the leftover (most
@@ -195,8 +178,8 @@ impl Scenario {
         let mut target = [0u8; 32];
         target[..12].copy_from_slice(b"target-contr");
         target[31] = 0x21;
-        // The entry-point hash, DERIVED from the callee circuit's name
-        // (M12 stage 1) rather than invented: the claim carries it as a
+        // The entry-point hash, derived from the callee circuit's name
+        // rather than invented: the claim carries it as a
         // constant, so the preimage must name the circuit's own callee.
         let ep = ep_hash("deposit");
         Scenario {
@@ -354,7 +337,7 @@ fn call_once_matches_corpus() {
 }
 
 /// callEmit is callOnce claiming a different entry point. Built through
-/// the interface handle's OTHER method (`depositEmit`), so the typed method
+/// the interface handle's other method (`depositEmit`), so the typed method
 /// names the entry point the circuit carries as a constant.
 #[test]
 fn call_emit_matches_corpus() {
@@ -420,7 +403,7 @@ fn call_big_matches_corpus() {
 }
 
 /// The target's deposit/depositEmit are the events experiment's base/emit1
-/// circuits; their differentials against the XCALL corpus artifacts verify
+/// circuits; their differentials against the xcall corpus artifacts verify
 /// that equivalence. depositBig is its own minimal circuit.
 #[test]
 fn target_deposit_big_matches_corpus() {
@@ -454,7 +437,7 @@ fn target_deposit_emit_matches_corpus() {
     assert_call_compatible(&ours, &theirs, &s.preimage_target_deposit_emit(3));
 }
 
-/// Criterion 3: tampering with ANY element of the callOnce transcript or
+/// Criterion 3: tampering with any element of the callOnce transcript or
 /// its private witness (cc-rand) must be rejected by both artifacts, with
 /// zero acceptance disagreements.
 #[test]

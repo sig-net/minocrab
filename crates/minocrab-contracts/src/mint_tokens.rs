@@ -18,17 +18,16 @@
 //! `cm = coinCommitment(ShieldedCoinInfo { nonce, color, value }, recipient)`;
 //! `kernel.claimZswapCoinSpend(cm)`.
 
-use minocrab::v3::{Circuit3, FieldT, Wire3};
+use minocrab::{Circuit, FieldT, Wire};
 use minocrab::{label, Fr, Private, Public};
-use minocrab_ledger::{
-    cell_write, emit, kernel_claim_zswap_coin_spend, kernel_mint_shielded,
-    ImpactElem, LedgerValue,
+use minocrab_experimental::impact::raw::{
+    cell_write, emit, kernel_claim_zswap_coin_spend, kernel_mint_shielded, ImpactElem, LedgerValue,
 };
-use minocrab_std::v3::kernel;
-use minocrab_std::v3::{
+use minocrab_std::kernel;
+use minocrab_std::{
     CoinNonce, ContractAddress, TokenDomainSeparator, ZswapCoinPublicKey,
     contract, coin_commitment, own_public_key, token_type, CoinRecipient, Disclose, Discloses,
-    ShieldedCoinInfo3, B32,
+    ShieldedCoinInfo, B32,
 };
 
 /// Ledger field indices, in declaration order.
@@ -49,8 +48,8 @@ pub const DOMAIN_SEP: &str = "testy-test";
 /// `kernel.mintShielded(domain_sep, 1)`; `cm = coinCommitment({nonce,
 /// color, 1}, left(recipient))`; `kernel.claimZswapCoinSpend(cm)`.
 fn mint_shielded_token(
-    c: &mut Circuit3,
-    one: Wire3<FieldT, Public>,
+    c: &mut Circuit,
+    one: Wire<FieldT, Public>,
     nonce: &CoinNonce<Public>,
     recipient: &ZswapCoinPublicKey<Public>,
 ) {
@@ -74,7 +73,7 @@ fn mint_shielded_token(
     emit(c, &kernel_mint_shielded(&ds_val, &amount));
 
     // cm = coinCommitment({nonce, color, value: 1}, left(recipient))
-    let coin = ShieldedCoinInfo3 {
+    let coin = ShieldedCoinInfo {
         nonce: *nonce,
         color,
         value: one,
@@ -94,13 +93,13 @@ fn mint_shielded_token(
 /// `mint-tokens` — the shielded-mint circuits.
 pub struct MintTokens;
 
-#[contract]
+#[contract(lowering = minocrab_compat::profile)]
 impl MintTokens {
     /// `export circuit mintWithRecipientArgument(recipient: ZswapCoinPublicKey,
     /// mintNonce: Bytes<32>): []`
     #[circuit]
     pub fn mint_with_recipient_argument(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         recipient: ZswapCoinPublicKey<Private>,
         mint_nonce: CoinNonce<Private>,
     ) -> Discloses<(MintRecipient, MintNonce)> {
@@ -119,7 +118,7 @@ impl MintTokens {
     /// `veryPublicValue`.
     #[circuit]
     pub fn mint_with_recipient_own_public_key(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         _recipient: B32<Private>,
         mint_nonce: CoinNonce<Private>,
     ) -> Discloses<(OwnKeyAsMintRecipient, OwnKeyOnLedger, MintNonce)> {

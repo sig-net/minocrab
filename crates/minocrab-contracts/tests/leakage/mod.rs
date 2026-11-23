@@ -1,11 +1,11 @@
-//! The dataflow walk behind the LEAKAGE INVENTORIES — ONE walk, run over
+//! The dataflow walk behind the leakage inventories — one walk, run over
 //! either lineage.
 //!
 //! `tests/leakage_inventory.rs` (the compat vault, against compactc's
 //! artifact) and `tests/leakage_inventory_pending.rs` (the API lineage on
 //! `evm_flow::Pending`) each hold their own frozen table; the provenance
 //! walk, the label taint, the witness inventory and the literal counting
-//! that DERIVE those tables are here, so the two tables say the same kind
+//! that derive those tables are here, so the two tables say the same kind
 //! of thing about the two artifacts and neither can drift in method.
 //!
 //! What the walk computes, and why it is sound in the direction it is used,
@@ -21,10 +21,10 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-use minocrab::v3::{Compiled3, DisclosedWire};
+use minocrab::{Compiled, DisclosedWire};
 use minocrab::DisclosureKind;
-use minocrab_ir::v3::passes::{defined_identifiers, operands};
-use minocrab_zkir::v3::{Instruction as I, IrSource, Operand};
+use minocrab_ir::passes::{defined_identifiers, operands};
+use minocrab_zkir::{Instruction as I, IrSource, Operand};
 
 // ---- provenance --------------------------------------------------------------------
 
@@ -60,7 +60,7 @@ fn has_witness(sources: &BTreeSet<Source>) -> bool {
     sources.iter().any(|s| matches!(s, Source::Witness(_)))
 }
 
-/// A `private_input` / `public_input` / `impact` with a VARIABLE guard is
+/// A `private_input` / `public_input` / `impact` with a variable guard is
 /// conditional; an immediate guard (or none) is not.
 fn is_guarded(guard: Option<&Operand>) -> bool {
     matches!(guard, Some(Operand::Variable(_)))
@@ -258,9 +258,9 @@ fn walk(ir: &IrSource, literals: &[&str]) -> Walk {
 
 // ---- labels ---------------------------------------------------------------------------
 
-/// Every wire's DECLARED labels in its ancestry: seeded at the wires the
+/// Every wire's declared labels in its ancestry: seeded at the wires the
 /// `Disclosed` records name, propagated forward by the same operand rule.
-fn label_taint(compiled: &Compiled3) -> HashMap<String, BTreeSet<String>> {
+fn label_taint(compiled: &Compiled) -> HashMap<String, BTreeSet<String>> {
     let mut seeds: HashMap<String, BTreeSet<String>> = HashMap::new();
     for d in &compiled.disclosures {
         if !matches!(d.kind, DisclosureKind::Disclosed | DisclosureKind::DisclosedUntyped) {
@@ -278,7 +278,7 @@ fn label_taint(compiled: &Compiled3) -> HashMap<String, BTreeSet<String>> {
     let mut taint: HashMap<String, BTreeSet<String>> = HashMap::new();
     for ins in compiled.ir.instructions.iter() {
         let mut inherited: BTreeSet<String> = BTreeSet::new();
-        // A label travels along DATA operands only. `cond_select`'s bit
+        // A label travels along data operands only. `cond_select`'s bit
         // chooses between `a` and `b` and contributes no bytes of its own,
         // so the outcome flag's label must not "cover" whichever secret the
         // selected arm carries — that is precisely the accidental coverage
@@ -321,7 +321,7 @@ fn label_taint(compiled: &Compiled3) -> HashMap<String, BTreeSet<String>> {
 /// none, so its twin line says so instead of comparing.
 pub fn inventory(
     name: &str,
-    compiled: &Compiled3,
+    compiled: &Compiled,
     twin: Option<&IrSource>,
     literals: &[&str],
 ) -> Vec<String> {

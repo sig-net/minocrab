@@ -1,65 +1,28 @@
 # erc20-vault proving cost: compactc vs the MinoCrab port
 
-> **Dated record (2026-09-05).** These numbers are the seventeen-circuit vault of sig-net/midnight-examples `0d9c1660`. The vault was re-ported to upstream's flush-pattern redesign (29 circuits, `375071b`) in M44 — see `notes/vault-flush.org` — and the re-run on those circuits is that milestone's open item; the row counts the test suite freezes today are in `crates/minocrab-contracts/tests/row_snapshot.rs`.
+> **Dated record (2026-09-05).** Every number in this file was measured on 2026-09-05 (the last row block, 2026-09-06, is marked as a row-snapshot figure), on the seventeen-circuit vault of sig-net/midnight-examples `0d9c1660` and the signet signer of sig-net/midnight-integration `fff3421c`, under `compactc 0.33.0-rc.2`. The vault has since been re-ported to upstream's flush-pattern redesign (29 circuits) and to erc20-vault v0.7.0-rc.2, and the signet contracts have moved on; the re-run on those circuits has not been done (`notes/vault-flush.org`). The rows and `k` the test suite freezes today are in `crates/minocrab-contracts/tests/row_snapshot.rs`, and they differ from the tables below: read the tables as a record of what instruction selection bought on that vault, not as the current cost of any circuit.
 
-MinoCrab is a Rust eDSL for Midnight that compiles to ZKIR, replacing the
-Compact language. This report benchmarks the real sig-net cross-chain
-contracts — all **17 circuits** of `erc20-vault` (sig-net/midnight-examples
-`0d9c1660`, the Poseidon protocol with the Aave lending flows) plus the 3
-circuits of its signet signer dependency (sig-net/midnight-integration
-`fff3421c`) — at the same pinned toolchain versions, across two artifacts:
+MinoCrab is a Rust eDSL for Midnight that compiles to ZKIR, replacing the Compact language. This report benchmarks the real sig-net cross-chain contracts — all **17 circuits** of `erc20-vault` (sig-net/midnight-examples `0d9c1660`, the Poseidon protocol with the Aave lending flows) plus the 3 circuits of its signet signer dependency (sig-net/midnight-integration `fff3421c`), at the same pinned toolchain versions, across two artifacts:
 
 - **compactc** — the Compact contracts compiled by `compactc 0.33.0-rc.2`.
-- **minocrab** — MinoCrab's direct port. Statement-identical to compactc:
-  same typed schema, same shared `ProofPreimage`, equal public-input
-  streams (`pis`/`pi_skips`), proven per circuit by the differential
-  suite (`tests/erc20_vault_differential.rs`, 57 tests including guard
-  and tamper agreement). Every cell below prices the **identical
-  statement** under the two toolchains.
+- **minocrab** — MinoCrab's direct port. Statement-identical to compactc: same typed schema, same shared `ProofPreimage`, equal public-input streams (`pis`/`pi_skips`), proven per circuit by the differential suite at that time (`tests/erc20_vault_differential.rs`, 57 tests including guard and tamper agreement). Every cell below prices the **identical statement** under the two toolchains.
 
-Earlier editions of this report had two more sides (the M10 optimized
-fork and its M11 Borsh fork, which proved their *own* statements). Both
-were retired in M28 after upstream adopted their avenues — Poseidon
-commitments, per-flow refunds — into the protocol itself
-(`notes/vault-refresh.org` §0); the two-sided comparison is now the whole
-story, and it is the strong comparability claim throughout.
+Earlier editions of this report had two more sides (an optimized fork and its Borsh fork, which proved their *own* statements). Both were retired after upstream adopted their avenues (Poseidon commitments, per-flow refunds) into the protocol itself (`notes/vault-refresh.org` §0); the two-sided comparison is now the whole story, and it is the strong comparability claim throughout.
 
 ## Headline
 
-On the same statement, the port never costs more than compactc and is
-cheaper wherever a circuit is not floored by protocol-pinned crypto:
+On the same statement, the port never costs more than compactc and is cheaper wherever a circuit is not floored by protocol-pinned crypto:
 
-- **Every request circuit crosses at least one `k` boundary.** The three
-  cheap requests drop three levels (`approveStata`, `approveRouter`,
-  `startDeposit`: k14 → k11, prove −80..−81%, RSS −74..−77%); `startSwap`
-  and `startRedeem` drop one (k16 → k15, prove −44..−46%, RSS −43..−47%);
-  `startWithdraw` and `startSupply` cut 29% of rows inside k15 (prove
-  −5..−6%).
-- **The nine settle circuits are ECDSA-floored at k16 on both sides.**
-  They cut 12–16% of rows but the secp256k1 verify (~24,450 rows) pins
-  them above 2^15, so prove time and RSS are flat (±noise).
-- **`initialise` is identical**: 891 rows on both sides at k10, the
-  first circuit where the port's row count equals compactc's exactly —
-  the protocol move took the two SHA blocks out of the deployer gate,
-  which is where the port's earlier −43% on this circuit came from.
-- **The signet signer is unchanged from M7**: −97.5% rows, −95..−97% prove,
-  five to six `k` levels lower.
+- **Every request circuit crosses at least one `k` boundary.** The three cheap requests drop three levels (`approveStata`, `approveRouter`, `startDeposit`: k14 → k11, prove −80..−81%, RSS −74..−77%); `startSwap` and `startRedeem` drop one (k16 → k15, prove −44..−46%, RSS −43..−47%); `startWithdraw` and `startSupply` cut 29% of rows inside k15 (prove −5..−6%).
+- **The nine settle circuits are ECDSA-floored at k16 on both sides.** They cut 12–16% of rows but the secp256k1 verify (~24,450 rows) pins them above 2^15, so prove time and RSS are flat (±noise).
+- **`initialise` is identical**: 891 rows on both sides at k10, the first circuit where the port's row count equals compactc's exactly — the protocol move took the two SHA blocks out of the deployer gate, which is where the port's earlier −43% on this circuit came from.
+- **The signet signer** (`fff3421c`): −97.5% rows, −95..−97% prove, five to six `k` levels lower.
 
-Compared with the previous protocol's numbers (the nine-circuit vault),
-the request-side wins **grew** and the settle-side wins **shrank**: the
-port's advantage was always instruction selection around the vault's own
-hashes, and the protocol move replaced most of those hashes (keccak
-request ids and digests, SHA commitments) with Poseidon on both sides.
-What is left to select better is the ABI-word and byte plumbing of the
-request circuits — where compactc still lowers every `Bytes<20>` /
-`Uint<128>` word through per-byte `div_mod` / `reconstitute_field`
-chains — and nothing in the ECDSA-dominated settles.
+Compared with the previous protocol's numbers (the nine-circuit vault), the request-side wins **grew** and the settle-side wins **shrank**: the port's advantage was always instruction selection around the vault's own hashes, and the protocol move replaced most of those hashes (keccak request ids and digests, SHA commitments) with Poseidon on both sides. What is left to select better is the ABI-word and byte plumbing of the request circuits — where compactc still lowers every `Bytes<20>` / `Uint<128>` word through per-byte `div_mod` / `reconstitute_field` chains — and nothing in the ECDSA-dominated settles.
 
 ## Results
 
-All 40 cells from one session (2026-09-05, Apple Silicon, quiet
-machine), prove = median of 3, one subprocess per cell for clean peak
-RSS. Raw data: `target/bench/results.json`.
+All 40 cells from one session (2026-09-05, Apple Silicon, quiet machine), prove = median of 3, one subprocess per cell for clean peak RSS. Raw data: `target/bench/results.json`.
 
 | circuit | side | k | rows | keygen (s) | prove (s) | verify (s) | proof (B) | peak RSS (MB) |
 |---|---|---|---|---|---|---|---|---|
@@ -131,17 +94,7 @@ RSS. Raw data: `target/bench/results.json`.
 
 ## Where the wins come from
 
-The vault is hash-bound: 95–99% of every circuit's rows are SHA-256,
-Poseidon and secp256k1 ECDSA (per-circuit budgets reconstructed from
-measured primitive costs — `cargo run -p minocrab-sim --example
-cryptocost` — and confirmed by the region profiler under
-`target/bench/profiles/`). Every hash the vault computes is now
-**protocol-pinned**: the Poseidon request id and attestation digest (what
-the MPC recomputes and what it signed), the Poseidon identity and refund
-commitments (the MPC's key-derivation path and the settle gate), the
-SHA-256 `tokenType`, coin commitment and nullifier (the ledger's own), and
-the ECDSA verify (the only authentication gate). None of that is ours to
-choose, so the two sides spend the same rows on it.
+The vault is hash-bound: 95–99% of every circuit's rows are SHA-256, Poseidon and secp256k1 ECDSA (per-circuit budgets reconstructed from measured primitive costs — `cargo run -p minocrab-sim --example cryptocost` — and confirmed by the region profiler under `target/bench/profiles/`). Every hash the vault computes is now **protocol-pinned**: the Poseidon request id and attestation digest (what the MPC recomputes and what it signed), the Poseidon identity and refund commitments (the MPC's key-derivation path and the settle gate), the SHA-256 `tokenType`, coin commitment and nullifier (the ledger's own), and the ECDSA verify (the only authentication gate). None of that is ours to choose, so the two sides spend the same rows on it.
 
 What differs is **instruction selection around those hashes**:
 
@@ -152,46 +105,17 @@ What differs is **instruction selection around those hashes**:
 | `abiWordToUint128` | gone from the settles (the settle views carry typed amounts) | gone likewise | — |
 | ledger op framing | identical Impact streams (PI-equal by construction) | identical | — |
 
-The request circuits are where those words live: `startSwap` builds seven
-of them and drops a level; the 2-word requests drop three. The settle
-circuits build none and read their amounts off the settle views, so their
-12–16% row cut is the domain-separator input plus framing, and stays
-inside k16.
+The request circuits are where those words live: `startSwap` builds seven of them and drops a level; the 2-word requests drop three. The settle circuits build none and read their amounts off the settle views, so their 12–16% row cut is the domain-separator input plus framing, and stays inside k16.
 
 ## Honest notes and limits
 
-- **`initialise` is identical, not merely parity.** 891 rows on both
-  sides: one Poseidon commitment, one point encode, seven cell writes.
-  With the SHA blocks gone from the deployer gate there is nothing left
-  to select differently.
-- **The nine settle circuits are ECDSA-floored above 2^15.** They cut
-  11.5–16.4% of rows but cannot cross k16 while the secp256k1 verify is
-  pinned. Their prove column is noise: `completeRedeem` +9.6% and
-  `refundRedeem` +6.9% at identical `k` and fewer rows are the same
-  session's swing (the other seven k16 settles sit within ±2%, and the
-  earlier editions recorded the same spread). Rows, `k` and proof sizes
-  are exact; same-`k` prove and RSS deltas are not findings either way.
-- **Sub-second cells are noise-dominated** in absolute terms; their `k`
-  columns are the result.
-- **The three lending flows have no earlier number to compare with**;
-  they enter the report here. `startRedeem` crosses k16 → k15 like
-  `startSwap` (three ABI words including two copies of the vault
-  address); `startSupply` stays inside k15 like `startWithdraw`.
-- **The API lineage is not in this table.** `erc20_vault_pending` (the
-  vault on the typed Sig Network API) proves its own statement and is
-  priced by rows only in `notes/benchmark.org` §2026-09-05 — 0.14–0.35×
-  of compactc on the request circuits, 0.86–0.88× on the settles.
+- **`initialise` is identical, not merely parity.** 891 rows on both sides: one Poseidon commitment, one point encode, seven cell writes. With the SHA blocks gone from the deployer gate there is nothing left to select differently.
+- **The nine settle circuits are ECDSA-floored above 2^15.** They cut 11.5–16.4% of rows but cannot cross k16 while the secp256k1 verify is pinned. Their prove column is noise: `completeRedeem` +9.6% and `refundRedeem` +6.9% at identical `k` and fewer rows are the same session's swing (the other seven k16 settles sit within ±2%, and the earlier editions recorded the same spread). Rows, `k` and proof sizes are exact; same-`k` prove and RSS deltas are not findings either way.
+- **Sub-second cells are noise-dominated** in absolute terms; their `k` columns are the result.
+- **The three lending flows have no earlier number to compare with**; they enter the report here. `startRedeem` crosses k16 → k15 like `startSwap` (three ABI words including two copies of the vault address); `startSupply` stays inside k15 like `startWithdraw`.
+- **The API lineage is not in this table.** `erc20_vault_pending` (the vault on the typed Sig Network API) proves its own statement and is priced by rows only in `notes/benchmark.org` §2026-09-05 — 0.14–0.35× of compactc on the request circuits, 0.86–0.88× on the settles.
 
-  **M37 rung D changed the STATEMENT of that lineage's eight settle
-  circuits** (2026-09-06), so their numbers above are stale and the
-  ones below are from the row snapshot rather than a bench run. The
-  `Succeeded` / `Failed` split moved the executed-but-failed case out of
-  `complete_withdraw` and into `refund_withdrawal`: the completion lost
-  the refund branch it might not take (its coin mint, its commitment
-  opening and its four witnesses) and each refund gained the second
-  Poseidon preimage and the `cond_select` that pick the attestation
-  digest by kind. Nine request circuits, `claim` and every other circuit
-  in the tree are byte-identical.
+  **On 2026-09-06 the STATEMENT of that lineage's eight settle circuits changed**, so their numbers above were stale and the ones below were taken from the row snapshot of that date rather than a bench run. They too predate later changes: the current figures are in `row_snapshot.rs`. The `Succeeded` / `Failed` split moved the executed-but-failed case out of `complete_withdraw` and into `refund_withdrawal`: the completion lost the refund branch it might not take (its coin mint, its commitment opening and its four witnesses) and each refund gained the second Poseidon preimage and the `cond_select` that pick the attestation digest by kind. Nine request circuits, `claim` and every other circuit in the tree are byte-identical.
 
   | circuit | before | after |
   |---|---|---|
@@ -202,13 +126,8 @@ inside k16.
   | `refund_redeem` | k16 / 35,562 | k16 / 35,635 |
   | `complete_swap` / `_supply` / `_redeem` | k16 / 45,082 / 35,576 / 35,581 | unchanged |
 
-  `complete_withdraw` crossing k16 → k15 is the one that matters: it
-  halves the proving key and the prover's RAM for the common path of a
-  withdrawal. **The bench has not been re-run**; that is the main
-  session's, and the prove/RSS columns for these rows will move.
-- Proof sizes are identical per circuit across both sides (same proof
-  system and public-input counts); verify times are milliseconds
-  everywhere.
+  `complete_withdraw` crossing k16 → k15 is the one that matters: it halves the proving key and the prover's RAM for the common path of a withdrawal. The bench was not re-run for these rows, so their prove and RSS columns would move.
+- Proof sizes are identical per circuit across both sides (same proof system and public-input counts); verify times are milliseconds everywhere.
 
 ## Reproducing
 
@@ -218,12 +137,4 @@ From a clean checkout (nix + direnv provide the pinned toolchain):
 nix run .#bench        # or: nix develop -c ./bench.sh
 ```
 
-This re-runs the differential tests with preimage dumping on (every
-preimage is corpus-verified — PI-equal under both toolchains' artifacts —
-before it is benchmarked), proves all 40 cells, and writes
-`target/bench/results.json`, `report.md`, and the per-region cost
-profiles under `target/bench/profiles/`. Deleting
-`target/bench/results.jsonl` forces a fresh run; leaving it resumes an
-interrupted one. The property harness (`erc20_vault_spec.rs`,
-`PROPTEST_CASES=1000000 cargo test --release` for the gating run) and the
-adversarial sweeps cover the same seventeen circuits.
+This re-runs the differential tests with preimage dumping on (every preimage is corpus-verified — PI-equal under both toolchains' artifacts — before it is benchmarked), proves all 40 cells, and writes `target/bench/results.json`, `report.md`, and the per-region cost profiles under `target/bench/profiles/`. Deleting `target/bench/results.jsonl` forces a fresh run; leaving it resumes an interrupted one. The property harness (`erc20_vault_pending_spec.rs`, `PROPTEST_CASES=1000000 cargo test --release` for the gating run) covers the seventeen circuits of the Pending lineage, and the tamper sweeps of `erc20_vault_differential.rs` cover the twenty-nine of the current port.

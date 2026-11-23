@@ -1,5 +1,5 @@
-//! A signet signer call BUILT THE WAY THE LEDGER BUILDS IT (M29 rung C),
-//! now through `minocrab-publisher` (M30 rung A).
+//! A signet signer call built the way the ledger builds it,
+//! now through `minocrab-publisher`.
 //!
 //! Every proof preimage the signet signer's tests use comes from here, and this
 //! module never assembles one by hand. The path is the production path:
@@ -19,15 +19,15 @@
 //! ```
 //!
 //! That is exactly what `sig-net/mpc`'s TypeScript sidecar does through the
-//! ledger-v9 WASM bindings (`midnight-publisher-ts/src/intent.ts`). Since
-//! M30 rung A it is also LIBRARY code — `minocrab_publisher::call` — rather
+//! ledger-v9 WASM bindings (`midnight-publisher-ts/src/intent.ts`). It is
+//! also library code — `minocrab_publisher::call` — rather
 //! than test code, so the preimage under test is the one the Rust publisher
 //! produces, not a look-alike. What is left in this file is only what is
 //! test-only: the fixed randomness, the fixed address, the deployment
 //! helpers, and the limb arithmetic the construction gate checks the
 //! ledger's own field vector against.
 //!
-//! The one thing NOT taken from the ledger is the Impact program itself
+//! The one thing not taken from the ledger is the Impact program itself
 //! (`minocrab_publisher::call::log_ops`): in production it comes from
 //! compactc's generated JS executor. `tests/signet_ledger_apply.rs` closes
 //! that gap against `sig-net/mpc`'s captured on-chain transactions.
@@ -52,6 +52,8 @@ use midnight_storage::storage::Array;
 use midnight_transient_crypto::commitment::PedersenRandomness;
 use midnight_transient_crypto::proofs::{ProofPreimage, VerifierKey};
 use minocrab::Fr;
+
+pub use super::common::b32_slots;
 use minocrab_publisher::call::{Attestation, EcdsaSignature};
 use rand::rngs::StdRng;
 use rand::SeedableRng;
@@ -68,7 +70,7 @@ pub type VmOp = Op<ResultModeVerify, InMemoryDB>;
 pub type PreimageIntent = Intent<Signature, ProofPreimageMarker, PedersenRandomness, InMemoryDB>;
 
 /// The communication-commitment randomness every signet signer call in the test
-/// suite is built with. FIXED, not sampled: the benchmark harness reads the
+/// suite is built with. Fixed, not sampled: the benchmark harness reads the
 /// preimages these tests dump (`support::dump_preimage`), so a preimage has
 /// to be reproducible across runs. A publisher samples it per call, which is
 /// why the library takes it as an argument.
@@ -89,14 +91,6 @@ pub fn singleton_address() -> ContractAddress {
 
 // ---- limb arithmetic, the construction gate's second reading ---------------
 
-/// A `Bytes<32>`'s two FAB slots: hi = byte 31, lo = bytes 0..31 LE.
-pub fn b32_slots(bytes: &[u8; 32]) -> (Fr, Fr) {
-    (
-        Fr::from(u64::from(bytes[31])),
-        Fr::from_le_bytes(&bytes[..31]).expect("31 bytes fit"),
-    )
-}
-
 /// A `Bytes<128>`'s five FAB slots: 31-byte chunks from the front, limb 0
 /// the trailing leftover.
 pub fn b128_limbs(bytes: &[u8; 128]) -> Vec<Fr> {
@@ -114,9 +108,9 @@ pub fn b128_limbs(bytes: &[u8; 128]) -> Vec<Fr> {
 /// `minocrab_publisher::call::call_prototype` with this suite's fixed
 /// randomness and `INITIAL_PARAMETERS`.
 ///
-/// The parameters are the publisher's argument, not its constant (M30 A);
+/// The parameters are the publisher's argument, not its constant;
 /// `INITIAL_PARAMETERS` is what these gates have always partitioned against
-/// and what their pinned preimages carry, so it is spelled out HERE, once.
+/// and what their pinned preimages carry, so it is spelled out here, once.
 pub fn call_prototype(
     entry_point: &str,
     address: ContractAddress,
@@ -164,7 +158,7 @@ pub fn calls_of(
         .collect()
 }
 
-/// THE construction gate's subject: the ledger's own `ProofPreimage` for one
+/// The construction gate's subject: the ledger's own `ProofPreimage` for one
 /// signet signer call.
 ///
 /// Built by putting the prototype through `Intent::new` and reading the
@@ -187,7 +181,7 @@ pub fn call_preimage(entry_point: &str, input: AlignedValue, misc_bytes: &[u8]) 
 
 // ---- deploying the signet signer and applying a call ---------------------------
 
-/// One of the COMMITTED managed verifier keys (M29 rung A:
+/// One of the committed managed verifier keys (M29 rung A:
 /// `crates/signet-artifacts/managed/keys/<circuit>.verifier`, written by the
 /// pinned `zkir-v3`'s keygen and gated byte-for-byte by `signet-artifacts`'
 /// `generated_equals_committed`).
@@ -218,7 +212,7 @@ pub fn singleton_contract_state(
     ContractState::new(StateValue::Array(Array::new()), operations, Default::default())
 }
 
-/// Balancing and limits OFF: there is no DUST wallet in this workspace (it
+/// Balancing and limits off: there is no DUST wallet in this workspace (it
 /// lives in `sig-net/mpc`'s `chain-midnight`), and none of these
 /// transactions carries a zswap offer.
 pub fn unbalanced_strictness() -> WellFormedStrictness {
@@ -288,7 +282,7 @@ pub fn respond_misc(
     minocrab_publisher::call::respond_misc(name, request_id, &signature(big_r_x, big_r_y, s, recovery_id))
 }
 
-/// A respond call's arguments with their COMPACT alignment: four
+/// A respond call's arguments with their Compact alignment: four
 /// `Bytes<32>` then a one-byte `Uint<8>`.
 pub fn respond_input(
     request_id: &[u8; 32],
@@ -319,7 +313,7 @@ pub fn respond_bidirectional_misc(
     )
 }
 
-/// `respondBidirectional`'s arguments with their COMPACT alignment: sixteen
+/// `respondBidirectional`'s arguments with their Compact alignment: sixteen
 /// field limbs.
 pub fn respond_bidirectional_input(
     request_id: &[u8; 32],

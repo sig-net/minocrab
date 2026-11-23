@@ -1,18 +1,18 @@
-//! M27 rung 2's gate: the Lean dataflow functions over the real IR
+//! The Lean dataflow gate: the Lean dataflow functions over the real IR
 //! (`MinocrabZkir.Dataflow` in crates/minocrab-zkir/lean/) agree with
-//! `operands_mut` / `returned_operands` / `defined_identifiers` on EVERY
+//! `operands_mut` / `returned_operands` / `defined_identifiers` on every
 //! corpus instruction (notes/zkir-semantics.org §8). Both sides print one
 //! line per instruction — path, index, operands, returned, defines, with
 //! wires by name and immediates as `#` — and the two texts must be equal.
 //!
-//! Skips loudly without `lake` on PATH or a compiled corpus, the policy of
+//! Skips loudly without `lake` on path or a compiled corpus, the policy of
 //! the rest of the corpus-driven gates.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use minocrab_ir::v3::passes::{defined_identifiers, operands, returned};
-use minocrab_zkir::v3::Operand;
+use minocrab_ir::passes::{defined_identifiers, operands, returned};
+use minocrab_zkir::Operand;
 
 fn collect_zkir(dir: &Path, out: &mut Vec<PathBuf>) {
     let Ok(entries) = std::fs::read_dir(dir) else {
@@ -49,7 +49,7 @@ fn rust_dump(corpus: &Path) -> String {
         if minocrab_zkir::major_version(path).expect("corpus reads") != 3 {
             continue;
         }
-        let ir = minocrab_zkir::v3::read_zkir(path).expect("corpus parses");
+        let ir = minocrab_zkir::read_zkir(path).expect("corpus parses");
         for (idx, ins) in ir.instructions.iter().enumerate() {
             out.push_str(&format!(
                 "{}\t{idx}\t{}\t{}\t{}\n",
@@ -68,7 +68,7 @@ fn lean_dataflow_agrees_with_the_rust_functions_on_every_corpus_instruction() {
     let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let lean_dir = crate_dir.join("../minocrab-zkir/lean");
     let corpus = crate_dir.join("../../corpus/zkir");
-    if !corpus.join("signet-midnight-examples").exists() {
+    if !corpus.join("signet-midnight-examples-v070").exists() {
         eprintln!("skipping: no corpus at {} (run corpus/compile.sh)", corpus.display());
         return;
     }
@@ -111,7 +111,7 @@ fn lean_dataflow_agrees_with_the_rust_functions_on_every_corpus_instruction() {
         );
     }
     let instructions = rust.lines().count();
-    // THE COUNT IS ASSERTED, as in corpus_roundtrip.rs: it moves only when
+    // The count is asserted, as in corpus_roundtrip.rs: it moves only when
     // the corpus does; update it in the same commit, naming the source.
     assert_eq!(
         // 16815 → 16666 at the M28 corpus refresh (4d9cf61): the Poseidon
@@ -128,7 +128,15 @@ fn lean_dataflow_agrees_with_the_rust_functions_on_every_corpus_instruction() {
         // 23011 → 67036 at the compactc 0.36.0 bump: compactc writes only
         // ZKIR v3, so all 855 corpus files are dumped, not 110.
         // 67036 → 121834 with passport-account-custody's 52 circuits.
-        instructions, 121834,
+        // 121834 → 119109 at the compactc 0.36.1 bump (no artifact moved):
+        // the compact source repinned to the release tag (7fa3a117), its
+        // examples and test contracts added and removed.
+        // 119109 → 128982 with the mainnet pins (M48 L): the v026 signer,
+        // responder and test callers and the 0.7.0-rc.2 vault, 41 artifacts.
+        // 128982 → 124300 when the v0.25.0 pin and fff3421c's signer, test
+        // callers and serde fixture retired (M48 L).
+        // 124300 → 115935 when the 375071b vault and the v0.24.1 pin retired.
+        instructions, 115935,
         "corpus instruction count moved ({instructions}); recompiled or extended corpus?"
     );
     println!("lean and rust dataflow agree on {instructions} corpus instructions");

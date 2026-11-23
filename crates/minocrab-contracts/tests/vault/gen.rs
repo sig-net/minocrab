@@ -1,7 +1,6 @@
 //! The property harness's proptest configuration — what the conformance and
-//! oracle suites scale their case counts by. The seventeen-circuit vault's
-//! scenario strategies that used to live here went with that vault (M44);
-//! a property harness on the flush pattern is a follow-up.
+//! oracle suites scale their case counts by. There are no scenario
+//! strategies for the flush-pattern vault here.
 
 use proptest::prelude::*;
 

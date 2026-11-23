@@ -1,11 +1,11 @@
-//! The agreement check: does this interface crate describe THAT artifact?
+//! The agreement check: does this interface crate describe that artifact?
 //!
 //! [`Artifact::assert_interface_matches`] is the whole point of the crate.
 //! Given a callee circuit's declared argument list `A` and result type `R`
 //! — the very types an `#[interface]` trait names, so nothing is written
 //! twice — it runs six checks against the pinned artifact:
 //!
-//! 1. the entry point EXISTS among the artifact's circuits;
+//! 1. the entry point exists among the artifact's circuits;
 //! 2. it is `proof: true` (a `proof: false` circuit has no verifier key, so
 //!    it can never be a callee — the whole `Signet` module is `proof:
 //!    false`, which is what makes this a real check);
@@ -14,7 +14,7 @@
 //! 4. the result type, flattened, equals `R`'s;
 //! 5. the circuit compiles a communications commitment (without one there
 //!    is nothing for `claimContractCall` to match);
-//! 6. the compiled `.zkir`'s opening CONSTRAINT PREFIX equals the
+//! 6. the compiled `.zkir`'s opening constraint prefix equals the
 //!    constraints `Prim::constraint` derives from `A` — slot for slot, on
 //!    the declared input of that slot — whenever the `.zkir` is reachable,
 //!    and against the distilled `pin.json` copy of it always.
@@ -24,8 +24,8 @@
 
 use std::path::{Path, PathBuf};
 
-use minocrab::v3::{CallArgs, CallResult, Prim};
-use minocrab::AlignmentAtom;
+use minocrab::{CallArgs, Decode, Prim};
+use minocrab::{AlignmentAtom, Public};
 use minocrab_ledger::EntryPoint;
 
 use crate::info::{flatten_all, ContractInfo, Flattened};
@@ -94,7 +94,7 @@ impl Artifact {
         Some(ZkirFacts::read(&path).map_err(Error::Zkir))
     }
 
-    /// THE DIGEST CHECK: the committed `contract-info.json` and every
+    /// The digest check: the committed `contract-info.json` and every
     /// reachable `.zkir` hash to what `pin.json` says, and the pin's
     /// distilled per-circuit facts are the artifact's.
     pub fn verify_pin(&self) -> Result<(), Problems> {
@@ -132,10 +132,10 @@ impl Artifact {
     /// The six checks, for one circuit.
     ///
     /// `A` is the callee's argument list (a tuple of the `#[interface]`
-    /// method's parameter types) and `R` its result type — the SAME types
+    /// method's parameter types) and `R` its result type — the same types
     /// the generated call passes, so agreement here is agreement about the
     /// call.
-    pub fn check<A: CallArgs, R: CallResult>(&self, entry_point: EntryPoint) -> Result<(), Problems> {
+    pub fn check<A: CallArgs, R: Decode<Public>>(&self, entry_point: EntryPoint) -> Result<(), Problems> {
         let name = entry_point.name();
         let mut problems = Problems::default();
 
@@ -212,14 +212,14 @@ impl Artifact {
     }
 
     /// [`Artifact::check`], as an assertion.
-    pub fn assert_interface_matches<A: CallArgs, R: CallResult>(&self, entry_point: EntryPoint) {
+    pub fn assert_interface_matches<A: CallArgs, R: Decode<Public>>(&self, entry_point: EntryPoint) {
         if let Err(problems) = self.check::<A, R>(entry_point) {
             panic!("{} does not match the pinned artifact:\n{problems}", entry_point.name());
         }
     }
 }
 
-/// THE CALLEE SIDE: our OWN built circuit against the interface it
+/// The callee side: our own built circuit against the interface it
 /// publishes.
 ///
 /// The mirror of [`Artifact::check`]. There the interface is a claim about
@@ -231,8 +231,8 @@ impl Artifact {
 ///
 /// `A` is the circuit's argument list and `R` its result, exactly as in
 /// [`Artifact::check`].
-pub fn check_ir<A: CallArgs, R: CallResult>(
-    ir: &minocrab_zkir::v3::IrSource,
+pub fn check_ir<A: CallArgs, R: Decode<Public>>(
+    ir: &minocrab_zkir::IrSource,
     entry_point: EntryPoint,
 ) -> Result<(), Problems> {
     let name = entry_point.name();
@@ -250,8 +250,8 @@ pub fn check_ir<A: CallArgs, R: CallResult>(
 }
 
 /// [`check_ir`], as an assertion.
-pub fn assert_ir_matches_interface<A: CallArgs, R: CallResult>(
-    ir: &minocrab_zkir::v3::IrSource,
+pub fn assert_ir_matches_interface<A: CallArgs, R: Decode<Public>>(
+    ir: &minocrab_zkir::IrSource,
     entry_point: EntryPoint,
 ) {
     if let Err(problems) = check_ir::<A, R>(ir, entry_point) {
@@ -261,7 +261,7 @@ pub fn assert_ir_matches_interface<A: CallArgs, R: CallResult>(
 
 /// A compiled circuit against a derived constraint prefix: input count,
 /// communications commitment, and the prefix slot for slot — each
-/// constraint on the declared input of ITS slot.
+/// constraint on the declared input of its slot.
 fn compare_zkir(
     problems: &mut Problems,
     name: &str,

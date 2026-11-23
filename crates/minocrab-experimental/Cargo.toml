@@ -1,0 +1,23 @@
+[package]
+name = "minocrab-experimental"
+description = "MinoCrab's experimental tier and escape hatches beneath the typed API, with NO backwards-compatibility guarantee: any release, a patch release included, may rename, change or remove any item"
+# 0.0.x on purpose: every 0.0.x release is semver-incompatible with every
+# other. No core crate depends on this one (workspace_versions.rs holds that).
+version = "0.0.1"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+readme = "README.md"
+keywords = ["midnight", "zkir", "impact", "zero-knowledge", "circuit"]
+categories = ["cryptography::cryptocurrencies", "cryptography"]
+include = ["src/**/*.rs", "README.md", "LICENSE-MIT", "LICENSE-APACHE"]
+
+[lints]
+workspace = true
+
+[dependencies]
+# `Circuit` and `ImpactElem`.
+minocrab.workspace = true
+# The Impact op builders and `emit`, re-exported in `impact::raw`.
+minocrab-ledger.workspace = true

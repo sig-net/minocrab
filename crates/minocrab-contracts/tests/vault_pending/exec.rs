@@ -1,4 +1,4 @@
-//! The reference EXECUTOR for the `erc20_vault_pending` lineage — the
+//! The reference executor for the `erc20_vault_pending` lineage — the
 //! `Pending`-based twin of `tests/vault/exec.rs`. Runs the model's Impact
 //! op streams through Midnight's own `QueryContext::query` against a real,
 //! segmented, twenty-two-field state tree.
@@ -42,7 +42,7 @@ pub struct PreState {
     pub mpc_response_key: Option<AlignedValue>,
     /// field 6 — `signet.mpcKeyVersion`. The V2 lineage had a
     /// `requestNonce: Counter` and a `caip2Id` cell in these positions; both
-    /// went with the V1 vocabulary (M44 rung D), so every field below moved
+    /// went with the V1 vocabulary, so every field below moved
     /// down one.
     pub key_version: u8,
     /// field 7 — `signet.evmChainId`.
@@ -114,7 +114,7 @@ impl PreState {
         ]
     }
 
-    /// The SEGMENTED state tree the circuits index into: an array of two
+    /// The segmented state tree the circuits index into: an array of two
     /// arrays, seven fields then fifteen (`ops::segment_of`).
     pub fn state(&self) -> StateValue {
         let fields = self.fields();
@@ -160,9 +160,9 @@ pub fn run(pre: &PreState, self_addr: &[u8; 32], ops: &[VmOp]) -> Result<Execute
 }
 
 /// See `tests/vault/exec.rs::assert_normalized`.
-/// THE GUARANTEED-SECTION GATE (Sig's fallibility model 1): the ledger's own
+/// The guaranteed-section gate (Sig's fallibility model 1): the ledger's own
 /// partitioner, run on this call alone under the initial parameters, must
-/// put the WHOLE transcript in the guaranteed section. Otherwise the
+/// put the whole transcript in the guaranteed section. Otherwise the
 /// transaction builder demotes the call to the fallible section with no
 /// error (`partition_transcripts`, ledger/src/construct.rs: "If none pass,
 /// 0 make it into the guaranteed section") and Sig will not sign for it.

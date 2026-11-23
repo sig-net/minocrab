@@ -1,20 +1,19 @@
-//! The vault on `Pending` (M35 rung C): layout, and row cost against the
+//! The vault on `Pending`: layout, and row cost against the
 //! modern lineage circuit by circuit.
 //!
 //! The cost rule of the milestone: the `Pending` calls do what the modern
-//! circuits did by hand, so a circuit costing MORE here is a bug in the API,
+//! circuits did by hand, so a circuit costing more here is a bug in the API,
 //! not a price of it. Where a circuit here does strictly less work (no
 //! calldata re-parse, no second map for the refund marker) it may cost
 //! less, and the table below records the measured pair for the note.
 //!
-//! The modern lineage was RETIRED in M28 (notes/vault-refresh.org §0); its
-//! side of the comparison is the `(k, rows)` the row snapshot last froze for
-//! it (commit abb4cfb, 2026-09-05), kept here as the baseline the rule was
-//! stated against.
+//! The modern lineage's side of the comparison is the `(k, rows)` the row
+//! snapshot last froze for it (commit abb4cfb), the baseline the rule was
+//! stated against (notes/vault-refresh.org §0).
 
 use minocrab_contracts::erc20_vault;
 use minocrab_contracts::erc20_vault_pending as pending;
-use minocrab_sim::v3::{cost, simulate};
+use minocrab_sim::{cost, simulate};
 
 mod vault_pending;
 
@@ -58,18 +57,18 @@ fn the_block_is_segmented_past_fifteen_fields() {
     assert_eq!(v.deposits.record_path().depth(), 2);
 }
 
-/// THE COST RULE, as measured (2026-09-05). A request circuit here pays
+/// The cost rule, as measured (2026-09-05). A request circuit here pays
 /// two things its modern twin does not: the environment insert (16-22
 /// rows: the typed continuation state, written once instead of re-parsed
 /// from calldata on settle) and the segmented block's two-element paths
 /// (~30 rows per circuit; with a fifteen-field block `initialize` is
-/// row-identical to modern's 2,412). Every settle circuit is CHEAPER by
-/// 260-900 rows. So the gate is per PAIR — a request and the settle that
+/// row-identical to modern's 2,412). Every settle circuit is cheaper by
+/// 260-900 rows. So the gate is per pair — a request and the settle that
 /// consumes it cost no more than the modern pair — and per-circuit `k`
 /// never rises. `initialize` and `approve_router` have no settle; they
 /// are held to modern's `k` and to the segmentation allowance.
 ///
-/// THE MEASURED PAIRS, M37 rung D (2026-09-06), with rung C's numbers
+/// The measured pairs, M37 rung D (2026-09-06), with rung C's numbers
 /// beside them. Only the withdrawal's two settles moved: `complete_withdraw`
 /// lost the whole refund branch (the coin mint, the commitment opening, the
 /// four witnesses) and `refund_withdrawal` gained the second Poseidon
@@ -84,7 +83,7 @@ fn the_block_is_segmented_past_fifteen_fields() {
 /// | swap + refund       | 12,379 + 35,578 | 12,379 + 35,651 | 48,806 |
 #[test]
 fn no_pair_costs_more_than_the_modern_lineage() {
-    let m = |ir: &minocrab_zkir::v3::IrSource| cost(ir);
+    let m = |ir: &minocrab_zkir::IrSource| cost(ir);
     let p_init = m(&pending::Vault::initialize().ir);
     let m_init = modern::INITIALIZE;
     let p_dep = m(&pending::Vault::deposit().ir);
@@ -133,17 +132,17 @@ fn no_pair_costs_more_than_the_modern_lineage() {
         eprintln!("{name:>18}: pending {ours:>6}   modern {theirs:>6}");
         assert!(ours <= theirs, "{name}: {ours} > {theirs}");
     }
-    // THE TWO SETTLE-LESS CIRCUITS have no settle to amortise against, so
+    // The two settle-less circuits have no settle to amortise against, so
     // they are held to an allowance rather than to a pair.
     //
-    // IT GREW AT M44 RUNG D, from 64 rows to 256. `modern` is the retired V2
+    // It grew at M44 rung D, from 64 rows to 256. `modern` is the retired V2
     // lineage, and the V1 record this one now files is not the same object:
     // its tail carries a 34-byte output-SCHEMA literal where V2 carried a
     // one-byte response kind, and its id is `calculateRequestIdV1` — two
     // chained Poseidons (the transaction digest, then the preimage) where V2
     // hashed the whole record once. `approve_router` pays both and nothing
     // back: 1,126 → 1,282 rows, +156. The split between the two causes is
-    // NOT measured here; what the allowance pins is that the V1 vocabulary
+    // not measured here; what the allowance pins is that the V1 vocabulary
     // costs a request a couple of hundred rows and not thousands.
     //
     // The pairs above are the claim that matters, and every one of them is
@@ -153,19 +152,19 @@ fn no_pair_costs_more_than_the_modern_lineage() {
     assert!(p_appr.1 <= m_appr.1 + V1_RECORD_ALLOWANCE, "approve_router: {} vs {}", p_appr.1, m_appr.1);
 }
 
-/// The lending flows (M35 rung C extension), against their COMPAT PORT
+/// The lending flows (M35 rung C extension), against their compat port
 /// twins (`erc20_vault`, PI-equal to compactc) rather than the retired
 /// modern lineage, which never had them: each `Pending`-based circuit must
 /// cost no more `k` than the circuit it replaces.
 ///
-/// IGNORED since M44 B: the twins are no longer the same circuits. The
-/// compat port was re-ported to upstream's FLUSH pattern (`375071b`), where
+/// Ignored since M44 B: the twins are no longer the same circuits. The
+/// compat port was re-ported to upstream's flush pattern (`375071b`), where
 /// `start_approve_stata` is a bare ownership proof that files nothing
 /// (k=10) against the `Pending` lineage's `approve_stata`, which files the
 /// request in the same call (k=11) — a comparison of two different jobs,
 /// not a regression. The like-for-like claim returns when the `Pending`
-/// lineage is itself re-based on the flush pattern (M44 rung D); until then
-/// the run still PRINTS both columns, so the numbers stay visible under
+/// lineage is itself re-based on the flush pattern; until then
+/// the run still prints both columns, so the numbers stay visible under
 /// `--ignored`, and the bound is left exactly as it was.
 #[test]
 #[ignore = "the compat twins moved to the flush pattern in M44; the like-for-like claim returns at M44 rung D"]
@@ -213,20 +212,20 @@ fn the_lending_flows_cost_no_more_than_the_compat_port() {
     }
 }
 
-// ---- the withdrawal's outcome, circuit by circuit (M37 rung D) ---------------
+// ---- the withdrawal's outcome, circuit by circuit ---------------
 
-/// THE ROW THE MILESTONE IS ABOUT. The deployed lineage put the
-/// executed-`false` case in a `when(!succeeded)` branch INSIDE
+/// The row the milestone is about. The deployed lineage put the
+/// executed-`false` case in a `when(!succeeded)` branch inside
 /// `completeWithdraw`, which is Gap 2: a completion that hoists a secret
 /// witness for a branch it may not take, and a `false` that "completes".
 ///
-/// On the typed API the outcome picks the CIRCUIT:
+/// On the typed API the outcome picks the circuit:
 ///
 /// | attestation             | complete | refund |
 /// |-------------------------|----------|--------|
-/// | this kind, flag `true`  | ACCEPT   | reject |
-/// | this kind, flag `false` | reject   | ACCEPT |
-/// | the MPC's failure kind  | reject   | ACCEPT |
+/// | this kind, flag `true`  | accept   | reject |
+/// | this kind, flag `false` | reject   | accept |
+/// | the MPC's failure kind  | reject   | accept |
 /// | this kind, byte `2`     | reject   | reject |
 ///
 /// The middle row is the one the deployed vault gets wrong.
@@ -271,7 +270,7 @@ fn the_withdrawals_outcome_picks_the_circuit() {
     }
 }
 
-/// ANYONE MAY COMPLETE: the completion's PRIVATE transcript is empty, so a
+/// Anyone may complete: the completion's private transcript is empty, so a
 /// stranger's proof is the same proof. There is no secret in the circuit to
 /// hoist — the API has no `Pending` method that consumes one in a
 /// completion, and the interface snapshot has no `wit` row for this circuit.
@@ -287,7 +286,7 @@ fn a_completion_witnesses_nothing() {
     assert!(simulate(&pending::Vault::complete_withdraw().ir, &pi).is_ok());
 }
 
-/// The refund still opens the owner commitment with a FRESH witness, so a
+/// The refund still opens the owner commitment with a fresh witness, so a
 /// stranger cannot refund someone else's withdrawal.
 #[test]
 fn only_the_withdrawer_refunds() {

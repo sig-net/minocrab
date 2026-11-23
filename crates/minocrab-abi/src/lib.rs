@@ -1,4 +1,4 @@
-//! ARTIFACT AGREEMENT: an interface crate, checked against the callee's
+//! Artifact agreement: an interface crate, checked against the callee's
 //! compiled artifact.
 //!
 //! This is what a package manager for contract interfaces can do that
@@ -7,7 +7,7 @@
 //! settle the claim: `contract-info.json` carries every circuit's fully
 //! typed signature, and the `.zkir` carries the constraint run the prover
 //! will actually execute. So drift between an interface crate and the
-//! contract it describes is a TEST FAILURE in the interface crate's own
+//! contract it describes is a test failure in the interface crate's own
 //! suite, not a runtime surprise at a call site.
 //!
 //! ```ignore
@@ -22,10 +22,10 @@
 //!
 //! The types named there are the ones the `#[interface]` trait declares and
 //! the ones a caller passes, so nothing is written down twice: agreement
-//! about the artifact IS agreement about every call site.
+//! about the artifact is agreement about every call site.
 //!
 //! Three pieces:
-//! - [`info`] — `contract-info.json` and the FLATTENING of Compact's typed
+//! - [`info`] — `contract-info.json` and the flattening of Compact's typed
 //!   tree into native slots, which is the same rule the `minocrab_std`
 //!   leaves implement;
 //! - [`pin`] — `pin.json`, the distilled hash-pinned artifact an interface
@@ -33,8 +33,8 @@
 //! - [`check`] — the six checks, and [`schema`] — the frozen published-ABI
 //!   rendering whose diff is the semver decision.
 //!
-//! WHAT IT DOES NOT DO: bind an artifact to a deployed ADDRESS. That needs
-//! the verifier key (keygen), which is out of M12's scope — see
+//! What it does not do: bind an artifact to a deployed address. That needs
+//! the verifier key (keygen), which is out of this crate's scope — see
 //! notes/interface-crates.org §"Honest limits" #3.
 //!
 //! # Where this sits

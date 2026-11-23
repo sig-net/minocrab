@@ -41,7 +41,7 @@ as data (=ROWS=) and measures the line counts. Two tests:
 First generation (2026-09-05, after M36's trim): 25,332 lines in the
 seven crates; 10,501 in files whose warrant is READING in whole or in
 part. The largest READING mass is =minocrab-ledger/src/lib.rs= (ops no
-fixture reaches) and =minocrab/src/v3.rs= (the instruction methods);
+fixture reaches) and =minocrab/src/circuit.rs= (the instruction methods);
 the smallest-and-most-important is =minocrab/src/lib.rs= — the lattice
 in 192 lines.
 

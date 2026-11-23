@@ -1,0 +1,632 @@
+{
+  "compiler-version": "0.36.1",
+  "compiler-commit": "7fa3a117c5e7efe9d2c51da04263e5f0b3509144",
+  "language-version": "0.28.0",
+  "runtime-version": "0.21.0",
+  "circuits": [
+    {
+      "name": "direct",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Struct",
+        "name": "Maybe",
+        "elements": [
+          {
+            "name": "is_some",
+            "type": {
+              "type-name": "Boolean"
+            }
+          },
+          {
+            "name": "value",
+            "type": {
+              "type-name": "Struct",
+              "name": "Either",
+              "elements": [
+                {
+                  "name": "is_left",
+                  "type": {
+                    "type-name": "Boolean"
+                  }
+                },
+                {
+                  "name": "left",
+                  "type": {
+                    "type-name": "Struct",
+                    "name": "ContractAddress",
+                    "elements": [
+                      {
+                        "name": "bytes",
+                        "type": {
+                          "type-name": "Bytes",
+                          "length": 32
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "name": "right",
+                  "type": {
+                    "type-name": "Struct",
+                    "name": "UserAddress",
+                    "elements": [
+                      {
+                        "name": "bytes",
+                        "type": {
+                          "type-name": "Bytes",
+                          "length": 32
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "viaInner",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Struct",
+        "name": "Maybe",
+        "elements": [
+          {
+            "name": "is_some",
+            "type": {
+              "type-name": "Boolean"
+            }
+          },
+          {
+            "name": "value",
+            "type": {
+              "type-name": "Struct",
+              "name": "Either",
+              "elements": [
+                {
+                  "name": "is_left",
+                  "type": {
+                    "type-name": "Boolean"
+                  }
+                },
+                {
+                  "name": "left",
+                  "type": {
+                    "type-name": "Struct",
+                    "name": "ContractAddress",
+                    "elements": [
+                      {
+                        "name": "bytes",
+                        "type": {
+                          "type-name": "Bytes",
+                          "length": 32
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "name": "right",
+                  "type": {
+                    "type-name": "Struct",
+                    "name": "UserAddress",
+                    "elements": [
+                      {
+                        "name": "bytes",
+                        "type": {
+                          "type-name": "Bytes",
+                          "length": 32
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "viaMiddle",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Struct",
+        "name": "Maybe",
+        "elements": [
+          {
+            "name": "is_some",
+            "type": {
+              "type-name": "Boolean"
+            }
+          },
+          {
+            "name": "value",
+            "type": {
+              "type-name": "Struct",
+              "name": "Either",
+              "elements": [
+                {
+                  "name": "is_left",
+                  "type": {
+                    "type-name": "Boolean"
+                  }
+                },
+                {
+                  "name": "left",
+                  "type": {
+                    "type-name": "Struct",
+                    "name": "ContractAddress",
+                    "elements": [
+                      {
+                        "name": "bytes",
+                        "type": {
+                          "type-name": "Bytes",
+                          "length": 32
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "name": "right",
+                  "type": {
+                    "type-name": "Struct",
+                    "name": "UserAddress",
+                    "elements": [
+                      {
+                        "name": "bytes",
+                        "type": {
+                          "type-name": "Bytes",
+                          "length": 32
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "both",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+          {
+            "type-name": "Struct",
+            "name": "Maybe",
+            "elements": [
+              {
+                "name": "is_some",
+                "type": {
+                  "type-name": "Boolean"
+                }
+              },
+              {
+                "name": "value",
+                "type": {
+                  "type-name": "Struct",
+                  "name": "Either",
+                  "elements": [
+                    {
+                      "name": "is_left",
+                      "type": {
+                        "type-name": "Boolean"
+                      }
+                    },
+                    {
+                      "name": "left",
+                      "type": {
+                        "type-name": "Struct",
+                        "name": "ContractAddress",
+                        "elements": [
+                          {
+                            "name": "bytes",
+                            "type": {
+                              "type-name": "Bytes",
+                              "length": 32
+                            }
+                          }
+                        ]
+                      }
+                    },
+                    {
+                      "name": "right",
+                      "type": {
+                        "type-name": "Struct",
+                        "name": "UserAddress",
+                        "elements": [
+                          {
+                            "name": "bytes",
+                            "type": {
+                              "type-name": "Bytes",
+                              "length": 32
+                            }
+                          }
+                        ]
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "type-name": "Struct",
+            "name": "Maybe",
+            "elements": [
+              {
+                "name": "is_some",
+                "type": {
+                  "type-name": "Boolean"
+                }
+              },
+              {
+                "name": "value",
+                "type": {
+                  "type-name": "Struct",
+                  "name": "Either",
+                  "elements": [
+                    {
+                      "name": "is_left",
+                      "type": {
+                        "type-name": "Boolean"
+                      }
+                    },
+                    {
+                      "name": "left",
+                      "type": {
+                        "type-name": "Struct",
+                        "name": "ContractAddress",
+                        "elements": [
+                          {
+                            "name": "bytes",
+                            "type": {
+                              "type-name": "Bytes",
+                              "length": 32
+                            }
+                          }
+                        ]
+                      }
+                    },
+                    {
+                      "name": "right",
+                      "type": {
+                        "type-name": "Struct",
+                        "name": "UserAddress",
+                        "elements": [
+                          {
+                            "name": "bytes",
+                            "type": {
+                              "type-name": "Bytes",
+                              "length": 32
+                            }
+                          }
+                        ]
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "witnesses": [
+  ],
+  "contracts": [
+    {
+      "name": "Inner",
+      "circuits": [
+        {
+          "name": "whoCalled",
+          "argument-types": [
+          ],
+          "result-type": {
+            "type-name": "Struct",
+            "name": "Maybe",
+            "elements": [
+              {
+                "name": "is_some",
+                "type": {
+                  "type-name": "Boolean"
+                }
+              },
+              {
+                "name": "value",
+                "type": {
+                  "type-name": "Struct",
+                  "name": "Either",
+                  "elements": [
+                    {
+                      "name": "is_left",
+                      "type": {
+                        "type-name": "Boolean"
+                      }
+                    },
+                    {
+                      "name": "left",
+                      "type": {
+                        "type-name": "Struct",
+                        "name": "ContractAddress",
+                        "elements": [
+                          {
+                            "name": "bytes",
+                            "type": {
+                              "type-name": "Bytes",
+                              "length": 32
+                            }
+                          }
+                        ]
+                      }
+                    },
+                    {
+                      "name": "right",
+                      "type": {
+                        "type-name": "Struct",
+                        "name": "UserAddress",
+                        "elements": [
+                          {
+                            "name": "bytes",
+                            "type": {
+                              "type-name": "Bytes",
+                              "length": 32
+                            }
+                          }
+                        ]
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Middle",
+      "circuits": [
+        {
+          "name": "forward",
+          "argument-types": [
+          ],
+          "result-type": {
+            "type-name": "Struct",
+            "name": "Maybe",
+            "elements": [
+              {
+                "name": "is_some",
+                "type": {
+                  "type-name": "Boolean"
+                }
+              },
+              {
+                "name": "value",
+                "type": {
+                  "type-name": "Struct",
+                  "name": "Either",
+                  "elements": [
+                    {
+                      "name": "is_left",
+                      "type": {
+                        "type-name": "Boolean"
+                      }
+                    },
+                    {
+                      "name": "left",
+                      "type": {
+                        "type-name": "Struct",
+                        "name": "ContractAddress",
+                        "elements": [
+                          {
+                            "name": "bytes",
+                            "type": {
+                              "type-name": "Bytes",
+                              "length": 32
+                            }
+                          }
+                        ]
+                      }
+                    },
+                    {
+                      "name": "right",
+                      "type": {
+                        "type-name": "Struct",
+                        "name": "UserAddress",
+                        "elements": [
+                          {
+                            "name": "bytes",
+                            "type": {
+                              "type-name": "Bytes",
+                              "length": 32
+                            }
+                          }
+                        ]
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "ledger": [
+    {
+      "name": "inner",
+      "index": 0,
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Contract",
+        "name": "Inner",
+        "circuits": [
+          {
+            "name": "whoCalled",
+            "argument-types": [
+            ],
+            "result-type": {
+              "type-name": "Struct",
+              "name": "Maybe",
+              "elements": [
+                {
+                  "name": "is_some",
+                  "type": {
+                    "type-name": "Boolean"
+                  }
+                },
+                {
+                  "name": "value",
+                  "type": {
+                    "type-name": "Struct",
+                    "name": "Either",
+                    "elements": [
+                      {
+                        "name": "is_left",
+                        "type": {
+                          "type-name": "Boolean"
+                        }
+                      },
+                      {
+                        "name": "left",
+                        "type": {
+                          "type-name": "Struct",
+                          "name": "ContractAddress",
+                          "elements": [
+                            {
+                              "name": "bytes",
+                              "type": {
+                                "type-name": "Bytes",
+                                "length": 32
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "name": "right",
+                        "type": {
+                          "type-name": "Struct",
+                          "name": "UserAddress",
+                          "elements": [
+                            {
+                              "name": "bytes",
+                              "type": {
+                                "type-name": "Bytes",
+                                "length": 32
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "middle",
+      "index": 1,
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Contract",
+        "name": "Middle",
+        "circuits": [
+          {
+            "name": "forward",
+            "argument-types": [
+            ],
+            "result-type": {
+              "type-name": "Struct",
+              "name": "Maybe",
+              "elements": [
+                {
+                  "name": "is_some",
+                  "type": {
+                    "type-name": "Boolean"
+                  }
+                },
+                {
+                  "name": "value",
+                  "type": {
+                    "type-name": "Struct",
+                    "name": "Either",
+                    "elements": [
+                      {
+                        "name": "is_left",
+                        "type": {
+                          "type-name": "Boolean"
+                        }
+                      },
+                      {
+                        "name": "left",
+                        "type": {
+                          "type-name": "Struct",
+                          "name": "ContractAddress",
+                          "elements": [
+                            {
+                              "name": "bytes",
+                              "type": {
+                                "type-name": "Bytes",
+                                "length": 32
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "name": "right",
+                        "type": {
+                          "type-name": "Struct",
+                          "name": "UserAddress",
+                          "elements": [
+                            {
+                              "name": "bytes",
+                              "type": {
+                                "type-name": "Bytes",
+                                "length": 32
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

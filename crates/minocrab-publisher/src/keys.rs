@@ -1,6 +1,6 @@
 //! The managed key directory, and the disk [`Resolver`] over it.
 //!
-//! This is the layout `crates/signet-artifacts` writes (M29 A); `sig-net/mpc`'s
+//! This is the layout `crates/signet-artifacts` writes; `sig-net/mpc`'s
 //! `chain-midnight` reads its `keys/` and `zkir/` out of
 //! `@sig-net/midnight-contract`'s `dist/managed`:
 //!
@@ -11,18 +11,18 @@
 //! <root>/expectedVk.json           circuit -> hashVerifierKey (COMMITTED)
 //! ```
 //!
-//! # Where a [`Deployment`]'s table comes from (M30 C2)
+//! # Where a [`Deployment`]'s table comes from
 //!
-//! [`ManagedDir::deployment`] builds the table from the package's OWN
+//! [`ManagedDir::deployment`] builds the table from the package's own
 //! `expectedVk.json` — the shape the former sidecar's build/prove gate read
 //! from the package's `expectedVk` export, circuit to `hashVerifierKey` of that
-//! package's own `.verifier` — and CHECKS every entry it uses against the
+//! package's own `.verifier` — and checks every entry it uses against the
 //! hash of the `.verifier` file this directory actually carries, failing
 //! loudly and by name if they disagree. Deriving the table from the
 //! `.verifier` files directly, the way an earlier version of this function
 //! did, cannot catch this: a directory can only ever agree with itself. The
 //! JSON and the keys are two artifacts `signet-artifacts::generate` writes
-//! from the SAME bytes in the SAME run, but nothing stops one of them from
+//! from the same bytes in the same run, but nothing stops one of them from
 //! going stale independently afterward (a hand-edited JSON, a key regenerated
 //! without re-running the pipeline, a stale file surviving a partial copy) —
 //! this is the check that notices.
@@ -34,7 +34,7 @@
 //!
 //! # Two spellings of a key location
 //!
-//! `resolve_key` accepts either the BARE circuit id (what
+//! `resolve_key` accepts either the bare circuit id (what
 //! [`crate::call::call_prototype`] writes into a prototype, and what the files
 //! are named) or a full encoded [`ContractKeyLocation`]
 //! (`contract:<address>/<circuit>?vk=<hash>`, what compact-js's proof-server
@@ -121,23 +121,23 @@ impl ManagedDir {
     }
 
     /// `hashVerifierKey(<circuit>.verifier)` — sha256 of the raw file bytes as
-    /// lowercase hex, via `signet_protocol::hash_verifier_key`, which M29 B
+    /// lowercase hex, via `signet_protocol::hash_verifier_key`, which is
     /// pinned against compact-js's own function under node.
     pub fn verifier_key_hash(&self, circuit: &str) -> Result<String, PublishError> {
         Ok(signet_protocol::hash_verifier_key(&self.verifier_key_bytes(circuit)?))
     }
 
     /// The [`Deployment`] a contract at `address` would have if it carried
-    /// THESE verifier keys — the `expectedVk` table, taken from the
-    /// package's OWN `expectedVk.json` and CHECKED against the `.verifier`
+    /// these verifier keys — the `expectedVk` table, taken from the
+    /// package's own `expectedVk.json` and checked against the `.verifier`
     /// files this directory carries, per circuit requested.
     ///
     /// A circuit `expectedVk.json` does not name is
     /// [`PublishError::UnknownCircuit`] (same as a `Deployment` built any
     /// other way asking for a circuit not in its table); a circuit the JSON
-    /// and the key file DISAGREE on is
+    /// and the key file disagree on is
     /// [`PublishError::ExpectedVkOutOfSync`], naming the circuit, the path
-    /// and both hashes — the mismatch this rung exists to catch (M30 C2).
+    /// and both hashes — the mismatch this check exists to catch.
     pub fn deployment(
         &self,
         address: ContractAddress,
@@ -166,8 +166,8 @@ impl ManagedDir {
 
     /// All three files for one circuit, or `None` if any of them is missing.
     ///
-    /// ALL OR NOTHING is the point: this repo commits the `.verifier` but not
-    /// the `.prover` or the `.bzkir` (M29 A — they regenerate deterministically
+    /// All or nothing is the point: this repo commits the `.verifier` but not
+    /// the `.prover` or the `.bzkir` (they regenerate deterministically
     /// and the prover key is 56 MB), so a directory with only the verifier key
     /// must read as "cannot prove this circuit", not as a half-resolved key
     /// that fails somewhere deeper.

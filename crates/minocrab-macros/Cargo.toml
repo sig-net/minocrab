@@ -22,7 +22,7 @@ proc-macro = true
 
 [dependencies]
 # The macro crate depends on nothing of ours: it emits fully-qualified
-# `::minocrab_std::v3::…` paths, so it stays a leaf of the build graph and
+# `::minocrab_std::…` paths, so it stays a leaf of the build graph and
 # cannot smuggle circuit-building code into an expansion.
 proc-macro2 = "1"
 quote = "1"

@@ -1,4 +1,4 @@
-//! The treasury's REFERENCE MODEL: what `send`, `complete` and `refund`
+//! The treasury's reference model: what `send`, `complete` and `refund`
 //! read, write, witness and take as arguments — in ordinary Rust, so a
 //! hand-built `ProofPreimage` can be handed to the simulator.
 //!
@@ -16,15 +16,15 @@ use midnight_zkir_v3::ir_instructions::ec_mul::ec_mul_offcircuit;
 use minocrab::Fr;
 use minocrab_contracts::erc20_vault::{TRANSFER_SELECTOR, VAULT_PATH};
 use minocrab_contracts::evm_flow::REFUND_PAD;
-use minocrab_contracts::signet_v1::{output_kind, schema, OutputSchema, ETHEREUM_CAIP2_ID};
-use minocrab_zkir::v3::IrValue;
+use minocrab_contracts::signet_v1::{output_kind, schema, OutputSchema};
+use minocrab_zkir::IrValue;
 
 use super::ops;
 use super::prims::*;
 
 // ---- the ledger fields, by declaration index ---------------------------------
 //
-// `signet: Signet` is FOUR fields under V1 (the request nonce and the caip2
+// `signet: Signet` is four fields under V1 (the request nonce and the caip2
 // id went: notes/vault-flush.org §6), then `transfers: Pending<…, 2>` is two.
 
 pub const SIGNET_SIGNER: u8 = 0;
@@ -89,7 +89,7 @@ pub struct Env {
     pub signer_addr: [u8; 32],
     /// The MPC response key's secret scalar seed.
     pub key_seed: u64,
-    /// `mpcKeyVersion`, a CELL under V1 — no circuit takes one.
+    /// `mpcKeyVersion`, a cell under V1 — no circuit takes one.
     pub key_version: u8,
     pub chain_id: u64,
     /// The signet signer's `signBidirectional` entry-point hash.
@@ -158,10 +158,10 @@ pub fn preimage_of(inputs: Vec<Fr>, witnesses: Vec<Fr>, ops: &[VmOp], rand: Fr) 
     }
 }
 
-// ---- Commit<T, Tag>: `hi` is NOT forced to zero ------------------------------
+// ---- Commit<T, Tag>: `hi` is not forced to zero ------------------------------
 
 /// `evm_flow::Commit::digest_of` off-circuit: `transientHash([pad.hi,
-/// pad.lo, value_limbs…, id.hi, id.lo])`, then the RAW
+/// pad.lo, value_limbs…, id.hi, id.lo])`, then the raw
 /// `div_mod_power_of_two` split — byte for byte the construction
 /// `signet_flow::Commit` performs, which is why an `Owned` environment's
 /// bytes equal the deployed vault's.
@@ -192,9 +192,9 @@ pub fn owner_commit_of(sk: &[u8; 32], request_id: &[u8; 32]) -> [u8; 32] {
 /// selector, gas limit and fee envelope, spelled out here so the model does
 /// not read them off the type it is checking.
 ///
-/// V1 since M44 rung D: `keyVersion` leads, the request nonce is GONE, the
+/// V1 since M44 rung D: `keyVersion` leads, the request nonce is gone, the
 /// destination is the constant `pad(32, "eip155:1")`, and the record ends
-/// with `signatureDest`, `params` and the OUTPUT SCHEMA — so the id is no
+/// with `signatureDest`, `params` and the output schema — so the id is no
 /// longer a hash of the whole record but of
 /// `RequestIdPreimageV1`, whose transaction enters as a digest
 /// (`prims::tx_params_digest`, `prims::request_id_v1`).
@@ -219,7 +219,6 @@ impl Req {
     pub fn limbs(&self, env: &Env) -> Vec<Fr> {
         let (sender_hi, sender_lo) = b32_slots(&env.self_addr);
         let (path_hi, path_lo) = b32_slots(&pad32(VAULT_PATH));
-        let (dest_hi, dest_lo) = b32_slots(&pad32(ETHEREUM_CAIP2_ID));
         let mut l = vec![
             Fr::from(u64::from(env.key_version)),
             sender_hi,
@@ -245,8 +244,7 @@ impl Req {
             l.push(lo);
         }
         l.push(Fr::from(0u64)); // access_list_entry_count
-        l.push(dest_hi);
-        l.push(dest_lo);
+        l.extend(execution_dest_limbs()); // executionDest: Bytes<64>
         l.push(Fr::from(0u64)); // signatureDest: unused
         l.push(Fr::from(0u64)); // params: 3 zero limbs
         l.push(Fr::from(0u64));
@@ -267,7 +265,7 @@ impl Req {
         aligned_atoms(&Self::atoms(), &self.limbs(env))
     }
 
-    /// `calculateEvmType2TxParamsDigestV1` over the two USED words.
+    /// `calculateEvmType2TxParamsDigestV1` over the two used words.
     pub fn tx_digest(&self, env: &Env) -> [u8; 32] {
         let words = self.words();
         tx_params_digest(
@@ -282,7 +280,7 @@ impl Req {
     }
 
     pub fn request_id(&self, env: &Env) -> [u8; 32] {
-        request_id_v1(
+        request_id_v026(
             env.key_version,
             &env.self_addr,
             &pad32(VAULT_PATH),
@@ -292,7 +290,7 @@ impl Req {
 }
 
 /// The notification's `depth ‖ path` payload — the treasury's record map is
-/// field 5 of a NARROW block, so the path is one element deep.
+/// field 5 of a narrow block, so the path is one element deep.
 pub fn notification_payload_limbs(self_addr: &[u8; 32], records_field: u8) -> Vec<Fr> {
     let mut bytes = [0u8; 128];
     bytes[..32].copy_from_slice(self_addr);
@@ -321,10 +319,10 @@ pub fn call_witnesses(cc_rand: Fr) -> Vec<Fr> {
 }
 
 /// A ticket's argument slots: `respond: RespondBidirectionalEvent` then
-/// `serializedOutput` — signed over the V1 digest the VERDICT implies
-/// (`prims::attestation_digest`: tag, id, height, verdict, WIDTH, output).
+/// `serializedOutput` — signed over the V1 digest the verdict implies
+/// (`prims::attestation_digest`: tag, id, height, verdict, width, output).
 ///
-/// `signed_width` and `signed_output_limbs` are the EMPTY output (0, no
+/// `signed_width` and `signed_output_limbs` are the empty output (0, no
 /// limbs) for a `failed` or `unviable` verdict and the one `Bool` byte for
 /// an `executed` one. That difference — in the width as much as in the limbs
 /// — is why `Pending::refund` hashes twice.
@@ -344,15 +342,11 @@ pub fn ticket_inputs(
     signed_output_limbs: &[Fr],
     ticket_output: Fr,
 ) -> Vec<Fr> {
-    let digest = attestation_digest(
-        request_id,
-        block_height,
-        output_kind,
-        signed_width,
-        signed_output_limbs,
-    );
+    let output_hash = attested_output_hash(signed_output_limbs);
+    let digest = attestation_digest_v026(request_id, block_height, output_kind, signed_width, &output_hash);
     let (rx_le, s_le, _pk) = sign(&digest, &scalar(key_seed), &scalar(nonce_seed));
     let (rid_hi, rid_lo) = b32_slots(request_id);
+    let (h_hi, h_lo) = b32_slots(&output_hash);
     let (d_hi, d_lo) = b32_slots(&digest);
     let (rx_hi, rx_lo) = b32_slots(&rx_le);
     let (s_hi, s_lo) = b32_slots(&s_le);
@@ -362,6 +356,9 @@ pub fn ticket_inputs(
         Fr::from(block_height),
         Fr::from(output_kind),
         Fr::from(signed_width as u64),
+        // `outputHash`: what the digest signs in place of the output.
+        h_hi,
+        h_lo,
         // `digest` on the event is for off-chain readers; nothing in the
         // circuit reads it, so the honest value is the real one.
         d_hi,
@@ -484,14 +481,14 @@ pub enum Attestation {
     /// nothing. `refund` takes it; `complete` must not.
     ExecutedFalse,
     /// The MPC's failure kind: reverted, never mined, or undecodable. Its
-    /// signed preimage is the kind byte ALONE.
+    /// signed preimage is the kind byte alone.
     NeverExecuted,
     /// This call's kind with a `bool` byte of 2: signed, but not a `bool`.
     ExecutedNonBoolean,
 }
 
 impl Attestation {
-    /// The MPC's VERDICT — `OutputKind`, where the `fff3421c` lineage had a
+    /// The MPC's verdict — `OutputKind`, where the `fff3421c` lineage had a
     /// response kind byte.
     pub fn output_kind(self) -> u64 {
         match self {
@@ -502,7 +499,7 @@ impl Attestation {
         }
     }
 
-    /// The attested WIDTH inside the digest: the `bool`'s one byte for an
+    /// The attested width inside the digest: the `bool`'s one byte for an
     /// execution, zero for a non-execution.
     pub fn signed_width(self) -> usize {
         match self {
@@ -581,7 +578,7 @@ impl SettleScenario {
         )
     }
 
-    /// `complete` witnesses NOTHING — that is the property, not an economy.
+    /// `complete` witnesses nothing — that is the property, not an economy.
     pub fn complete_witnesses(&self) -> Vec<Fr> {
         vec![]
     }
@@ -593,7 +590,7 @@ impl SettleScenario {
         vec![hi, lo, pk_hi, pk_lo]
     }
 
-    /// The settle's op stream. The record is REMOVED WITHOUT BEING READ:
+    /// The settle's op stream. The record is removed without being read:
     /// nothing in a V1 settle needs a field of it (there is no kind byte and
     /// no format version to re-assert), so `Pending::consume` is a
     /// membership check and two removals.

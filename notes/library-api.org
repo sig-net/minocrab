@@ -198,7 +198,7 @@ state.
   and AUTO-WARNS on any net instruction drop even when the pass is silent.
   =FoldImmediateCopies= / =DedupRangeConstraints= wrap the two reference
   passes; =run_pipeline= composes; =by_name= / =builtin_names= are the
-  registry. Tests in tests/v3_passes.rs pin the wrapper≡free-function
+  registry. Tests in tests/passes.rs pin the wrapper≡free-function
   equality, the drop-warning (and its absence on a no-op), and the
   registry. The trait is exposed by default (stable-ish tier); the
   =unstable= internals sweep is NOT done — step 3.
@@ -237,6 +237,8 @@ Verification hooks (§4) stay deferred; the shape is preserved throughout.
 Build-order steps 3 and the rest of 4, closing the milestone's checklist.
 
 ** Tier boundary v1
+
+SUPERSEDED (M48 B, 2026-11-21): the =unstable= feature gates nothing in either crate any more; it survives as an empty no-op alias so downstream manifests that name it (the passport port pins =minocrab-sim= with it) still resolve. Every consumer enabled it (=minocrab= itself turned it on for =minocrab-ir=), so the gated items are now compiled unconditionally with the visibility they had; the tiers survive only as the crates' Stability doc sections. The record below is how it was.
 
 §1's option (a), implemented: an =unstable= cargo feature on
 =minocrab-ir= and =minocrab-sim= gates the named internals —

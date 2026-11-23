@@ -1,15 +1,15 @@
-//! **EXPLORATION, not a corpus rewrite.** Per-recipient disclosure: handing
+//! **exploration, not a corpus rewrite.** Per-recipient disclosure: handing
 //! one named person a value only they can read, from inside a contract.
 //!
 //! The question this module exists to answer is "can a MinoCrab contract do
 //! what DAML's privacy model does — make sure a party sees the data within
 //! their purview, and nobody else?" The design discussion, the comparison
-//! with DAML and the list of things that do NOT carry over live in
+//! with DAML and the list of things that do not carry over live in
 //! `notes/disclosure-model.org`; this module is the executable half.
 //!
 //! # The mechanism
 //!
-//! Hashed ElGamal (ECIES without a MAC) over Jubjub, computed IN-CIRCUIT, with
+//! Hashed ElGamal (ECIES without a MAC) over Jubjub, computed in-circuit, with
 //! the ciphertext written to the public ledger. Recipient key `pk = g^ek`,
 //! ephemeral scalar `e` fresh per call:
 //!
@@ -21,7 +21,7 @@
 //! ```
 //!
 //! The recipient recomputes `S = E^ek` from their own secret and recovers
-//! `value = ct - mask`. That recovery needs NO proof and no on-chain
+//! `value = ct - mask`. That recovery needs no proof and no on-chain
 //! transaction — it is field arithmetic over a ledger read, which is why
 //! [`tests/disclosure.rs`] implements it natively in Rust rather than as a
 //! circuit.
@@ -34,18 +34,18 @@
 //! weak-input guards and its KDF shape, so a MinoCrab contract and a Compact
 //! contract using that module derive the same mask from the same key.
 //!
-//! WITH ONE DELIBERATE DIVERGENCE. OZ maps bytes to a Jubjub scalar as
+//! With one deliberate divergence. OZ maps bytes to a Jubjub scalar as
 //! `degradeToTransient(persistentHash(..))` — truncate the digest to 248 bits,
 //! which is below the Jubjub scalar order ℓ (≈ 2^251.8), so the result is
 //! always in range. Sound, but it is a workaround for a missing Compact
-//! builtin: ZKIR HAS `jubjub_scalar_from_native`, which reduces mod ℓ, and
+//! builtin: ZKIR has `jubjub_scalar_from_native`, which reduces mod ℓ, and
 //! [`ephemeral_scalar`] ends on it. The truncation is kept in front of the
 //! reduction so the scalar derived from a given seed is bit-for-bit the one
 //! OZ's module derives (the reduction is the identity on a 248-bit input);
-//! what the extra instruction buys is that range-correctness no longer rests
+//! what the extra instruction buys is that range-correctness does not rest
 //! on `degrade`'s width happening to be below ℓ.
 //!
-//! OUR CORPUS COPY IS STALE, and that is why there is no differential here.
+//! Our corpus copy is stale, and that is why there is no differential here.
 //! `corpus/compile-report.tsv` has `EcdhMask.compact line 148 char 22: no
 //! compatible function named ecMulGenerator is in scope … supplied (Field),
 //! declared (JubjubScalar)` — the vendored rev (5f3ecd4, v0.3.0-alpha.2)
@@ -58,15 +58,15 @@
 //!
 //! # Two corrections upstream is making, and where this module stands on them
 //!
-//! Both are OPEN PRs on `OpenZeppelin/compact-contracts`, read 2026-10-11,
-//! neither merged — so the vendored module and `main` both still have them.
+//! Both are open PRs on `OpenZeppelin/compact-contracts`, neither merged
+//! when read — so the vendored module and `main` both still have them.
 //!
 //! **#1110, "derive ElGamal's mask through Ecdh" (3/3).** `EcdhMask.encrypt`
-//! and `ElGamal.encryptPoint` each carried their own Diffie-Hellman step AND
+//! and `ElGamal.encryptPoint` each carried their own Diffie-Hellman step and
 //! their own copy of the two weak-input guards, so the guards could drift
 //! apart. The fix routes both through one `Ecdh.deriveShared`. This module
 //! takes the lesson one step further than Compact can: [`derive_shared`] is
-//! the only DH, and it returns a [`SharedSecret`] whose field is PRIVATE to
+//! the only DH, and it returns a [`SharedSecret`] whose field is private to
 //! this module, so there is no way to obtain a shared secret without passing
 //! the guards. The factoring is not a convention here, it is the type system —
 //! which matters because the homomorphic ElGamal path is exactly the next
@@ -74,7 +74,7 @@
 //!
 //! **#913, "hash to field and a uniform EcdhMask pad" (2/3).** The sharper
 //! one, and it is a real leak rather than a tidiness point: `ct = m + kdf(S)`
-//! with `kdf(S) < 2^248` NEVER WRAPS, so a plaintext anywhere near field size
+//! with `kdf(S) < 2^248` never wraps, so a plaintext anywhere near field size
 //! publishes its top bits in the clear. OZ's own `encrypt` is safe (its
 //! `value` is a `Uint<128>`, hidden with ~2^-120 slack), but `decrypt` returns
 //! a `Field` and the module is described as masking "a single field element",
@@ -83,7 +83,7 @@
 //! (Compact has no XOR for `expand_message_xmd`), uniform over the whole field
 //! within 2^-257.
 //!
-//! WHERE THIS MODULE STANDS: safe, by the type and not by the comment.
+//! Where this module stands: safe, by the type and not by the comment.
 //! [`encrypt`] takes `Uint<128>`, which is range-constrained in-circuit, so
 //! the 248-bit pad has 120 bits of slack and no top bits leak. There is
 //! deliberately NO `encrypt_field` — adding one needs `fieldKdf` first, and
@@ -98,7 +98,7 @@
 //! export ledger memos: List<(Field, Field, Field)>;     // field 1: encode(E) ‖ ct
 //! ```
 //!
-//! `memos` is ONE global append-only list, not a per-recipient
+//! `memos` is one global append-only list, not a per-recipient
 //! `Map<account, List<..>>`, and that is the privacy-relevant choice: a
 //! per-recipient map publishes who received a disclosure and how many, which
 //! is exactly the metadata DAML's stakeholder projection does not publish. A
@@ -106,42 +106,42 @@
 //! list, the Zcash model) and publishes only that a disclosure happened.
 //! See `notes/disclosure-model.org` §4.
 //!
-//! # Why the keys are stored as `encode` LIMBS, not as `JubjubPoint`
+//! # Why the keys are stored as `encode` limbs, not as `JubjubPoint`
 //!
 //! A `JubjubPoint` is `Cell`-only in a MinoCrab ledger: its limbs come out of
 //! an `encode` instruction, ZKIR has no in-circuit inverse, so
 //! [`LedgerRepr::from_limbs`] cannot rebuild one and a
 //! `LedgerMap<_, JubjubPoint>` does not exist (see that impl's docs in
 //! `minocrab-std`). [`PointLimbs`] is the way round: store the two field
-//! limbs, which read back fine, and have the SENDER supply the point as a
+//! limbs, which read back fine, and have the sender supply the point as a
 //! typed argument that the circuit binds to the stored limbs. Off-circuit the
 //! limbs decode back into a point (`decode_offcircuit`), which is all the
 //! recipient's wallet needs.
 
-use minocrab::v3::{Circuit3, FieldT, JubjubScalarT, Val, Wire3};
+use minocrab::{Circuit, FieldT, JubjubScalarT, Val, Wire};
 use minocrab::{label, Alignment, AlignmentAtom, AlignmentSegment, Fr, Private, Public};
-use minocrab_std::v3::hash;
-use minocrab_std::v3::{
+use minocrab_std::hash;
+use minocrab_std::{
     contract, is_true, not, CircuitAbi, Disclose, Discloses, JubjubPoint, Ledger, LedgerList,
-    LedgerMap, LedgerRepr, Prim, ProofWires, Uint, Vis3, B32,
+    LedgerMap, LedgerRepr, Prim, ProofWires, Uint, Vis, B32,
 };
 
 /// The domain-separation tag this contract's KDF is keyed with — the
 /// `domain` argument OZ's `EcdhMask` leaves to its consumer. A recipient's
-/// wallet MUST use the same bytes, and a different contract reusing the same
-/// recipient key MUST use different ones.
+/// wallet must use the same bytes, and a different contract reusing the same
+/// recipient key must use different ones.
 pub const DOMAIN: &str = "minocrab_disclosure_ecdh_v1";
 
 label! {
     /// The account a disclosure is addressed to. Public by necessity for
     /// `register` (it is the map key); see the module docs for why
-    /// `disclose_to` does NOT make it public.
+    /// `disclose_to` does not make it public.
     pub RegisteredAccount = "registered account";
     /// The registered public key — one label for both `encode` limbs.
     pub RegisteredKey = "registered key";
     /// The ephemeral public key `E = g^e`, both limbs.
     pub EphemeralKey = "ephemeral key";
-    /// The masked value `ct = value + KDF(pk^e)`. This is the ONLY thing the
+    /// The masked value `ct = value + KDF(pk^e)`. This is the only thing the
     /// disclosure makes public about the value, and it is a one-time pad.
     pub MaskedValue = "masked value";
 }
@@ -152,17 +152,17 @@ label! {
 /// the ledger as. The `Public` instantiation is a ledger shape; the `Private`
 /// one only ever appears between the `encode` and the `disclose`.
 #[derive(Clone, Copy)]
-pub struct PointLimbs<V: Vis3 = Private> {
+pub struct PointLimbs<V: Vis = Private> {
     /// The affine x coordinate.
-    pub x: Wire3<FieldT, V>,
+    pub x: Wire<FieldT, V>,
     /// The affine y coordinate.
-    pub y: Wire3<FieldT, V>,
+    pub y: Wire<FieldT, V>,
 }
 
-impl<V: Vis3> PointLimbs<V> {
+impl<V: Vis> PointLimbs<V> {
     /// `encode(point)` — the instruction, and the only constructor that ties
     /// these limbs to a point.
-    pub fn of(c: &mut Circuit3, point: JubjubPoint<V>) -> Self {
+    pub fn of(c: &mut Circuit, point: JubjubPoint<V>) -> Self {
         let limbs = c.encode(point.point());
         assert_eq!(limbs.len(), 2, "a Jubjub point encodes to two field limbs");
         PointLimbs {
@@ -172,7 +172,7 @@ impl<V: Vis3> PointLimbs<V> {
     }
 
     /// The limbs in slot order, for a hash preimage.
-    pub fn slots(self) -> [Wire3<FieldT, V>; 2] {
+    pub fn slots(self) -> [Wire<FieldT, V>; 2] {
         [self.x, self.y]
     }
 }
@@ -180,9 +180,9 @@ impl<V: Vis3> PointLimbs<V> {
 impl Disclose for PointLimbs<Private> {
     type Public = PointLimbs<Public>;
 
-    fn disclose_as<L: minocrab_std::v3::DisclosureLabel>(
+    fn disclose_as<L: minocrab_std::DisclosureLabel>(
         self,
-        c: &mut Circuit3,
+        c: &mut Circuit,
     ) -> PointLimbs<Public> {
         PointLimbs {
             x: self.x.disclose_as::<L>(c),
@@ -203,12 +203,12 @@ impl LedgerRepr for PointLimbs<Public> {
         vec![AlignmentAtom::Field, AlignmentAtom::Field]
     }
 
-    fn push_limbs(&self, _c: &mut Circuit3, limbs: &mut Vec<Wire3<FieldT, Public>>) {
+    fn push_limbs(&self, _c: &mut Circuit, limbs: &mut Vec<Wire<FieldT, Public>>) {
         limbs.push(self.x);
         limbs.push(self.y);
     }
 
-    fn from_limbs(limbs: Vec<Wire3<FieldT, Public>>) -> Self {
+    fn from_limbs(limbs: Vec<Wire<FieldT, Public>>) -> Self {
         assert_eq!(limbs.len(), 2, "a point is two field limbs");
         PointLimbs {
             x: limbs[0],
@@ -217,7 +217,7 @@ impl LedgerRepr for PointLimbs<Public> {
     }
 }
 
-impl<V: Vis3> CircuitAbi for PointLimbs<V> {
+impl<V: Vis> CircuitAbi for PointLimbs<V> {
     const SLOTS: usize = 2;
 
     fn push_atoms(atoms: &mut Vec<AlignmentAtom>) {
@@ -234,11 +234,11 @@ impl<V: Vis3> CircuitAbi for PointLimbs<V> {
 /// The ciphertext as the ledger stores it: `{ ephemeralPk, ct }`, with the
 /// point flattened to its `encode` limbs (see the module docs).
 #[derive(Clone, Copy)]
-pub struct Memo<V: Vis3 = Private> {
+pub struct Memo<V: Vis = Private> {
     /// `encode(E)`, `E = g^e`.
     pub ephemeral: PointLimbs<V>,
     /// `value + KDF(pk^e, DOMAIN)`.
-    pub ct: Wire3<FieldT, V>,
+    pub ct: Wire<FieldT, V>,
 }
 
 impl ProofWires for Memo<Public> {
@@ -257,12 +257,12 @@ impl LedgerRepr for Memo<Public> {
         ]
     }
 
-    fn push_limbs(&self, c: &mut Circuit3, limbs: &mut Vec<Wire3<FieldT, Public>>) {
+    fn push_limbs(&self, c: &mut Circuit, limbs: &mut Vec<Wire<FieldT, Public>>) {
         self.ephemeral.push_limbs(c, limbs);
         limbs.push(self.ct);
     }
 
-    fn from_limbs(mut limbs: Vec<Wire3<FieldT, Public>>) -> Self {
+    fn from_limbs(mut limbs: Vec<Wire<FieldT, Public>>) -> Self {
         assert_eq!(limbs.len(), 3, "a memo is three field limbs");
         let ct = limbs.pop().expect("three limbs");
         Memo {
@@ -300,7 +300,7 @@ fn point_alignment() -> Alignment {
 /// has to be upgrade-stable. `degradeToTransient` truncates the 32-byte digest
 /// to its low 31 bytes, which is where the hiding margin comes from — the mask
 /// is uniform over `[0, 2^248)` while the value is `< 2^128`.
-pub fn kdf(c: &mut Circuit3, shared: SharedSecret) -> Wire3<FieldT, Private> {
+pub fn kdf(c: &mut Circuit, shared: SharedSecret) -> Wire<FieldT, Private> {
     c.region("ecdh kdf", |c| {
         let [x, y] = shared.0.slots();
         let point_hash = hash::persistent_hash_compact(c, point_alignment(), &[x.erase(), y.erase()]);
@@ -323,22 +323,22 @@ pub fn kdf(c: &mut Circuit3, shared: SharedSecret) -> Wire3<FieldT, Private> {
 /// finished with `jubjub_scalar_from_native` (see the module docs' divergence
 /// note).
 ///
-/// # The freshness obligation this does NOT discharge
+/// # The freshness obligation this does not discharge
 ///
-/// `e` is a ONE-TIME PAD key. It must be unique per `(recipient, call)` AND
+/// `e` is a one-time pad key. It must be unique per `(recipient, call)` and
 /// unpredictable to observers: `recipientPk` is public, so anyone who learns
 /// `e` recomputes `S = pk^e` and opens the ciphertext. A unique but guessable
 /// seed (a counter, a public nonce) therefore breaks confidentiality
 /// completely. Nothing in-circuit can check either property — the circuit sees
 /// a field element and cannot tell a secret one from a public one. The seed
-/// MUST be a high-entropy witness the sender's wallet never publishes, and
+/// must be a high-entropy witness the sender's wallet never publishes, and
 /// `notes/disclosure-model.org` §5 records this as the sharpest edge in the
 /// whole design.
 pub fn ephemeral_scalar(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     seed: &B32<Private>,
     tag: &B32<Public>,
-) -> Wire3<JubjubScalarT, Private> {
+) -> Wire<JubjubScalarT, Private> {
     c.region("expand randomness", |c| {
         let expanded = hash::persistent_hash_compact(
             c,
@@ -358,7 +358,7 @@ pub fn ephemeral_scalar(
 /// An ECDH shared secret point `S`, and the proof that the two weak-input
 /// guards ran on the way to it.
 ///
-/// The inner limbs are PRIVATE TO THIS MODULE, so [`derive_shared`] is the only
+/// The inner limbs are private to this module, so [`derive_shared`] is the only
 /// way to obtain one and [`kdf`] is the only thing that consumes one. That is
 /// the structural version of what OZ's PR #1110 achieves by convention: there,
 /// a second encryption path can still write its own `ecMul` and skip the
@@ -367,29 +367,29 @@ pub fn ephemeral_scalar(
 pub struct SharedSecret(PointLimbs<Private>);
 
 /// The account id a caller may register: `upgradeFromTransient(transientHash(
-/// [pad(32, "disclosure:acct:"), sk]))` over a WITNESSED caller secret.
+/// [pad(32, "disclosure:acct:"), sk]))` over a witnessed caller secret.
 ///
 /// This is `notes/disclosure-model.org` §12 option 2, and it is what makes
 /// account squatting inexpressible rather than merely expensive: `register`
 /// takes no account argument at all, so the id is a function of a secret only
 /// the caller holds. There is no value a squatter can supply to name somebody
-/// else's account, which closes BOTH halves of §6 — the land-grab and the
+/// else's account, which closes both halves of §6 — the land-grab and the
 /// takeover — and leaves a re-registration meaning only "rotate my own key".
 ///
-/// Derived from a SECRET, not from `own_public_key`. Hashing the caller's
+/// Derived from a secret, not from `own_public_key`. Hashing the caller's
 /// public key would be cheaper and equally squat-proof, but anyone who knew
 /// that public key could compute the account id, so every disclosure to it
 /// would be publicly attributable to its owner. A commitment to a secret is a
 /// stable pseudonym nobody can compute from public data; senders learn it from
 /// the recipient, which they had to do anyway.
 ///
-/// DOMAIN-SEPARATED FROM THE VAULT, deliberately. `common::commitment_transient`
-/// is this exact shape under the pad `"vault:user:"`, and the vault DISCLOSES
+/// Domain-separated from the vault, deliberately. `common::commitment_transient`
+/// is this exact shape under the pad `"vault:user:"`, and the vault discloses
 /// its user commitment — so reusing that pad would make a caller's disclosure
 /// account id equal a value already public elsewhere, linking the two
 /// contracts for anyone holding the same `sk`. The shape is reused, per the
 /// reuse rule; the domain is not, and must not be.
-fn account_of_caller(c: &mut Circuit3) -> B32<Private> {
+fn account_of_caller(c: &mut Circuit) -> B32<Private> {
     c.region("caller account id", |c| {
         let sk = B32 {
             hi: c.witness::<FieldT>(),
@@ -402,35 +402,35 @@ fn account_of_caller(c: &mut Circuit3) -> B32<Private> {
     })
 }
 
-/// `Ecdh_deriveShared(pk, e)` — the ONE Diffie-Hellman step, with the ONE copy
+/// `Ecdh_deriveShared(pk, e)` — the one Diffie-Hellman step, with the one copy
 /// of the weak-input guards. Returns `(E = g^e, S = pk^e)`.
 ///
 /// # The guards, and why they are here rather than at each call site
 ///
 /// `recipientPk = identity` gives `S = identity` for any `e`, and
 /// `e ≡ 0 (mod ℓ)` gives `S = identity` for any key. Both yield
-/// `mask = KDF(identity, domain)`, a value ANY observer can recompute, so a
-/// ciphertext masked with it opens trivially. The identity IS a valid
+/// `mask = KDF(identity, domain)`, a value any observer can recompute, so a
+/// ciphertext masked with it opens trivially. The identity is a valid
 /// prime-order-subgroup point, so the runtime's subgroup constraint does not
 /// catch either case — nothing below this function would.
 ///
-/// The ephemeral POINT is guarded, not the scalar: `g^e == identity` captures
+/// The ephemeral point is guarded, not the scalar: `g^e == identity` captures
 /// both `e == 0` and any `e` reducing to 0 mod ℓ, so the guard holds however
 /// the runtime treats an out-of-range scalar. Guarding `e != 0` instead would
 /// lean on `ec_mul` faulting for `e >= ℓ`.
 ///
-/// # What it does NOT guard, because no circuit can
+/// # What it does not guard, because no circuit can
 ///
-/// That `e` is FRESH and SECRET — see [`ephemeral_scalar`]. A guard can rule
+/// That `e` is fresh and secret — see [`ephemeral_scalar`]. A guard can rule
 /// out the two values that break the scheme for everyone; it cannot tell a
 /// high-entropy witness from a counter.
 pub fn derive_shared(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     recipient_pk: JubjubPoint<Private>,
-    e: Wire3<JubjubScalarT, Private>,
+    e: Wire<JubjubScalarT, Private>,
 ) -> (PointLimbs<Private>, SharedSecret) {
     c.region("ecdh derive shared", |c| {
-        // The identity's encode limbs as CONSTANTS, which is the one place
+        // The identity's encode limbs as constants, which is the one place
         // this diverges from OZ's shape for cost rather than correctness.
         // Compact has no point literal, so `EcdhMask` writes
         // `ecMulGenerator(0 as JubjubScalar)` and pays a full scalar
@@ -467,7 +467,7 @@ pub fn derive_shared(
 /// # Why `value` is a `Uint<128>` and not a `Field`
 ///
 /// Because [`kdf`]'s pad is 248 bits and `ct = value + mask` is field
-/// addition that NEVER WRAPS for a 248-bit mask, so a plaintext anywhere near
+/// addition that never wraps for a 248-bit mask, so a plaintext anywhere near
 /// field size publishes its top bits (upstream PR #913; the module docs carry
 /// the argument and `tests/disclosure.rs` demonstrates the recovery). At
 /// `Uint<128>` the pad has 120 bits of slack and hides the value with ~2^-120
@@ -483,10 +483,10 @@ pub fn derive_shared(
 /// written — and `notes/disclosure-model.org` §6 says what breaks if either
 /// half of that stops being true.
 pub fn encrypt(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     recipient_pk: JubjubPoint<Private>,
     value: Uint<128>,
-    e: Wire3<JubjubScalarT, Private>,
+    e: Wire<JubjubScalarT, Private>,
 ) -> Memo<Private> {
     let (ephemeral, shared) = derive_shared(c, recipient_pk, e);
     c.region("ecdh mask", |c| {
@@ -499,11 +499,11 @@ pub fn encrypt(
 /// Two points are equal iff both `encode` limbs are — the only equality a
 /// `JubjubPoint` has in ZKIR, since `test_eq` is a field-and-`Bytes<32>`
 /// instruction and a point is neither.
-fn point_is<V: Vis3>(c: &mut Circuit3, a: PointLimbs<V>, b: PointLimbs<V>) -> minocrab_std::v3::Check<V> {
+fn point_is<V: Vis>(c: &mut Circuit, a: PointLimbs<V>, b: PointLimbs<V>) -> minocrab_std::Check<V> {
     let x = c.test_eq(a.x, b.x);
     let y = c.test_eq(a.y, b.y);
-    is_true(minocrab_std::v3::Bool::from_field_unchecked(x))
-        .and(is_true(minocrab_std::v3::Bool::from_field_unchecked(y)))
+    is_true(minocrab_std::Bool::from_field_unchecked(x))
+        .and(is_true(minocrab_std::Bool::from_field_unchecked(y)))
 }
 
 // ---- the contract -----------------------------------------------------------------
@@ -548,17 +548,17 @@ impl Disclosure {
     /// There is NO `account` argument. The id is
     /// [`account_of_caller`] — a commitment to a witnessed caller secret — so
     /// a caller can only ever write the one entry their own secret derives.
-    /// That closes both halves of what §6 used to call one hole: there is no
+    /// That closes both halves of the hole §6 describes: there is no
     /// id to grab first, and no id to seize later.
     ///
     /// A consequence worth stating, because it reads like a bug and is not:
-    /// this is a bare `Map.insert`, so re-registering REPLACES the stored key.
+    /// this is a bare `Map.insert`, so re-registering replaces the stored key.
     /// Since the key it replaces is always the caller's own, that is key
-    /// ROTATION, which a registry needs anyway — a recipient who loses `ek`
+    /// rotation, which a registry needs anyway — a recipient who loses `ek`
     /// is otherwise locked out forever. What it is not is a takeover: nothing
     /// a caller can supply addresses another account's entry.
     ///
-    /// Still NOT proven here: that the caller is entitled to be disclosed to
+    /// Still not proven here: that the caller is entitled to be disclosed to
     /// by any particular counterparty. Authority of that kind is a contract's
     /// own business (`notes/disclosure-model.org` §12 option 3 is the issuer
     /// signature, if an issuer must gatekeep which accounts exist at all).
@@ -570,10 +570,10 @@ impl Disclosure {
     /// [`ephemeral_scalar`].
     #[circuit]
     pub fn register(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         pk: JubjubPoint<Private>,
     ) -> Discloses<(RegisteredAccount, RegisteredKey)> {
-        // WHOSE account this is, derived rather than claimed. The witness
+        // Whose account this is, derived rather than claimed. The witness
         // order is (sk_hi, sk_lo, ek).
         let account = account_of_caller(c);
 
@@ -596,21 +596,21 @@ impl Disclosure {
     ///
     /// # What the circuit proves, and what it merely does
     ///
-    /// PROVES: the ciphertext is a well-formed hashed-ElGamal encryption, under
+    /// Proves: the ciphertext is a well-formed hashed-ElGamal encryption, under
     /// a fresh-looking ephemeral key, of a `Uint<128>` the circuit range-
     /// constrained, to the public key the ledger has registered for `account`.
     /// A sender cannot address a memo to a key of their choosing and claim it
     /// went to `account`: `pk` is bound to `keys[account]` limb for limb.
     ///
-    /// MERELY DOES: delivery. Nothing here, and nothing a ZK contract can do,
+    /// Merely does: delivery. Nothing here, and nothing a ZK contract can do,
     /// makes the recipient's wallet actually read the memo, and nothing stops
     /// the sender from encrypting the same value to a second key as well. Those
     /// two gaps are the whole difference from DAML and they are §2 of the note.
     ///
-    /// # The account is NOT disclosed
+    /// # The account is not disclosed
     ///
     /// `account` enters the lookup as a public key (a map lookup's key is an
-    /// Impact operand — there is no private map read), so this circuit DOES
+    /// Impact operand — there is no private map read), so this circuit does
     /// publish which account is being disclosed to, and the typed declaration
     /// says so. That is a real leak against DAML's model, and
     /// `notes/disclosure-model.org` §4 gives the two ways out — a per-call
@@ -618,7 +618,7 @@ impl Disclosure {
     /// witness the key — neither of which is free.
     #[circuit]
     pub fn disclose_to(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         account: B32<Private>,
         pk: JubjubPoint<Private>,
         value: Uint<128>,

@@ -1,10 +1,10 @@
 //! The same agreement suite `signet-signer-interface` carries, for a
-//! contract NOBODY PORTED.
+//! contract nobody ported.
 //!
 //! Nothing in this workspace implements the xcall target in MinoCrab; the
 //! only thing we have is what compactc left behind, and that was enough to
 //! generate the crate and is enough to check it. That is the
-//! Compact-interop claim of M12: any deployed Midnight contract becomes
+//! Compact-interop claim: any deployed Midnight contract becomes
 //! importable, and stays checked.
 //!
 //! The mutation suite lives with the other crate — the checker is the same
@@ -14,7 +14,7 @@ use std::path::PathBuf;
 
 use minocrab::Public;
 use minocrab_abi::{circuit_schema, Artifact, Pin};
-use minocrab_std::v3::{BytesN, Uint, B32};
+use minocrab_std::{BytesN, Uint, B32};
 use xcall_target_interface::XcallTarget;
 
 const SOURCE: &str = "corpus/zkir/signet-midnight-experiments/experiments/xcall/contract/src/target";
@@ -70,7 +70,7 @@ fn the_pinned_digests_match_the_bytes() {
     }
 }
 
-/// `deposit` and `depositEmit` have the SAME argument layout and different
+/// `deposit` and `depositEmit` have the same argument layout and different
 /// entry points — honest limit #1 of notes/interface-crates.org seen from
 /// the artifact side: what distinguishes the two calls is the claimed
 /// entry-point hash, not anything in either circuit.

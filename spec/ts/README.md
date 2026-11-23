@@ -112,11 +112,11 @@ as the decoder.
 | `[u8; 32]` | `readBytes32` / `writeBytes32` | 32 |
 | `[u8; 64]` | `readBytes64` / `writeBytes64` | 64 |
 | `Flagged<u32>` | `readFlaggedU32` / `writeFlaggedU32` | 5 |
-| `VaultEventV1` | `readVaultEventV1` / `writeVaultEventV1` | 362 |
-| `ReplaceNonceEventV1` | `readReplaceNonceEventV1` / `writeReplaceNonceEventV1` | 330 |
-| `SwapEventV1` | `readSwapEventV1` / `writeSwapEventV1` | 526 |
-| `SupplyEventV1` | `readSupplyEventV1` / `writeSupplyEventV1` | 364 |
-| `RedeemEventV1` | `readRedeemEventV1` / `writeRedeemEventV1` | 396 |
+| `VaultEventV1` | `readVaultEventV1` / `writeVaultEventV1` | 394 |
+| `ReplaceNonceEventV1` | `readReplaceNonceEventV1` / `writeReplaceNonceEventV1` | 362 |
+| `SwapEventV1` | `readSwapEventV1` / `writeSwapEventV1` | 558 |
+| `SupplyEventV1` | `readSupplyEventV1` / `writeSupplyEventV1` | 396 |
+| `RedeemEventV1` | `readRedeemEventV1` / `writeRedeemEventV1` | 428 |
 | `EmptyOutput` | `readEmptyOutput` / `writeEmptyOutput` | 0 |
 | `BoolOutput` | `readBoolOutput` / `writeBoolOutput` | 1 |
 | `WordOutput` | `readWordOutput` / `writeWordOutput` | 32 |

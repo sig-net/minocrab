@@ -1,8 +1,8 @@
-//! The reference EXECUTOR: the missing link between MinoCrab's Impact op
+//! The reference executor: the missing link between MinoCrab's Impact op
 //! streams and ledger semantics.
 //!
-//! Until M10 the whole workspace only ever *encoded* ops (`Op::field_repr`
-//! into a `ProofPreimage`) and compared encodings. Nothing ever ran them.
+//! Encoding ops (`Op::field_repr` into a `ProofPreimage`) and comparing
+//! encodings does not run them.
 //! This module runs them, on a real contract state, through Midnight's own
 //! driver — [`QueryContext::query`], which owns the `[context, effects,
 //! state]` stack convention, the nine-map `Effects` encode/decode and the
@@ -12,7 +12,7 @@
 //! What running buys that encoding never could:
 //!
 //! - the op stream is well-formed at all (stack discipline, cache
-//!   discipline, `Idx` paths that exist, `Popeq` results that MATCH the
+//!   discipline, `Idx` paths that exist, `Popeq` results that match the
 //!   real state — `ResultModeVerify::process_read` errors on mismatch);
 //! - the declared `Effects` are the ones the ledger would compute, which
 //!   is exactly the equality `semantics.rs:1441-1447` enforces when a
@@ -74,41 +74,46 @@ pub struct PreState {
     pub stata_underlying: [u8; 20],
     /// field 12 — `stataToken`.
     pub stata_token: [u8; 20],
-    /// field 13 — `allowedTokens: Set<Bytes<20>>`.
-    pub allowed_tokens: Vec<[u8; 20]>,
-    /// field 14 — `globalLastSeen`.
+    /// field 13 — `allowedTokens: Map<Bytes<20>, AllowedTokenConfig>`: the
+    /// key, and the `TokenFees { withdraw, swap, supply, redeem }` value.
+    pub allowed_tokens: Vec<([u8; 20], [u64; 4])>,
+    /// field 14 — `feeRecipientCoinPublicKey`.
+    pub fee_recipient_coin_key: [u8; 32],
+    /// field 15 — `feeRecipientEncryptionPublicKey`.
+    pub fee_recipient_encryption_key: [u8; 32],
+    /// field 16 — `globalLastSeen`.
     pub global_last_seen: u64,
-    /// field 15 — `vaultAccountNonce`.
+    /// field 17 — `vaultAccountNonce`.
     pub vault_account_nonce: u64,
-    /// field 16 — `inputRequestBuffer`.
+    /// field 18 — `inputRequestBuffer`.
     pub input_request_buffer: Entries,
-    /// field 17 — `outputRequestBuffer`.
+    /// field 19 — `outputRequestBuffer`.
     pub output_request_buffer: Entries,
-    /// field 18 — `inputAttestationBuffer`.
+    /// field 20 — `inputAttestationBuffer`.
     pub input_attestation_buffer: Entries,
-    /// field 19 — `outputAttestationBuffer`.
+    /// field 21 — `outputAttestationBuffer`.
     pub output_attestation_buffer: Entries,
-    /// field 20 — `evictionMap`.
+    /// field 22 — `evictionMap`.
     pub eviction_map: Entries,
-    /// fields 21/22 — `bidirectionalReplaceNonceMap`, `replaceNonceArgsMap`.
+    /// fields 23/24 — `bidirectionalReplaceNonceMap`, `replaceNonceArgsMap`.
     pub replace_nonce_map: Entries,
     pub replace_nonce_args: Entries,
-    /// fields 23/24 — `bidirectionalApproveMap`, `approveArgsMap`.
+    /// fields 25/26 — `bidirectionalApproveMap`, `approveArgsMap`.
     pub approve_map: Entries,
     pub approve_args: Entries,
-    /// fields 25/26.
+    /// fields 27/28.
     pub deposit_map: Entries,
     pub deposit_args: Entries,
-    /// fields 27/28.
+    /// fields 29/30.
     pub withdraw_map: Entries,
     pub withdraw_args: Entries,
-    /// fields 29/30.
+    /// fields 31/32.
     pub swap_map: Entries,
     pub swap_args: Entries,
-    /// fields 31/32.
+    /// fields 33/34.
     pub supply_map: Entries,
     pub supply_args: Entries,
-    /// fields 33/34.
+    /// fields 35/36.
     pub redeem_map: Entries,
     pub redeem_args: Entries,
 }
@@ -121,10 +126,11 @@ fn map_of(entries: &Entries) -> StateValue {
     StateValue::Map(m)
 }
 
-fn set_of(elems: &[[u8; 20]]) -> StateValue {
+fn allowed_of(tokens: &[([u8; 20], [u64; 4])]) -> StateValue {
     let mut m: HashMap<AlignedValue, StateValue<InMemoryDB>, InMemoryDB> = HashMap::new();
-    for e in elems {
-        m = m.insert(bytesn_value(20, e), StateValue::Null);
+    for (k, fees) in tokens {
+        let limbs: Vec<minocrab::Fr> = fees.iter().map(|f| minocrab::Fr::from(*f)).collect();
+        m = m.insert(bytesn_value(20, k), cell(aligned(&[8, 8, 8, 8], &limbs)));
     }
     StateValue::Map(m)
 }
@@ -138,7 +144,7 @@ fn u128_cell(v: u128) -> StateValue {
 }
 
 impl PreState {
-    /// The 35 fields in declaration order, before segmentation.
+    /// The 37 fields in declaration order, before segmentation.
     fn fields(&self) -> Vec<StateValue> {
         let gas_limbs: Vec<minocrab::Fr> = self.gas_limits.iter().map(|g| minocrab::Fr::from(*g)).collect();
         vec![
@@ -158,7 +164,9 @@ impl PreState {
             cell(bytesn_value(20, &self.uniswap_router)),
             cell(bytesn_value(20, &self.stata_underlying)),
             cell(bytesn_value(20, &self.stata_token)),
-            set_of(&self.allowed_tokens),
+            allowed_of(&self.allowed_tokens),
+            cell(bytesn_value(32, &self.fee_recipient_coin_key)),
+            cell(bytesn_value(32, &self.fee_recipient_encryption_key)),
             u64_cell(self.global_last_seen),
             u64_cell(self.vault_account_nonce),
             map_of(&self.input_request_buffer),
@@ -183,8 +191,8 @@ impl PreState {
         ]
     }
 
-    /// The SEGMENTED state tree the circuits index into: an array of three
-    /// arrays, five fields then fifteen then fifteen (`ops::segment_of`).
+    /// The segmented state tree the circuits index into: an array of three
+    /// arrays, seven fields then fifteen then fifteen (`ops::segment_of`).
     pub fn state(&self) -> StateValue {
         let fields = self.fields();
         assert_eq!(fields.len(), usize::from(FIELDS));
@@ -237,15 +245,15 @@ pub fn run(pre: &PreState, self_addr: &[u8; 32], ops: &[VmOp]) -> Result<Execute
 
 /// The trap notes/vault-optimization.org flags: `prove.rs:291-327` merges
 /// adjacent `Noop`s (summing their `n`) when a transaction is proved, and
-/// `verify.rs:1889-1894` REJECTS any transcript still holding two adjacent
+/// `verify.rs:1889-1894` rejects any transcript still holding two adjacent
 /// `Noop`s (`MalformedTransaction::NotNormalized`). A reference op stream
 /// that is compared to a circuit's must therefore be normalised the same
 /// way, or the comparison is against a program the ledger would never
 /// accept. The vault's circuits emit no `Noop` at all, so this is a guard
 /// against regression.
-/// THE GUARANTEED-SECTION GATE (Sig's fallibility model 1): the ledger's own
+/// The guaranteed-section gate (Sig's fallibility model 1): the ledger's own
 /// partitioner, run on this call alone under the initial parameters, must
-/// put the WHOLE transcript in the guaranteed section. Otherwise the
+/// put the whole transcript in the guaranteed section. Otherwise the
 /// transaction builder demotes the call to the fallible section with no
 /// error (`partition_transcripts`, ledger/src/construct.rs: "If none pass,
 /// 0 make it into the guaranteed section") and Sig will not sign for it.

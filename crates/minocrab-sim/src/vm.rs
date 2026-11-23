@@ -1,0 +1,1539 @@
+//! L5 for ZKIR v3 — native simulator over the typed IR.
+//!
+//! A mechanical port of the off-circuit arm of midnight-zkir 3.2.0's
+//! interpreter: `IrSource::preprocess` in `src/ir_vm.rs`, which upstream
+//! keeps `pub(crate)`. Each arm below follows upstream's arm for the same
+//! instruction. The reference semantics *verify* a complete `ProofPreimage`
+//! (they do not generate a transcript): circuit arguments are decoded from
+//! `preimage.inputs` per the input schema, and `Impact` public inputs are
+//! checked against `preimage.public_transcript_inputs` as they accumulate.
+//! `Run` surfaces everything upstream's `Preprocessed` carries (memory,
+//! pis, pi_skips, binding input, communications commitment) plus the circuit
+//! outputs and per-instruction counters.
+//!
+//! Per-instruction value semantics are *not* re-implemented: midnight-zkir
+//! publishes its off-circuit helpers (`midnight_zkir_v3::ir_instructions`),
+//! and this module calls them — `add_offcircuit`, `decode_offcircuit`,
+//! `encode_offcircuit`, `to_bytes_offcircuit`, `from_bytes_offcircuit`,
+//! `native_to_jubjub_scalar`, … — alongside Midnight's crypto
+//! (`transient_hash`, `hash_to_curve`, `transient_commit`, SHA-256 / SHA-512
+//! / Keccak-256 over the FAB-aligned byte encoding), exactly as `preprocess`
+//! does. The upstream items mirrored rather than reused are `pub(crate)`
+//! ones: `IrValue::get_type`, `IrValue::default`, `TypedIdentifier`'s field
+//! access (recovered through its serde form), `BYTES_PER_FIELD_ELEMENT`,
+//! `ir_value_to_bytes32`, `resolve_bool_list` and the limb count of
+//! `bytes_from_natives_nb_limbs`.
+//!
+//! This simulator is never trusted alone: `tests/end_to_end.rs`
+//! and `tests/zkir31_ops.rs` cross-check runs against upstream
+//! `IrSource::check`, which is `preprocess(..)?.pi_skips` verbatim.
+
+use std::collections::BTreeMap;
+use std::collections::HashMap;
+
+use group::Group;
+use midnight_base_crypto::repr::BinaryHashRepr;
+use midnight_curves::{curve25519, k256, p256, Fr as JubjubFr, JubjubSubgroup};
+use midnight_transient_crypto::curve::{Fr, FR_BITS, FR_BYTES_STORED};
+use midnight_transient_crypto::fab::{AlignmentExt, ValueReprAlignedValue};
+use midnight_transient_crypto::hash::{hash_to_curve, transient_commit, transient_hash};
+use midnight_transient_crypto::proofs::{ProofPreimage, Zkir};
+use midnight_zkir_v3::ir_instructions::add::add_offcircuit;
+use midnight_zkir_v3::ir_instructions::constrain_eq::constrain_eq_offcircuit;
+use midnight_zkir_v3::ir_instructions::ec_mul::ec_mul_offcircuit;
+use midnight_zkir_v3::ir_instructions::encode::{
+    decode_offcircuit, encode_offcircuit, native_to_jubjub_scalar,
+};
+use midnight_zkir_v3::ir_instructions::eq::test_eq_offcircuit;
+use midnight_zkir_v3::ir_instructions::from_bytes::from_bytes_offcircuit;
+use midnight_zkir_v3::ir_instructions::from_coordinates::from_coordinates_offcircuit;
+use midnight_zkir_v3::ir_instructions::to_bytes::to_bytes_offcircuit;
+use midnight_zkir_v3::ir_types::MAX_BYTES_LEN;
+use midnight_zkir_v3::ir_instructions::into_coordinates::into_coordinates_offcircuit;
+use midnight_zkir_v3::ir_instructions::inv::inv_offcircuit;
+use midnight_zkir_v3::ir_instructions::mul::mul_offcircuit;
+use midnight_zkir_v3::ir_instructions::neg::neg_offcircuit;
+use midnight_zkir_v3::ir_instructions::select::select_offcircuit;
+use minocrab_zkir::{Instruction as I, IrSource};
+
+use minocrab_zkir::{Identifier, IrType, IrValue, Operand};
+use sha2::{Sha256, Sha512};
+use sha3::{Digest, Keccak256};
+
+#[derive(Debug, thiserror::Error)]
+pub enum SimError {
+    #[error("instruction {at} ({op}): {message}")]
+    Failed {
+        at: usize,
+        op: &'static str,
+        message: String,
+    },
+    /// Argument decoding failed before any instruction ran.
+    #[error("inputs: {0}")]
+    Inputs(String),
+    /// A transcript was not consumed exactly.
+    #[error("transcripts not fully consumed: {0}")]
+    Transcript(String),
+    /// Communications-commitment handling failed.
+    #[error("communications commitment: {0}")]
+    CommCommitment(String),
+}
+
+fn fail(at: usize, op: &'static str, message: impl Into<String>) -> SimError {
+    SimError::Failed {
+        at,
+        op,
+        message: message.into(),
+    }
+}
+
+/// The result of simulating one v3 circuit run — upstream's `Preprocessed`
+/// with `pis` kept as [`Fr`] instead of unwrapped
+/// `outer::Scalar`, plus outputs and run metrics.
+#[derive(Debug, Clone)]
+pub struct Run {
+    /// Full typed value memory at the end of the run, by identifier.
+    pub memory: HashMap<Identifier, IrValue>,
+    /// The proof-system public-input vector: `binding_input`, then (when
+    /// enabled) the communications commitment, then one element per
+    /// `Impact` input — zeros where the guard was off.
+    pub pis: Vec<Fr>,
+    /// One entry per `Impact`: `None` if taken, `Some(count)` if its guard
+    /// was off and `count` zeros were substituted in `pis`.
+    pub pi_skips: Vec<Option<usize>>,
+    /// The preimage's binding input (always `pis[0]`).
+    pub binding_input: Fr,
+    /// The preimage's `(commitment, randomness)`, if any.
+    pub comm_comm: Option<(Fr, Fr)>,
+    /// Values produced by the `Output` terminator (circuit return values).
+    pub outputs: Vec<IrValue>,
+    /// Raw `Fr` elements consumed from the private transcript.
+    pub consumed_private: usize,
+    /// Raw `Fr` elements consumed from the public transcript outputs.
+    pub consumed_public: usize,
+    /// Instruction execution counts by opcode.
+    pub op_counts: BTreeMap<&'static str, u32>,
+    /// The `Impact` public inputs the run accumulated, in order — the
+    /// preimage's `public_transcript_inputs` as the circuit computes them
+    /// (guarded-off blocks contribute nothing). Under [`simulate`] this is
+    /// equal to `preimage.public_transcript_inputs` by construction, since
+    /// each element is checked as it accumulates; under [`Mode::Gather`] it
+    /// is the run's output — the Impact op stream the circuit asks for.
+    pub public_transcript_inputs: Vec<Fr>,
+    /// Instruction indices whose `Assert` failed. Always empty under
+    /// [`simulate`], which returns `Err` on the first one; under
+    /// [`Mode::Gather`] asserts are recorded rather than fatal, because a
+    /// gather pass runs against a provisional transcript.
+    pub assert_failures: Vec<usize>,
+    /// Instructions that failed outright under [`Mode::Gather`] — a value
+    /// the fixpoint has not resolved yet is not a valid value of its type.
+    /// Always empty under [`simulate`]. A non-empty list means
+    /// [`Run::public_transcript_inputs`] is a prefix, not the whole
+    /// transcript.
+    pub walk_failures: Vec<(usize, String)>,
+}
+
+/// How [`simulate_with`] treats the preimage's public halves.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Mode {
+    /// The reference semantics: every transcript is checked and consumed
+    /// exactly, a failed assert aborts. This is [`simulate`].
+    Verify,
+    /// The executor's pass (`exec`): `public_transcript_outputs` is a
+    /// provisional guess — short reads yield zeros, `Impact` inputs are
+    /// accumulated rather than checked, the two public halves need not be
+    /// consumed exactly, and a failed assert is recorded, not fatal. The
+    /// private transcript and the arguments are still exact.
+    Gather,
+}
+
+/// Opcode name of a v3 instruction (for metrics and error messages).
+pub fn op_name(ins: &I) -> &'static str {
+    match ins {
+        I::Add { .. } => "add",
+        I::Assert { .. } => "assert",
+        I::Bytes32FromLowHigh { .. } => "bytes32_from_low_high",
+        I::Bytes32IntoLowHigh { .. } => "bytes32_into_low_high",
+        I::CondSelect { .. } => "cond_select",
+        I::ConstrainBits { .. } => "constrain_bits",
+        I::ConstrainEq { .. } => "constrain_eq",
+        I::ConstrainToBoolean { .. } => "constrain_to_boolean",
+        I::Copy { .. } => "copy",
+        I::DivModPowerOfTwo { .. } => "div_mod_power_of_two",
+        I::EcMul { .. } => "ec_mul",
+        I::EcMulGenerator { .. } => "ec_mul_generator",
+        I::Encode { .. } => "encode",
+        I::FromBytes32 { .. } => "from_bytes32",
+        I::FromCoordinates { .. } => "from_coordinates",
+        I::HashToCurve { .. } => "hash_to_curve",
+        I::Impact { .. } => "impact",
+        I::IntoBytes32 { .. } => "into_bytes32",
+        I::IntoCoordinates { .. } => "into_coordinates",
+        I::Inv { .. } => "inv",
+        I::JubjubScalarFromNative { .. } => "jubjub_scalar_from_native",
+        I::Keccak256 { .. } => "keccak256",
+        I::LessThan { .. } => "less_than",
+        I::Mul { .. } => "mul",
+        I::Neg { .. } => "neg",
+        I::Not { .. } => "not",
+        I::Output { .. } => "output",
+        I::PersistentHash { .. } => "persistent_hash",
+        I::PrivateInput { .. } => "private_input",
+        I::PublicInput { .. } => "public_input",
+        I::ReconstituteField { .. } => "reconstitute_field",
+        I::ReverseBytes { .. } => "reverse_bytes",
+        I::TestEq { .. } => "test_eq",
+        I::TransientHash { .. } => "transient_hash",
+        I::Slice { .. } => "slice",
+        I::Nth { .. } => "nth",
+        I::Concat { .. } => "concat",
+        I::LoadConstant { .. } => "load_constant",
+        I::Sha512 { .. } => "sha512",
+        I::And { .. } => "and",
+        I::Or { .. } => "or",
+        I::Xor { .. } => "xor",
+        I::ToBytes { .. } => "to_bytes",
+        I::FromBytes { .. } => "from_bytes",
+        I::Reverse { .. } => "reverse",
+        I::BytesIntoNatives { .. } => "bytes_into_natives",
+        I::BytesFromNatives { .. } => "bytes_from_natives",
+    }
+}
+
+/// Runtime type of a value — mirror of the `pub(crate)`
+/// `IrValue::get_type`.
+fn ir_type_of(value: &IrValue) -> IrType {
+    match value {
+        IrValue::Native(_) => IrType::Native,
+        IrValue::Bool(_) => IrType::Bool,
+        IrValue::Byte(_) => IrType::Byte,
+        IrValue::Bytes(bs) => IrType::Bytes(bs.len() as u32),
+        IrValue::JubjubPoint(_) => IrType::JubjubPoint,
+        IrValue::JubjubScalar(_) => IrType::JubjubScalar,
+        IrValue::Secp256k1Point(_) => IrType::Secp256k1Point,
+        IrValue::Secp256k1Base(_) => IrType::Secp256k1Base,
+        IrValue::Secp256k1Scalar(_) => IrType::Secp256k1Scalar,
+        IrValue::Secp256r1Point(_) => IrType::Secp256r1Point,
+        IrValue::Secp256r1Base(_) => IrType::Secp256r1Base,
+        IrValue::Secp256r1Scalar(_) => IrType::Secp256r1Scalar,
+        IrValue::Curve25519Point(_) => IrType::Curve25519Point,
+        IrValue::Curve25519Base(_) => IrType::Curve25519Base,
+        IrValue::Curve25519Scalar(_) => IrType::Curve25519Scalar,
+    }
+}
+
+/// Default (zero/identity) value of a type, produced by guarded-off
+/// transcript reads — mirror of the `pub(crate)` `IrValue::default`.
+fn default_ir_value(val_t: &IrType) -> IrValue {
+    match val_t {
+        IrType::Native => IrValue::Native(Fr::default()),
+        IrType::Bool => IrValue::Bool(bool::default()),
+        IrType::Byte => IrValue::Byte(u8::default()),
+        IrType::Bytes(n) => IrValue::Bytes(vec![u8::default(); *n as usize]),
+        IrType::JubjubPoint => IrValue::JubjubPoint(JubjubSubgroup::default()),
+        IrType::JubjubScalar => IrValue::JubjubScalar(JubjubFr::default()),
+        IrType::Secp256k1Point => IrValue::Secp256k1Point(k256::K256::default()),
+        IrType::Secp256k1Base => IrValue::Secp256k1Base(k256::Fp::default()),
+        IrType::Secp256k1Scalar => IrValue::Secp256k1Scalar(k256::Fq::default()),
+        IrType::Secp256r1Point => IrValue::Secp256r1Point(p256::P256::default()),
+        IrType::Secp256r1Base => IrValue::Secp256r1Base(p256::Fp::default()),
+        IrType::Secp256r1Scalar => IrValue::Secp256r1Scalar(p256::Fq::default()),
+        IrType::Curve25519Point => {
+            IrValue::Curve25519Point(curve25519::Curve25519Subgroup::default())
+        }
+        IrType::Curve25519Base => IrValue::Curve25519Base(curve25519::Fp::default()),
+        IrType::Curve25519Scalar => IrValue::Curve25519Scalar(curve25519::Scalar::default()),
+    }
+}
+
+/// One circuit argument: `TypedIdentifier`'s fields are `pub(crate)`
+/// upstream, so recover them through its serde form (`{"name", "type"}`),
+/// the same trick `minocrab_ir::typed_identifier` uses to build them.
+#[derive(serde::Deserialize)]
+struct InputSchema {
+    name: Identifier,
+    #[serde(rename = "type")]
+    val_t: IrType,
+}
+
+fn input_schema(ir: &IrSource) -> Result<Vec<InputSchema>, SimError> {
+    ir.inputs
+        .iter()
+        .map(|ti| {
+            serde_json::to_value(ti)
+                .and_then(serde_json::from_value)
+                .map_err(|e| SimError::Inputs(format!("cannot read input schema: {e}")))
+        })
+        .collect()
+}
+
+// --- operand resolution -----------------------------------------------------------
+
+fn get(
+    memory: &HashMap<Identifier, IrValue>,
+    id: &Identifier,
+    at: usize,
+    op: &'static str,
+) -> Result<IrValue, SimError> {
+    memory
+        .get(id)
+        .cloned()
+        .ok_or_else(|| fail(at, op, format!("variable not found: {id:?}")))
+}
+
+/// The whole bytes a `Native` limb holds — mirror of the `pub(crate)`
+/// `BYTES_PER_FIELD_ELEMENT`.
+const BYTES_PER_FIELD_ELEMENT: usize = 31;
+
+/// A `Bytes(32)` value as an array, for the fixed-size ZKIR 3.0 byte
+/// instructions — mirror of the private `ir_value_to_bytes32`.
+fn bytes32(value: IrValue, at: usize, op: &'static str) -> Result<[u8; 32], SimError> {
+    let bytes: Vec<u8> = value.try_into().map_err(|e| fail(at, op, format!("{e}")))?;
+    let len = bytes.len();
+    bytes
+        .try_into()
+        .map_err(|_| fail(at, op, format!("expected a Bytes<32> value, got Bytes<{len}>")))
+}
+
+/// The operands of a boolean gate, each a `Bool` — mirror of
+/// `resolve_bool_list`.
+fn operand_bools(
+    memory: &HashMap<Identifier, IrValue>,
+    operands: &[Operand],
+    at: usize,
+    op: &'static str,
+) -> Result<Vec<bool>, SimError> {
+    if operands.is_empty() {
+        return Err(fail(at, op, "Boolean gate requires at least one input"));
+    }
+    operands
+        .iter()
+        .map(|o| {
+            let val = operand(memory, o, at, op)?;
+            let t = ir_type_of(&val);
+            bool::try_from(val)
+                .map_err(|_| fail(at, op, format!("Boolean gate expects Bool inputs, found {t:?}")))
+        })
+        .collect()
+}
+
+fn operand(
+    memory: &HashMap<Identifier, IrValue>,
+    o: &Operand,
+    at: usize,
+    op: &'static str,
+) -> Result<IrValue, SimError> {
+    match o {
+        Operand::Variable(id) => get(memory, id, at, op),
+        Operand::Immediate(imm) => Ok(IrValue::Native(*imm)),
+    }
+}
+
+fn operand_fr(
+    memory: &HashMap<Identifier, IrValue>,
+    o: &Operand,
+    at: usize,
+    op: &'static str,
+) -> Result<Fr, SimError> {
+    operand(memory, o, at, op)?
+        .try_into()
+        .map_err(|e| fail(at, op, format!("{e}")))
+}
+
+fn operand_bool(
+    memory: &HashMap<Identifier, IrValue>,
+    o: &Operand,
+    at: usize,
+    op: &'static str,
+) -> Result<bool, SimError> {
+    let val = operand_fr(memory, o, at, op)?;
+    if val == 0.into() {
+        Ok(false)
+    } else if val == 1.into() {
+        Ok(true)
+    } else {
+        Err(fail(at, op, format!("expected boolean, found: {val:?}")))
+    }
+}
+
+fn bits_of(val: Fr) -> Vec<bool> {
+    val.as_le_bytes()
+        .into_iter()
+        .flat_map(|byte| {
+            [0x01u8, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80]
+                .into_iter()
+                .map(move |mask| byte & mask != 0)
+        })
+        .collect()
+}
+
+fn operand_bits(
+    memory: &HashMap<Identifier, IrValue>,
+    o: &Operand,
+    constrain: Option<u32>,
+    at: usize,
+    op: &'static str,
+) -> Result<Vec<bool>, SimError> {
+    let val = operand_fr(memory, o, at, op)?;
+    let mut bits = bits_of(val);
+    if let Some(n) = constrain {
+        if n as usize >= FR_BITS {
+            return Err(fail(at, op, "excessive bit bound"));
+        }
+        if bits[n as usize..].iter().any(|b| *b) {
+            return Err(fail(
+                at,
+                op,
+                format!("bit bound failed: {val:?} is not {n}-bit"),
+            ));
+        }
+        bits.truncate(n as usize);
+    }
+    Ok(bits)
+}
+
+fn from_bits(bits: impl DoubleEndedIterator<Item = bool>) -> Fr {
+    bits.rev().fold(Fr::from(0u64), |acc, bit| {
+        acc * Fr::from(2u64) + Fr::from(bit as u64)
+    })
+}
+
+/// Read `width` raw elements from a transcript, or fail. Upstream slices
+/// unchecked (`&transcript[i..i + w]`) and therefore
+/// *panics* on exhaustion; this is the one place the port surfaces an error
+/// instead — same rejection, no panic.
+fn take_raw<'t>(
+    transcript: &'t [Fr],
+    idx: usize,
+    width: usize,
+    at: usize,
+    op: &'static str,
+    what: &str,
+) -> Result<&'t [Fr], SimError> {
+    transcript
+        .get(idx..idx + width)
+        .ok_or_else(|| fail(at, op, format!("ran out of {what}")))
+}
+
+/// The differential comparator — call-compatibility of two artifacts on one
+/// preimage, the criterion every `*differential*` suite gates on
+/// (verification.md §3(c), notes/ledger-abi.org §6):
+///
+/// 1. the typed interface — input types in order, and the outputs;
+/// 2. the PI stream — identical `pis` and `pi_skips` from this simulator on
+///    both artifacts;
+/// 3. upstream agreement — Midnight's own `IrSource::check` accepts both and
+///    reports the same `pi_skips` this simulator computed, so a simulator bug
+///    cannot hide behind the comparison it performs.
+///
+/// It lives here, once, so that no copy can drift weaker (dropping the
+/// schema check or `theirs.check`). One body is what
+/// a third-party pass will call to ship its own proof of preservation —
+/// the harness as public API starts with this function.
+pub fn assert_call_compatible(ours: &IrSource, theirs: &IrSource, pi: &ProofPreimage) {
+    let types = |ir: &IrSource| {
+        serde_json::to_value(&ir.inputs)
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|ti| ti["type"].clone())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(types(ours), types(theirs), "input schemas differ");
+    assert_eq!(ours.outputs, theirs.outputs, "output schemas differ");
+
+    let our_run = simulate(ours, pi).expect("our artifact accepts");
+    let their_run = simulate(theirs, pi).expect("the other artifact accepts");
+    assert_eq!(our_run.pi_skips, their_run.pi_skips, "pi_skips differ");
+    assert_eq!(our_run.pis, their_run.pis, "PI vectors differ");
+
+    assert_eq!(
+        ours.check(pi).expect("upstream accepts ours"),
+        our_run.pi_skips
+    );
+    assert_eq!(
+        theirs.check(pi).expect("upstream accepts theirs"),
+        their_run.pi_skips
+    );
+}
+
+/// Simulate one run of `ir` against a complete proof preimage, mirroring
+/// `IrSource::preprocess` instruction for instruction.
+///
+/// `preimage.inputs` is the circuit's *encoded* argument list: each argument
+/// occupies `IrType::encoded_len` consecutive raw `Fr` elements.
+pub fn simulate(ir: &IrSource, preimage: &ProofPreimage) -> Result<Run, SimError> {
+    simulate_with(ir, preimage, Mode::Verify)
+}
+
+/// [`simulate`], with the treatment of the public transcript halves chosen
+/// by `mode` — the one walk both the verifier and the executor run, so the
+/// two cannot drift.
+pub fn simulate_with(
+    ir: &IrSource,
+    preimage: &ProofPreimage,
+    mode: Mode,
+) -> Result<Run, SimError> {
+    let run = simulate_with_unchecked(ir, preimage, mode);
+    simplify_check::cross_check(ir, preimage, mode, &run);
+    run
+}
+
+/// [`simulate_with`] without the `MINOCRAB_CHECK_SIMPLIFY` instrument.
+fn simulate_with_unchecked(
+    ir: &IrSource,
+    preimage: &ProofPreimage,
+    mode: Mode,
+) -> Result<Run, SimError> {
+    let gather = mode == Mode::Gather;
+    let mut memory: HashMap<Identifier, IrValue> = HashMap::new();
+    let mut public_transcript_inputs: Vec<Fr> = Vec::new();
+    let mut assert_failures: Vec<usize> = Vec::new();
+    let mut walk_failures: Vec<(usize, String)> = Vec::new();
+    let mut transcript_truncated = false;
+
+    // Decode the flattened argument list per the input schema.
+    let mut idx = 0usize;
+    for input in input_schema(ir)? {
+        let w = input.val_t.encoded_len();
+        if idx + w > preimage.inputs.len() {
+            return Err(SimError::Inputs(format!(
+                "not enough raw inputs: ran out at index {idx} while decoding {:?}",
+                input.name
+            )));
+        }
+        let value = decode_offcircuit(&preimage.inputs[idx..idx + w], &input.val_t)
+            .map_err(|e| SimError::Inputs(format!("{e}")))?;
+        memory.insert(input.name, value);
+        idx += w;
+    }
+    if idx != preimage.inputs.len() {
+        return Err(SimError::Inputs(format!(
+            "expected {idx} raw inputs, received {}",
+            preimage.inputs.len()
+        )));
+    }
+
+    // The PI vector opens with the binding input, then (when enabled) the
+    // communications commitment.
+    let mut pis: Vec<Fr> = vec![preimage.binding_input];
+    if ir.do_communications_commitment {
+        // Under `Mode::Gather` the commitment spans the circuit's outputs,
+        // which this pass is still computing; the executor fills it in once
+        // they are known, so an absent one is not an error here.
+        match preimage.communications_commitment {
+            Some((c, _)) => pis.push(c),
+            None if gather => pis.push(Fr::from(0u64)),
+            None => {
+                return Err(SimError::CommCommitment(
+                    "expected communications commitment".into(),
+                ))
+            }
+        }
+    }
+    let mut pi_skips: Vec<Option<usize>> = Vec::new();
+    let mut public_transcript_inputs_idx = 0usize;
+    let mut public_transcript_outputs_idx = 0usize;
+    let mut private_transcript_idx = 0usize;
+    let mut outputs: Vec<IrValue> = Vec::new();
+    let mut op_counts: BTreeMap<&'static str, u32> = BTreeMap::new();
+
+    for (at, ins) in ir.instructions.iter().enumerate() {
+        let op = op_name(ins);
+        *op_counts.entry(op).or_default() += 1;
+        // Under `Mode::Gather` every value in flight may be provisional —
+        // a read the fixpoint has not resolved yet — so an instruction can
+        // fail on garbage that the next round replaces. Such a failure is
+        // recorded and the walk goes on, but nothing further is appended to
+        // the transcript: what has accumulated so far is a correct prefix
+        // (op emission depends only on earlier reads), and a prefix is
+        // exactly what the fixpoint needs to make progress. Under
+        // `Mode::Verify` the closure's first `Err` is the function's.
+        let mut step = || -> Result<(), SimError> {
+        match ins {
+            I::Encode { input, outputs } => {
+                let val = operand(&memory, input, at, op)?;
+                let encoded = encode_offcircuit(&val);
+                if encoded.len() != outputs.len() {
+                    return Err(fail(
+                        at,
+                        op,
+                        format!(
+                            "unexpected output length of encode instruction: {:?}",
+                            ir_type_of(&val)
+                        ),
+                    ));
+                }
+                for (out_id, enc_val) in outputs.iter().zip(encoded) {
+                    memory.insert(out_id.clone(), enc_val);
+                }
+            }
+            // Typed arithmetic via zkir-v3's own helpers.
+            I::Add { a, b, output } => {
+                let a = operand(&memory, a, at, op)?;
+                let b = operand(&memory, b, at, op)?;
+                let result = add_offcircuit(&a, &b).map_err(|e| fail(at, op, format!("{e}")))?;
+                memory.insert(output.clone(), result);
+            }
+            I::Mul { a, b, output } => {
+                let a = operand(&memory, a, at, op)?;
+                let b = operand(&memory, b, at, op)?;
+                let result = mul_offcircuit(&a, &b).map_err(|e| fail(at, op, format!("{e}")))?;
+                memory.insert(output.clone(), result);
+            }
+            I::Neg { a, output } => {
+                let a = operand(&memory, a, at, op)?;
+                let result = neg_offcircuit(&a).map_err(|e| fail(at, op, format!("{e}")))?;
+                memory.insert(output.clone(), result);
+            }
+            I::Inv { a, output } => {
+                let a = operand(&memory, a, at, op)?;
+                let result = inv_offcircuit(&a).map_err(|e| fail(at, op, format!("{e}")))?;
+                memory.insert(output.clone(), result);
+            }
+            I::Not { a, output } => {
+                let result = IrValue::Native(Fr::from(!operand_bool(&memory, a, at, op)? as u64));
+                memory.insert(output.clone(), result);
+            }
+            // ZKIR 3.1's gates over `Bool` values.
+            I::And { inputs, output } => {
+                let result = operand_bools(&memory, inputs, at, op)?.into_iter().all(|b| b);
+                memory.insert(output.clone(), IrValue::Bool(result));
+            }
+            I::Or { inputs, output } => {
+                let result = operand_bools(&memory, inputs, at, op)?.into_iter().any(|b| b);
+                memory.insert(output.clone(), IrValue::Bool(result));
+            }
+            I::Xor { inputs, output } => {
+                let result = operand_bools(&memory, inputs, at, op)?
+                    .into_iter()
+                    .fold(false, |acc, b| acc ^ b);
+                memory.insert(output.clone(), IrValue::Bool(result));
+            }
+            I::ConstrainEq { a, b } => {
+                let a = operand(&memory, a, at, op)?;
+                let b = operand(&memory, b, at, op)?;
+                constrain_eq_offcircuit(&a, &b).map_err(|e| fail(at, op, format!("{e}")))?;
+            }
+            I::CondSelect { bit, a, b, output } => {
+                let bit_val = operand_bool(&memory, bit, at, op)?;
+                let a_val = operand(&memory, a, at, op)?;
+                let b_val = operand(&memory, b, at, op)?;
+                let result = select_offcircuit(bit_val, &a_val, &b_val)
+                    .map_err(|e| fail(at, op, format!("{e}")))?;
+                memory.insert(output.clone(), result);
+            }
+            I::Assert { cond } => {
+                if !operand_bool(&memory, cond, at, op)? {
+                    if !gather {
+                        return Err(fail(at, op, "failed direct assertion"));
+                    }
+                    // A circuit that rejects has no transcript past the
+                    // rejection: everything after a failed assert is
+                    // unconstrained, and emitting it would put values in
+                    // the op stream that no state could justify. Recording
+                    // the index and truncating leaves a prefix the fixpoint
+                    // can still settle on, and a settled run whose first
+                    // failure is an assert is a rejection, not an error.
+                    assert_failures.push(at);
+                    transcript_truncated = true;
+                }
+            }
+            I::TestEq { a, b, output } => {
+                let a = operand(&memory, a, at, op)?;
+                let b = operand(&memory, b, at, op)?;
+                let result =
+                    test_eq_offcircuit(&a, &b).map_err(|e| fail(at, op, format!("{e}")))?;
+                memory.insert(output.clone(), IrValue::Native(Fr::from(result as u64)));
+            }
+            // A guarded-off read yields the type's
+            // default and consumes nothing.
+            I::PublicInput {
+                guard,
+                val_t,
+                output,
+            } => {
+                let val = match guard {
+                    Some(guard) if !operand_bool(&memory, guard, at, op)? => {
+                        default_ir_value(val_t)
+                    }
+                    _ => {
+                        let w = val_t.encoded_len();
+                        // Under `Mode::Gather` the outputs half is the
+                        // provisional guess the fixpoint is refining; a
+                        // read past its end reads zeros (the value the
+                        // next iteration replaces), rather than failing.
+                        let padded: Vec<Fr>;
+                        let raw = if gather
+                            && public_transcript_outputs_idx + w
+                                > preimage.public_transcript_outputs.len()
+                        {
+                            padded = (0..w)
+                                .map(|i| {
+                                    preimage
+                                        .public_transcript_outputs
+                                        .get(public_transcript_outputs_idx + i)
+                                        .copied()
+                                        .unwrap_or_else(|| Fr::from(0u64))
+                                })
+                                .collect();
+                            &padded[..]
+                        } else {
+                            take_raw(
+                                &preimage.public_transcript_outputs,
+                                public_transcript_outputs_idx,
+                                w,
+                                at,
+                                op,
+                                "public transcript outputs",
+                            )?
+                        };
+                        public_transcript_outputs_idx += w;
+                        match decode_offcircuit(raw, val_t) {
+                            Ok(v) => v,
+                            // A provisional guess is not a valid value of
+                            // every type — five zeros are not a curve
+                            // point. Under `Mode::Gather` the type's
+                            // default stands in until the round that reads
+                            // the real one.
+                            Err(_) if gather => default_ir_value(val_t),
+                            Err(e) => return Err(fail(at, op, format!("{e}"))),
+                        }
+                    }
+                };
+                memory.insert(output.clone(), val);
+            }
+            I::PrivateInput {
+                guard,
+                val_t,
+                output,
+            } => {
+                let val = match guard {
+                    Some(guard) if !operand_bool(&memory, guard, at, op)? => {
+                        default_ir_value(val_t)
+                    }
+                    _ => {
+                        let w = val_t.encoded_len();
+                        let raw = take_raw(
+                            &preimage.private_transcript,
+                            private_transcript_idx,
+                            w,
+                            at,
+                            op,
+                            "private transcript",
+                        )?;
+                        private_transcript_idx += w;
+                        decode_offcircuit(raw, val_t).map_err(|e| fail(at, op, format!("{e}")))?
+                    }
+                };
+                memory.insert(output.clone(), val);
+            }
+            I::Copy { val, output } => {
+                let val = operand(&memory, val, at, op)?;
+                memory.insert(output.clone(), val);
+            }
+            I::ConstrainToBoolean { val } => {
+                operand_bool(&memory, val, at, op)?;
+            }
+            I::ConstrainBits { val, bits } => {
+                operand_bits(&memory, val, Some(*bits), at, op)?;
+            }
+            I::DivModPowerOfTwo { val, bits, outputs } => {
+                if outputs.len() != 2 {
+                    return Err(fail(at, op, "DivModPowerOfTwo requires exactly 2 outputs"));
+                }
+                if *bits as usize > FR_BYTES_STORED * 8 {
+                    return Err(fail(at, op, "excessive bit count"));
+                }
+                let val_bits = operand_bits(&memory, val, None, at, op)?;
+                memory.insert(
+                    outputs[0].clone(),
+                    IrValue::Native(from_bits(val_bits[*bits as usize..].iter().copied())),
+                );
+                memory.insert(
+                    outputs[1].clone(),
+                    IrValue::Native(from_bits(val_bits[..*bits as usize].iter().copied())),
+                );
+            }
+            I::ReconstituteField {
+                divisor,
+                modulus,
+                bits,
+                output,
+            } => {
+                if *bits as usize > FR_BYTES_STORED * 8 {
+                    return Err(fail(at, op, "excessive bit count"));
+                }
+                let max_bits = bits_of(Fr::from(-1i64));
+                let modulus_bits = operand_bits(&memory, modulus, Some(*bits), at, op)?;
+                let divisor_bits =
+                    operand_bits(&memory, divisor, Some(FR_BITS as u32 - *bits), at, op)?;
+                let cmp = modulus_bits
+                    .iter()
+                    .chain(divisor_bits.iter())
+                    .rev()
+                    .zip(max_bits[..FR_BITS].iter().rev())
+                    .map(|(ab, max)| ab.cmp(max))
+                    .fold(std::cmp::Ordering::Equal, |prefix, local| {
+                        if prefix.is_eq() {
+                            local
+                        } else {
+                            prefix
+                        }
+                    });
+                if cmp.is_gt() {
+                    return Err(fail(at, op, "reconstituted element overflows field"));
+                }
+                let power = (0..*bits).fold(Fr::from(1u64), |acc, _| Fr::from(2u64) * acc);
+                let modulus = operand_fr(&memory, modulus, at, op)?;
+                let divisor = operand_fr(&memory, divisor, at, op)?;
+                memory.insert(output.clone(), IrValue::Native(power * divisor + modulus));
+            }
+            I::LessThan { a, b, bits, output } => {
+                let a = from_bits(operand_bits(&memory, a, Some(*bits), at, op)?.into_iter());
+                let b = from_bits(operand_bits(&memory, b, Some(*bits), at, op)?.into_iter());
+                memory.insert(output.clone(), IrValue::Native(Fr::from((a < b) as u64)));
+            }
+            // Reduction mod the Jubjub scalar order.
+            I::JubjubScalarFromNative { native, output } => {
+                let x = operand_fr(&memory, native, at, op)?;
+                memory.insert(
+                    output.clone(),
+                    IrValue::JubjubScalar(native_to_jubjub_scalar(&x)),
+                );
+            }
+            I::TransientHash { inputs, output } => {
+                let vals = inputs
+                    .iter()
+                    .map(|i| operand_fr(&memory, i, at, op))
+                    .collect::<Result<Vec<Fr>, _>>()?;
+                memory.insert(output.clone(), IrValue::Native(transient_hash(&vals)));
+            }
+            // SHA-256 / Keccak-256 over the FAB-aligned
+            // byte encoding of native inputs; result is Bytes<32>.
+            I::PersistentHash {
+                alignment,
+                inputs,
+                output,
+            }
+            | I::Keccak256 {
+                alignment,
+                inputs,
+                output,
+            }
+            | I::Sha512 {
+                alignment,
+                inputs,
+                output,
+            } => {
+                let inputs = inputs
+                    .iter()
+                    .map(|i| operand_fr(&memory, i, at, op))
+                    .collect::<Result<Vec<Fr>, _>>()?;
+                let value = alignment.parse_field_repr(&inputs).ok_or_else(|| {
+                    fail(
+                        at,
+                        op,
+                        format!("inputs did not match alignment: {inputs:?}"),
+                    )
+                })?;
+                let mut repr = Vec::new();
+                ValueReprAlignedValue(value).binary_repr(&mut repr);
+                let hash_output: Vec<u8> = match ins {
+                    I::PersistentHash { .. } => Sha256::digest(&repr).to_vec(),
+                    I::Keccak256 { .. } => Keccak256::digest(&repr).to_vec(),
+                    _ => Sha512::digest(&repr).to_vec(),
+                };
+                memory.insert(output.clone(), IrValue::Bytes(hash_output));
+            }
+            // The public-input block. A guarded-off
+            // Impact still pushes `count` *zeros* into the PI vector
+            // (matching the in-circuit `select(guard, x, 0)`) and records
+            // the skip; a taken one pushes the values and checks them
+            // against the preimage's declared public transcript inputs.
+            I::Impact { guard, inputs } => {
+                let count = inputs.len();
+                if !operand_bool(&memory, guard, at, op)? {
+                    for _ in inputs {
+                        pis.push(Fr::from(0u64));
+                    }
+                    pi_skips.push(Some(count));
+                } else {
+                    // Resolve every input before publishing any: an op is
+                    // one Impact instruction, and half an op in the
+                    // transcript would not decode. (Verify mode never gets
+                    // here with an unresolvable operand.)
+                    let values = inputs
+                        .iter()
+                        .map(|input| operand_fr(&memory, input, at, op))
+                        .collect::<Result<Vec<Fr>, _>>()?;
+                    for x in values {
+                        pis.push(x);
+                        if !transcript_truncated {
+                            public_transcript_inputs.push(x);
+                        }
+                        public_transcript_inputs_idx += 1;
+                    }
+                    pi_skips.push(None);
+                    // Under `Mode::Gather` there is nothing to check
+                    // against: the accumulated values are the transcript.
+                    for i in 0..if gather { 0 } else { count } {
+                        let idx = public_transcript_inputs_idx - count + i;
+                        let expected = preimage.public_transcript_inputs.get(idx).copied();
+                        let computed = Some(pis[pis.len() - count + i]);
+                        if expected != computed {
+                            return Err(fail(
+                                at,
+                                op,
+                                format!(
+                                    "public transcript input mismatch for input {idx}; \
+                                     expected: {expected:?}, computed: {computed:?}"
+                                ),
+                            ));
+                        }
+                    }
+                }
+            }
+            I::HashToCurve { inputs, output } => {
+                let vals = inputs
+                    .iter()
+                    .map(|i| operand_fr(&memory, i, at, op))
+                    .collect::<Result<Vec<Fr>, _>>()?;
+                memory.insert(output.clone(), IrValue::JubjubPoint(hash_to_curve(&vals).0));
+            }
+            I::EcMul { a, scalar, output } => {
+                let p = operand(&memory, a, at, op)?;
+                let s = operand(&memory, scalar, at, op)?;
+                let r = ec_mul_offcircuit(&p, &s).map_err(|e| fail(at, op, format!("{e}")))?;
+                memory.insert(output.clone(), r);
+            }
+            I::EcMulGenerator { scalar, output } => {
+                let s = operand(&memory, scalar, at, op)?;
+                let p = match ir_type_of(&s) {
+                    IrType::JubjubScalar => IrValue::JubjubPoint(JubjubSubgroup::generator()),
+                    IrType::Secp256k1Scalar => IrValue::Secp256k1Point(k256::K256::generator()),
+                    IrType::Secp256r1Scalar => IrValue::Secp256r1Point(p256::P256::generator()),
+                    IrType::Curve25519Scalar => {
+                        IrValue::Curve25519Point(curve25519::Curve25519Subgroup::generator())
+                    }
+                    t => {
+                        return Err(fail(
+                            at,
+                            op,
+                            format!("unsupported EcMulGenerator for scalar of type {t:?}"),
+                        ))
+                    }
+                };
+                let r = ec_mul_offcircuit(&p, &s).map_err(|e| fail(at, op, format!("{e}")))?;
+                memory.insert(output.clone(), r);
+            }
+            I::IntoCoordinates { point, outputs } => {
+                let p = operand(&memory, point, at, op)?;
+                let coordinates =
+                    into_coordinates_offcircuit(&p).map_err(|e| fail(at, op, format!("{e}")))?;
+                memory.insert(outputs.0.clone(), coordinates.0);
+                memory.insert(outputs.1.clone(), coordinates.1);
+            }
+            I::FromCoordinates { inputs, output } => {
+                let x = operand(&memory, &inputs.0, at, op)?;
+                let y = operand(&memory, &inputs.1, at, op)?;
+                let p = from_coordinates_offcircuit(&x, &y)
+                    .map_err(|e| fail(at, op, format!("{e}")))?;
+                memory.insert(output.clone(), p);
+            }
+            I::ToBytes { input, output } => {
+                let x = operand(&memory, input, at, op)?;
+                let bytes = to_bytes_offcircuit(&x).map_err(|e| fail(at, op, format!("{e}")))?;
+                memory.insert(output.clone(), bytes);
+            }
+            // The ZKIR 3.0 instruction, fixed at `Bytes(32)`.
+            I::IntoBytes32 { input, output } => {
+                let x = operand(&memory, input, at, op)?;
+                let bytes = to_bytes_offcircuit(&x)
+                    .map_err(|e| fail(at, op, format!("{e}")))
+                    .and_then(|b| bytes32(b, at, op))?;
+                memory.insert(output.clone(), IrValue::Bytes(bytes.to_vec()));
+            }
+            I::FromBytes {
+                val_t,
+                bytes,
+                output,
+            } => {
+                let bytes: Vec<u8> = operand(&memory, bytes, at, op)?
+                    .try_into()
+                    .map_err(|e| fail(at, op, format!("{e}")))?;
+                let x = from_bytes_offcircuit(val_t, &bytes)
+                    .map_err(|e| fail(at, op, format!("{e}")))?;
+                memory.insert(output.clone(), x);
+            }
+            // The ZKIR 3.0 instruction, `Bytes(32)` only.
+            I::FromBytes32 {
+                val_t,
+                bytes,
+                output,
+            } => {
+                let bytes = bytes32(operand(&memory, bytes, at, op)?, at, op)?;
+                let x = from_bytes_offcircuit(val_t, &bytes)
+                    .map_err(|e| fail(at, op, format!("{e}")))?;
+                memory.insert(output.clone(), x);
+            }
+            // `ReverseBytes` is `Reverse`'s ZKIR 3.0 name.
+            I::Reverse { bytes, output } | I::ReverseBytes { bytes, output } => {
+                let mut bytes: Vec<u8> = operand(&memory, bytes, at, op)?
+                    .try_into()
+                    .map_err(|e| fail(at, op, format!("{e}")))?;
+                bytes.reverse();
+                memory.insert(output.clone(), IrValue::Bytes(bytes));
+            }
+            I::Slice {
+                bytes,
+                start,
+                len,
+                output,
+            } => {
+                let bs: Vec<u8> = operand(&memory, bytes, at, op)?
+                    .try_into()
+                    .map_err(|e| fail(at, op, format!("{e}")))?;
+                let (s, l) = (*start as usize, *len as usize);
+                if l == 0 {
+                    return Err(fail(at, op, "slice length must be at least 1"));
+                }
+                let end = s.checked_add(l).filter(|end| *end <= bs.len()).ok_or_else(|| {
+                    fail(at, op, format!("slice out of bounds: {s}..{s}+{l} into Bytes<{}>", bs.len()))
+                })?;
+                memory.insert(output.clone(), IrValue::Bytes(bs[s..end].to_vec()));
+            }
+            I::BytesIntoNatives { bytes, outputs } => {
+                let value = operand(&memory, bytes, at, op)?;
+                if !matches!(value, IrValue::Bytes(_)) {
+                    return Err(fail(
+                        at,
+                        op,
+                        format!("BytesIntoNatives expects a Bytes input, found {:?}", ir_type_of(&value)),
+                    ));
+                }
+                let encoded = encode_offcircuit(&value);
+                if encoded.len() != outputs.len() {
+                    return Err(fail(
+                        at,
+                        op,
+                        format!(
+                            "BytesIntoNatives: {:?} packs into {} field elements but the instruction has {} outputs",
+                            ir_type_of(&value),
+                            encoded.len(),
+                            outputs.len()
+                        ),
+                    ));
+                }
+                for (out_id, enc_val) in outputs.iter().zip(encoded) {
+                    memory.insert(out_id.clone(), enc_val);
+                }
+            }
+            // With `bytes_from_natives_nb_limbs` (private upstream) inlined.
+            I::BytesFromNatives { inputs, len, output } => {
+                if *len == 0 || *len > MAX_BYTES_LEN {
+                    return Err(fail(
+                        at,
+                        op,
+                        format!("BytesFromNatives: output length {len} is not in 1..={MAX_BYTES_LEN}"),
+                    ));
+                }
+                let nb_limbs = (*len as usize).div_ceil(BYTES_PER_FIELD_ELEMENT);
+                if inputs.len() != nb_limbs {
+                    return Err(fail(
+                        at,
+                        op,
+                        format!(
+                            "BytesFromNatives: a Bytes<{len}> unpacks from {nb_limbs} field elements \
+                             but the instruction has {} inputs",
+                            inputs.len()
+                        ),
+                    ));
+                }
+                let encoded = inputs
+                    .iter()
+                    .map(|i| operand_fr(&memory, i, at, op))
+                    .collect::<Result<Vec<Fr>, _>>()?;
+                let value = decode_offcircuit(&encoded, &IrType::Bytes(*len)).map_err(|_| {
+                    fail(
+                        at,
+                        op,
+                        format!(
+                            "BytesFromNatives: every input must fit in the number of bytes it \
+                             contributes to the output ({BYTES_PER_FIELD_ELEMENT} bytes, except \
+                             the last one, which contributes {})",
+                            *len as usize - BYTES_PER_FIELD_ELEMENT * (nb_limbs - 1)
+                        ),
+                    )
+                })?;
+                memory.insert(output.clone(), value);
+            }
+            // Low = first 31 bytes LE, high = last byte.
+            I::Bytes32IntoLowHigh { bytes, outputs } => {
+                let mut bytes = bytes32(operand(&memory, bytes, at, op)?, at, op)?;
+                let high = IrValue::Native(Fr::from(bytes[31] as u64));
+                bytes[31] = 0;
+                let low = from_bytes_offcircuit(&IrType::Native, &bytes)
+                    .map_err(|e| fail(at, op, format!("{e}")))?;
+                memory.insert(outputs.0.clone(), low);
+                memory.insert(outputs.1.clone(), high);
+            }
+            I::Bytes32FromLowHigh { inputs, output } => {
+                let low = operand(&memory, &inputs.0, at, op)?;
+                let high = operand(&memory, &inputs.1, at, op)?;
+                let bytes_low = to_bytes_offcircuit(&low)
+                    .map_err(|e| fail(at, op, format!("{e}")))
+                    .and_then(|b| bytes32(b, at, op))?;
+                let bytes_high = to_bytes_offcircuit(&high)
+                    .map_err(|e| fail(at, op, format!("{e}")))
+                    .and_then(|b| bytes32(b, at, op))?;
+                if bytes_low[31] != 0 || bytes_high[1..].iter().any(|b| *b != 0) {
+                    return Err(fail(
+                        at,
+                        op,
+                        "Bytes32FromLowHigh: low operand must fit in 31 bytes (be less than \
+                         2^248) and high operand must fit in a single byte (be less than 256)",
+                    ));
+                }
+                let mut out_bytes = bytes_low;
+                out_bytes[31] = bytes_high[0];
+                memory.insert(output.clone(), IrValue::Bytes(out_bytes.to_vec()));
+            }
+            I::Nth { bytes, index, output } => {
+                let bs: Vec<u8> = operand(&memory, bytes, at, op)?
+                    .try_into()
+                    .map_err(|e| fail(at, op, format!("{e}")))?;
+                let k = *index as usize;
+                if k >= bs.len() {
+                    return Err(fail(at, op, format!("nth out of bounds: index {k} into Bytes<{}>", bs.len())));
+                }
+                memory.insert(output.clone(), IrValue::Byte(bs[k]));
+            }
+            I::Concat { inputs, output } => {
+                let mut bytes = vec![];
+                for input in inputs {
+                    match operand(&memory, input, at, op)? {
+                        IrValue::Byte(b) => bytes.push(b),
+                        IrValue::Bytes(bs) => bytes.extend(bs),
+                        other => {
+                            return Err(fail(
+                                at,
+                                op,
+                                format!("Concat expects Byte or Bytes inputs, found {:?}", ir_type_of(&other)),
+                            ))
+                        }
+                    }
+                }
+                if bytes.is_empty() {
+                    return Err(fail(at, op, "Concat requires at least one byte of input"));
+                }
+                if bytes.len() > MAX_BYTES_LEN as usize {
+                    return Err(fail(
+                        at,
+                        op,
+                        format!("Concat result length {} exceeds MAX_BYTES_LEN ({MAX_BYTES_LEN})", bytes.len()),
+                    ));
+                }
+                memory.insert(output.clone(), IrValue::Bytes(bytes));
+            }
+            I::LoadConstant { val_t, encoding, output } => {
+                let value =
+                    decode_offcircuit(encoding, val_t).map_err(|e| fail(at, op, format!("{e}")))?;
+                memory.insert(output.clone(), value);
+            }
+            // Outputs are type-checked against the
+            // circuit's output signature.
+            I::Output { vals } => {
+                if vals.len() != ir.outputs.len() {
+                    return Err(fail(
+                        at,
+                        op,
+                        format!(
+                            "Output: signature declares {} return values but instruction has {}",
+                            ir.outputs.len(),
+                            vals.len()
+                        ),
+                    ));
+                }
+                for (i, (val, expected_t)) in vals.iter().zip(ir.outputs.iter()).enumerate() {
+                    let value = operand(&memory, val, at, op)?;
+                    if ir_type_of(&value) != *expected_t {
+                        return Err(fail(
+                            at,
+                            op,
+                            format!(
+                                "Output position {i}: signature declares {expected_t:?} but \
+                                 operand has runtime type {:?}",
+                                ir_type_of(&value)
+                            ),
+                        ));
+                    }
+                    outputs.push(value);
+                }
+            }
+        }
+        Ok(())
+        };
+        match step() {
+            Ok(()) => {}
+            Err(e) if gather => {
+                walk_failures.push((at, e.to_string()));
+                transcript_truncated = true;
+            }
+            Err(e) => return Err(e),
+        }
+    }
+
+    // Every transcript must be consumed exactly. Under
+    // `Mode::Gather` only the private half is exact: the public halves are
+    // the run's own output and its provisional input.
+    let public_halves_consumed = gather
+        || (preimage.public_transcript_inputs.len() == public_transcript_inputs_idx
+            && preimage.public_transcript_outputs.len() == public_transcript_outputs_idx);
+    if !public_halves_consumed || preimage.private_transcript.len() != private_transcript_idx {
+        return Err(SimError::Transcript(format!(
+            "public inputs {}/{}, public outputs {}/{}, private {}/{}",
+            public_transcript_inputs_idx,
+            preimage.public_transcript_inputs.len(),
+            public_transcript_outputs_idx,
+            preimage.public_transcript_outputs.len(),
+            private_transcript_idx,
+            preimage.private_transcript.len(),
+        )));
+    }
+
+    // Communications commitment: transient_commit over the *raw* preimage
+    // inputs followed by the encoded outputs. (The
+    // in-circuit twin rebuilds the same list from
+    // memory, skipping absent inputs — off-circuit every declared input was
+    // decoded into memory above, so the lists coincide.)
+    if ir.do_communications_commitment && !gather {
+        let comm_comm = preimage.communications_commitment.ok_or_else(|| {
+            SimError::CommCommitment("expected communications randomness".into())
+        })?;
+        let mut comm_comm_inputs: Vec<Fr> = Vec::new();
+        comm_comm_inputs.extend(preimage.inputs.iter());
+        for value in outputs.iter() {
+            for ir_val in encode_offcircuit(value) {
+                comm_comm_inputs.push(
+                    ir_val
+                        .try_into()
+                        .map_err(|e| SimError::CommCommitment(format!("{e}")))?,
+                );
+            }
+        }
+        if comm_comm.0 != transient_commit(&comm_comm_inputs[..], comm_comm.1) {
+            return Err(SimError::CommCommitment(
+                "communications commitment mismatch".into(),
+            ));
+        }
+    }
+
+    Ok(Run {
+        memory,
+        pis,
+        pi_skips,
+        binding_input: preimage.binding_input,
+        comm_comm: preimage.communications_commitment,
+        outputs,
+        consumed_private: private_transcript_idx,
+        consumed_public: public_transcript_outputs_idx,
+        op_counts,
+        public_transcript_inputs,
+        assert_failures,
+        walk_failures,
+    })
+}
+
+// --- reporting -------------------------------------------------------------------
+
+/// A resolved disclosure: what the circuit made public, by label and by the
+/// value it took in this run.
+///
+/// `values` is a list because a v3 disclosure record covers one *logical*
+/// value, which may be several wires (a `Bytes<32>`'s `[hi, lo]`); see
+/// [`minocrab::Disclosure`].
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct DisclosedValue {
+    pub label: String,
+    pub kind: &'static str,
+    /// The concrete disclosed wires in this run, in wire order.
+    pub values: Vec<String>,
+}
+
+/// Structured simulation report: what ran, what it cost, what it disclosed.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct Report {
+    pub instructions_executed: u32,
+    pub op_counts: BTreeMap<&'static str, u32>,
+    pub witnesses_consumed: usize,
+    pub outputs: Vec<String>,
+    /// The proof system's public-input vector (v2's `public_statement` is
+    /// the transcript; v3's statement IS `pis`).
+    pub public_statement: Vec<String>,
+    /// Everything this circuit disclosed, with the values of this run.
+    pub disclosures: Vec<DisclosedValue>,
+}
+
+fn value_display(value: &IrValue) -> String {
+    match value {
+        IrValue::Native(fr) => format!("{fr:?}"),
+        other => format!("{other:?}"),
+    }
+}
+
+/// Build the structured report for a v3 run — the v3 twin of
+///
+///
+/// A disclosed value is resolved through the run's memory by the
+/// [`Identifier`] the record carries, or taken straight from the record when
+/// it is a constant. `"<not computed>"` can only appear for a value the run
+/// never produced, which for a completed run means a disclosure of a wire that
+/// no instruction reached.
+pub fn report(run: &Run, disclosures: &[minocrab::Disclosure]) -> Report {
+    Report {
+        instructions_executed: run.op_counts.values().sum(),
+        op_counts: run.op_counts.clone(),
+        witnesses_consumed: run.consumed_private,
+        outputs: run.outputs.iter().map(value_display).collect(),
+        public_statement: run.pis.iter().map(|fr| format!("{fr:?}")).collect(),
+        disclosures: disclosures
+            .iter()
+            .map(|d| DisclosedValue {
+                label: d.label.clone(),
+                kind: match d.kind {
+                    minocrab::DisclosureKind::Disclosed => "disclosed",
+                    minocrab::DisclosureKind::DisclosedUntyped => "disclosed (untyped)",
+                    minocrab::DisclosureKind::Statement => "statement",
+                    minocrab::DisclosureKind::Output => "output",
+                },
+                values: d
+                    .values
+                    .iter()
+                    .map(|value| match value {
+                        minocrab::DisclosedWire::Named(id) => run
+                            .memory
+                            .get(id)
+                            .map(value_display)
+                            .unwrap_or_else(|| "<not computed>".into()),
+                        // A constant needs no run to resolve — see
+                        // `DisclosedWire::Constant`.
+                        minocrab::DisclosedWire::Constant(imm) => format!("{imm:?}"),
+                    })
+                    .collect(),
+            })
+            .collect(),
+    }
+}
+
+/// Simulate a compiled v3 circuit and produce the structured report.
+pub fn simulate_compiled(
+    compiled: &minocrab::Compiled,
+    preimage: &ProofPreimage,
+) -> Result<(Run, Report), SimError> {
+    let run = simulate(&compiled.ir, preimage).map_err(|e| name_the_failed_assert(compiled, e))?;
+    let report = report(&run, &compiled.disclosures);
+    Ok((run, report))
+}
+
+/// A failed `assert` that was written with a message says what it meant.
+///
+/// ZKIR has nowhere to put Compact's `assert(cond, "message")` second
+/// argument, so the frontend keeps it beside the stream
+/// (`Compiled::assert_messages`, one entry per assert that carries one) and
+/// this is where it is spent: "instruction 41 (assert): failed direct
+/// assertion" becomes "… : failed assertion: Chain ID must be positive".
+fn name_the_failed_assert(compiled: &minocrab::Compiled, error: SimError) -> SimError {
+    match error {
+        SimError::Failed {
+            at,
+            op: op @ "assert",
+            message,
+        } => SimError::Failed {
+            at,
+            op,
+            message: match compiled.assert_message(at) {
+                Some(named) => format!("failed assertion: {named}"),
+                None => message,
+            },
+        },
+        other => other,
+    }
+}
+
+// --- cost + profiling ------------------------------------------------------------
+
+/// Static circuit cost via Midnight's own cost model (k = log2 rows needed).
+pub fn cost(ir: &IrSource) -> (u8, usize) {
+    let model = ir.model();
+    (model.k(), model.rows())
+}
+
+/// The body of the test `#[circuit(max_k = N)]` generates: the circuit's
+/// `k` against the budget its author declared.
+///
+/// A ceiling, not an equality. `k` is `log2` of the proving-table rows, so it
+/// is what decides the proving key, the prover's RAM and the wall clock —
+/// crossing a power of two is the event a budget exists to catch, and it is
+/// invisible to `row_snapshot` for any circuit not in that table. Coming in
+/// under budget is a win and passes; the message says by how much, so the
+/// declaration can be tightened deliberately rather than drifting.
+///
+/// Lives here rather than in the macro's expansion so that the wording is
+/// one string with one place to fix, and so the expansion stays a call.
+#[track_caller]
+pub fn assert_max_k(circuit: &str, compiled: &minocrab::Compiled, budget: u8) {
+    let (k, rows) = cost(&compiled.ir);
+    assert!(
+        k <= budget,
+        "{circuit}: k={k} ({rows} rows) is over the declared budget of \
+         max_k = {budget}. A circuit's k sets its proving key, its prover RAM \
+         and its wall clock, so this is a cost REGRESSION, not a snapshot \
+         drift: either take the rows back out, or raise the budget in the \
+         same commit that explains why it moved."
+    );
+    if k < budget {
+        println!(
+            "{circuit}: k={k} ({rows} rows), {} under the declared budget of \
+             max_k = {budget} — tighten it when the headroom is meant to stay",
+            budget - k
+        );
+    }
+}
+
+/// Attribute each instruction to its innermost region and price the circuit
+/// Instructions outside every region
+/// land in "(top level)".
+///
+/// Regions are attributed twice: by instruction count, and by *estimated
+/// rows* ([`rowcost`](crate::rowcost)) — the two disagree wildly wherever crypto lives, and
+/// rows are what k, prove time and RAM track.
+pub fn profile(compiled: &minocrab::Compiled) -> crate::Profile {
+    let instructions = compiled.ir.instructions.as_slice();
+    let (k, rows) = cost(&compiled.ir);
+    let est = crate::rowcost::est_rows(&compiled.ir);
+
+    // regions are pushed on scope exit, so for nested regions the inner one
+    // appears first — the first region containing an index is the innermost.
+    let region_of = |idx: usize| -> &str {
+        compiled
+            .regions
+            .iter()
+            .find(|r| r.start <= idx && idx < r.end)
+            .map(|r| r.label.as_str())
+            .unwrap_or("(top level)")
+    };
+
+    let mut by_label: BTreeMap<&str, crate::RegionCost> = BTreeMap::new();
+    for (idx, ins) in instructions.iter().enumerate() {
+        let label = region_of(idx);
+        let entry = by_label.entry(label).or_insert_with(|| crate::RegionCost {
+            label: label.to_string(),
+            instructions: 0,
+            percent: 0.0,
+            est_rows: Some(0),
+            est_rows_percent: Some(0.0),
+            op_counts: BTreeMap::new(),
+        });
+        entry.instructions += 1;
+        *entry.est_rows.get_or_insert(0) += est[idx];
+        *entry.op_counts.entry(op_name(ins)).or_default() += 1;
+    }
+
+    let total = instructions.len().max(1);
+    let est_total: usize = est.iter().sum();
+    let mut regions: Vec<crate::RegionCost> = by_label
+        .into_values()
+        .map(|mut r| {
+            r.percent = r.instructions as f64 * 100.0 / total as f64;
+            r.est_rows_percent =
+                Some(r.est_rows.unwrap_or(0) as f64 * 100.0 / est_total.max(1) as f64);
+            r
+        })
+        .collect();
+    // Rows first: instruction count is the misleading order (a keccak is one
+    // instruction and a tenth of the circuit).
+    regions.sort_by(|a, b| {
+        b.est_rows
+            .cmp(&a.est_rows)
+            .then(b.instructions.cmp(&a.instructions))
+            .then(a.label.cmp(&b.label))
+    });
+
+    crate::Profile {
+        k,
+        rows,
+        total_instructions: instructions.len(),
+        est_rows_total: Some(est_total),
+        regions,
+    }
+}
+
+/// A test instrument for the simplification pass (notes/ir-passes.org
+/// §14): with `MINOCRAB_CHECK_SIMPLIFY=<file>` set, every [`simulate_with`]
+/// call in [`Mode::Verify`] (the reference semantics; the executor's
+/// provisional `Gather` walk is re-verified by one anyway) also simulates `minocrab_ir::passes::simplify`
+/// of the same circuit on the same preimage and panics unless the two
+/// agree on the verdict and, on accept, on the public-input vector, the
+/// skips, the outputs and the private transcript consumed. One line per
+/// call is appended to `<file>`: the circuit's [`simplify_check::fingerprint`], whether the
+/// pass changed it, and the verdict. Unset (always, outside that one
+/// measurement), it does nothing.
+///
+/// It exists so the whole workspace suite — every differential and model
+/// test that simulates a circuit on its own test vectors — can be run once
+/// as evidence for the pass, without touching any contract or test.
+#[doc(hidden)]
+pub mod simplify_check {
+    use std::hash::{Hash, Hasher};
+    use std::io::Write;
+
+    use midnight_transient_crypto::proofs::ProofPreimage;
+    use minocrab_ir::passes::{native_inputs, simplify};
+    use minocrab_zkir::{to_zkir_string, IrSource};
+
+    use super::{Mode, Run, SimError};
+
+    const VAR: &str = "MINOCRAB_CHECK_SIMPLIFY";
+
+    /// A circuit's identity for the log: a hash of its serialized ZKIR, the same
+    /// text the zkir dump writes.
+    #[doc(hidden)]
+    pub fn fingerprint(ir: &IrSource) -> u64 {
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        to_zkir_string(ir).expect("the IR serializes").hash(&mut h);
+        h.finish()
+    }
+
+    pub(super) fn cross_check(ir: &IrSource, preimage: &ProofPreimage, mode: Mode, run: &Result<Run, SimError>) {
+        let Some(log) = std::env::var_os(VAR) else { return };
+        if mode != Mode::Verify {
+            return;
+        }
+        let simplified = simplify(ir.instructions.to_vec(), &native_inputs(ir), &[]);
+        let changed = simplified.len() != ir.instructions.len();
+        if changed {
+            let other = IrSource { instructions: std::sync::Arc::new(simplified), ..ir.clone() };
+            let theirs = super::simulate_with_unchecked(&other, preimage, mode);
+            match (run, &theirs) {
+                (Ok(a), Ok(b)) => {
+                    assert_eq!(a.pis, b.pis, "{VAR}: the simplified circuit moved the public inputs");
+                    assert_eq!(a.pi_skips, b.pi_skips, "{VAR}: the simplified circuit moved the skips");
+                    assert_eq!(a.outputs, b.outputs, "{VAR}: the simplified circuit moved the outputs");
+                    assert_eq!(a.consumed_private, b.consumed_private, "{VAR}: private transcript consumed");
+                }
+                (Err(_), Err(_)) => {}
+                (a, b) => panic!("{VAR}: the simplified circuit changed the verdict\n  original: {a:?}\n  simplified: {b:?}"),
+            }
+        }
+        let line = format!(
+            "{:016x} {} {}\n",
+            fingerprint(ir),
+            if changed { "changed" } else { "unchanged" },
+            if run.is_ok() { "accept" } else { "reject" }
+        );
+        let mut file = std::fs::OpenOptions::new().create(true).append(true).open(log).expect("the log opens");
+        file.write_all(line.as_bytes()).expect("the log is writable");
+    }
+}

@@ -45,8 +45,8 @@ pub fn ttl(tblock: Timestamp) -> Timestamp {
 
 /// The chain's side of a publish, as these gates supply it.
 ///
-/// `INITIAL_PARAMETERS` is spelled out HERE rather than in the library: the
-/// library takes the chain's parameters as an argument (M30 A), and a test
+/// `INITIAL_PARAMETERS` is spelled out here rather than in the library: the
+/// library takes the chain's parameters as an argument, and a test
 /// with no chain has to choose something.
 pub fn chain_context(tblock: Timestamp) -> ChainContext<InMemoryDB> {
     ChainContext {
@@ -72,7 +72,7 @@ pub fn singleton_contract_state(
     ContractState::new(StateValue::Array(Array::new()), operations, Default::default())
 }
 
-/// Balancing and limits OFF: nothing here pays a DUST fee, because the DUST
+/// Balancing and limits off: nothing here pays a DUST fee, because the DUST
 /// wallet lives in `sig-net/mpc`'s `chain-midnight` (`minocrab_publisher::dust`
 /// is its seam).
 pub fn unbalanced_strictness() -> WellFormedStrictness {
@@ -137,10 +137,10 @@ pub fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
-/// A TRIMMED copy of M29 D's translation of mpc's `emission_from_log_item`
+/// A trimmed copy of M29 D's translation of mpc's `emission_from_log_item`
 /// (`chain-midnight/src/emissions.rs:96-148`). `minocrab-contracts`'
 /// `tests/signet_ledger_apply.rs` carries the full one, with every `ensure!`
-/// asserted; here the decoder exists only to SOURCE real values — a real
+/// asserted; here the decoder exists only to source real values — a real
 /// request id and a real signature, off a real chain — for the publisher to
 /// rebuild a call from.
 pub fn emission_of(item: &VersionedLogItem<InMemoryDB>, who: &str) -> Emission {
@@ -167,7 +167,7 @@ pub fn emission_of(item: &VersionedLogItem<InMemoryDB>, who: &str) -> Emission {
 /// Decode one of M29 D's fixtures and return the signet signer call's emission.
 ///
 /// The SHA-256 assertion is both the integrity check and the provenance pin:
-/// each fixture's hash IS the ledger transaction hash the capture recorded
+/// each fixture's hash is the ledger transaction hash the capture recorded
 /// (`minocrab-contracts/tests/fixtures/mpc/README.md`).
 pub fn golden_emission(bytes: &[u8], expected_sha256: &str, who: &str) -> Emission {
     assert_eq!(

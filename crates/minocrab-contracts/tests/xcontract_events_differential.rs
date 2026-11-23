@@ -1,8 +1,12 @@
 //! xcontract-events depositViaVault (caller with a returned value) and
 //! token deposit (callee): call-compatibility with the corpus artifacts per
-//! notes/ledger-abi.org §6 — the M5 return-value path (result witnesses
+//! notes/ledger-abi.org §6 — the return-value path (result witnesses
 //! bound by the communication commitment) plus Set.insert, against real
 //! compactc artifacts, with rejection agreement on tampering.
+
+#[path = "support/common.rs"]
+mod common;
+use common::*;
 
 use std::borrow::Cow;
 
@@ -23,28 +27,14 @@ use minocrab::Fr;
 use minocrab_contracts::events;
 use minocrab_contracts::xcontract_events as xce;
 use minocrab_ledger::ep_hash;
-use minocrab_sim::v3::{assert_call_compatible, simulate};
-use minocrab_zkir::v3::IrSource;
+use minocrab_sim::{assert_call_compatible, simulate};
+use minocrab_zkir::IrSource;
 use sha2::{Digest, Sha256};
 
 type VmOp = Op<ResultModeVerify, InMemoryDB>;
 
 fn corpus_zkir(side: &str, name: &str) -> IrSource {
-    let path = format!(
-        "{}/../../corpus/zkir/signet-midnight-experiments/experiments/xcontract-events/contract/src/{side}/zkir/{name}.zkir",
-        env!("CARGO_MANIFEST_DIR")
-    );
-    minocrab_zkir::v3::read_zkir(&path).expect("corpus golden parses")
-}
-
-fn bytesn_value(n: u32, bytes: &[u8]) -> AlignedValue {
-    AlignedValue::new(
-        Value(vec![ValueAtom(bytes.to_vec()).normalize()]),
-        Alignment(vec![AlignmentSegment::Atom(AlignmentAtom::Bytes {
-            length: n,
-        })]),
-    )
-    .unwrap()
+    common::corpus_zkir(&format!("signet-midnight-experiments/experiments/xcontract-events/contract/src/{side}/zkir"), name)
 }
 
 fn cell(av: AlignedValue) -> StateValue<InMemoryDB, AlignedValueChecked> {
@@ -53,13 +43,6 @@ fn cell(av: AlignedValue) -> StateValue<InMemoryDB, AlignedValueChecked> {
 
 fn key(i: u8) -> Key {
     Key::Value(bytesn_value(1, &[i]).try_into().expect("a canonical test key"))
-}
-
-fn b32_slots(bytes: &[u8; 32]) -> (Fr, Fr) {
-    (
-        Fr::from(u64::from(bytes[31])),
-        Fr::from_le_bytes(&bytes[..31]).unwrap(),
-    )
 }
 
 /// The `rt-aligned-concat addr ‖ entry_point ‖ comm` 3-atom cell value.
@@ -191,7 +174,7 @@ impl Scenario {
         let mut token_addr = [0u8; 32];
         token_addr[..9].copy_from_slice(b"token-adr");
         token_addr[31] = 0x22;
-        // DERIVED from the callee circuit's name (M12 stage 1); the ep
+        // Derived from the callee circuit's name; the ep
         // limbs are witnesses, so this is a preimage-only change.
         let ep = ep_hash("deposit");
         Scenario {
@@ -396,14 +379,14 @@ fn deposit_via_vault_rejects_tampering() {
 // ---- M11 stage 6: the Borsh twin ---------------------------------------------
 
 /// `xcontract_events_borsh::XcontractEventsBorsh::token_deposit` emits the same bytes as the
-/// original — as BYTE-IDENTICAL ZKIR — with both serializations built from
+/// original — as byte-identical ZKIR — with both serializations built from
 /// declared types: the 256-byte payload (56 Borsh bytes then the zero pad,
 /// hashed whole) and the 288-byte `Misc` envelope (`LEN` exactly 288, so no
 /// pad at all). See `tests/events_differential.rs` for why identical ZKIR is
 /// the strongest form of the claim.
 #[test]
 fn borsh_twin_is_byte_identical_to_the_original() {
-    use minocrab_zkir::v3::to_zkir_string;
+    use minocrab_zkir::to_zkir_string;
     assert_eq!(
         to_zkir_string(&xce::XcontractEvents::token_deposit().ir).expect("the original serializes"),
         to_zkir_string(&minocrab_contracts::xcontract_events_borsh::XcontractEventsBorsh::token_deposit().ir)

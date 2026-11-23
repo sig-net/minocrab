@@ -2,9 +2,6 @@
 name = "minocrab-sim"
 description = "MinoCrab L5: native ZKIR simulator with disclosure reports and row-cost metrics, so circuits run under cargo test"
 version.workspace = true
-# Held until the owner lifts it (PUBLISHING.md); every `midnight-*` crate
-# it needs is on crates.io now.
-publish = false
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -18,7 +15,7 @@ categories = [
 ]
 include = ["src/**/*.rs", "README.md", "LICENSE-MIT", "LICENSE-APACHE"]
 
-# The gate-count CLI (M24): `minocrab rows|diff <file.zkir>` for people not
+# The gate-count CLI: `minocrab rows|diff <file.zkir>` for people not
 # using the Rust API. Reuses this crate's cost() + minocrab-zkir's read_zkir.
 [lints]
 workspace = true
@@ -32,24 +29,21 @@ doc = false
 [dependencies]
 minocrab.workspace = true
 minocrab-zkir.workspace = true
-# The CLI's `pass` subcommand runs the published passes over a .zkir file
-# (M24 point 4); a regular dependency since then, not just the tests'.
-minocrab-ir = { workspace = true, features = ["unstable"] }
+# The CLI's `pass` subcommand runs the published passes over a .zkir file.
+minocrab-ir.workspace = true
 # v3 simulator: reuse zkir-v3's public off-circuit helpers and the same
-# crypto crates its interpreter calls (see src/v3.rs).
+# crypto crates its interpreter calls (see src/vm.rs).
 midnight-zkir-v3.workspace = true
 midnight-transient-crypto.workspace = true
 midnight-base-crypto.workspace = true
 midnight-curves.workspace = true
-# The EXECUTOR (`v3::exec`, `unstable` only): Midnight's own Impact VM, run
-# in `ResultModeGather` against a live `StateValue`. Optional so the stable
-# tier — the measurement API and the `minocrab` CLI — does not grow a ledger
-# dependency. See notes/executor.org.
-midnight-onchain-vm = { workspace = true, optional = true }
-midnight-onchain-state = { workspace = true, optional = true }
-midnight-onchain-runtime = { workspace = true, optional = true }
-midnight-coin-structure = { workspace = true, optional = true }
-midnight-storage = { workspace = true, optional = true }
+# The executor (`exec`): Midnight's own Impact VM, run in
+# `ResultModeGather` against a live `StateValue`. See notes/executor.org.
+midnight-onchain-vm.workspace = true
+midnight-onchain-state.workspace = true
+midnight-onchain-runtime.workspace = true
+midnight-coin-structure.workspace = true
+midnight-storage.workspace = true
 group.workspace = true
 sha2.workspace = true
 sha3.workspace = true
@@ -58,22 +52,10 @@ serde_json.workspace = true
 thiserror.workspace = true
 
 [features]
-# The INTERNAL tier (M24 tier boundary, notes/library-api.org §1): the
-# simulator VM (`simulate`, `Run3`, the report machinery). No stability
-# promise; the stable surface is the measurement API — `cost`, `profile`,
-# `assert_max_k`, `rowcost` — and the `minocrab` CLI. In-workspace crates
-# enable this.
-unstable = [
-    "dep:midnight-onchain-vm",
-    "dep:midnight-onchain-state",
-    "dep:midnight-onchain-runtime",
-    "dep:midnight-coin-structure",
-    "dep:midnight-storage",
-]
+# No-op alias: gates nothing; kept so downstream manifests that name it still resolve.
+unstable = []
 
 [dev-dependencies]
-# Enable the internal tier for this crate's own tests and examples.
-minocrab-sim = { path = ".", features = ["unstable"] }
 anyhow.workspace = true
 proptest.workspace = true
 # The opcost example prices minocrab-std's byte-plumbing shapes.

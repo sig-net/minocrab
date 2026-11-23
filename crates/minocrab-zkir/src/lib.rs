@@ -6,8 +6,8 @@
 //! toolchain directly (see notes/architecture.org).
 //!
 //! On-disk `.zkir` JSON (compactc's output) wraps the version as
-//! `{"major": 3, "minor": n}`; [`v3::read_zkir`] handles the inward rewrite
-//! and [`v3::write_zkir`] is its exact inverse. Older compilers also wrote
+//! `{"major": 3, "minor": n}`; [`read_zkir`] handles the inward rewrite
+//! and [`write_zkir`] is its exact inverse. Older compilers also wrote
 //! ZKIR v2, which nothing in this workspace targets; [`major_version`] is how
 //! a walk over `.zkir` files tells them apart before parsing.
 //!
@@ -22,9 +22,9 @@
 //!
 //! # Start here
 //!
-//! - [`v3::read_zkir`] and [`v3::write_zkir`] — the on-disk pair, exact
-//!   inverses; [`v3::parse_zkir`] / [`v3::to_zkir_string`] the in-memory pair
-//! - [`v3::IrSource`] — Midnight's own IR type, re-exported not redefined
+//! - [`read_zkir`] and [`write_zkir`] — the on-disk pair, exact
+//!   inverses; [`parse_zkir`] / [`to_zkir_string`] the in-memory pair
+//! - [`IrSource`] — Midnight's own IR type, re-exported not redefined
 //! - [`major_version`] — which ZKIR a `.zkir` file is, without parsing it
 //! - [`Error`] — the one error type, always carrying the path it failed on
 
@@ -32,7 +32,19 @@ use std::path::Path;
 
 pub use midnight_transient_crypto::curve::Fr;
 
-pub mod v3;
+mod io;
+pub use io::*;
+
+// rename-v3: begin shim (tools/rename-v3.sh never rewrites this block)
+/// The pre-rename path: everything that was `minocrab_zkir::v3::X` is `minocrab_zkir::X`.
+/// Kept for the downstream pins only; nothing in this workspace uses it.
+#[doc(hidden)]
+#[deprecated(note = "`minocrab_zkir::v3` is gone: the items are at the crate root \
+                     (`minocrab_zkir::X`) and lose the `3` suffix; this module is removed in the next release")]
+pub mod v3 {
+    pub use crate::*;
+}
+// rename-v3: end shim
 
 /// The one error type: what failed, and on which path.
 #[derive(Debug, thiserror::Error)]

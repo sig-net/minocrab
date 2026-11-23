@@ -4,10 +4,14 @@
 //! a real compactc artifact, plus rejection agreement on a tampered
 //! transcript.
 
+#[path = "support/common.rs"]
+mod common;
+use common::*;
+
 use std::borrow::Cow;
 
 use midnight_base_crypto::fab::{
-    Alignment, AlignmentAtom, AlignmentSegment, AlignedValue, Value, ValueAtom,
+    Alignment, AlignmentSegment, AlignedValue,
 };
 use midnight_base_crypto::repr::BinaryHashRepr;
 use midnight_onchain_state::state::StateValue;
@@ -21,42 +25,18 @@ use midnight_transient_crypto::proofs::{KeyLocation, ProofPreimage};
 use midnight_transient_crypto::repr::FieldRepr;
 use minocrab::Fr;
 use minocrab_contracts::mint_tokens;
-use minocrab_sim::v3::{assert_call_compatible, simulate};
-use minocrab_zkir::v3::IrSource;
+use minocrab_sim::{assert_call_compatible, simulate};
+use minocrab_zkir::IrSource;
 use sha2::{Digest, Sha256};
 
 type VmOp = Op<ResultModeVerify, InMemoryDB>;
 
 fn corpus_zkir(name: &str) -> IrSource {
-    let path = format!(
-        "{}/../../corpus/zkir/signet-midnight-experiments/experiments/mint-tokens/contract/src/mint-tokens/zkir/{name}.zkir",
-        env!("CARGO_MANIFEST_DIR")
-    );
-    minocrab_zkir::v3::read_zkir(&path).expect("corpus golden parses")
-}
-
-fn atom(n: u32) -> AlignmentSegment {
-    AlignmentSegment::Atom(AlignmentAtom::Bytes { length: n })
-}
-
-fn bytesn_value(n: u32, bytes: &[u8]) -> AlignedValue {
-    AlignedValue::new(
-        Value(vec![ValueAtom(bytes.to_vec()).normalize()]),
-        Alignment(vec![atom(n)]),
-    )
-    .unwrap()
+    common::corpus_zkir("signet-midnight-experiments/experiments/mint-tokens/contract/src/mint-tokens/zkir", name)
 }
 
 fn cell(av: AlignedValue) -> StateValue {
     StateValue::Cell(Sp::new(av))
-}
-
-/// [hi, lo] Fr slot pair of a Bytes<32>.
-fn b32_slots(bytes: &[u8; 32]) -> (Fr, Fr) {
-    (
-        Fr::from(u64::from(bytes[31])),
-        Fr::from_le_bytes(&bytes[..31]).unwrap(),
-    )
 }
 
 fn pad32(s: &str) -> [u8; 32] {
@@ -279,7 +259,7 @@ fn mint_with_recipient_own_public_key_matches_corpus() {
 }
 
 /// Criterion 3: a tampered transcript (e.g. a mint of a different amount
-/// than the circuit performs) must be rejected by BOTH artifacts.
+/// than the circuit performs) must be rejected by both artifacts.
 #[test]
 fn mint_rejects_tampered_transcript() {
     let theirs = corpus_zkir("mintWithRecipientArgument");

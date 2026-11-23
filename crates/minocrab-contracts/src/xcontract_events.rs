@@ -1,6 +1,6 @@
 //! `xcontract-events` (signet-midnight-experiments) — provable event
-//! attribution across a cross-contract call (M5): vault A calls token B's
-//! `deposit`, B emits a DepositEvent and returns its hash, and BOTH sides
+//! attribution across a cross-contract call: vault A calls token B's
+//! `deposit`, B emits a DepositEvent and returns its hash, and both sides
 //! record the hash in authenticated state. The communication commitment
 //! guarantees the hash A stores is exactly what B returned.
 //!
@@ -35,15 +35,16 @@
 //! }
 //! ```
 
-use minocrab::v3::Circuit3;
+use minocrab::Circuit;
 use minocrab::{label, Private, Public};
-use minocrab_ledger::{
-    cell_write, counter_increment, counter_read, emit, emit_event, set_insert,
-    ImpactElem, LedgerValue, XcallCommitment, XcallResult,
+use minocrab_experimental::impact::raw::{
+    cell_write, counter_increment, counter_read, emit, set_insert, ImpactElem,
+    LedgerValue,
 };
-use minocrab_std::v3::kernel;
-use minocrab_std::v3::{
-    contract, BytesN, ContractAddress, Disclose, Discloses, Serializer, Uint, B32,
+use minocrab_ledger::{XcallCommitment, XcallResult};
+use minocrab_std::kernel;
+use minocrab_std::{
+    contract, event, BytesN, ContractAddress, Disclose, Discloses, Serializer, Uint, B32,
 };
 
 use crate::events::{MISC_SIZE, MISC_TAG, MISC_VERSION};
@@ -81,23 +82,22 @@ fn b32_ledger_value(b: &B32<Public>) -> LedgerValue {
 /// contracts' source.
 pub struct XcontractEvents;
 
-#[contract]
+#[contract(lowering = minocrab_compat::profile)]
 impl XcontractEvents {
     /// `export circuit depositViaVault(amount: Uint<128>): Bytes<32>`.
     ///
-    /// The corpus's only circuits with a RETURN VALUE, so the only users of
+    /// The corpus's only circuits with a return value, so the only users of
     /// `#[circuit(output = ..)]`: the label names the disclosed value, and
     /// `CircuitOut for B32<Public>` suffixes the two limbs `(hi)`/`(lo)` — the
     /// hand-written labels, unchanged.
     #[circuit(output = "event hash")]
     pub fn deposit_via_vault(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         amount: Uint<128>,
     ) -> Discloses<(Amount, XcallCommitment, XcallResult), B32<Public>> {
         let a = amount.disclose_as::<Amount>(c).field();
-        // Kept even though guard threading no longer uses it: dropping this
-        // `Copy` would renumber every later identifier, moving the ZKIR
-        // (notes/edsl-trim.org §B, the removal's zero-movement gate).
+        // The `one` compactc threads, unused here: dropping this `Copy` would
+        // renumber every later identifier, moving the ZKIR (notes/edsl-trim.org §B).
         let _ = c.constant(1u64);
 
         emit(c, &counter_increment(VAULT_CALL_COUNT, 1));
@@ -119,16 +119,15 @@ impl XcontractEvents {
     /// machinery is all vault-side).
     #[circuit(output = "event hash")]
     pub fn token_deposit(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         amount: Uint<128>,
         caller: ContractAddress<Private>,
     ) -> Discloses<(Amount, Caller), B32<Public>> {
         let caller = caller.bytes();
         let a = amount.disclose_as::<Amount>(c).field();
         let cal = caller.disclose_as::<Caller>(c);
-        // Kept even though guard threading no longer uses it: dropping this
-        // `Copy` would renumber every later identifier, moving the ZKIR
-        // (notes/edsl-trim.org §B, the removal's zero-movement gate).
+        // The `one` compactc threads, unused here: dropping this `Copy` would
+        // renumber every later identifier, moving the ZKIR (notes/edsl-trim.org §B).
         let _ = c.constant(1u64);
 
         // const sequence = depositCount as Uint<64> — read before the increment.
@@ -162,11 +161,7 @@ impl XcontractEvents {
         misc.push_literal(c, &name);
         misc.push_bytes_n(&payload);
         let misc = misc.finish::<MISC_SIZE>(c);
-        let misc_val = LedgerValue::bytes(
-            MISC_SIZE as u32,
-            misc.limbs().iter().map(|&w| ImpactElem::Wire(w)).collect(),
-        );
-        emit(c, &emit_event(MISC_VERSION, MISC_TAG, &misc_val));
+        event::emit(c, MISC_VERSION, MISC_TAG, &misc);
 
         Discloses::of(event_hash)
     }

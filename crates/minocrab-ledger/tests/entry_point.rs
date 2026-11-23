@@ -7,11 +7,11 @@
 //! [`minocrab_ledger::ep_hash`] does not: it calls
 //! `EntryPointBuf::ep_hash`.
 //!
-//! What is left to test is that the CALL is the right one and that our FAB
+//! What is left to test is that the call is the right one and that our FAB
 //! limb split of the result matches the `Bytes<32>` convention the claim's
 //! `rt-aligned-concat` uses. Both are checked here against the real thing:
 //!
-//!  - the hash, for EVERY circuit name in EVERY corpus `contract-info.json`
+//!  - the hash, for every circuit name in every corpus `contract-info.json`
 //!    (312 artifacts), against an independently constructed
 //!    `EntryPointBuf`, and against `persistent_commit` with the domain
 //!    separator spelled out by hand;
@@ -71,7 +71,7 @@ fn corpus_circuit_names() -> (usize, BTreeSet<String>) {
     (files.len(), names)
 }
 
-/// THE SWEEP: our hash is upstream's, for every circuit name compactc has
+/// The sweep: our hash is upstream's, for every circuit name compactc has
 /// ever emitted in the corpus.
 #[test]
 fn ep_hash_matches_upstream_for_every_corpus_circuit() {
@@ -83,7 +83,7 @@ fn ep_hash_matches_upstream_for_every_corpus_circuit() {
     // Uint<0> became a legal type (CHANGELOG 0.33.111). The hash rule
     // itself did not move: every circuit name in the corpus, the new
     // source's included, still hashes to upstream's entry point. +3 at
-    // M43 A: the second signet-midnight-integration pin (pr127, e9350c4),
+    // The second signet-midnight-integration pin (pr127, e9350c4),
     // the signet signer's three circuits at PR #127. +3 at M44 A: the third
     // pin (v0.24.1, a80e98e) — three artifacts: the signet signer, the Signet
     // module and its oracle program; the vault's 17 → 29 circuits replace
@@ -94,8 +94,16 @@ fn ep_hash_matches_upstream_for_every_corpus_circuit() {
     // compact/test-center/compact/ecdsa compile under language 0.28.0.
     // +2 with passport-account-custody (passport PR #184): account and
     // webauthn; account-p256 is an include file and fails standalone.
+    // +85 at the compactc 0.36.1 bump, from the compact source moving to the
+    // release tag (56c3b77 → 7fa3a117): 89 new compiling contracts in its
+    // examples, test-center and test-contracts, 4 examples deleted upstream.
+    // The compiler itself moved no artifact.
+    // +7 with the mainnet pins (M48 L): the v026 signer, responder and two
+    // test callers, and the 0.7.0-rc.2 vault. -7 when the v0.25.0 pin and
+    // fff3421c's signet contract, test callers and serde fixture retired;
+    // -4 when the 375071b vault and the v0.24.1 pin (three) retired.
     assert_eq!(
-        artifacts, 327,
+        artifacts, 408,
         "the corpus artifact count moved; re-read notes/corpus-sources.org before \
          refreshing this number"
     );

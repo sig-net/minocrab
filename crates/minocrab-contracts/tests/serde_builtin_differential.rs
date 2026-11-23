@@ -2,6 +2,9 @@
 //! artifact per notes/ledger-abi.org §6, plus rejection agreement on
 //! non-canonical encodings.
 
+#[path = "support/common.rs"]
+mod common;
+
 use std::borrow::Cow;
 
 use midnight_base_crypto::fab::{
@@ -15,17 +18,13 @@ use midnight_transient_crypto::proofs::{KeyLocation, ProofPreimage, Zkir};
 use midnight_transient_crypto::repr::FieldRepr;
 use minocrab::Fr;
 use minocrab_contracts::serde_builtin;
-use minocrab_sim::v3::simulate;
-use minocrab_zkir::v3::IrSource;
+use minocrab_sim::simulate;
+use minocrab_zkir::IrSource;
 
 type VmOp = Op<ResultModeVerify, InMemoryDB>;
 
 fn corpus_zkir() -> IrSource {
-    let path = format!(
-        "{}/../../corpus/zkir/signet-midnight-experiments/experiments/serde-builtin/contract/src/serde-builtin/zkir/checkRoundtrip.zkir",
-        env!("CARGO_MANIFEST_DIR")
-    );
-    minocrab_zkir::v3::read_zkir(&path).expect("corpus golden parses")
+    common::corpus_zkir("signet-midnight-experiments/experiments/serde-builtin/contract/src/serde-builtin/zkir", "checkRoundtrip")
 }
 
 /// A canonical Mixed encoding: flag=1, amount, small, tag, zero padding.
@@ -90,7 +89,20 @@ fn preimage(bytes: &[u8; 128]) -> ProofPreimage {
 #[test]
 fn check_roundtrip_matches_corpus() {
     let theirs = corpus_zkir();
-    let ours = serde_builtin::SerdeBuiltin::check_roundtrip().ir;
+    let compiled = serde_builtin::SerdeBuiltin::check_roundtrip();
+    // The deserialize region is compactc's, instruction for instruction up
+    // to naming: our region against the same number of instructions of
+    // compactc's stream from its first split of the low limb (input 4,
+    // bytes 0..31).
+    let region = compiled.regions.iter().find(|r| r.label == "deserialize Mixed").expect("the region");
+    let len = region.end - region.start;
+    let at = common::first_reading_input(&theirs, "div_mod_power_of_two", 4);
+    assert_eq!(
+        common::canonical_window(&compiled.ir, region.start, len),
+        common::canonical_window(&theirs, at, len),
+        "the deserialize region is not compactc's"
+    );
+    let ours = compiled.ir;
 
     let bytes = mixed_bytes(0xdead_beef_0123, 0x2a, b"mixed-tag-32-bytes-for-the-test!");
     let pi = preimage(&bytes);
@@ -113,7 +125,7 @@ fn check_roundtrip_matches_corpus() {
     assert_eq!(our_run.pis, their_run.pis, "PI vectors differ");
     assert_eq!(ours.check(&pi).expect("upstream accepts ours"), our_run.pi_skips);
 
-    // Criterion 3: non-canonical encodings must be rejected by BOTH —
+    // Criterion 3: non-canonical encodings must be rejected by both —
     // a flag byte of 2 (compactc 0.36 refuses it as a Boolean; ours reads
     // false, re-serializes 0 and fails the round trip)…
     let mut bad_flag = bytes;
@@ -128,4 +140,23 @@ fn check_roundtrip_matches_corpus() {
     let pi = preimage(&bad_pad);
     assert!(simulate(&ours, &pi).is_err(), "ours must reject padding");
     assert!(simulate(&theirs, &pi).is_err(), "corpus must reject padding");
+
+    // The deserialize splits only the 50 bytes the fields occupy, so the
+    // padding is held to zero by the round trip alone, on both sides: a
+    // nonzero byte is refused in each limb, including the first padding
+    // byte (in the limb the tag shares) and the last byte of the string.
+    for at in [50usize, 61, 62, 93, 124, 127] {
+        let mut bad_pad = bytes;
+        bad_pad[at] = 1;
+        let pi = preimage(&bad_pad);
+        assert!(simulate(&ours, &pi).is_err(), "ours must reject padding at {at}");
+        assert!(simulate(&theirs, &pi).is_err(), "corpus must reject padding at {at}");
+    }
+    // A flag of 0 and the widest field values are canonical, and accepted by
+    // both with the same public inputs.
+    let mut wide = mixed_bytes(u128::MAX, 0xff, &[0xff; 32]);
+    wide[0] = 0;
+    let pi = preimage(&wide);
+    let (our_run, their_run) = (simulate(&ours, &pi).expect("ours accepts"), simulate(&theirs, &pi).expect("corpus accepts"));
+    assert_eq!(our_run.pis, their_run.pis, "PI vectors differ");
 }

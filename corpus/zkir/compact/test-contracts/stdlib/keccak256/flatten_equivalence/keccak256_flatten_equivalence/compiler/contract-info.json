@@ -1,0 +1,114 @@
+{
+  "compiler-version": "0.36.1",
+  "compiler-commit": "7fa3a117c5e7efe9d2c51da04263e5f0b3509144",
+  "language-version": "0.28.0",
+  "runtime-version": "0.21.0",
+  "circuits": [
+    {
+      "name": "hashBytes12",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "x",
+          "type": {
+            "type-name": "Bytes",
+            "length": 12
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "hashTriple",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "t",
+          "type": {
+            "type-name": "Struct",
+            "name": "Triple",
+            "elements": [
+              {
+                "name": "a",
+                "type": {
+                  "type-name": "Bytes",
+                  "length": 4
+                }
+              },
+              {
+                "name": "b",
+                "type": {
+                  "type-name": "Bytes",
+                  "length": 4
+                }
+              },
+              {
+                "name": "c",
+                "type": {
+                  "type-name": "Bytes",
+                  "length": 4
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "hashUneven",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "u",
+          "type": {
+            "type-name": "Struct",
+            "name": "Uneven",
+            "elements": [
+              {
+                "name": "head",
+                "type": {
+                  "type-name": "Bytes",
+                  "length": 1
+                }
+              },
+              {
+                "name": "mid",
+                "type": {
+                  "type-name": "Bytes",
+                  "length": 4
+                }
+              },
+              {
+                "name": "tail",
+                "type": {
+                  "type-name": "Bytes",
+                  "length": 7
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    }
+  ],
+  "witnesses": [
+  ],
+  "contracts": [
+  ],
+  "ledger": [
+  ]
+}

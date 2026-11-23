@@ -1,19 +1,19 @@
-//! M35 rung F — the idiot-proofing pass, made measurable.
+//! The idiot-proofing pass, made measurable.
 //!
 //! The MPC's own integration caller (`signet-midnight-integration`'s
 //! test-caller-contract: `initialise`, `submitIsEvenRequest`, a verify
 //! circuit; the shape `midnight_stream.rs` drives against a real cluster),
-//! written here FROM THE PUBLIC API AND ITS DOCS ALONE — no vault code
+//! written here from the public API and its docs alone — no vault code
 //! consulted — with a log of every point a mistake was possible.
 //!
-//! THE MISTAKE LOG (what could have gone wrong, and what catches it):
+//! The mistake log (what could have gone wrong, and what catches it):
 //!
 //! | # | the mistake                                              | caught by                                   |
 //! |---|----------------------------------------------------------|---------------------------------------------|
-//! | 1 | forgetting the `signet: Signet` slot in the block         | E0609: `request` needs `&Signet`, no field   |
+//! | 1 | forgetting the `signet: Signet` slot in the block         | E0080 at the field that needs it (the derive) |
 //! | 2 | a settle circuit taking another slot's ticket             | E0308 (`Succeeded<Call>` carries the call)   |
 //! | 3 | a response type that is not a Borsh record               | E0277 (`Attestable: CircuitBorsh`)           |
-//! | 4 | two slot filings with one kind byte                       | E0080, prescriptive (`assert_distinct_kinds`)|
+//! | 4 | two slot filings with one kind byte                       | gone: a V1 record carries no kind byte      |
 //! | 5 | capturing a private value in the environment             | E0277 (no `LedgerRepr` at `Private`)         |
 //! | 6 | a `WORDS` that is not the call's argument-word count       | E0080, prescriptive (the slot's constructor) |
 //! | 7 | hand-writing the notification's path bytes / depth        | impossible: derived from the slot            |
@@ -21,11 +21,11 @@
 //! | 9 | forgetting the freshness check, the nonce, the insert     | impossible: inside `request`                 |
 //! |10 | forgetting the record's kind/version bind, the remove     | impossible: inside `complete`                |
 //! |11 | reading the response before verifying it                 | impossible: `complete` is the constructor    |
-//! |12 | declaring the wrong label set on a circuit               | the generated disclosure TEST (not compile)  |
-//! |13 | forgetting `assert_initialised`                          | NOT CAUGHT — a business gate, by design      |
-//! |14 | forgetting to check `output.result` after settling        | CAUGHT since M37 D: `EvmCall::succeeded`     |
-//! |15 | `initialise` storing a response key the MPC won't derive  | NOT CAUGHT at build; `settle` fails to prove |
-//! |16 | `initialise` leaving caip2 / chain id zero                | NOT CAUGHT at build; the MPC drops the record|
+//! |12 | declaring the wrong label set on a circuit               | the generated disclosure test (not compile)  |
+//! |13 | forgetting `assert_initialised`                          | not caught — a business gate, by design      |
+//! |14 | forgetting to check `output.result` after settling        | caught: `EvmCall::succeeded`                 |
+//! |15 | `initialise` storing a response key the MPC won't derive  | not caught at build; `settle` fails to prove |
+//! |16 | `initialise` leaving caip2 / chain id zero                | not caught at build; the MPC drops the record|
 //! |17 | `key_version == 0`                                        | in-circuit assert (`construct_…_event_v2`)   |
 //!
 //! Hand-maintained invariants left per flow: 13, 14 (the two the design
@@ -33,20 +33,20 @@
 //! §7 table listed as hand-synchronised (kind, version, path bytes, the
 //! map/env/nonce triple, the verify→kind→lookup→remove order) is gone.
 
-use minocrab::v3::Circuit3;
+use minocrab::Circuit;
 use minocrab::{Private, Public};
 use minocrab_contracts::common::SigningPath;
 use minocrab_contracts::evm::{Envelope, EvmCall, Filing, Interface, U256};
 use minocrab_contracts::evm_flow::{Contract, Pending, Succeeded};
 use minocrab_contracts::signet_flow::{Requested, Settled, Signet, Signing};
-use minocrab_sim::v3::cost;
-use minocrab_std::v3::{
+use minocrab_sim::cost;
+use minocrab_std::{
     circuit, is_true, label, Bool, Bytes, Check, Disclose, Discloses, Ledger, LedgerCounter,
     LedgerRepr, Secp256k1Point, Uint, B32,
 };
 
-/// THE CALLEE'S INTERFACE — the MPC's integration target, declared by this
-/// contract in one line, which is what `trait Interface` being OPEN buys:
+/// The callee's interface — the MPC's integration target, declared by this
+/// contract in one line, which is what `trait Interface` being open buys:
 /// nothing in the library knows about this deployment, and a
 /// `Contract<SignetEvmTarget>` still cannot be handed an ERC-20 `transfer`.
 struct SignetEvmTarget;
@@ -55,7 +55,7 @@ impl Interface for SignetEvmTarget {}
 
 /// `SignetEvmTarget.isEven(uint256) -> bool`.
 ///
-/// The argument is a [`U256`] — an ALREADY-ENCODED word, which is what
+/// The argument is a [`U256`] — an already-encoded word, which is what
 /// the MPC's own caller passes (`argWord`), and whose encoder is the
 /// identity.
 struct IsEven;
@@ -68,13 +68,13 @@ impl EvmCall for IsEven {
     type Success = Bool<Private>;
     const GAS_LIMIT: u64 = 100_000;
 
-    fn succeeded(_c: &mut Circuit3, ok: &Bool<Private>) -> Check<Private> {
+    fn succeeded(_c: &mut Circuit, ok: &Bool<Private>) -> Check<Private> {
         is_true(*ok)
     }
 }
 
 minocrab_contracts::output_schema! {
-    /// `[{"name":"result","type":"bool"}]` — the flag THIS deployment's
+    /// `[{"name":"result","type":"bool"}]` — the flag this deployment's
     /// records name `result`, not the library's `success`. The name is a
     /// fact about the protocol, and since M44 rung D it lives in the schema
     /// string the MPC decodes under, so declaring one here is the whole of
@@ -82,10 +82,10 @@ minocrab_contracts::output_schema! {
     pub struct Result = b"[{\"name\":\"result\",\"type\":\"bool\"}]";
 }
 
-/// HOW THIS CALLER FILES IT: under its own [`Result`] schema, because the
+/// How this caller files it: under its own [`Result`] schema, because the
 /// response record names the flag `result` rather than `success`. That is a
-/// fact about THIS deployment's protocol, which is why it is here and not on
-/// [`IsEven`] (M38 rung A, notes/evm-interfaces.org §1).
+/// fact about this deployment's protocol, which is why it is here and not on
+/// [`IsEven`] (notes/evm-interfaces.org §1).
 struct IsEvenResult;
 
 impl Filing for IsEvenResult {
@@ -124,8 +124,8 @@ label! {
 /// `the_selector_is_the_one_the_mpcs_caller_asks_for` below checks that the
 /// hash is these bytes.
 ///
-/// FOUND IN THE PORT, and worth saying: the hand-written circuit embedded
-/// them as `c.constant(0x2a2e1320u64)`, i.e. BIG-endian in the field
+/// Found in the port, and worth saying: the hand-written circuit embedded
+/// them as `c.constant(0x2a2e1320u64)`, i.e. big-endian in the field
 /// element, where every differential-checked lineage in this workspace
 /// embeds `Fr::from_le_bytes(selector)` — `erc20_vault`'s `TRANSFER_SELECTOR`
 /// is pinned against compactc's own calldata that way. This file's contract
@@ -133,20 +133,20 @@ label! {
 /// caught; the typed API gives it the checked one.
 const IS_EVEN_SELECTOR: [u8; 4] = [0x2a, 0x2e, 0x13, 0x20];
 
-fn assert_initialised(c: &mut Circuit3) {
+fn assert_initialised(c: &mut Circuit) {
     let n = CALLER.initialised.read(c);
     c.assert(n.gt(0u64).message("Not initialised"));
 }
 
 /// Pin the MPC response key (derived for this contract's address), the key
-/// VERSION and the destination chain, once.
+/// version and the destination chain, once.
 ///
 /// The caip2 id went with the V1 vocabulary (`executionDest` is the constant
 /// `ethereumCaip2Id()`); the key version took its place as a cell, which is
 /// why `submitIsEvenRequest` below no longer takes one.
 #[circuit]
 fn initialise(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     response_key: Secp256k1Point,
     key_version: Uint<8>,
     chain_id: Uint<64>,
@@ -165,7 +165,7 @@ fn initialise(
 /// `isEven(argWord)` to `to`, under a fixed gas envelope.
 #[circuit]
 fn submit_is_even_request(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     evm_nonce: Uint<64>,
     to: Bytes<20>,
     arg_word: B32<Private>,
@@ -175,7 +175,7 @@ fn submit_is_even_request(
     CALLER.is_even.request_with(
         c,
         |c| Contract::<SignetEvmTarget>::from_address(c, to),
-        (|_c: &mut Circuit3| arg_word,),
+        (|_c: &mut Circuit| arg_word,),
         Envelope::fixed(),
         evm_nonce,
         |c| {
@@ -190,13 +190,13 @@ fn submit_is_even_request(
 /// `verifyResponse`: settle, and publish the attested result.
 #[circuit]
 fn verify_response(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     ticket: Succeeded<IsEvenResult>,
 ) -> Discloses<(Settled, Outcome)> {
     assert_initialised(c);
     // `complete` asserts `IsEven::succeeded` — the attested flag itself —
     // so mistake 14 is no longer this circuit's to remember. What it still
-    // chooses is whether to PUBLISH the answer, which it does.
+    // chooses is whether to publish the answer, which it does.
     let outcome = CALLER.is_even.complete(c, ticket);
     let _asked_about = outcome.env.argument;
     let _result = outcome.output.field().disclose_as::<Outcome>(c);

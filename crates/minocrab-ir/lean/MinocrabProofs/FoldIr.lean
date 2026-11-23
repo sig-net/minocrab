@@ -222,7 +222,7 @@ def NoUseBeforeDef : List Instr → Prop
   | [] => True
   | i :: rest => (∀ n ∈ usesOf i, n ∉ copyDsts (i :: rest)) ∧ NoUseBeforeDef rest
 
-/-- The SSA shape `zkir-wellformed` checks on the corpus (and `Builder3`
+/-- The SSA shape `zkir-wellformed` checks on the corpus (and `Builder`
 guarantees): copy destinations bound once, before any use. -/
 structure WellFormed (l : List Instr) : Prop where
   nodup : (copyDsts l).Nodup

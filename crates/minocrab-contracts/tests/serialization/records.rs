@@ -1,9 +1,9 @@
 //! The bridge between the reference model's requests and the spec types.
 //!
-//! Each function below reads a [`Sent`]'s OWN FIELDS — its args, its env, its
+//! Each function below reads a [`Sent`]'s own fields — its args, its env, its
 //! EVM nonce — and fills in the matching spec type, restating the selector,
 //! the ABI words, the signing path and the output schema from the contract's
-//! constants. It is deliberately NOT built from `Sent::req()`: that is the
+//! constants. It is deliberately not built from `Sent::req()`: that is the
 //! model's own assembly of the record, and the conformance property is that
 //! two independent assemblies produce the same bytes. The model produces the
 //! deployed bytes (FAB limbs → `binary_repr`), the spec type produces the
@@ -12,8 +12,8 @@
 //! Read these side by side with `vault::model`'s `Req::limbs`: field for
 //! field, in the same order, they must say the same thing.
 //!
-//! The REQUEST ID is not a function of these bytes and has not been since the
-//! protocol move (M28): V1 hashes a `RequestIdPreimageV1` whose transaction
+//! The request ID is not a function of these bytes and has not been since the
+//! protocol move: V1 hashes a `RequestIdPreimageV1` whose transaction
 //! enters as a digest (`vault::prims::request_id_v1`). The byte-equality
 //! claims below stand; the id claims live in the model.
 
@@ -21,7 +21,7 @@ use minocrab::{AlignmentAtom, Public};
 use minocrab_contracts::signet::SignBidirectionalEventV2;
 use minocrab_contracts::signet_v1::ETHEREUM_CAIP2_ID;
 use minocrab_contracts::{erc20_vault, erc20_vault_pending};
-use minocrab_std::v3::LedgerRepr;
+use minocrab_std::LedgerRepr;
 
 use crate::serialization::spec_types;
 use crate::serialization::spec_types::{
@@ -39,7 +39,7 @@ pub fn kind(k: u32) -> u8 {
 
 // ---- the deployed V1 records' atoms and limb counts --------------------------
 //
-// Taken from the SHIPPING definitions (`erc20_vault::*Record`, the
+// Taken from the shipping definitions (`erc20_vault::*Record`, the
 // `LedgerRepr` the request maps are declared with), so a shape change in the
 // contract reaches the spec suite rather than being restated here.
 
@@ -83,8 +83,16 @@ const TAG_FIRST_MEMBER: u8 = 0;
 
 /// `ethereumCaip2Id()` — the `executionDest` of every V1 request the vault
 /// makes.
-fn execution_dest() -> [u8; 32] {
-    pad32(ETHEREUM_CAIP2_ID)
+fn execution_dest() -> ByteArray<64> {
+    let mut b = [0u8; 64];
+    b[..ETHEREUM_CAIP2_ID.len()].copy_from_slice(ETHEREUM_CAIP2_ID.as_bytes());
+    ByteArray(b)
+}
+
+/// The V2 record's `caip2Id: Bytes<32>`, the same id at its old width (it
+/// fits the first 32 of `executionDest`'s 64 bytes).
+fn caip2_of(dest: &ByteArray<64>) -> [u8; 32] {
+    dest.0[..32].try_into().expect("32 bytes")
 }
 
 fn schema<const N: usize>(bytes: &[u8]) -> ByteArray<N> {
@@ -218,7 +226,7 @@ pub fn withdraw_event(s: &Sent) -> VaultEventV1 {
 }
 
 /// `sendReplaceNonce`'s record: a value-0 transaction to the vault's own EVM
-/// address with NO calldata — the only V1 record whose `calldata.is_some` is
+/// address with no calldata — the only V1 record whose `calldata.is_some` is
 /// 0, so the two word slots are zero and `noWords` is 0. Its output schema is
 /// `[]`: the MPC returns nothing.
 pub fn replace_nonce_event(s: &Sent) -> ReplaceNonceEventV1 {
@@ -396,7 +404,7 @@ pub fn swap_record_v2_atoms() -> Vec<AlignmentAtom> {
 }
 
 /// The FAB atoms of the V2 3-word redeem record (`Pending<RedeemEnv,
-/// RedeemResponse, 3>`). The V2 supply record IS the 2-word record above.
+/// RedeemResponse, 3>`). The V2 supply record is the 2-word record above.
 pub fn redeem_record_v2_atoms() -> Vec<AlignmentAtom> {
     SignBidirectionalEventV2::<Public, { erc20_vault::REDEEM_WORDS }>::atoms()
 }
@@ -406,11 +414,11 @@ pub const VAULT_RECORD_V2_LIMBS: usize = SignBidirectionalEventV2::<Public, 2>::
 pub const SWAP_RECORD_V2_LIMBS: usize = SignBidirectionalEventV2::<Public, 7>::LIMBS;
 pub const REDEEM_RECORD_V2_LIMBS: usize = SignBidirectionalEventV2::<Public, 3>::LIMBS;
 
-/// The V2 twin of a V1 2-word record: the same field VALUES, the V2 field
-/// ORDER, a format version in front, a response kind instead of the schema.
+/// The V2 twin of a V1 2-word record: the same field values, the V2 field
+/// order, a format version in front, a response kind instead of the schema.
 ///
 /// Written as a field-for-field rebuild of the V1 value rather than as a third
-/// statement of the middle — the middle is what V2 does NOT change, and saying
+/// statement of the middle — the middle is what V2 does not change, and saying
 /// it twice would let the two drift while both stayed green. `request_nonce`
 /// has no V1 field to come from: the V1 record dropped it, and V2 is a
 /// specification, so it enters as an argument.
@@ -426,28 +434,28 @@ fn vault_v2(e: &VaultEventV1, request_nonce: u64, response_kind: u32) -> VaultEv
         params: e.params,
         tx_param_type: e.tx_param_type,
         tx_params: e.tx_params,
-        caip2_id: e.execution_dest,
+        caip2_id: caip2_of(&e.execution_dest),
         response_kind: kind(response_kind),
     }
 }
 
-/// `deposit`'s V2 record — response kind CLAIM.
+/// `deposit`'s V2 record — response kind claim.
 pub fn deposit_event_v2(s: &Sent, request_nonce: u64) -> VaultEventV2 {
     vault_v2(&deposit_event(s), request_nonce, erc20_vault_pending::RESPONSE_KIND_CLAIM)
 }
 
-/// `approveRouter`'s V2 record — response kind APPROVE, the one kind no settle
+/// `approveRouter`'s V2 record — response kind approve, the one kind no settle
 /// circuit accepts.
 pub fn approve_event_v2(s: &Sent, request_nonce: u64) -> VaultEventV2 {
     vault_v2(&approve_event(s), request_nonce, erc20_vault_pending::RESPONSE_KIND_APPROVE)
 }
 
-/// `withdraw`'s V2 record — response kind WITHDRAW.
+/// `withdraw`'s V2 record — response kind withdraw.
 pub fn withdraw_event_v2(s: &Sent, request_nonce: u64) -> VaultEventV2 {
     vault_v2(&withdraw_event(s), request_nonce, erc20_vault_pending::RESPONSE_KIND_WITHDRAW)
 }
 
-/// `startSupply`'s V2 record — response kind SUPPLY, in the 2-word type: the
+/// `startSupply`'s V2 record — response kind supply, in the 2-word type: the
 /// V1 supply record's middle is a vault record's middle, and V2 drops the only
 /// field that told them apart.
 pub fn supply_event_v2(s: &Sent, request_nonce: u64) -> VaultEventV2 {
@@ -463,12 +471,12 @@ pub fn supply_event_v2(s: &Sent, request_nonce: u64) -> VaultEventV2 {
         params: e.params,
         tx_param_type: e.tx_param_type,
         tx_params: e.tx_params,
-        caip2_id: e.execution_dest,
+        caip2_id: caip2_of(&e.execution_dest),
         response_kind: kind(erc20_vault_pending::RESPONSE_KIND_SUPPLY),
     }
 }
 
-/// `swap`'s V2 record — response kind SWAP.
+/// `swap`'s V2 record — response kind swap.
 pub fn swap_event_v2(s: &Sent, request_nonce: u64) -> SwapEventV2 {
     let e = swap_event(s);
     SwapEventV2 {
@@ -482,12 +490,12 @@ pub fn swap_event_v2(s: &Sent, request_nonce: u64) -> SwapEventV2 {
         params: e.params,
         tx_param_type: e.tx_param_type,
         tx_params: e.tx_params,
-        caip2_id: e.execution_dest,
+        caip2_id: caip2_of(&e.execution_dest),
         response_kind: kind(erc20_vault_pending::RESPONSE_KIND_SWAP),
     }
 }
 
-/// `startRedeem`'s V2 record — response kind REDEEM.
+/// `startRedeem`'s V2 record — response kind redeem.
 pub fn redeem_event_v2(s: &Sent, request_nonce: u64) -> RedeemEventV2 {
     let e = redeem_event(s);
     RedeemEventV2 {
@@ -501,7 +509,7 @@ pub fn redeem_event_v2(s: &Sent, request_nonce: u64) -> RedeemEventV2 {
         params: e.params,
         tx_param_type: e.tx_param_type,
         tx_params: e.tx_params,
-        caip2_id: e.execution_dest,
+        caip2_id: caip2_of(&e.execution_dest),
         response_kind: kind(erc20_vault_pending::RESPONSE_KIND_REDEEM),
     }
 }

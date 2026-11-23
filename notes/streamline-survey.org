@@ -1,0 +1,205 @@
+#+TITLE: Streamlining survey: the core, what sits on it, and where to start
+#+DATE: 2026-11-21
+#+STARTUP: overview
+
+dmd, 2026-11-21: the codebase was built incrementally and reads defensive; the aim is a planned core with minimal, thought-through abstractions on top, accepting that some features leave minocrab and a few rows fall out. This is the survey (five read-only passes: compiler core, std and macros, the periphery crates, usage, tests) and the ranked starting points. Nothing was changed. Claims marked UNMEASURED were not run.
+
+THE RENAME, 2026-11-22 (M48 rung K, =tools/rename-v3.sh=): the =v3= modules of minocrab, minocrab-ir, minocrab-std, minocrab-sim and minocrab-zkir went to the crate root and our items lost the =3= suffix (=Circuit3= is =Circuit=, =Wire3= =Wire=, =Builder3= =Builder=, =Vis3= =Vis=, =Sim3Error= =SimError=, and so on), and the =tests/v3_*.rs= files lost the prefix. Notes written before that date, this one included, use the old names; a deprecated =v3= shim per crate keeps the old paths compiling for the downstream pins.
+
+* 1. Size and shape today
+
+| part | src lines | note |
+|------+-----------+------|
+| zkir + ir + minocrab (compiler) | 9.3k | 2.3k of it the taint lint; 33-57% of non-test lines are comments |
+| ledger + std + macros | 18.9k | std is 37% comments |
+| sim + abi + interface-gen + bench | 7.3k | tooling |
+| publisher + signet-* + the two interface crates | 4.5k | Signet/MPC specific |
+| minocrab-contracts src | 18.1k | about 8.2k is EVM and Signet library code, not examples |
+| tests | about 58k | about 6.75k generated snapshot lines |
+
+* 2. What the survey found
+
+** The core is smaller than the code around it
+- There is no IR. =Builder3= (=minocrab-ir/src/v3.rs:144=) appends upstream ZKIR instructions directly and the passes rewrite raw ZKIR; notes/architecture.org still describes an L1 IR.
+- The builder has no per-value definition table. =immediate_of=, =instruction_index_of= and =is_read_guarded_by= scan the whole stream backwards (=v3.rs:259,284,350=) and are called per disclosed wire, per Impact wire and per guard, so build time is quadratic (UNMEASURED).
+- =Builder3= re-checks operand types at runtime and panics (=v3.rs:201-226,591-704=) although every =Circuit3= path already carries them in trait bounds; only tests reach the builder directly.
+- Each pass has five or six spellings: plain fn, =_kept= fn, =Pass= struct, =ProofRef= static, =VerifiedPass= impl, =folded()=. =Kept= is checked three times. =passes.rs:1034-1328= is 295 lines of Kani specimens that say they are not proofs.
+- =dedup_range_constraints= is on only in tests. No shipped circuit uses it; the gadgets avoid duplicate range checks by hand with PRECONDITION comments.
+- The =unstable= feature tier is fiction: =minocrab= itself turns it on for =minocrab-ir= (=crates/minocrab/Cargo.toml:18=) and every user of sim enables it. 74 cfg sites (17 + 3 in ir, 54 in sim).
+- Dead in core: =crate::Disclosure= (v2 record), =Visibility::IS_PUBLIC=, =Builder3::is_public_input=, =Selected=, the =Guarded= / =Branches= duplicate read API, =witness_guarded=, the untyped =disclose*= forms.
+- =v3= naming: 487 module mentions in 171 files and 2,644 =*3= type mentions, with no v2 left.
+
+** Std has one idea spelled eleven ways, and a layer nobody calls
+- About eleven parallel per-leaf traits (=CircuitAbi=, =CircuitArg=, =CallArg=, =CallResult=, =CircuitOut=, =LedgerRepr=, =ProofWires=, =Select=, =Disclose=, =CheckOperand=, =CircuitBorsh=) all say "this value is N flat field slots". =LedgerRepr= and =ProofWires= are defined from three of the others (=ledger.rs:154-238=). Three derives exist because there is no single value trait, and the =LedgerRepr= derive rejects generics, so contracts hand-write impls.
+- Five byte-string types and two integer types. =Uint= has no =add=, so contracts do =c.add= then =Uint::from_field_unchecked=: 115 unchecked constructions in contracts src. Subtraction exists three times (=Uint::sub=, =BoundedUint::sub=, =kernel::checked_sub=). Comparisons exist as free fns and methods.
+- =hook.rs=, =blind.rs=, =stream.rs=, =vector.rs= (about 1,570 lines, M40-M42) have no production consumer. The one src user is =evm_flow/outbox.rs=, and =Outbox= is used only by tests. =Assumed= / =.stale(c)= exists to steer authors to hooks; contracts write =.stale(c)= about 100 times and use no hook. M44 D (rest) plans to re-base =erc20_vault_pending= on =Outbox=, so this is unfinished, not abandoned.
+- App code in the general library: =#[derive(Ledger)]= finds Signet slots by matching the type names "Signet", "Pending", "Fired", "Outbox" as strings (=minocrab-macros/src/ledger.rs:104,186=); =LedgerWidth::KINDS= is Signet's response-kind check (=ledger.rs:705-750=); borsh (1,363 lines), =Serializer=, secp/EVM/base64url helpers.
+- Panics the project rule wants as type errors: =from_limbs= on the point types is =unreachable!()= but =LedgerMap<_, Secp256k1Point>::lookup= compiles and reaches it (=ledger.rs:264,311,1115=); const-known runtime asserts at =vector.rs:162=, =entry.rs:862=, =v3.rs:1555,1622=.
+- Nesting (=at_key=, =KeyPath=, =LedgerAdt=, =Rooted=) is used only by =nested.rs= and its test.
+
+** How it is used
+- The passport port (2,876 lines, 52 circuits, the only outside author) writes raw =Circuit3= code over =Wire3<FieldT, Private>=. It uses the leaf types, Cell/Map/Set, the derives, =#[circuit]= / =#[contract]=, =label!= / =disclose_as=, =c.when=, the kernel. It uses none of: =Check= and the predicate layer, regions, assert messages, counters, hooks.
+- It hand-rolled a preimage builder (kept after std gained one), =bytes_eq= (19 calls), cell =increment=, =either= / =implies= / =le=, a macro for P256 argument types, and its own copy of the simulator and executor.
+- mpc links only =minocrab-publisher=. midnight-integration consumes checked-in ZKIR and keys. The one production contract, =signet_contract.rs=, imports six names and raw =minocrab_ledger::emit=.
+- Vela (=~/dollar-app=, M47) builds on =signet_flow= / =signet_v1= / =evm_flow::Pending=. That stack is live and lives in the examples crate.
+- Repeated by hand: member, assert, lookup (15 times); a private B32-equality helper in five places including std's own kernel; two assert dialects (=assert_with= 84 times in the manager, =Check.message= in the vault); =Discloses::of(())= closing 150 of 211 circuits.
+- =signet.rs= (the older protocol generation) survives only because =evm.rs=, =evm_flow.rs=, =manager.rs= and the pending vault import utilities from it.
+
+** Rows
+- After the fold, the cached dump (=target/tmp/zkir-baseline=, 267 circuits, dated 2026-10-15, may be stale) holds 170 =cond_select= on a constant bit, 40 =cond_select= with identical arms, 16 =test_eq 0 0=, 20 =add 0=, and 181 duplicated pure instructions (79 in =manager::execute=). Whether the backend already folds these is UNMEASURED; a duplicated pure instruction was measured at one row.
+- =kernel::self_address= re-reads on every call unless the circuit opts into the cache (four users); =is_self= ignores the cache (=kernel.rs:426=). The passport =authorise= reads it three times.
+- =Or= lowers to three =not= and a =mul= where one =cond_select= would do.
+- =signet_v1= keeps a =_const_path= twin (=signet_v1.rs:485-489=) because the builder does not fold an assert over constants.
+- Hand work-arounds worth lifting into the library: native =Reverse= (=signet.rs:743=, about 150 rows against 4,600), the hard-coded identity point (=disclosure.rs:442=), burn without nullifier (=common.rs:340=).
+
+** Periphery
+- =minocrab-publisher= depends on no minocrab crate. mpc uses none of =publish()=, =ChainContext=, =DustBalancer= or =PublishError=; =publish.rs= + =dust.rs= (about 258 lines) exist for tests. M47 B wants a general call builder here, which argues against simply moving it to mpc.
+- =signet-sim= hand-copies MPC code that mpc's =signet-crypto= provides.
+- =minocrab-interface-gen= (1.5k) generates two crates holding about 150 lines of declarations.
+- 13 of 17 crates are =publish = false=; the path-plus-version essay in the root Cargo.toml, PUBLISHING.md, and the std/sim dev-cycle comments serve a publish that is not happening. Root Cargo.toml is 104 comment lines of 181.
+- The simulator ports upstream's =IrSource::preprocess= (about 775 lines) because it is =pub(crate)= upstream.
+- Eight top-level .md files (1,987 lines) overlap each other and notes/.
+
+** Tests
+- BROKEN: =.github/workflows/nightly.yml:19-22= and =bump.sh:227= name =erc20_vault_spec= and =erc20_vault_adversarial=, removed in M44. The elevated proptest run fails instead of running. VERIFICATION.md cites the same files.
+- The set a refactor can lean on: =corpus_roundtrip=; the eight byte-identical differentials; the PI-equality differentials (vault, manager, signet); =no_unlabelled_witness_dependent_public_component= and =taint_lint=; =evm_alloy_oracle=; the deployed half of =serialization_conformance=; the interface argument order. All assert on emitted ZKIR or behaviour.
+- What will fight a refactor: =trust_base.rs= regenerates TRUST.md with per-file line counts and requires every file to be classified; the vault models (2,132 + 2,484 lines) hard-code ledger field indices and read order.
+- Movement is checked three ways (row snapshot, CI zkir-dump, differentials). About 6.75k generated snapshot lines are re-blessed by =bump.sh accept=.
+- Duplicated helpers: =vault_pending/ops.rs= is a declared copy of =vault/ops.rs= with one constant changed, =treasury/ops.rs= a third; =canonical= is copied into all eight differentials; =corpus_zkir= twelve times.
+- About 2k lines of "API A emits the same ZKIR as API B" tests (=v3_guard_scope.rs=, =evm_abi.rs= claims 3-4, =v3_dedup.rs=) that go when the older API goes.
+- The pending vault's 6.3k test lines have no compactc anchor. The flush vault has no property harness (M44 F).
+
+* 3. Starting points, in order
+
+1. FIX THE GATES FIRST. Repair the nightly job and =bump.sh= gate names, make =trust_base= stop counting lines, and write down the refactor safety set above as one command. Small, and everything after leans on it.
+2. DRAW THE BOUNDARY. Core = zkir, the builder, =minocrab=, ledger, std leaves/slots/kernel/entry, macros. Split =minocrab-contracts= into app library crates (=evm=, =signet=) and a corpus of parity ports and fixtures; fold the utilities out of =signet.rs= and retire it; drop the =unstable= features and the publishing scaffolding; fold interface-gen into abi. No circuit moves. Gate: every golden byte-identical.
+3. TAKE THE APP OUT OF STD AND THE MACROS. Replace the name-matching in =#[derive(Ledger)]= with a trait the app crate implements; move =KINDS=, borsh, =Serializer= and the secp/EVM helpers to the app crates; move hook/blind/stream/vector and =Outbox= to their own crate until M44 D gives them a consumer. Then decide whether =Assumed= / =.stale= stays.
+4. REBUILD THE BUILDER ON A DEFINITION TABLE: per value, its type, defining instruction and known constant. Removes the linear scans and the runtime type asserts, and gives constant knowledge to everything above. Gate: byte-identical.
+5. REDUCE PASSES TO FILTER FUNCTIONS, THEN ADD ONE SIMPLIFICATION PASS. Delete the =Pass= / =VerifiedPass= / =ProofRef= scaffolding and the Kani specimens; turn range dedup on or delete it; add constant-operand simplification and pure-op CSE. This is where rows come from. Measure first. Gate: =row_snapshot= flat or down, differentials under the same normalisation on both sides.
+6. ONE VALUE TRAIT IN STD. Collapse the per-leaf trait tower into a single flat-value trait with blanket impls and one derive that accepts generics. The largest abstraction win and the riskiest step, since slot order is the wire contract. Gate: goldens, interface snapshot, rows.
+7. ONE INTEGER, FEWER BYTE TYPES, AND THE PRIMITIVES AUTHORS KEEP WRITING. =Uint= with checked arithmetic so the 115 unchecked constructions go; B32 equality as a check; =lookup_required=; cell increment; default self-address caching; one assert style. Turn the point-cell panic and the const-known asserts into compile errors.
+8. MOVE THE TAINT LINT TO ITS OWN CRATE and the disclosure policy next to the macros. Pure moves.
+9. TESTS, FOLLOWING THE CODE. Share the ops/canonical/corpus helpers; shrink the generated snapshots to their real checks; delete the A-equals-B tests with the APIs they compare.
+10. LAST: rename =v3= to the crate root and drop the =3= suffixes in one mechanical commit; strip milestone narration from comments; collapse the top-level docs.
+
+* 4. Rulings (dmd, 2026-11-21)
+
+- COMPAT CRATE: anything that exists to keep the emitted stream byte-for-byte equal to compactc's goes in a compat crate, labelled with why it exists. It is kept, not deleted.
+- KEEP: everything that limits what type-checks (nothing that enforces safety is removed); unlabelled disclosures; unchecked integer construction.
+- CROSS-CONTRACT CALLS are not experimental now ledger 9 is out (update =~/compact= to see it). =contract_call=, =#[interface]=, abi and the interface crates are core-adjacent, not parked.
+- EXPERIMENTAL CRATE: raw Impact written by a contract author, and things like it, as far as possible. The =impact_mixed= primitive stays in core because the slots lower to it.
+- Do not remove anything that makes the Sig demos read better.
+- This supersedes the parts of section 3 that delete the untyped =disclose*= forms (step 4's dead-item list), that make checked arithmetic the only path (step 7), and that make the simplifications unconditional (steps 5 and 7).
+
+* 5. Rulings, second round (dmd, 2026-11-21)
+
+- DEPLOYED ARTIFACTS DO NOT MOVE. The signer and every circuit with a Compact twin stay byte-identical; only MinoCrab-only contracts (Vela, the pending vault, passport) get the optimised stream.
+- COMPAT IS GADGETS WHERE POSSIBLE: the compactc-shaped variant of a gadget lives in the compat crate and the parity ports import it. A build-wide switch only where a gadget cannot carry it.
+- RUNTIME CHECKS: keep one runtime backstop per invariant, drop the duplicates of it.
+- HOOKS, BLIND OPS, STREAM, VECTOR, OUTBOX STAY IN STD.
+- THE SIG DEMOS are the erc20 vaults (=erc20_vault=, =erc20_vault_pending=) and what they read from; =Pending=, =signet_flow=, =signet_v1=, =evm_flow= stay.
+- THE PUBLISHER stays in this repo, untouched by the cleanup.
+- THE =v3= RENAME goes last, one commit. Nothing is published, so breaking imports is acceptable; a re-export shim is kept for the downstream pins.
+- Not answered, running on the defaults offered: keep =lean_proof!= and the proof references, delete the Kani specimens that say they are not proofs; work in a worktree off =main= (=~/minocrab-streamline=, branch =streamline=).
+- AFTER THE CLEANUP: the examples move to the erc20 vaults and Sig SDK versions pinned for mainnet.
+- THEN PUBLISH READINESS (same day). This reverses the survey's suggestion to drop the publishing scaffolding: it stays, and new crates (compat, experimental, the app crates) are created publishable from the start.
+- THE EVM AND SIGNET APP CRATES ARE PUBLISHED. So they may not depend on =minocrab-contracts= (the unpublished corpus), their tests may not need the corpus to build, and anything they share with the old =signet.rs= generation has to live in a published crate.
+- THE EXPERIMENTAL CRATE IS PUBLISHED, with no guarantee of backwards compatibility. It says so in its README and crate docs. No core crate may depend on it, so its churn cannot reach a stable crate.
+
+* 6. The boundary, as decided from the import graph (2026-11-21)
+
+- TWO APP CRATES, both published. =minocrab-evm=: the ABI words, the =AbiType= family, =EvmCall= / =Payable= / =FromReturn= and the interface modules under =evm/= (none of which names Signet). =minocrab-signet=, which depends on it: =Filing= / =Filed=, the envelope and =build_tx*=, =evm_flow= with =Outbox=, =signet_v1=, =signet_flow=, and the part of =common= they use (the B32 newtypes, the path helpers, =witness_sk=). =evm.rs= is cut along that line; =reverse_bytes32= and =checked_truncation_u128= move down.
+- THE CYCLES TO BREAK FIRST, inside =minocrab-contracts=, before any crate exists: =common= reads =erc20_vault::VAULT_PATH=; a =cfg(test)= test in =evm.rs= uses =erc20_vault=; =evm= and =signet_flow= and =signet= import each other for =EvmCalldata=, =Secp256k1SigLimbs= and the ABI-word wrappers. The shared items move to =signet_v1=; the wrappers go and the manager calls =evm::address_word= / =numeric_word= directly (already asserted byte-identical by =tests/evm_abi.rs=).
+- =minocrab-contracts= stays the unpublished corpus and re-exports every moved module at its old path, so =minocrab_contracts::signet_flow::…= keeps compiling. Tests stay there and test through the re-exports. The v0 remainder of =signet.rs= (nothing outside its own tests reads it) stays as a leaf module of the corpus.
+- THE DERIVE: =#[derive(Ledger)]= stops matching type names. =LedgerWidth= gains two consts (provides a context / needs one); the derive calls one const fn over every field. FOR DMD TO REVIEW under the compile-errors rule: the two rejections (two =Signet= fields; a =Pending= without one) move from a span-precise proc-macro error to an inline-const E0080 with a fixed message. In exchange a =use= alias no longer defeats the check and an unrelated user type named =Pending= is no longer wired as a Signet slot.
+- =LedgerWidth::KINDS= / =assert_distinct_kinds= is deleted: no type overrides =KINDS=, so it has checked empty lists since =Filing::KIND= went. No live check is lost.
+- BORSH, =Serializer= and the secp / base64url helpers STAY IN STD: std's own =hash::transient_hash= and the =b32_newtype!= macro use them, and the passport port uses the secp and base64url helpers.
+- =Outbox= lives in =evm_flow=, not std, so it moves to =minocrab-signet= with it. Hook, blind, stream and vector stay in std as ruled.
+- The =unstable= features become empty aliases, not removed, because the passport port's manifest names the one on =minocrab-sim=.
+- 25 =compile_fail= doctests in the moved modules get error codes first, so a stale path cannot make them pass vacuously.
+
+* 7. The compat crate, as decided from the inventory (2026-11-21)
+
+=minocrab-compat= depends on std, ledger, =minocrab= and ir; nothing depends on it except the parity ports and their tests. Its crate docs carry the label: it exists so that a circuit ported from Compact emits compactc's instruction stream byte for byte, which is how a port is checked against the compiler's own output, and nothing in it is the cheapest correct lowering.
+
+** What goes in it
+| module | what | why it is compactc-shaped |
+|--------+------+---------------------------|
+| =kernel= | the Compact standard-library transcription now at std =kernel.rs:324-809=: send / mint / receive unshielded, the negated balance and block-time forms, =merge_coin=, =send_shielded=, =checked_sub=, =as_uint128= | =not= as =cond_select(b,0,1)=; =&&= as =cond_select=; the guard conjoined once per op; =send_shielded= hashing one coin commitment twice (about 5,640 rows a use) |
+| =merkle= | =insert_index_default= with the unfolded default leaf hash | compactc does not fold =persistentHash= over constants (one SHA block, about 1,885 rows) |
+| =secp= | =secp256k1_ecdsa_verify= as compactc lowers it | the identity point built by =ec_mul_generator= + two conversions (about 12,300 rows for a constant) and an x-coordinate round trip |
+| =normalise= | =folded()= | the normaliser the eight instruction-level differentials apply to both sides |
+| =profile= | one call a parity circuit makes first | see the switch below |
+
+** The one switch
+Three things cannot be a gadget, because shared helpers (=common.rs='s mint, burn and receive, used by both vaults) call core: whether =kernel::self_address= reads fresh at every call or once per circuit; whether repeated range constraints are deduplicated; whether the simplification pass runs. Core holds these as per-circuit lowering state, defaulting to the lean choice. =minocrab_compat::profile(c)= sets all three to compactc's. Every circuit with a Compact twin, and the deployed signer, runs it first: a ported =#[contract]= block says =#[contract(lowering = minocrab_compat::profile)]= once and the macro calls it before each circuit's body, and a circuit built by hand outside a block calls it as its first statement (=tests/circuit_closure.rs= checks both); the gate that it was applied everywhere it must be is the zkir dump staying byte-identical.
+
+** Order
+1. COPY, do not move: the compat crate gets the compactc-shaped gadgets, the parity ports import them, std is unchanged. Zero movement.
+2. The lowering state and =profile=, with the defaults still compactc's. Zero movement.
+3. Flip each default and make each std gadget lean, one at a time. A parity port must not move at all; a MinoCrab-only circuit may only go down in rows; each lean gadget gets a test that it is public-input-equal to its compat twin on the same inputs.
+
+** Step 3, as done (2026-11-21, branch =sl-lean2=)
+- The three defaults are flipped: =Lowering::default()= is =OncePerCircuit=, dedup on, simplify on. The profile states all three as compactc's. Flipping found two ports that had not stated it (=events_borsh=, =xcontract_events_borsh=); =circuit_closure.rs= now counts a =<port>_borsh= module as a port and checks every listed module is a port or MinoCrab-only.
+- =cache_self_address= inside a =when= used to keep the GUARDED read, so a later read outside the scope got zero where the guard was off (a latent bug, no call site hit it). It now keeps nothing there, and under the default it is =self_address= plus the refusal under =EveryCall=. The doc that said a read inside a =when= never consults the cache was false: the kept address is returned there with no read, sound because it is constant, but it means =c.when(g, self_address).or_default()= after an unguarded read is the address, not zero, where =g= is off. Documented on =self_address=; =common::mint_shielded_token='s auto-receive multiplies by its guard so it is unaffected. VM tests for the bug and both orders in =minocrab-std/tests/v3_kernel_cache.rs=.
+- The parity =erc20_vault= never reaches =cache_self_address=: =common.rs= calls only =self_address=, and the two callers (=erc20_vault_pending.rs=, =signet_flow::file_request=) are reached only from the MinoCrab-only =erc20_vault_pending= and =treasury=. Building all 227 circuits is the check (the profile would panic).
+- std's token circuits lean: rows and the equivalence argument in notes/op-costs.org §4. =secp256k1_ecdsa_verify= unchanged; the open question is §5 there.
+
+** Stays in core although it looks like compat
+- The Impact op sequences, the protocol hash preimages, the input-constraint table and alignment widths, guarded-effect semantics: the ledger and the VM require them.
+- =fold_immediate_copies=: zero rows, and nothing gains from a second shape.
+- Uncached =idx= opcodes (56 sites in =minocrab-ledger=): the cached form is valid and cheaper in gas, but the op builders are pure functions and a switch would thread through all of them. DEFERRED, recorded here.
+- =Callee::Field='s fresh read per call site: the lean form, =.pin(c)=, already exists.
+- =Check::or= is NOT compactc's shape (compactc lowers =||= to one =cond_select=); it is simply expensive. Core makes it one =cond_select=. Its only caller is =evm_flow.rs:1452=.
+
+* 8. The value traits, as designed (2026-11-21, rung G, not started)
+
+** What is there
+Every leaf and record type answers the same three questions through differently named traits. Its static layout: =CircuitAbi= (=SLOTS=, atoms, prims). Its encoding to field slots: =CallArg::push_call_slots= at =Public=, =CircuitArg::push_slots= at =Private=, =LedgerRepr::push_limbs= at =Public= with the circuit in hand, =ProofWires::push_wires= for the bare values. Its decoding from slots: =CallResult::from_call_slots=, =LedgerRepr::from_limbs=, and =CircuitArg::declare= for a fresh argument. =LedgerRepr= and =ProofWires= are generated from the call traits by a macro for fourteen leaf types (=ledger.rs:124-176=), and contracts hand-write ten =LedgerRepr= and ten =ProofWires= impls because the derive rejects generics.
+
+** What replaces it
+- =CircuitAbi= stays: it is the layout.
+- =Encode<V>=: one method, the value's slots at visibility =V=. =CallArg= becomes =Encode<Public>=; =CircuitArg::push_slots= becomes =Encode<Private>=.
+- =Decode<V>=: one method, the value from its slots. =CallResult= becomes =Decode<Public>=.
+- The ledger pair is SPLIT, not merged: =LedgerWrite= (atoms and limbs; blanket over =Encode<Public>=, hand-written for the two point types, whose limbs come out of the =encode= gate) and =LedgerRead: LedgerWrite= (=from_limbs=, =witness_read=; blanket over =Decode<Public>=). The point types implement only =LedgerWrite=. =LedgerMap::lookup= and every other method that rebuilds a value asks for =LedgerRead=, so a map of points that is looked up stops compiling with a missing impl; today it compiles and reaches an =unreachable!()= (=ledger.rs:264,311=). Insert and member on such a map keep working. This ADDS a type restriction and removes a panic.
+- =ProofWires=: blanket over =Encode<Public>=, kept by hand for the points and the bare wire.
+- =CircuitArg= keeps =declare= and =constrain=: argument names come from field paths and a point argument is not flat slots, so it is not a decode.
+- ONE DERIVE produces =CircuitAbi=, =Encode= and =Decode= for a record, generic parameters allowed; the ledger and proof-wire impls then come from the blankets, and the hand-written ones in contracts go.
+
+** What must not move
+Slot order is the wire contract. Gates: the 227-circuit dump identical, =interface_snapshot= unchanged, =row_snapshot= unchanged. The old trait names stay as aliases or supertraits for one step if that keeps the passport port compiling; say which in the commit.
+
+** Order
+1. Introduce =Encode= / =Decode= and re-express the leaf table through them; old traits become blanket impls. No call site changes.
+2. Split =LedgerRepr=; bound the rebuilding methods on =LedgerRead=; a =compile_fail= doctest for the looked-up point map.
+3. The one derive; delete the hand-written impls in contracts.
+4. Remove the old names once nothing in the workspace uses them.
+
+** Steps 1 and 2, as done (2026-11-21, branch =sl-values=)
+- STEP 1 WAS ONLY PARTLY POSSIBLE with downstream frozen. =Encode<V>= / =Decode<V>= live in std (=entry.rs=, beside =CircuitArg=), as blanket VIEWS: =impl<T: CallArg> Encode<Public>=, =impl<T: CircuitArg> Encode<Private>= (=push_slots=), =impl<T: CallResult> Decode<Public>=. Std, not core, because the =Private= blanket can only be written in the crate that owns =Encode= (orphan rule) and core cannot name =CircuitArg=. Old to new, not new to old, because the derive's expansions, the contracts and the passport port implement the old traits by hand: with =impl<T: Encode<Public>> CallArg for T= those types would have no =Encode=, and =Maybe= / =Either= / =[T; N]= over them would stop being call arguments. (Negative reasoning does let a downstream crate hand-write =CallArg= for its own type beside such a blanket; the composites are what break.)
+- What step 1 did: the ledger leaf table is the hidden exported =__ledger_leaf!= macro, written against =Encode<Public>= / =Decode<Public>= with the bound on the type (=Maybe<T>= is a ledger leaf exactly where its call impls hold, the same set as before); =b32_newtype!= expands it instead of restating =ProofWires= and =LedgerRepr=; the coin operands encode through =Encode<Public>=. Impl blocks for the family in std: 65 before, 66 after step 1 (three blankets in, two restated newtype impls out).
+- WHAT REMAINS OF STEP 1: a leaf's slots are still written once per VISIBILITY, not once: =CallArg= (=call.rs=) and =CircuitArg::push_slots= (=entry.rs=) carry the same body for every one-slot leaf. Merging them needs each leaf to implement =Encode<V>= for all =V=, which conflicts with the old-to-new blankets; it becomes possible when the one derive (step 3) emits =Encode= / =Decode= for records, so that downstream types have them, and the blankets can flip to new-to-old. The composites' (=Maybe=, =Either=, arrays) old-trait impls are then the last restatements.
+- STEP 2, SHAPE: the ledger pair is =LedgerStore= (the write half, plus the CELL read: =store_atoms=, =push_store_limbs=, =read_cell=, provided =store_limbs= / =store_value=) and =LedgerRepr= unchanged (it IS §8's =LedgerRead=: the read half, =from_limbs= / =witness_read=). =impl<T: LedgerRepr> LedgerStore for T= delegates to the =LedgerRepr= methods, so hand-written overrides still apply; the two point types implement =LedgerStore= only (one =point_store!= macro), so their =unreachable!()= =from_limbs= bodies are gone. =LedgerStore='s methods are named apart from =LedgerRepr='s because the passport port glob-imports =minocrab_std::v3::*= and a shared name would make every =x.ledger_value(c)= ambiguous. Named =LedgerStore= rather than §8's =LedgerWrite= because it carries the cell read; §8's renaming waits for step 4.
+- STEP 2, BOUNDS: on =LedgerRepr= (the read half): =LedgerMap::lookup=, =LedgerMap::lookup_required=, =LedgerList::head=, the blind =Primitive= accumulators (=Last= / =First= and the tuples, which look their snapshots up), =StreamSpec='s =Key= / =Body= and the stream reads (untouched: an associated-type bound downstream generic code may lean on). Relaxed to =LedgerStore= (points keep compiling where they did): =Fresh=, =stored=, =repr_limbs=, =LedgerSlot= (=insert_default=), map keys everywhere, map =insert=, set insert/member/remove, list =push_front=, Merkle inserts and =leaf_hash=, =LedgerCell= read/write, every =Hook= write, =HookValue=, and the blind keys.
+- STEP 2, TIER: a missing impl, E0599 ("the method =lookup= exists for struct =LedgerMap<B32<Public>, Secp256k1Point<Public>>=, but its trait bounds were not satisfied: =Secp256k1Point<Public>: LedgerRepr="). Not E0277, because =lookup= exists twice (values and ADT handles, disjoint impls) and rustc reports an unsatisfied inherent-impl bound as E0599 without the =on_unimplemented= text; the pointer to a cell or an encoded-limbs record is therefore in =LedgerRepr='s and the point types' docs, and in =LedgerRepr='s =on_unimplemented= for the places it does fire. NEWLY REJECTED besides map lookup and list head of points: a point as a stream key or body, and a point as a blind accumulator (whose lookup would have hit the =unreachable!()=). No in-tree code (contracts, tests, compat, the passport port) did either; the workspace builds unchanged.
+
+* 9. The experimental crate, as decided from the inventory (2026-11-21, rung D)
+
+Very little is experimental. What was looked at, and where it went:
+- RAW IMPACT WRITTEN BY AN AUTHOR is the one thing that fits. The primitives (=Circuit3::impact= / =impact_mixed=, =minocrab_ledger::emit= and the op builders) must stay =pub= because std and compat are other crates and lower to them, so visibility cannot move them. A capability token was considered and rejected: any way to mint it has to be public, so it would be friction and prove nothing.
+- WHAT RAW IMPACT BYPASSES. Disclosure still applies (elements are public wires and are recorded) and so do guards. The stale-read backstop does NOT: typed writes go through std's =stored=, which calls =refuse_stale=; =impact_mixed= and =emit= do not, so a raw write can store a value computed from an unacknowledged read. Slot layout typing is bypassed too.
+- THE CRATE: =minocrab-experimental=, version 0.0.x, depending on =minocrab= and =minocrab-ledger=, no core crate depending on it. Module =impact=: the curated re-export of the op builders and =emit= (what the ports use, unchanged). Core marks the primitives =#[doc(hidden)]= with one line saying where authors go.
+- NOT MOVED. Nested ADTs: every slot is generic over the path and Compact itself has nested maps; it is a stable, less-used feature, and extracting it would un-seal the path traits. =BytesNDyn=: 45 lines, one consumer; stays, its stale doc line about the Signet schemas is fixed. The =ext_insert= scratch state: its one user is std's private self-address cache, and a typed public setter would let anyone forge a cached address.
+- CORRECTED THE SAME DAY (dmd: "should checked write not just be in regular minocrab, if it's what new code should call?"). Yes. The experimental crate holds ONLY the raw re-export. The stale-read check goes on core's raw write path itself, so that there is no unchecked default to reach for: the check runs where the write is emitted, the typed slots stop being the only callers that remember it, and a port that writes a read-derived value by hand acknowledges the read at the site, which is erased in the ZKIR and so moves nothing. To establish before coding: which elements of a raw op are stored values as opposed to keys and paths (the op builders know; =emit= sees only elements), and which ports trip the check. Each one that trips is a read-modify-write that was never acknowledged, which is worth knowing in itself.
+- A GAP FOUND IN STD (dmd, same day: "do the typed event emission"): there is no typed event emission. The deployed signer and the two borsh event contracts reach =emit_event= through raw Impact for that reason alone. A typed std emitter producing the same ops takes them off raw Impact with zero movement. To do once std is quiet.
+- After that, the only in-tree user of hand-written raw Impact that is not reproducing compactc's shape is the manager's per-effect guarded lookup.
+- THE TYPED EVENT EMITTER, as done (branch =sl-events=): =minocrab_std::v3::event::emit(c, version, tag, &BytesN<Public, N>)=, module-qualified like =kernel=. It emits =minocrab_ledger::emit_event='s ops through =minocrab_ledger::emit=, so the disclosures (one =impact public input= statement per wire, recorded in =impact_args=) and the ambient guard are the raw form's by construction; =tests/v3_event.rs= pins ZKIR and disclosure record equal for 1, 2 and 10 limbs, straight-line and under =when=. A private payload is a type mismatch (E0308, the distinct-types tier). The signer and the four events contracts are on it, byte-identical (227 circuits).
+- THE STALE-READ CHECK ON THE RAW WRITE PATH, the facts. (i) What std's typed writes checked: the VALUE of =LedgerCell::write=, =LedgerMap::insert=, =LedgerList::push_front=, and the ITEM of =LedgerMerkleTree::insert= / =insert_index= (and the historic tree's), through =stored=. NOT checked: every key (map keys, set elements, which are the keys of a map of nulls), =insert_hash= / =insert_hash_index= (a leaf hash), the coin arms (=insert_coin=, =push_front_coin=; the raw =cell_write_coin= has no typed twin), counter increments (an immediate, no author wire), the kernel ops, and the default inserts (constants). A hook is different: =Circuit3::then= checks EVERY wire of the program, keys included. (ii) Design: option (a). =ImpactOp= carries a crate-private second field, the stored value's wires and what it is, filled by =cell_write_at=, =map_insert_at= and =list_push_front_at= from the very =LedgerValue= they splice in, with std's own messages (=a cell write's value= …); =minocrab_ledger::emit= runs =refuse_stale= on every marked op before emitting any. Option (b), checking every wire, would refuse a key derived from a read and an =insert_hash= of a read-derived hash, both accepted by the typed slots today, so it was not allowed. The Merkle item stays checked in std (=refuse_stale_item=), because the tree stores its hash and no op carries the item. The private field also means an =ImpactOp= cannot be built outside =minocrab-ledger= except by its builders. =Circuit3::impact_mixed= stays unchecked (it does not know which elements are values) and says so. Direct callers of =impact_mixed= outside the ledger crate: the manager port's guarded lookup (a read: =dup=, =idx=, =popeq=), std's and compat's =emit_guarded= (kernel ops only) and compat's =guarded_kernel_self= (a read); none stores a value, so none skips a check the typed path makes. (iii) What tripped: four sites, all in =crates/minocrab-std/tests/v3_ledger.rs=, the hand-written twins of typed code that already writes =.stale(c)=: =the_guard_free_methods_are_the_ops_with_an_immediate_guard= and =the_cell_and_counter_methods_are_the_explicit_ops= (cell read at field 4, the 20-byte address, written back to field 4; the second also field 5, the chain id, to field 5), =the_point_cell_is_the_hand_written_typed_gate= (the secp point cell, field 7, read and written back) and =the_jubjub_cell_is_the_hand_written_typed_gate= (field 9, the same). Each is acknowledged at the read with =c.acknowledge_stale(..)=, which is what the typed twin's =.stale(c)= records. NO contract port and no compat code tripped: every hand-written raw write in the corpus stores an argument, a constant or a hash of arguments, never a read-derived value. No unchecked form was needed.
+** Steps 3 and 4, as done (2026-11-21, branch =sl-derive-values=)
+- THE FLIP. =Encode<V>= / =Decode<V>= moved to core (=minocrab::v3::abi=, beside =CircuitAbi=, with =CircuitAbi= as supertrait), because core's =call= and the ABI checker name the result type and a blanket into core's traits cannot live in std. Every leaf implements them ONCE in std's =v3/slots.rs=, =Encode= generic over its visibility, =Decode= at =Public= only (the set =CallResult= had). =CallArg= and =CallResult= are RETIRED: their bounds read =Encode<Public>= / =Decode<Public>=, and the disclosure statement moved onto =Encode=. =CircuitArg= is =Encode<Private>= plus =declare= (a declaration labels slots by path and a point is one typed input, so it is not a decode); =push_slots= is gone. The points and the scalar encode at =Private= to no slot and not at =Public=; the coins encode and decode at =Public= only; =Bounded=, =NonEmpty= and =Tag= encode at =Private=.
+- THE DERIVE is =#[derive(Value)]=: =CircuitAbi=, =Encode<__V>=, =Decode<__V>=, =CircuitArg=, =CircuitArgs=, =ProofWires=, =LedgerRepr=, each bounded by its fields as =for<'__w> Field: Trait= (the lifetime keeps a bound that does not hold from being a definition error), carrying the struct's own parameters and where-clause. =#[arg(skip)]= marks a =PhantomData= field. =#[derive(CircuitArg)]= and =#[derive(LedgerRepr)]= are =Value= plus a definition-site check (=Self: CircuitArg=, resp. =Self: LedgerRepr + ProofWires=) for a struct without generic parameters, so the rejections they made stay at the derive; the generated interface crates keep their derive name. =CircuitBorsh= and =#[circuit]= share the argument half.
+- NOT FLIPPED: =LedgerRepr= and =ProofWires= get no blanket over =Encode= / =Decode=. =ProofWires= has impls for tuples and =Wire3= (core types), which coherence forbids beside a blanket over core's =Encode=; =LedgerRepr= stays field-wise because records hold fields whose ledger form is hand-written over limbs that are not an =Encode= (=PreRecord=, the event records, =PointLimbs=).
+- DELETED in minocrab-signet: the =ProofWires= / =LedgerRepr= pairs of =Owned=, =QueueEntry=, =HandleOwned=, =Outstanding=, =Commit=, and the tickets' three impls (all now =#[derive(Value)]=). KEPT: =Contract<I>= (its field takes the parent's label; the derive would add an =_address= segment and move the interface snapshot), =Handle=, =PointLimbs=, =Memo= (bare =Wire3= fields, which are not value types), =PreRecord=, =EventRecordV1/V2= (limbs held as a =Vec=, atoms from another type), the =LedgerWidth= impls (slot shapes, not values), =AccountRecordOut='s =CircuitOut=.
+- NEWLY ACCEPTED, none of it a visibility or shape loosening: generic records under the derives; a public record (=Commit=, a =LedgerRepr= environment) is now also a cross-contract argument and result, and its =Maybe= a ledger leaf; a visibility-generic record with a fixed-visibility field is no longer a trivial-bound error, it simply lacks the impls that field rules out.
+- THE PASSPORT PORT has to make two edits: its =Scalar= (=custody.rs=) and the =argument!= macro (=p256.rs=) move =push_slots= into an =impl Encode<Private>= (body unchanged, method =encode=). Checked on a copy of those shapes against this branch.
+- COUNT. Public traits in the family: 13 before rung G, 15 after steps 1-2, 13 now (=CallArg=, =CallResult= out; =Encode=, =Decode= in). Hand-written impl blocks: core+std 159 → 154, contracts 8 → 8, evm+signet 29 → 19, passport 5 → 7.

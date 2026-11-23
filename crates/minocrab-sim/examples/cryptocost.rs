@@ -1,4 +1,4 @@
-//! Row costs of the crypto primitives (M10 step 0 instrument), in the
+//! Row costs of the crypto primitives, in the
 //! spirit of `examples/opcost.rs`: build minimal circuits, difference their
 //! cost-model rows, and print what each primitive actually costs.
 //!
@@ -6,7 +6,7 @@
 //! residuals between snapshot circuits; this example measures them directly
 //! and prints the measured-vs-model delta, so the analysis's projections can
 //! be re-checked (and the row-attribution constants in
-//! `minocrab_sim::v3::rowcost` re-calibrated) at any time.
+//! `minocrab_sim::rowcost` re-calibrated) at any time.
 //!
 //! Two numbers per primitive, because the zkir-v3 arch enables a chip only
 //! when the circuit uses it (`ir_vm.rs:1212` `used_chips`), so the first use
@@ -16,7 +16,7 @@
 //!
 //! The analysis's per-block/per-op figures are marginal costs, so the
 //! measured-vs-model comparison uses the marginal column. Row attribution
-//! (`minocrab_sim::v3::rowcost`) is marginal too — the fixed chip cost
+//! (`minocrab_sim::rowcost`) is marginal too — the fixed chip cost
 //! belongs to no region and shows up as the profile's unattributed residual.
 //!
 //! The byte-plumbing shapes stay in `examples/opcost.rs`, which already
@@ -28,18 +28,18 @@
 //! Run: cargo run --release -p minocrab-sim --example cryptocost
 //! (~75s: the padded column re-synthesises a 35k-row circuit per shape).
 
-use minocrab::v3::{
-    Bytes32T, Circuit3, FieldT, JubjubPointT, JubjubScalarT, Secp256k1PointT, Secp256k1ScalarT,
-    Wire3,
+use minocrab::{
+    Bytes32T, Circuit, FieldT, JubjubPointT, JubjubScalarT, Secp256k1PointT, Secp256k1ScalarT,
+    Wire,
 };
 use minocrab::{Alignment, AlignmentAtom, AlignmentSegment, Private};
-use minocrab_sim::v3::rowcost;
-use minocrab_std::v3::{secp256k1_ecdsa_verify, Secp256k1EcdsaSignature, B32};
+use minocrab_sim::rowcost;
+use minocrab_std::{secp256k1_ecdsa_verify, Secp256k1EcdsaSignature, B32};
 
 // --- circuit-building helpers -----------------------------------------------------
 
-fn rows(build: impl FnOnce(&mut Circuit3)) -> usize {
-    let mut c = Circuit3::new();
+fn rows(build: impl FnOnce(&mut Circuit)) -> usize {
+    let mut c = Circuit::new();
     build(&mut c);
     c.finish(false).ir.model().rows()
 }
@@ -51,14 +51,14 @@ fn bytes_alignment(len: usize) -> Alignment {
 }
 
 /// A constrained `Bytes<len>` argument as its FAB limbs (`limbs[0]` is the
-/// leftover, most significant chunk — `minocrab_std::v3::BytesNDyn`'s rule,
+/// leftover, most significant chunk — `minocrab_std::BytesNDyn`'s rule,
 /// spelled out here because that type is `len > 31` only).
-fn bytesn_arg(c: &mut Circuit3, name: &str, len: usize) -> Vec<Wire3<FieldT, Private>> {
+fn bytesn_arg(c: &mut Circuit, name: &str, len: usize) -> Vec<Wire<FieldT, Private>> {
     let nlimbs = len.div_ceil(31);
     let leftover = len - 31 * (nlimbs - 1);
     // Every argument must be declared before the first instruction, so
     // declare the whole limb vector, then constrain it.
-    let limbs: Vec<Wire3<FieldT, Private>> = (0..nlimbs)
+    let limbs: Vec<Wire<FieldT, Private>> = (0..nlimbs)
         .map(|i| c.arg(&format!("{name}_{i}")))
         .collect();
     for (i, limb) in limbs.iter().enumerate() {
@@ -88,7 +88,7 @@ fn byte_hash_circuit(len: usize, n: usize, keccak: bool) -> usize {
 /// `n` copies of `transient_hash` over `limbs` native field elements.
 fn poseidon_circuit(limbs: usize, n: usize) -> usize {
     rows(|c| {
-        let args: Vec<Wire3<FieldT, Private>> = (0..limbs)
+        let args: Vec<Wire<FieldT, Private>> = (0..limbs)
             .map(|i| c.arg::<FieldT>(&format!("x_{i}")))
             .collect();
         for a in &args {
@@ -117,7 +117,7 @@ fn ecdsa_circuit(n: usize) -> usize {
 
 /// `(r, s)` as a signature over secp256k1's scalar field.
 fn ecdsa_sig(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     r: &B32<Private>,
     s: &B32<Private>,
 ) -> Secp256k1EcdsaSignature<Private> {
@@ -131,7 +131,7 @@ fn ecdsa_sig(
 
 /// `n` constrained `Bytes<32>` arguments — declared first, constrained
 /// after (arguments may not follow instructions).
-fn b32_args<const N: usize>(c: &mut Circuit3, names: [&str; N]) -> [B32<Private>; N] {
+fn b32_args<const N: usize>(c: &mut Circuit, names: [&str; N]) -> [B32<Private>; N] {
     let args = names.map(|name| B32 {
         hi: c.arg(&format!("{name}_hi")),
         lo: c.arg(&format!("{name}_lo")),
@@ -350,7 +350,7 @@ fn main() {
     });
     let bytes32_round_trip = ecdsa_part(|c, s, _pk| {
         let bytes = c.into_bytes32(s);
-        let _: Wire3<Secp256k1ScalarT, Private> = c.from_bytes32(bytes);
+        let _: Wire<Secp256k1ScalarT, Private> = c.from_bytes32(bytes);
     });
     let foreign_mul = ecdsa_part(|c, s, _pk| {
         let _ = c.mul(s, s);
@@ -534,7 +534,7 @@ fn main() {
     }
 
     // --- the row-attribution constants --------------------------------------------
-    println!("\n== minocrab_sim::v3::rowcost constants (used by --profiles) ==");
+    println!("\n== minocrab_sim::rowcost constants (used by --profiles) ==");
     println!(
         "{:<34} {:>12} {:>12} {:>9}",
         "constant", "measured", "rowcost", "Δ%"
@@ -584,10 +584,10 @@ fn main() {
 /// 248-bit native field element).
 fn jubjub_part(
     body: impl Fn(
-            &mut Circuit3,
-            Wire3<JubjubPointT, Private>,
-            Wire3<JubjubScalarT, Private>,
-            Wire3<FieldT, Private>,
+            &mut Circuit,
+            Wire<JubjubPointT, Private>,
+            Wire<JubjubScalarT, Private>,
+            Wire<FieldT, Private>,
         ) + Copy,
 ) -> usize {
     let build = |n: usize| {
@@ -607,23 +607,23 @@ fn jubjub_part(
 /// Pre-declared wires the generic shapes below build on.
 struct Frame {
     /// A 248-bit constrained argument.
-    wide: Wire3<FieldT, Private>,
+    wide: Wire<FieldT, Private>,
     /// An 8-bit constrained argument.
-    byte: Wire3<FieldT, Private>,
+    byte: Wire<FieldT, Private>,
     /// A constrained `Bytes<32>` argument.
     b32: B32<Private>,
     /// The same value as a typed `Bytes<32>`.
-    b32_typed: Wire3<Bytes32T, Private>,
+    b32_typed: Wire<Bytes32T, Private>,
     /// A public constant (impact operands and guards must be public).
-    one: Wire3<FieldT, minocrab::Public>,
+    one: Wire<FieldT, minocrab::Public>,
 }
 
 /// Marginal rows of one more `body`, and the k it was measured at. With
 /// `pad`, the circuit is first filled to ≈35k rows (k=16, the vault's settle
 /// circuits) so range-check-bearing shapes are priced in that regime.
-fn generic_marginal(pad: bool, body: fn(&mut Circuit3, &Frame)) -> (usize, u8) {
+fn generic_marginal(pad: bool, body: fn(&mut Circuit, &Frame)) -> (usize, u8) {
     let build = |n: usize| -> (usize, u8) {
-        let mut c = Circuit3::new();
+        let mut c = Circuit::new();
         let wide = c.arg::<FieldT>("wide");
         let byte = c.arg::<FieldT>("byte");
         let b32 = B32 {
@@ -660,7 +660,7 @@ fn generic_marginal(pad: bool, body: fn(&mut Circuit3, &Frame)) -> (usize, u8) {
 }
 
 /// One priced shape: a label and the instructions it builds on a [`Frame`].
-type Shape = (&'static str, fn(&mut Circuit3, &Frame));
+type Shape = (&'static str, fn(&mut Circuit, &Frame));
 
 /// The non-crypto instruction shapes worth pricing: what the vault's
 /// framing, byte-plumbing and ledger-op regions are made of.
@@ -718,7 +718,7 @@ fn generic_shapes() -> Vec<Shape> {
             let _ = c.into_bytes32(f.wide);
         }),
         ("from_bytes32(-> native)", |c, f| {
-            let _: Wire3<FieldT, Private> = c.from_bytes32(f.b32_typed);
+            let _: Wire<FieldT, Private> = c.from_bytes32(f.b32_typed);
         }),
         ("impact(1 elem)", |c, f| c.impact(f.one, &[f.one])),
         ("impact(8 elems)", |c, f| c.impact(f.one, &[f.one; 8])),
@@ -734,7 +734,7 @@ fn generic_shapes() -> Vec<Shape> {
 /// Marginal rows of one extra `body` inside the ECDSA argument frame: build
 /// the frame with one `body` and with two, and difference.
 fn ecdsa_part(
-    body: impl Fn(&mut Circuit3, Wire3<Secp256k1ScalarT, Private>, Wire3<Secp256k1PointT, Private>)
+    body: impl Fn(&mut Circuit, Wire<Secp256k1ScalarT, Private>, Wire<Secp256k1PointT, Private>)
         + Copy,
 ) -> usize {
     let build = |n: usize| {
@@ -742,7 +742,7 @@ fn ecdsa_part(
             let pk = c.arg::<Secp256k1PointT>("pk");
             let [s] = b32_args(c, ["s"]);
             let s_typed = s.to_typed(c);
-            let scalar: Wire3<Secp256k1ScalarT, Private> = c.from_bytes32(s_typed);
+            let scalar: Wire<Secp256k1ScalarT, Private> = c.from_bytes32(s_typed);
             for _ in 0..n {
                 body(c, scalar, pk);
             }
@@ -752,12 +752,12 @@ fn ecdsa_part(
 }
 
 /// What `rowcost::est_rows` adds up for one `secp256k1EcdsaVerify` — the
-/// instruction mix the eDSL emits (`minocrab_std::v3::secp256k1_ecdsa_verify`).
-/// The verify is measured as a REGION of the finished stream: `finish` deletes
+/// instruction mix the eDSL emits (`minocrab_std::secp256k1_ecdsa_verify`).
+/// The verify is measured as a region of the finished stream: `finish` deletes
 /// instructions, so a build-time instruction count cannot index the stream it
 /// returns (notes/ir-passes.org §13), and a region is moved onto it.
 fn ecdsa_estimate() -> f64 {
-    let mut c = Circuit3::new();
+    let mut c = Circuit::new();
     let pk = c.arg::<Secp256k1PointT>("pk");
     let [digest, r, s] = b32_args(&mut c, ["digest", "r", "s"]);
     c.region("ecdsa", |c| {

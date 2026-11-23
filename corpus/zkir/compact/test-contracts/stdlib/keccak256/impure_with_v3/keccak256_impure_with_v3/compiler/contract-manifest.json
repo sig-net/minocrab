@@ -1,0 +1,41 @@
+{
+  "manifest-version": "1",
+  "compiler-version": "0.36.1",
+  "compiler-commit": "7fa3a117c5e7efe9d2c51da04263e5f0b3509144",
+  "language-version": "0.28.0",
+  "runtime-version": "0.21.0",
+  "compiler": {
+    "type": "directory",
+    "contract-info.json": {
+      "type": "file",
+      "size": 778,
+      "hash": "3326e5d7b733cf2226d08fc714c9914f123d097d12a813d661c3ff8d17943489"
+    }
+  },
+  "contract": {
+    "type": "directory",
+    "index.d.ts": {
+      "type": "file",
+      "size": 1537,
+      "hash": "b4afb4efc8964b94c5fff59aad07e2f2294f93e8baff81ff89a3958da8b267e8"
+    },
+    "index.js": {
+      "type": "file",
+      "size": 12334,
+      "hash": "05c9a0655bb932838c2013cf608c0666dc201ae7a92c30f04a3a2fcb4abec763"
+    },
+    "index.js.map": {
+      "type": "file",
+      "size": 723,
+      "hash": "fd5f8c63b51a286b863ddc86ecbdeac2916d88464876c93ed2b9f42a3839c8a9"
+    }
+  },
+  "zkir": {
+    "type": "directory",
+    "keccak256_writes_ledger.zkir": {
+      "type": "file",
+      "size": 897,
+      "hash": "bc43df8612fbc224ab3e1eddc3b6aca994caf17c95e98a33549270e90d5a367c"
+    }
+  }
+}

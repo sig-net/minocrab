@@ -83,7 +83,7 @@ So passes divide cleanly:
 ** (i) Guard scoping — the biggest API win, and not the backend's job
 
 Every ledger and kernel operation takes a guard operand, so every method has
-an =_under= twin differing only in that argument. =minocrab-std/src/v3/
+an =_under= twin differing only in that argument. =minocrab-std/src/
 kernel.rs= is about half boilerplate for this reason, and =ledger.rs= worse.
 
 It also does not COMPOSE, which is the real complaint. A helper called under
@@ -143,6 +143,8 @@ with M10's warrant. Rows go DOWN, which is the direction that profile
 already wants.
 
 * 3. THE TWO TO REJECT, and why
+
+(2026-11-21: both now exist as an OFF-by-default pass, §14, answered by a purity table taken from midnight-zkir and by never touching a transcript read; the reasons below are why they stay off for anything with a Compact twin.)
 
 ** Dead code elimination — unsound here without care nobody will maintain
 
@@ -230,7 +232,7 @@ a convenience:
    bug class is now unwritable inside a scope.
 
 THE GATE, and the reason it is safe to adopt incrementally:
-=tests/v3_guard_scope.rs= proves =guarded(g, plain)= is BYTE-IDENTICAL to
+=tests/guard_scope.rs= proves =guarded(g, plain)= is BYTE-IDENTICAL to
 the hand-threaded =plain_under(g)= for every shape — Impact ops, reads,
 assertions, nesting, and =if_else=. It is a way of writing the guard down,
 not a different lowering. All 164 pre-existing circuits are unchanged
@@ -654,11 +656,11 @@ the 27 beside them do, or not at all.
 
 The bigger correction, and it is why /delete/ is the wrong verb in step 3.
 
-=tests/v3_guard_scope.rs= proves the scope is a way of WRITING a guard down
+=tests/guard_scope.rs= proves the scope is a way of WRITING a guard down
 rather than a different lowering, and it does so by building the same circuit
 twice: once with =guarded(g, plain)= and once with the hand-threaded
 =plain_under(g)= / =witness_guarded(g)= / =public_transcript_input_guarded(g)=,
-then comparing bytes. =tests/v3_ledger.rs= does the same for the typed ledger
+then comparing bytes. =tests/ledger.rs= does the same for the typed ledger
 layer against raw =minocrab_ledger= calls. Delete the halves and there is no
 twin left to compare against — the test would have to hand-roll a duplicate of
 the thing it is checking, which is not a proof of anything.
@@ -691,7 +693,7 @@ back as a bare =T= and nothing said so — the silent default was not a gap §9
 opened, it was one that had been there since M10's guarded reads landed.
 
 =minocrab::v3::Guarded<T, V>= is what the guarded read helpers return now.
-Three ways out, and the price list is =tests/v3_guard_scope.rs=:
+Three ways out, and the price list is =tests/guard_scope.rs=:
 
 | | means | measured cost |
 |---+---+---|
@@ -814,7 +816,7 @@ worse and does not fix it. FIXED 2026-10-10, §13.
 
 ** THE KEY TEST, which is the whole claim
 
-=crates/minocrab-std/tests/v3_dedup.rs=. One representative record (every leaf
+=crates/minocrab-std/tests/dedup.rs=. One representative record (every leaf
 family, including the =Bool= whose entry constraint is booleanity and whose
 segment is a byte), built twice:
 
@@ -983,7 +985,7 @@ emit it, and the rule removes it there (§13).
 
 ** =folded= DOES NOT GET IT, deliberately
 
-=passes::folded= is the normaliser the instruction-for-instruction
+=passes::folded= (since M48 C =minocrab_compat::normalise::folded=) is the normaliser the instruction-for-instruction
 differentials run over compactc's artifact AND ours (§8). It stays the COPY
 FOLD ONLY. The rule deletes an instruction rather than renaming one, no
 compactc artifact we hold carries its shape (measured above), and adding it
@@ -1015,7 +1017,7 @@ instruction took its index.
 
 =builtin_names()= is now the three, in =finish='s order, and
 =DropTrueAsserts= implements =VerifiedPass=. Tests:
-=crates/minocrab-ir/tests/v3_passes.rs=, the =drop_true_asserts= section —
+=crates/minocrab-ir/tests/passes.rs=, the =drop_true_asserts= section —
 the rule, the three refusals, the order through =finish=, the report's
 warnings, and the verified pipeline in =finish='s own order.
 
@@ -1113,15 +1115,15 @@ before any pass can run.
 
 ** The API, and two panics for dmd
 
-=Kept= is INTERNAL TIER: it lives in the private =passes::kept= module and
-is re-exported from =passes= only under =unstable=, beside
+=Kept= is INTERNAL: it lives in the private =passes::kept= module and
+is re-exported from =passes= (behind =unstable= until M48 B emptied the feature), beside
 =Builder3::finish_kept=, its one producer. It bakes in "every pass in
 =finish= is a filter", which is a fact about today's =finish= and not a
 promise for the semver tier (notes/library-api.org §1). The =_kept= passes,
 =retain_kept=, =Kept::identity= and =Kept::compose= are crate-private;
 =compose='s length check is an internal invariant of =finish_kept=.
 
-Two rejections on the unstable surface are build-time panics, because the
+Two rejections on the internal surface are build-time panics, because the
 bound is a stream length known only at run time (the ladder's last rung):
 =Kept::position(i)= panics for =i >= input_len()= and =Kept::boundary(i)=
 for =i > input_len()=, each with a message naming the stream's length and
@@ -1140,7 +1142,7 @@ and outputs did not change (the =_kept= passes equal the unsuffixed ones on
 the algorithm as transcribed and rests on review that the Rust implements
 it; the new bodies were re-read against =FoldIr.lean=, =AssertIr.lean= and
 =DedupIr.lean= and are the same algorithm. The Kani stream harnesses are
-the non-closing specimens they were. The metadata remap itself — =Kept=,
+the non-closing specimens they were (deleted in M48 F; the taint lint's harnesses in =minocrab-taint= are the only Kani harnesses left). The metadata remap itself — =Kept=,
 its composition, =Circuit3::finish='s moves — is NOT covered by any proof:
 it is tested (fixed and random streams per pass, random =Circuit3=
 programs, the debug checks on every built circuit), with the Lean
@@ -1191,23 +1193,23 @@ Zero movement: the 214-circuit ZKIR dump is byte-identical before and after
 (=diff -rq= empty) — the fix touches no instruction, only the metadata
 beside the stream. Pinned by:
 
-- =crates/minocrab-ir/src/v3/passes/kept.rs= (unit tests): each pass's map
+- =crates/minocrab-ir/src/passes/kept.rs= (unit tests): each pass's map
   against an independent expectation, operands included, on a fixed stream
   with two distinct surviving asserts and on 100,000 random streams per
   pass; composition equal to stepwise =position= and associative; the
   identity; the three panics; the empty stream.
-- =crates/minocrab-ir/tests/v3_passes.rs=: the composition through
+- =crates/minocrab-ir/tests/passes.rs=: the composition through
   =finish_kept= with all three passes on.
-- =crates/minocrab/src/v3.rs=
+- =crates/minocrab/src/circuit.rs=
   (=assert_messages_survive_the_passes_that_drop_instructions=,
   =regions_survive_the_passes_that_drop_instructions=, both failing before
   the fix with the shapes above).
-- =crates/minocrab-sim/tests/v3_metadata.rs=: 5,000 random =Circuit3=
+- =crates/minocrab-sim/tests/metadata.rs=: 5,000 random =Circuit3=
   programs, half under the opt profile — each message on its own assert
   (the argument or immediate it was written on), the dropped ones gone,
   each region holding exactly its own messages and surviving instruction
   count, regions nested or disjoint. Fails at program 5 before the fix.
-- =crates/minocrab-sim/tests/v3_end_to_end.rs=: a failing check reported
+- =crates/minocrab-sim/tests/end_to_end.rs=: a failing check reported
   through =simulate_compiled= with its own message and a region profiled
   with its own instruction, once with the fold and the true-assert rule and
   once under the opt profile with a deduped constraint emptying its region
@@ -1219,3 +1221,196 @@ beside the stream. Pinned by:
   messages named; and =erc20_vault::initialise= reporting each of its four
   argument checks with its own message. Before the fix: 242 findings, and
   a zero chain id reported "failed direct assertion".
+
+* 14. THE SIMPLIFICATION PASS, as built (M48 F, 2026-11-21)
+
+=minocrab_ir::v3::passes::simplify= (and =simplify_with= with a =Rules= value, for measuring one rule at a time). OFF by default: the switch is =minocrab::v3::Lowering::simplify=, threaded exactly as the dedup flag is (=Circuit3::finish= hands it to =Builder3::simplify=, which runs it in =finish_kept=). =minocrab_compat::profile= states =simplify: false= because compactc emits these instructions, so nothing with a Compact twin or a deployed key moves. No circuit in the tree turns it on in this rung; the 227-circuit dump is byte-identical.
+
+§3 rejected dead-code and common-subexpression elimination for two reasons: the effectful instructions have no dataflow consumers, and CSE over ledger reads changes the transcript. Both are answered here the same way, by a table taken from Midnight's definition of each instruction rather than from intuition, and by never touching a transcript read.
+
+** Where it runs, and what it may do
+
+After =fold_immediate_copies= and =drop_true_asserts=, before =dedup_range_constraints= (a merge can make two range constraints on the merged outputs identical, which only the dedup then removes). It is a FILTER like the other three: it deletes instructions and renames a variable operand to another variable, so the =Kept= map is built by =retain_kept= as before and composed in =finish_kept=. =check_kept= (debug) now takes the simplification's native inputs when it ran: a kept instruction may then also read a variable renamed to a variable (the =Output= terminator included, which it previously compared verbatim and still does when the pass is off), and a dropped one may be any instruction the table lets the pass delete or merge.
+
+Metadata: assert messages and regions move through =Kept= exactly as before; no assert is ever deleted by this pass. Disclosure records hold NAMES, and the pass is given every =DisclosedWire::Named= identifier as =observed=: an observed value's defining instruction is never deleted and never merged away, so every record still names a value the run computes, under its own name, and no record is rewritten. That is the fold's discipline (§8, the record says what the value is) taken the conservative way: rather than renaming a record, the pass declines to rename a value a record names.
+
+** The purity table, from midnight-zkir 3.2.0
+
+Definition used: an instruction is PURE when its static checks hold and, for every value of its operands of their types, exactly one value of its outputs satisfies its in-circuit constraints (gadget-internal witnesses existentially quantified) and the off-circuit walk cannot fail on a value. A pure instruction may be deleted when nothing reads it (the satisfying assignments of the rest are unchanged, projected) and merged into an identical earlier one. DETERMINED: the outputs are a function of the operands but the instruction ALSO constrains the operands; it may be merged into an identical earlier twin (which imposes the same constraint on the same operands) and is never deleted as dead. KEPT: anything else, never touched. The polymorphic instructions are classified only on operands KNOWN to be =Native= (an immediate always is, =resolve_operand=; the circuit's =Native= arguments; the outputs the table says are =Native=, inferred forward); on anything else they are KEPT, because the foreign-field and curve gadgets were not argued. Line numbers are the in-circuit synthesis walk of =ir_vm.rs= unless named; the off-circuit arms were read beside them (=ir_vm.rs:348-834=). Cross-checked against =MinocrabZkir/Constraint.lean= (=SatInstr=), which models every row marked PURE below as a functional equation with no side condition, and every DETERMINED row with one (=isBit=, =ltWidth=, the =fabBytes= =.ok=, =lo < 2^248=, the reconstitute bounds), and against notes/zkir-semantics.org §4.3.
+
+| instruction | class | constrains beyond its outputs? | where |
+|-------------+-------+--------------------------------+-------|
+| =copy= | pure | no: an alias | ir_vm.rs:1094-1097 |
+| =add=, =mul=, =neg= on natives | pure | no: native arithmetic | ir_vm.rs:1164-1180; add.rs:96, mul.rs:85 |
+| =test_eq= on natives | pure | no: =is_equal=, its inverse witness internal | ir_vm.rs:1157-1163; eq.rs:104 |
+| =transient_hash= on natives | pure | no: Poseidon over natives | ir_vm.rs:1112-1121 |
+| =div_mod_power_of_two= on a native, two outputs, at most 248 bits | pure | no: the CANONICAL bit decomposition, unique and total | ir_vm.rs:1253-1272, 470-476; native_gadget.rs:872-906 |
+| =to_bytes=, =into_bytes32= of a native | pure | no: canonical 32-byte decomposition | to_bytes.rs:118-120; native_gadget.rs:908-922; decomposition.rs:106-113 (doc: "a single u8 vector") |
+| =from_bytes=, =from_bytes32= to =Native= | determined (static check) | no: a linear combination, reduced mod p (off-circuit =from_le_bytes_with_reduction=); the operand must be =Bytes= | from_bytes.rs:182, :78 |
+| =bytes32_into_low_high= | determined (static check) | no; the operand must be =Bytes<32>= | ir_vm.rs:1478-1486; zkir-semantics §4.3 |
+| =bytes_into_natives= | determined (static check) | no: linear packing; output count must match the length | ir_vm.rs:1438-1458; encode.rs:100-106 |
+| =reverse=, =reverse_bytes=, =slice=, =nth=, =concat= | determined (static check) | no: re-indexing assigned bytes; type and bounds checked statically | ir_vm.rs:1403-1543 |
+| =and=, =or=, =xor= | determined (static check) | no: over =Bool= values; the unwrap is a type check | ir_vm.rs:970-987, 1194-1208; ir_types.rs:552-560 |
+| =load_constant= | determined (static check) | no: fixed cells; the encoding must decode | ir_vm.rs:1545-1554 |
+| =cond_select= on natives | determined | YES: the selector is =convert=ed to a bit | ir_vm.rs:1064-1071; select.rs:88 |
+| =not= | determined | YES: the operand is =convert=ed to a bit | ir_vm.rs:1186-1193 |
+| =inv= on natives | determined | YES: asserts non-zero (off-circuit "cannot invert zero") | ir_vm.rs:1181-1185; inv.rs:42, 106-108 |
+| =less_than= | determined | YES: =lower_than= range-checks both operands | ir_vm.rs:1209-1219, 529-537; native_gadget.rs:416 |
+| =reconstitute_field= | determined | YES: the halves must recompose below p | ir_vm.rs:1273-1303 |
+| =persistent_hash=, =keccak256=, =sha512= | determined | YES: inputs decomposed per the alignment, which bounds them | ir_vm.rs:1122-1156, 169-212 |
+| =bytes_from_natives= | determined | YES: each limb decomposed into exactly its bytes | ir_vm.rs:1459-1477 |
+| =bytes32_from_low_high= on natives | determined | YES: low below 2^248, high a byte | ir_vm.rs:1487-1497 |
+| =assert=, =constrain_bits=, =constrain_eq=, =constrain_to_boolean= | kept | a constraint is all they are | ir_vm.rs:1059-1093 |
+| =impact= | kept | pushes public inputs | ir_vm.rs:1098-1111 |
+| =public_input=, =private_input= | kept | each consumes a transcript position (§3) | ir_vm.rs:1228-1252, 423-461 |
+| =output= | kept | the terminator | ir_vm.rs:1555 |
+| =encode= | kept | polymorphic; the =JubjubScalar= arm asserts the spare limb zero | encode.rs:108-118 |
+| =from_coordinates= | kept | asserts the point is on the curve | ir_vm.rs:1359-1364 |
+| =ec_mul=, =ec_mul_generator=, =hash_to_curve=, =into_coordinates=, =jubjub_scalar_from_native= | kept | not established (curve and biguint gadgets not read) | ir_vm.rs:1220-1227, 1304-1358 |
+| anything polymorphic on an operand not known Native | kept | not established | |
+
+"Determined (static check)": these constrain nothing beyond their outputs, but each carries a STATIC check (an operand's type, a length, a bound) on a type the pass does not track (it tracks only "known Native"). Deleting one that fails its check would turn a circuit that accepts nothing into one that accepts, so they are merged (a repeat fails exactly when its twin did, earlier) but never deleted as dead. Found by the (C) instrument below, on the hand-built ill-typed streams of =v3_zkir31_ops.rs=; no builder-made circuit has one. The pure rows check their static conditions themselves (Native operands known, the div_mod's arity and width).
+
+In the code this is ONE exhaustive match, =passes::definition=, with no wildcard arm; it also carries each instruction's outputs, so =defined_identifiers= reads through it and there is no second list.
+
+Upstream detail worth knowing, met on the way: midnight-circuits' native gadget keeps a per-cell record of proven bounds (=constrained_cells=, native_gadget.rs:366) and skips a range check a recorded bound implies. A pure instruction records bounds only on its own output cells, so deleting a dead one cannot remove a bound a later check relied on; and enabling a chip is per instruction kind present (ir_vm.rs:1627-1650), so deleting the last instance of a kind can lower k. Neither changes the satisfying assignments.
+
+** The rules
+
+1. MERGE: an exact repeat (opcode, attributes, operands after the renames so far) of an earlier PURE instruction is deleted and its outputs read as the twin's.
+2. MERGE of DETERMINED instructions, the same way. Included because the twin lays down the identical constraint on the identical operands, and the outputs are equal in every satisfying assignment; this is where most of the merge rows are (=manager::execute='s repeated selects, =send_shielded='s second coin-commitment hash). Across anything at all: ZKIR has no control flow, every instruction is laid down, so position orders nothing (=a_determined_instruction_merges_across_a_non_pure_one…=).
+3. CONSTANT SELECT: =cond_select 1 a b= is =a= and =cond_select 0 a b= is =b=, on natives, when the chosen arm is a variable. The selector is a fixed cell, its bit constraint witness-independent. Measured first: such a select costs 1.2 rows; the backend does not fold it. Any other immediate selector is unsatisfiable and is left alone, as =drop_true_asserts= leaves a failing assert.
+4. DEAD PURE: a pure instruction none of whose outputs is read (by an instruction, the terminator, or an observed name) is deleted; one backward sweep is the fixed point because every use follows its definition.
+
+LEFT OUT:
+- =cond_select g x x= -> =x=: costs a row (measured), but deleting it drops the constraint that =g= is a bit. Fails the circuit criterion.
+- =add x 0= and the other linear identities: the backend already makes them free (§0).
+- Merging transcript reads (§3), Impact, constraints (the dedup's), and anything kept.
+- Renaming a disclosure record instead of keeping the value: not needed for correctness, and it would be a second mechanism; a disclosed repeat costs its row.
+
+** Evidence
+
+- (A) =crates/minocrab-ir/tests/simplify.rs=, 23 tests on hand-built streams: each rule, the fixed point and idempotence, the refusals (an unused =cond_select=, =not=, =less_than=, =inv=, =reconstitute_field= stays; transcript reads, constraints, Impact and asserts never merge; a disclosed value or disclosed repeat stays; arithmetic on a value not known Native stays; a select on 2, on an immediate arm, or on a variable selector with equal arms stays), and the builder's map through =finish_kept=.
+- (B) =crates/minocrab-sim/tests/simplify.rs=: 3,000 random =Circuit3= programs (the =v3_metadata= generator's shape, with arithmetic, selects on wires and on 0/1/2, =not=, =inv=, =less_than=, =div_mod=, Poseidon, asserts, range checks, exact repeats, unused results, disclosures, Impacts, outputs, regions), each built with the pass off and on and run on 4 preimages (their Impact transcript gathered from the unsimplified build) through our simulator AND upstream =IrSource::check=: same verdict under both walks, and on accept the same =pis=, skips, outputs, private consumption and disclosed values. 12,000 runs, about 2,100 accepting and 9,900 rejecting, 2,900 programs shrinking by 13,500 instructions. Mutation check: reclassifying =not= as pure fails it at program 28.
+- (C) =crates/minocrab-contracts/tests/simplify_survey.rs=: on all 227 workspace circuits (finished streams, pass applied in the test), every effect kept in order, every disclosed name still defined, idempotent; 45 circuits change. And the whole workspace suite run once with =MINOCRAB_CHECK_SIMPLIFY=<log>= (=minocrab_sim::v3::simplify_check=, a no-op unless set): every =simulate_with= call anywhere also simulates the simplified circuit on the same preimage and panics on a different verdict, =pis=, skips, outputs or private consumption. Result (2026-11-21): the suite green under the instrument (1,410 passed, 0 failed), 6,690 distinct streams simulated, 117 of the 227 workspace circuits among them. Of the 45 circuits the pass changes, 39 were simulated on their suites' own vectors with at least one ACCEPTING run and agreed every time (every =erc20_vault= circuit in the table, all twelve changed =erc20_vault_pending= ones but =swap= and =withdraw=, both =attest= verifiers, =manager::execute= and =deposit_shielded=, =serde_builtin::check_roundtrip=, =events_borsh::emit_n(2)= and =(4)=, =xcontract_events_borsh::token_deposit=, =xcall_with_payment::{notify, pay}=, both =mint_tokens= mints); =erc20_vault_pending::{swap, withdraw}= only on rejecting vectors; four never simulated by any suite: =events::emit_n(2)=, =events::emit_n(4)=, =xcontract_events::token_deposit= (their =_borsh= twins were) and =kernel_tokens::s_send_shielded=, which therefore has only the structural evidence. The first run of the instrument found the static-check gap described under the table (four hand-built ill-typed streams in =v3_zkir31_ops.rs=) and a meaningless comparison under the executor's provisional =Gather= walk; both fixed before this result.
+
+** Rows (Midnight's cost model, =minocrab_sim::v3::cost=, the pass applied to each finished stream in the test; =simplify_row_table=, --release)
+
+Each rule alone, then all (the parts need not sum). "twin" = has a Compact twin or is the deployed signer, so the pass stays off there; "MinoCrab-only" = =erc20_vault_pending=, =treasury=, =disclosure= (=treasury= and =disclosure= do not change). The passport port is out of tree and not measured.
+
+| circuit | lineage | rows | k | instructions deleted | merge pure | merge determined | constant select | dead pure | all |
+|---+---+---+---+---+---+---+---+---+---|
+| attest::sha_verify | twin | 65429 -> 52988 | 16 -> 16 | 87 | 0 | 0 | 0 | 12441 | 12441 |
+| serde_builtin::check_roundtrip | twin | 24573 -> 14086 | 15 -> 14 | 74 | 0 | 0 | 0 | 10487 | 10487 |
+| manager::execute | twin | 220606 -> 214501 | 18 -> 18 | 100 | 316 | 5773 | 11 | 0 | 6105 |
+| kernel_tokens::s_send_shielded | twin | 23615 -> 17985 | 15 -> 15 | 2 | 0 | 5630 | 0 | 0 | 5630 |
+| attest::keccak_verify | twin | 59646 -> 55766 | 17 -> 16 | 87 | 0 | 0 | 0 | 3880 | 3880 |
+| xcontract_events::token_deposit | twin | 10940 -> 10215 | 14 -> 14 | 10 | 725 | 0 | 0 | 0 | 725 |
+| xcontract_events_borsh::token_deposit | twin | 10940 -> 10215 | 14 -> 14 | 10 | 725 | 0 | 0 | 0 | 725 |
+| events::emit_n(4) | twin | 898 -> 446 | 10 -> 9 | 21 | 452 | 0 | 0 | 0 | 452 |
+| events_borsh::emit_n(4) | twin | 898 -> 446 | 10 -> 9 | 21 | 452 | 0 | 0 | 0 | 452 |
+| events::emit_n(2) | twin | 544 -> 394 | 10 -> 9 | 7 | 150 | 0 | 0 | 0 | 150 |
+| events_borsh::emit_n(2) | twin | 544 -> 394 | 10 -> 9 | 7 | 150 | 0 | 0 | 0 | 150 |
+| erc20_vault::queue_attestation32 | twin | 37933 -> 37847 | 16 -> 16 | 1 | 86 | 0 | 0 | 0 | 86 |
+| erc20_vault::queue_attestation1 | twin | 37847 -> 37762 | 16 -> 16 | 1 | 85 | 0 | 0 | 0 | 85 |
+| erc20_vault::queue_attestation0 | twin | 37799 -> 37736 | 16 -> 16 | 1 | 63 | 0 | 0 | 0 | 63 |
+| erc20_vault::complete_swap | twin | 30347 -> 30300 | 15 -> 15 | 7 | 41 | 4 | 6 | 0 | 47 |
+| erc20_vault::flush_queue | twin | 7078 -> 7058 | 13 -> 13 | 10 | 0 | 20 | 0 | 0 | 20 |
+| manager::deposit_shielded | twin | 38488 -> 38481 | 16 -> 16 | 6 | 0 | 0 | 7 | 0 | 7 |
+| erc20_vault::start_withdraw | twin | 22237 -> 22232 | 15 -> 15 | 4 | 0 | 2 | 3 | 0 | 5 |
+| erc20_vault::start_swap | twin | 22388 -> 22383 | 15 -> 15 | 4 | 0 | 2 | 3 | 0 | 5 |
+| erc20_vault::start_supply | twin | 22112 -> 22107 | 15 -> 15 | 4 | 0 | 2 | 3 | 0 | 5 |
+| erc20_vault::start_redeem | twin | 22112 -> 22107 | 15 -> 15 | 4 | 0 | 2 | 3 | 0 | 5 |
+| xcall_with_payment::notify | twin | 11585 -> 11580 | 14 -> 14 | 4 | 0 | 0 | 5 | 0 | 5 |
+| xcall_with_payment::pay | twin | 11687 -> 11682 | 14 -> 14 | 4 | 0 | 0 | 5 | 0 | 5 |
+| erc20_vault::complete_supply | twin | 20566 -> 20562 | 15 -> 15 | 4 | 0 | 2 | 4 | 0 | 4 |
+| erc20_vault::complete_redeem | twin | 20566 -> 20562 | 15 -> 15 | 4 | 0 | 2 | 4 | 0 | 4 |
+| erc20_vault_pending::complete_swap | MinoCrab-only | 57048 -> 57044 | 16 -> 16 | 4 | 0 | 2 | 4 | 0 | 4 |
+| erc20_vault::complete_withdraw | twin | 10768 -> 10766 | 14 -> 14 | 2 | 0 | 0 | 2 | 0 | 2 |
+| erc20_vault_pending::deposit | MinoCrab-only | 1716 -> 1714 | 11 -> 11 | 1 | 2 | 0 | 0 | 0 | 2 |
+| erc20_vault_pending::refund_withdrawal | MinoCrab-only | 47497 -> 47495 | 16 -> 16 | 2 | 0 | 0 | 2 | 0 | 2 |
+| erc20_vault_pending::refund_swap | MinoCrab-only | 47636 -> 47634 | 16 -> 16 | 2 | 0 | 0 | 2 | 0 | 2 |
+| erc20_vault_pending::complete_supply | MinoCrab-only | 47567 -> 47565 | 16 -> 16 | 2 | 0 | 0 | 2 | 0 | 2 |
+| erc20_vault_pending::refund_supply | MinoCrab-only | 47640 -> 47638 | 16 -> 16 | 2 | 0 | 0 | 2 | 0 | 2 |
+| erc20_vault_pending::complete_redeem | MinoCrab-only | 47567 -> 47565 | 16 -> 16 | 2 | 0 | 0 | 2 | 0 | 2 |
+| erc20_vault_pending::refund_redeem | MinoCrab-only | 47640 -> 47638 | 16 -> 16 | 2 | 0 | 0 | 2 | 0 | 2 |
+| mint_tokens::mint_with_recipient_argument | twin | 9663 -> 9661 | 14 -> 14 | 2 | 0 | 0 | 2 | 0 | 2 |
+| mint_tokens::mint_with_recipient_own_public_key | twin | 9807 -> 9805 | 14 -> 14 | 2 | 0 | 0 | 2 | 0 | 2 |
+| erc20_vault::start_replace_nonce | twin | 1838 -> 1837 | 11 -> 11 | 1 | 0 | 1 | 0 | 0 | 1 |
+| erc20_vault::send_replace_nonce | twin | 1099 -> 1098 | 11 -> 11 | 1 | 0 | 1 | 0 | 0 | 1 |
+| erc20_vault::start_approve_router | twin | 1064 -> 1063 | 11 -> 11 | 1 | 0 | 1 | 0 | 0 | 1 |
+| erc20_vault::start_approve_stata | twin | 1014 -> 1013 | 10 -> 10 | 1 | 0 | 1 | 0 | 0 | 1 |
+| erc20_vault::start_deposit | twin | 1240 -> 1239 | 11 -> 11 | 1 | 0 | 1 | 0 | 0 | 1 |
+| erc20_vault_pending::withdraw | MinoCrab-only | 11451 -> 11450 | 14 -> 14 | 1 | 0 | 1 | 0 | 0 | 1 |
+| erc20_vault_pending::swap | MinoCrab-only | 12116 -> 12115 | 14 -> 14 | 1 | 0 | 1 | 0 | 0 | 1 |
+| erc20_vault_pending::supply | MinoCrab-only | 11380 -> 11379 | 14 -> 14 | 1 | 0 | 1 | 0 | 0 | 1 |
+| erc20_vault_pending::redeem | MinoCrab-only | 11557 -> 11556 | 14 -> 14 | 1 | 0 | 1 | 0 | 0 | 1 |
+
+- TOTAL twin: merge pure 3245 / merge determined 11444 / constant select 60 / dead pure 26808 / all 41554
+- TOTAL MinoCrab-only: merge pure 2 / merge determined 6 / constant select 16 / dead pure 0 / all 22
+
+Top five by saving: =attest::sha_verify= 12,441 (dead =div_mod= chain, 87 instructions: a byte-splitting chain run 87 steps past the last byte anything reads), =serde_builtin::check_roundtrip= 10,487 (74 dead =div_mod=; k 15 -> 14), =manager::execute= 6,105 (mostly merged =cond_select= repeats), =kernel_tokens::s_send_shielded= 5,630 (the coin commitment hashed twice, survey §7), =attest::keccak_verify= 3,880 (dead =div_mod=; k 17 -> 16). Every one has a Compact twin, so none of it is realised while the pass is off there. The MinoCrab-only total is 22 rows over twelve =erc20_vault_pending= circuits; =treasury= and =disclosure= do not change.
+
+** Ledger, updated
+
+| pass | vs compactc | gate |
+|------+-------------+------|
+| =fold_immediate_copies= | diverges by inlining (§8) | always on, both sides normalised |
+| =drop_true_asserts= | neutral | always on, =run= preserved in Lean |
+| =simplify= | diverges from OUR ports' streams (see the correction below) | off; =Lowering::simplify=, no circuit turns it on yet |
+| =dedup_range_constraints= | prospective (§11) | opt-in, M10 warrant |
+| =simplify= | diverges (compactc emits what it deletes) | ON by default since M48 C step 3; =minocrab_compat::profile= turns it off for every port and the signer |
+| =dedup_range_constraints= | prospective (§11) | ON by default since M48 C step 3; off under the profile |
+
+No Lean theorem yet: the warrant is the table, the three kinds of evidence above, and review. It has no =Pass= value and no =by_name= entry (the survey's §5 direction is fewer spellings, not more).
+
+** The defaults flipped (M48 C step 3, 2026-11-21)
+
+=Lowering::default()= is now =simplify: true=, =dedup_range_constraints: true=. Measured on the 227-circuit dump: the twelve =erc20_vault_pending= circuits of the table above move, by exactly the table's 22 rows (deposit -2, withdraw/swap/supply/redeem -1 each, complete_swap -4, the other six -2 each), no k changes; the dedup adds nothing on top in this tree. =treasury= and =disclosure= do not move. The flip found two ports that had not stated compactc's lowering, =events_borsh= and =xcontract_events_borsh= (their differential is the parent port's file, so =circuit_closure.rs= did not count them as ports); both now do, and =circuit_closure.rs= counts a =<port>_borsh= module as a port and checks every listed module is a port or one of the three MinoCrab-only ones. =backend_folding.rs= measures the backend alone and so now builds under the profile.
+
+** The spellings, checked for dead ones (rung F part 1)
+
+Public items of =passes.rs= with no caller outside tests (=tests/passes.rs=, =minocrab-std/tests/lean_claims.rs=): =run_pipeline=, =run_pipeline_verified=, =VerifiedPass= and its three impls, =ProofRef= with =lean_proof!= and the three statics =FOLD_PROOF=, =DEDUP_PROOF=, =DROP_TRUE_ASSERTS_PROOF=, =ProofRef::file= and =ProofRef::missing_theorems=; and with NO caller at all, tests included, =ProofRef::contents= and =ProofRef::theorems=. Everything else is reached: =by_name=, =builtin_names=, the =Pass= trait, =PassReport= and the three =Pass= structs (hence the three unsuffixed pass functions) by the =minocrab pass= CLI (=minocrab-sim/src/bin/minocrab.rs=); =fold_immediate_copies= also by =minocrab_compat::normalise::folded=; =operands=, =returned=, =defined_identifiers= by the builder and the taint lint; =Kept= by the frontend. Not deleted in this rung, by instruction. The new pass adds =simplify=, =simplify_with=, =Rules= and =native_inputs= and no =Pass= value.
+
+The three =Kept= checks, as found: =Builder3::finish_kept= asserts in every build that the composed map starts at the built stream's length and ends at the finished one's; =check_kept= (debug) asserted the same two lengths again and then each kept instruction against its landing place and each dropped one's kind; =moved_onto_the_finished_stream= in =Circuit3::finish= (debug) checks the frontend's use of the map: each surviving message at its assert's position in order, and each region exactly the run of positions its survivors landed on (=boundary= against =position=). Only the two repeated length asserts were exact duplicates; they are gone from =check_kept=. The per-instruction check stays debug-only (it clones the whole built stream); the frontend check tests a different property (the metadata moves and =boundary='s agreement with =position=) and stays.
+
+* Correction to the row table above (2026-11-21): the waste it found is ours, not compactc's
+
+The table's "circuits with a Compact twin" savings were read as compactc emitting dead instructions. That is false. Checked directly on compactc 0.36.0's own artifacts for all 907 corpus =.zkir= files with a backward liveness sweep: no dead =div_mod_power_of_two= anywhere, and nine dead instructions in total (seven =copy=, one =neg=, one =add=). compactc's =optimize-circuit= pass drops a =div-mod-power-of-two= whose outputs are unread (=compiler/circuit-passes/optimize-circuit.ss=, around lines 644-648).
+
+The 87 / 74 / 87 dead instructions are in MinoCrab's ports. Those three ports (=attest::sha_verify=, =attest::keccak_verify=, =serde_builtin::check_roundtrip=) are checked against compactc by CALL COMPATIBILITY (=assert_call_compatible=: same public inputs, same verdict), not instruction for instruction, so their streams were never compactc's. In =attest.rs= =deserialize_respond_output= calls =output.to_le_bytes(c)=, which splits all 128 bytes, and reads 37 of them; compactc splits 17. So a port can cost about 12,000 rows more than the contract it ports while passing its differential.
+
+What follows from that: only the instruction-level differentials (the eight that normalise with =folded=) pin a port to compactc's stream. A port checked by call compatibility is free to be cheaper or dearer than compactc, and three of ours are dearer.
+
+** The three ports fixed (2026-11-21)
+
+dmd's decision: "Fix them." These three circuits move although they have a Compact twin, because their streams were never compactc's and the fix moves them toward it.
+
+What compactc decomposes. =deserialize<T, N>= (=build-deserialize=, =expand-serialize.ss=) reads each byte a field occupies ON ITS OWN, from the limb holding it, by two splits: =div_mod_power_of_two(limb, 8k)= keeps the quotient, =div_mod_power_of_two(_, 8)= keeps the byte. A =Boolean= adds =constrain_to_boolean=, a =copy= and =test_eq _ 1=; a =Uint<8n>= folds its bytes with =reconstitute_field= (a lone byte is a =copy=), then a =copy= and =constrain_bits 8n=; a =Bytes<32>= is its last byte (a =copy=) and its first 31 folded. A field nothing reads, and the padding, emit nothing (=optimize-circuit= drops the unread splits). In =attest= that is =success= and =amount= (bytes 0..17; =amount= is kept alive by its range check, an effect); =recipient= (17..37) is not split at all. In =serde_builtin= it is all four fields (bytes 0..50); the 78 padding bytes are not split, and the round trip's limb comparison holds them to zero.
+
+What our ports did: =BytesN::to_le_bytes= on all 128 bytes (one chain of 123 =div_mod(_, 8)= over the five limbs), then read bytes 0..37 (=attest=, of which =amount= and =recipient= were then unread too) or 0..50 (=serde_builtin=).
+
+Deserialize region, instructions by op (ours before / compactc / ours after):
+
+| circuit | before | compactc | after |
+|---------+--------+----------+-------|
+| =attest::sha_verify=, =keccak_verify= | 123 =div_mod=, 34 =reconstitute_field=, 1 =test_eq= | 34 =div_mod=, 15 =reconstitute_field=, 1 =constrain_to_boolean=, 2 =copy=, 1 =test_eq=, 1 =constrain_bits= | same as compactc |
+| =serde_builtin::check_roundtrip= | 123 =div_mod=, 45 =reconstitute_field=, 1 =test_eq= | 100 =div_mod=, 45 =reconstitute_field=, 1 =constrain_to_boolean=, 5 =copy=, 1 =test_eq=, 2 =constrain_bits= | same as compactc |
+
+The fix: =minocrab_compat::deserialize::Packed= (new), field readers =boolean::<AT>=, =uint::<AT, LEN>=, =bytes32::<AT>= emitting exactly that shape, offsets and widths const generics (a field outside the =Bytes<N>= is a compile error). =attest= reads =success= and =amount= through it and no longer has a =recipient= wire; =serde_builtin= reads its four fields through it inside a ="deserialize Mixed"= region. Its values are checked by =minocrab-compat/tests/deserialize.rs= (every reader on a =Bytes<64>=, a =Uint= straddling a limb boundary included, and a Boolean byte of 2 or 0xff refused). =to_le_bytes= and every other std gadget are unchanged; no other circuit's stream moved (the 227-circuit dump differs in exactly these three files). Instruments moved: the row snapshot (these three lines only, regenerated by its command) and =metadata_indices='s region count, 411 to 412 (the new region); the interface snapshot, leakage inventory and taint baseline did not.
+
+Each deserialize region is now INSTRUCTION-IDENTICAL to compactc's up to naming, and the differentials check it: =attest_differential= compares our ="deserialize RespondOutput"= region plus the =assert(out.success)= after it with compactc's stream from its first split of the output's low limb, =serde_builtin_differential= the ="deserialize Mixed"= region likewise (=common::canonical_window=, =common::first_reading_input=). The rest of each port is still checked by call compatibility only. Distance from compactc over the whole stream (opcode-level LCS, identifiers ignored, ours-only / compactc-only instructions): =attest= 115/73 before, 6/68 after (the rest: compactc's digest goes byte by byte, 30 =div_mod= and 30 =reconstitute_field=, where ours uses =reverse=; its identity check is a =cond_select= where ours is a =not=; the callCount increment is emitted first by compactc and last by ours); =serde_builtin= 108/181 before, 14/102 after (compactc's serializer re-splits the fields byte by byte where ours packs with =mul= / =add=).
+
+The constraint argument. Every limb of the output is range-checked on entry (=constrain_bits= 32 and 248, both sides), and a split adds no rejection: the bytes it yields are a function of the limb. So splitting fewer bytes accepts nothing more, and the only rejecting instructions in the region are the same on both sides. =attest=: before, the call was refused iff byte 0 was not 1 (=test_eq= then =assert=); now, as compactc, byte 0 must be 0 or 1 (=constrain_to_boolean=) and then 1: refused iff byte 0 is not 1, as before; =constrain_bits 128= on a 16-byte value never fails. =recipient= and the padding were never constrained by anything but their limbs' entry checks and the signed digest, on either side. =serde_builtin=: flag byte as =attest=, the round trip refuses anything else; =constrain_bits= 128 and 8 never fail on 16 and 1 bytes; the padding was and is held to zero only by the round trip's limb comparison. New vectors show it: =attest= refuses success 2 and 0xff on both sides, and accepts on both, with equal public inputs, the largest amount, a recipient of 0xff and nonzero padding in every limb; =serde_builtin= refuses a nonzero padding byte at 50, 61, 62, 93, 124 and 127 on both, and accepts flag 0 with every field at its maximum on both.
+
+Numbers (row snapshot, Midnight's cost model; dead = a backward liveness sweep over the finished stream, =simplify= = what the pass deletes):
+
+| circuit | rows before | rows after | k before | k after | dead before | dead after | =simplify= deletes before / after | compactc rows, k |
+|---------+-------------+------------+----------+---------+-------------+------------+-----------------------------------+------------------|
+| =attest::sha_verify= | 65,429 | 49,999 | 16 | 16 | 156 (122 =div_mod=, 34 =reconstitute_field=) | 0 | 87 / 0 | 58,609, 16 |
+| =attest::keccak_verify= | 59,646 | 52,777 | 17 | 16 | 156 (122, 34) | 0 | 87 / 0 | 61,387, 16 |
+| =serde_builtin::check_roundtrip= | 24,573 | 21,319 | 15 | 15 | 74 (=div_mod=) | 0 | 74 / 0 | 34,550, 16 |
+
+=check_roundtrip= does not reach k 14, which the table above predicted: that saving (10,487 rows) was the lean shape, one chained split per byte stopped at byte 50, where compactc's shape is two splits per byte (100 =div_mod= for 50 bytes). Taking compactc's shape for a port is the rule; the lean one would be a further 7,000 rows or so on this circuit and is not taken. =attest= saves more than the table's 12,441 / 3,880 because the dead =reconstitute_field= folds of =amount= and =recipient= go too, net of the =amount= split and range check compactc keeps and the port now emits. All three ports are now cheaper than compactc's own artifacts.
+
+Rerunning =simplify_row_table= after the fix: none of the three circuits changes under the pass, and the twin total of the =dead pure= rule is 0 (it was 26,808); the twin total of all rules is 14,746 (was 41,554), all of it merges and constant selects.

@@ -1,12 +1,14 @@
-//! THIS CRATE'S CLAIM, CHECKED.
+//! This crate's claim, checked.
 //!
 //! `src/lib.rs` asserts that a contract deployed from
-//! `signet-midnight-integration`'s `signet-contract` package exports three
-//! circuits with exactly these argument layouts. Everything needed to
+//! `signet-midnight-integration`'s `signet-signer` package exports one
+//! circuit, `signBidirectional`, with exactly this argument layout (the
+//! respond circuits moved to the responder at v0.26, and its interface is
+//! `signet-responder-interface`). Everything needed to
 //! settle that assertion is committed beside it — `artifact/`'s
 //! `contract-info.json` (the callee's own typed schema, as compactc wrote
 //! it) and `pin.json` (the distilled, hash-pinned facts of the compiled
-//! `.zkir`s) — so drift is a test failure HERE rather than a surprise at
+//! `.zkir`s) — so drift is a test failure here rather than a surprise at
 //! somebody's call site.
 //!
 //! Four positive tests and a mutation suite:
@@ -17,26 +19,26 @@
 //! - every declared circuit passes all six checks, including the compiled
 //!   `.zkir`'s constraint prefix slot for slot;
 //! - the published ABI equals its frozen snapshot;
-//! - and [`mutation`] proves the checker BITES: nine ways to be wrong,
+//! - and [`mutation`] proves the checker bites: nine ways to be wrong,
 //!   nine failures.
 
 use std::path::PathBuf;
 
 use minocrab::Public;
 use minocrab_abi::{circuit_schema, Artifact, Pin};
-use signet_signer_interface::{
-    RespondBidirectionalEventV1, RequestId, SignBidirectionalEventNotification,
-    SignatureRespondedEventV1, SignetSigner,
-};
+use signet_signer_interface::{RequestId, SignBidirectionalEventNotification, SignetSigner};
 
 /// Where the artifact came from, relative to the workspace root. The same
 /// string `pin.json` carries.
-const SOURCE: &str = "corpus/zkir/signet-midnight-integration-v0250/packages/signet-contract/src/signet-contract";
+const SOURCE: &str = "corpus/zkir/signet-midnight-integration-v026/packages/signet-signer/src/signet-signer";
 
-/// The three circuits' argument lists, as the interface declares them.
+/// A circuit of the same deployment's other contract, the responder, for
+/// the swapped-circuit mutation: the signer exports only one circuit.
+const RESPONDER_RESPOND_ZKIR: &str =
+    "corpus/zkir/signet-midnight-integration-v026/packages/signet-responder/src/signet-responder/zkir/respond.zkir";
+
+/// The circuit's argument list, as the interface declares it.
 type SignBidirectional = (RequestId<Public>, SignBidirectionalEventNotification<Public>);
-type Respond = (SignatureRespondedEventV1<Public>,);
-type RespondBidirectional = (RespondBidirectionalEventV1<Public>,);
 
 fn crate_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -50,7 +52,7 @@ fn artifact() -> Artifact {
     Artifact::open(crate_dir()).expect("the pinned artifact opens")
 }
 
-/// The frozen published ABI, rendered from the TYPES alone.
+/// The frozen published ABI, rendered from the types alone.
 fn schema() -> String {
     let mut out = String::from(
         "# The published ABI of `signet-signer-interface`, derived from the\n\
@@ -60,16 +62,10 @@ fn schema() -> String {
          # Regenerate: cargo test -p signet-signer-interface -- --ignored\n\n",
     );
     out.push_str(&circuit_schema::<SignBidirectional, ()>(SignetSigner::SIGN_BIDIRECTIONAL));
-    out.push('\n');
-    out.push_str(&circuit_schema::<Respond, ()>(SignetSigner::RESPOND));
-    out.push('\n');
-    out.push_str(&circuit_schema::<RespondBidirectional, ()>(
-        SignetSigner::RESPOND_BIDIRECTIONAL,
-    ));
     out
 }
 
-/// The committed pin is the DISTILLATION of the source artifact, not a
+/// The committed pin is the distillation of the source artifact, not a
 /// hand-maintained file: re-pinning is `--ignored` plus a diff.
 #[test]
 fn the_committed_pin_is_the_artifacts_distillation() {
@@ -101,9 +97,6 @@ fn the_pinned_digests_match_the_bytes() {
 fn every_declared_circuit_matches_the_artifact() {
     let artifact = artifact();
     artifact.assert_interface_matches::<SignBidirectional, ()>(SignetSigner::SIGN_BIDIRECTIONAL);
-    artifact.assert_interface_matches::<Respond, ()>(SignetSigner::RESPOND);
-    artifact
-        .assert_interface_matches::<RespondBidirectional, ()>(SignetSigner::RESPOND_BIDIRECTIONAL);
 }
 
 /// The published ABI, frozen. Its diff is the semver decision.
@@ -129,9 +122,9 @@ fn regenerate_pin_and_schema() {
         .expect("interface-schema.txt writes");
 }
 
-/// THE CHECKER HAS TO BITE, or the four tests above are decoration.
+/// The checker has to bite, or the four tests above are decoration.
 ///
-/// Each case takes the real artifact, breaks ONE thing, and asserts the
+/// Each case takes the real artifact, breaks one thing, and asserts the
 /// check fails with a message naming it. The last two are the interesting
 /// ones: they forge `pin.json` to agree with the damage, and the compiled
 /// `.zkir` catches them anyway — which is why check 6 reads the instruction
@@ -185,7 +178,7 @@ mod mutation {
         expect_failure(&rebuilt(info, pin, zkir), "proof: false");
     }
 
-    /// The callee REORDERED its arguments. Same slots, same widths, a
+    /// The callee reordered its arguments. Same slots, same widths, a
     /// different commitment — the change the semver rule calls major.
     #[test]
     fn a_reordered_argument_list_is_caught() {
@@ -229,16 +222,18 @@ mod mutation {
         expect_failure(&rebuilt(info, pin, zkir), "constraint");
     }
 
-    /// THE `.zkir` IS AN INDEPENDENT ORACLE, case 1: `contract-info.json`
-    /// and `pin.json` are left CORRECT, so checks 1-5 all pass; only the
-    /// compiled circuit is swapped for another of the same contract's. A
+    /// The `.zkir` is an independent oracle, case 1: `contract-info.json`
+    /// and `pin.json` are left correct, so checks 1-5 all pass; only the
+    /// compiled circuit is swapped for another of the same deployment's
+    /// (the responder's `respond`, since the signer has one circuit). A
     /// deployment that shipped the wrong circuit under this name is
     /// exactly the drift nothing else here can see.
     #[test]
     fn the_zkir_catches_a_swapped_circuit() {
         let (info, pin, zkir) = parts();
-        let real = zkir.expect("the .zkir tree should be reachable in-workspace");
-        let dir = forged_zkir_dir("swapped", &std::fs::read_to_string(real.join("respond.zkir")).unwrap());
+        assert!(zkir.is_some(), "the .zkir tree should be reachable in-workspace");
+        let other = std::fs::read_to_string(workspace_root().join(RESPONDER_RESPOND_ZKIR)).unwrap();
+        let dir = forged_zkir_dir("swapped", &other);
         expect_failure(&rebuilt(info, pin, Some(dir)), ".zkir declares 9 inputs");
     }
 

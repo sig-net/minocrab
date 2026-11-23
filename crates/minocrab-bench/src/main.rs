@@ -1,5 +1,5 @@
-//! M6 baseline benchmark harness: the erc20-vault contract (twenty-nine
-//! circuits since M44) and its signet signer dependency, proved under
+//! Baseline benchmark harness: the erc20-vault contract (twenty-nine
+//! circuits) and its signet signer dependency, proved under
 //! each toolchain at the same pinned versions.
 //!
 //! A run is a matrix of circuits ([`Target`]) × [`Side`]s, and sides are
@@ -8,13 +8,11 @@
 //! - `minocrab` — the direct ports, built in-process from `minocrab-contracts`;
 //! - `compactc` — the corpus `.zkir` goldens.
 //!
-//! `minocrab` and `compactc` prove the SAME preimage per circuit: the
+//! `minocrab` and `compactc` prove the same preimage per circuit: the
 //! differential tests establish PI-equality on these preimages and (with
 //! `MINOCRAB_DUMP_PREIMAGES`) dump them for this harness, so those numbers
-//! price the identical statement. (The M10/M11 `opt` and `borsh` sides,
-//! which proved their own preimages, were retired with their forks in M28 —
-//! notes/vault-refresh.org §0; `Preimages::PerSide` is kept for the next
-//! side that cannot share a statement.)
+//! price the identical statement. (`Preimages::PerSide` is for a side that
+//! cannot share a statement.)
 //!
 //! Run via `./bench.sh` (dumps preimages, then runs this binary in release
 //! mode). Modes:
@@ -37,7 +35,7 @@ use anyhow::{bail, Context, Result};
 use midnight_base_crypto::data_provider::{FetchMode, MidnightDataProvider, OutputMode};
 use midnight_transient_crypto::proofs::{ParamsProverProvider, ProofPreimage, Zkir};
 use minocrab_contracts::{erc20_vault, signet_contract};
-use minocrab_zkir::v3::IrSource;
+use minocrab_zkir::IrSource;
 use serde::{Deserialize, Serialize};
 
 struct Target {
@@ -46,7 +44,7 @@ struct Target {
     /// Corpus artifact path relative to the repo root.
     corpus: &'static str,
     /// The MinoCrab direct port.
-    ours: fn() -> minocrab::v3::Compiled3,
+    ours: fn() -> minocrab::Compiled,
 }
 
 /// Where a side's circuits come from.
@@ -67,9 +65,8 @@ enum Preimages {
     Shared,
     /// A per-side subdirectory, for a side that cannot share the port's
     /// preimage because it proves its *own* statement for the same logical
-    /// operation (the retired `opt` side was one; the methodology caveat is
-    /// notes/vault-optimization.org §Sequencing). No declared side uses it
-    /// today.
+    /// operation (the methodology caveat is
+    /// notes/vault-optimization.org §Sequencing). No declared side uses it.
     #[allow(dead_code)]
     PerSide(&'static str),
 }
@@ -122,7 +119,7 @@ impl Side {
             Artifacts::Corpus => {
                 let path = repo_root().join(target.corpus);
                 Some(
-                    minocrab_zkir::v3::read_zkir(path.to_str().unwrap())
+                    minocrab_zkir::read_zkir(path.to_str().unwrap())
                         .with_context(|| format!("corpus artifact {}", target.corpus)),
                 )
             }
@@ -131,7 +128,7 @@ impl Side {
 
     /// Profiles are MinoCrab-side only: they need the eDSL's region
     /// annotations, which a parsed `.zkir` does not carry.
-    fn profiled(&self, target: &Target) -> Option<minocrab::v3::Compiled3> {
+    fn profiled(&self, target: &Target) -> Option<minocrab::Compiled> {
         match self.artifacts {
             Artifacts::Port => Some((target.ours)()),
             Artifacts::Corpus => None,
@@ -147,9 +144,13 @@ impl Side {
 }
 
 const VAULT: &str =
-    "corpus/zkir/signet-midnight-examples/examples/erc20-vault/contract/src/erc20-vault/zkir";
-const SIGNET: &str =
-    "corpus/zkir/signet-midnight-integration-v0250/packages/signet-contract/src/signet-contract/zkir";
+    "corpus/zkir/signet-midnight-examples-v070/examples/erc20-vault/contract/src/erc20-vault/zkir";
+/// The signet signer's and the signet responder's artifacts (midnight-integration
+/// v0.26.0-rc.15: two contracts, the three v0.25.0 circuits unchanged).
+const SIGNER: &str =
+    "corpus/zkir/signet-midnight-integration-v026/packages/signet-signer/src/signet-signer/zkir";
+const RESPONDER: &str =
+    "corpus/zkir/signet-midnight-integration-v026/packages/signet-responder/src/signet-responder/zkir";
 
 fn targets() -> Vec<Target> {
     macro_rules! t {
@@ -168,10 +169,10 @@ fn targets() -> Vec<Target> {
         t!(VAULT, "initialise", || erc20_vault::Vault::initialise()),
         t!(VAULT, "setGasParams", || erc20_vault::Vault::set_gas_params()),
         t!(VAULT, "addAllowedToken", || erc20_vault::Vault::add_allowed_token()),
+        t!(VAULT, "setTokenFees", || erc20_vault::Vault::set_token_fees()),
+        t!(VAULT, "setFeeRecipient", || erc20_vault::Vault::set_fee_recipient()),
         t!(VAULT, "flushQueue", || erc20_vault::Vault::flush_queue()),
-        t!(VAULT, "queueAttestation0", || erc20_vault::Vault::queue_attestation0()),
-        t!(VAULT, "queueAttestation1", || erc20_vault::Vault::queue_attestation1()),
-        t!(VAULT, "queueAttestation32", || erc20_vault::Vault::queue_attestation32()),
+        t!(VAULT, "queueAttestation", || erc20_vault::Vault::queue_attestation()),
         t!(VAULT, "startReplaceNonce", || erc20_vault::Vault::start_replace_nonce()),
         t!(VAULT, "sendReplaceNonce", || erc20_vault::Vault::send_replace_nonce()),
         t!(VAULT, "completeReplaceNonce", || erc20_vault::Vault::complete_replace_nonce()),
@@ -194,9 +195,9 @@ fn targets() -> Vec<Target> {
         t!(VAULT, "startRedeem", || erc20_vault::Vault::start_redeem()),
         t!(VAULT, "sendRedeem", || erc20_vault::Vault::send_redeem()),
         t!(VAULT, "completeRedeem", || erc20_vault::Vault::complete_redeem()),
-        t!(SIGNET, "signBidirectional", || signet_contract::SignetContract::sign_bidirectional()),
-        t!(SIGNET, "respond", || signet_contract::SignetContract::respond()),
-        t!(SIGNET, "respondBidirectional", || signet_contract::SignetContract::respond_bidirectional()),
+        t!(SIGNER, "signBidirectional", || signet_contract::Signer::sign_bidirectional()),
+        t!(RESPONDER, "respond", || signet_contract::Responder::respond()),
+        t!(RESPONDER, "respondBidirectional", || signet_contract::Responder::respond_bidirectional()),
     ]
 }
 
@@ -458,7 +459,7 @@ fn cells() -> Vec<(Target, Side)> {
     out
 }
 
-/// Per-region cost profiles (the M7 target-picker, now attributed by
+/// Per-region cost profiles (the target-picker, attributed by
 /// estimated rows as well as instruction count). Built in-process from the
 /// eDSL circuits — no proving, so `--profiles` can refresh them alone after
 /// a region-annotation change. compactc's parsed `.zkir` carries no regions,
@@ -475,7 +476,7 @@ fn write_profiles(out_dir: &std::path::Path) -> Result<()> {
             Artifacts::Port => target.name.to_string(),
             _ => format!("{}.{}", target.name, side.name),
         };
-        let profile = minocrab_sim::v3::profile(&compiled);
+        let profile = minocrab_sim::profile(&compiled);
         std::fs::write(profile_dir.join(format!("{stem}.txt")), format!("{profile}"))?;
         serde_json::to_writer_pretty(
             std::fs::File::create(profile_dir.join(format!("{stem}.json")))?,

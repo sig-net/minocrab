@@ -1,4 +1,4 @@
-//! The MPC's Midnight publisher, pure core (M30).
+//! The MPC's Midnight publisher, pure core.
 //!
 //! `sig-net/mpc` publishes an MPC signature to Midnight by building a
 //! `respond` call, proving it, paying its DUST fee and submitting it. mpc's
@@ -7,12 +7,12 @@
 //! and executor were JavaScript:
 //!
 //! ```text
-//!  (request id, signature)                        M30 A — call.rs
+//!  (request id, signature)                                call.rs
 //!            │                       arguments as an AlignedValue,
 //!            ▼                       the Impact program, the key location
 //!      SignerCall  ──prototype(state, parameters, rand)──▶ ContractCallPrototype
 //!            │
-//!            ▼                                            M30 B — intent.rs
+//!            ▼                                                    intent.rs
 //!      build ─▶ Intent (with TTL) ─▶ Transaction           prove.rs, keys.rs
 //!            │                                             publish.rs
 //!            ├─ prove   in process: no proof server, no child process, and

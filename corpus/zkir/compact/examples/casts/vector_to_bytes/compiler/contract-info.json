@@ -1,6 +1,6 @@
 {
-  "compiler-version": "0.36.0",
-  "compiler-commit": "b5d9e4dfc532fe47011c4f6296e254f4853eb469",
+  "compiler-version": "0.36.1",
+  "compiler-commit": "7fa3a117c5e7efe9d2c51da04263e5f0b3509144",
   "language-version": "0.28.0",
   "runtime-version": "0.21.0",
   "circuits": [
@@ -18,76 +18,6 @@
     },
     {
       "name": "test1",
-      "pure": true,
-      "proof": false,
-      "arguments": [
-        {
-          "name": "param1",
-          "type": {
-            "type-name": "Bytes",
-            "length": 1024
-          }
-        }
-      ],
-      "result-type": {
-        "type-name": "Vector",
-        "length": 1024,
-        "type": {
-          "type-name": "Uint",
-          "maxval": 255
-        }
-      }
-    },
-    {
-      "name": "test2",
-      "pure": true,
-      "proof": false,
-      "arguments": [
-        {
-          "name": "param1",
-          "type": {
-            "type-name": "Vector",
-            "length": 1024,
-            "type": {
-              "type-name": "Uint",
-              "maxval": 255
-            }
-          }
-        }
-      ],
-      "result-type": {
-        "type-name": "Bytes",
-        "length": 1024
-      }
-    },
-    {
-      "name": "test3",
-      "pure": true,
-      "proof": false,
-      "arguments": [
-        {
-          "name": "param1",
-          "type": {
-            "type-name": "Vector",
-            "length": 1,
-            "type": {
-              "type-name": "Vector",
-              "length": 1024,
-              "type": {
-                "type-name": "Uint",
-                "maxval": 255
-              }
-            }
-          }
-        }
-      ],
-      "result-type": {
-        "type-name": "Bytes",
-        "length": 1024
-      }
-    },
-    {
-      "name": "test4",
       "pure": false,
       "proof": true,
       "arguments": [
@@ -109,53 +39,7 @@
       }
     },
     {
-      "name": "test5",
-      "pure": true,
-      "proof": false,
-      "arguments": [
-        {
-          "name": "param1",
-          "type": {
-            "type-name": "Vector",
-            "length": 1024,
-            "type": {
-              "type-name": "Uint",
-              "maxval": 127
-            }
-          }
-        }
-      ],
-      "result-type": {
-        "type-name": "Bytes",
-        "length": 1024
-      }
-    },
-    {
-      "name": "test6",
-      "pure": true,
-      "proof": false,
-      "arguments": [
-      ],
-      "result-type": {
-        "type-name": "Tuple",
-        "types": [
-        ]
-      }
-    },
-    {
-      "name": "test7",
-      "pure": true,
-      "proof": false,
-      "arguments": [
-      ],
-      "result-type": {
-        "type-name": "Tuple",
-        "types": [
-        ]
-      }
-    },
-    {
-      "name": "test8",
+      "name": "test2",
       "pure": true,
       "proof": false,
       "arguments": [
@@ -174,86 +58,7 @@
       }
     },
     {
-      "name": "test9",
-      "pure": true,
-      "proof": false,
-      "arguments": [
-        {
-          "name": "param1",
-          "type": {
-            "type-name": "Vector",
-            "length": 1,
-            "type": {
-              "type-name": "Uint",
-              "maxval": 255
-            }
-          }
-        }
-      ],
-      "result-type": {
-        "type-name": "Tuple",
-        "types": [
-        ]
-      }
-    },
-    {
-      "name": "test10",
-      "pure": true,
-      "proof": false,
-      "arguments": [
-      ],
-      "result-type": {
-        "type-name": "Tuple",
-        "types": [
-        ]
-      }
-    },
-    {
-      "name": "test11",
-      "pure": true,
-      "proof": false,
-      "arguments": [
-        {
-          "name": "param1",
-          "type": {
-            "type-name": "Bytes",
-            "length": 1024
-          }
-        }
-      ],
-      "result-type": {
-        "type-name": "Vector",
-        "length": 1024,
-        "type": {
-          "type-name": "Uint",
-          "maxval": 18446744073709551615
-        }
-      }
-    },
-    {
-      "name": "test12",
-      "pure": true,
-      "proof": false,
-      "arguments": [
-        {
-          "name": "param1",
-          "type": {
-            "type-name": "Bytes",
-            "length": 1024
-          }
-        }
-      ],
-      "result-type": {
-        "type-name": "Vector",
-        "length": 1024,
-        "type": {
-          "type-name": "Uint",
-          "maxval": 18446744073709551615
-        }
-      }
-    },
-    {
-      "name": "test13",
+      "name": "test3",
       "pure": false,
       "proof": false,
       "arguments": [
@@ -275,7 +80,7 @@
       }
     },
     {
-      "name": "test14",
+      "name": "test4",
       "pure": false,
       "proof": false,
       "arguments": [
@@ -297,7 +102,7 @@
       }
     },
     {
-      "name": "test15",
+      "name": "test5",
       "pure": false,
       "proof": true,
       "arguments": [
@@ -320,37 +125,7 @@
       }
     },
     {
-      "name": "test16",
-      "pure": true,
-      "proof": false,
-      "arguments": [
-        {
-          "name": "param1",
-          "type": {
-            "type-name": "Bytes",
-            "length": 1024
-          }
-        },
-        {
-          "name": "param2",
-          "type": {
-            "type-name": "Vector",
-            "length": 1024,
-            "type": {
-              "type-name": "Uint",
-              "maxval": 255
-            }
-          }
-        }
-      ],
-      "result-type": {
-        "type-name": "Tuple",
-        "types": [
-        ]
-      }
-    },
-    {
-      "name": "test17",
+      "name": "test6",
       "pure": true,
       "proof": false,
       "arguments": [
@@ -372,7 +147,7 @@
       }
     },
     {
-      "name": "test18",
+      "name": "test7",
       "pure": true,
       "proof": false,
       "arguments": [
@@ -394,7 +169,7 @@
       }
     },
     {
-      "name": "test19",
+      "name": "test8",
       "pure": true,
       "proof": false,
       "arguments": [
@@ -412,7 +187,7 @@
       }
     },
     {
-      "name": "test20",
+      "name": "test9",
       "pure": true,
       "proof": false,
       "arguments": [
@@ -423,7 +198,7 @@
       }
     },
     {
-      "name": "test21",
+      "name": "test10",
       "pure": true,
       "proof": false,
       "arguments": [
@@ -445,7 +220,7 @@
       }
     },
     {
-      "name": "test22",
+      "name": "test11",
       "pure": true,
       "proof": false,
       "arguments": [
@@ -456,7 +231,7 @@
       }
     },
     {
-      "name": "test23a",
+      "name": "test12a",
       "pure": true,
       "proof": false,
       "arguments": [
@@ -478,7 +253,7 @@
       }
     },
     {
-      "name": "test23b",
+      "name": "test12b",
       "pure": true,
       "proof": false,
       "arguments": [
@@ -500,7 +275,7 @@
       }
     },
     {
-      "name": "test23c",
+      "name": "test12c",
       "pure": true,
       "proof": false,
       "arguments": [
@@ -519,7 +294,7 @@
       }
     },
     {
-      "name": "test24",
+      "name": "test13",
       "pure": true,
       "proof": false,
       "arguments": [
@@ -530,7 +305,7 @@
       }
     },
     {
-      "name": "test25",
+      "name": "test14",
       "pure": true,
       "proof": false,
       "arguments": [
@@ -563,7 +338,7 @@
       }
     },
     {
-      "name": "test26",
+      "name": "test15",
       "pure": true,
       "proof": false,
       "arguments": [
@@ -571,7 +346,7 @@
           "name": "param1",
           "type": {
             "type-name": "Struct",
-            "name": "var26",
+            "name": "var15",
             "elements": [
               {
                 "name": "param1",
@@ -605,7 +380,7 @@
       }
     },
     {
-      "name": "test27a",
+      "name": "test16a",
       "pure": true,
       "proof": false,
       "arguments": [
@@ -617,7 +392,7 @@
       }
     },
     {
-      "name": "test28a",
+      "name": "test17a",
       "pure": true,
       "proof": false,
       "arguments": [
@@ -629,34 +404,7 @@
       }
     },
     {
-      "name": "test29",
-      "pure": true,
-      "proof": false,
-      "arguments": [
-        {
-          "name": "param1",
-          "type": {
-            "type-name": "Bytes",
-            "length": 2
-          }
-        }
-      ],
-      "result-type": {
-        "type-name": "Tuple",
-        "types": [
-          {
-            "type-name": "Uint",
-            "maxval": 255
-          },
-          {
-            "type-name": "Uint",
-            "maxval": 255
-          }
-        ]
-      }
-    },
-    {
-      "name": "test30",
+      "name": "test18",
       "pure": true,
       "proof": false,
       "arguments": [
@@ -678,22 +426,7 @@
       }
     },
     {
-      "name": "test31",
-      "pure": true,
-      "proof": false,
-      "arguments": [
-      ],
-      "result-type": {
-        "type-name": "Vector",
-        "length": 1,
-        "type": {
-          "type-name": "Uint",
-          "maxval": 255
-        }
-      }
-    },
-    {
-      "name": "test32",
+      "name": "test19",
       "pure": false,
       "proof": true,
       "arguments": [
@@ -704,7 +437,7 @@
       }
     },
     {
-      "name": "test33",
+      "name": "test20",
       "pure": true,
       "proof": false,
       "arguments": [
@@ -713,33 +446,11 @@
         "type-name": "Bytes",
         "length": 2
       }
-    },
-    {
-      "name": "test34",
-      "pure": true,
-      "proof": false,
-      "arguments": [
-        {
-          "name": "param1",
-          "type": {
-            "type-name": "Bytes",
-            "length": 1024
-          }
-        }
-      ],
-      "result-type": {
-        "type-name": "Vector",
-        "length": 1024,
-        "type": {
-          "type-name": "Uint",
-          "maxval": 65535
-        }
-      }
     }
   ],
   "witnesses": [
     {
-      "name": "w13",
+      "name": "w3",
       "arguments": [
         {
           "name": "param1",
@@ -759,7 +470,7 @@
       }
     },
     {
-      "name": "w14",
+      "name": "w4",
       "arguments": [
         {
           "name": "param1",
@@ -789,7 +500,7 @@
       "storage": "Counter"
     },
     {
-      "name": "val4",
+      "name": "val1",
       "index": 1,
       "exported": false,
       "storage": "Cell",
@@ -803,7 +514,7 @@
       }
     },
     {
-      "name": "map15",
+      "name": "map5",
       "index": 2,
       "exported": true,
       "storage": "Map",
@@ -821,7 +532,7 @@
       }
     },
     {
-      "name": "var32",
+      "name": "var19",
       "index": 3,
       "exported": true,
       "storage": "Map",

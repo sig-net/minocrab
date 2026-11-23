@@ -1,11 +1,11 @@
-//! M29 rung C — THE CONSTRUCTION GATE.
+//! The construction gate.
 //!
 //! `tests/signet_contract_differential.rs` already asks "does compactc's
 //! artifact accept the same preimage ours does?". Until this rung, the
 //! preimage it asked about was assembled by hand: a `ProofPreimage` literal
 //! whose `inputs` were a `Vec<Fr>` the test wrote out and whose
 //! `public_transcript_inputs` were `op.field_repr` over ops the test wrote
-//! out. That is a SECOND reading of the ledger's rule, and a differential
+//! out. That is a second reading of the ledger's rule, and a differential
 //! against a second reading proves nothing about the first.
 //!
 //! Here the preimage comes from the ledger: `ContractCallPrototype` +
@@ -14,23 +14,24 @@
 //! (`ledger/src/construct.rs:515-573`) — the same three calls
 //! `sig-net/mpc`'s sidecar makes through the ledger-v9 WASM bindings
 //! (`midnight-publisher-ts/src/intent.ts`) and the same ones a Rust
-//! publisher will make (M30 B). See `support/signet_call.rs`.
+//! publisher will make. See `support/signet_call.rs`.
 //!
-//! What this gate proves: on the preimage PRODUCTION BUILDS, our artifact
+//! What this gate proves: on the preimage production builds, our artifact
 //! and compactc's have the same input schema and the same output schema,
 //! accept it, and produce identical public-input vectors and pi-skip
-//! sequences — under our own simulator AND under the upstream
-//! `IrSource::check`. What it does NOT prove: that a proof made from that
-//! preimage verifies (rung E), that the Impact program in it is the one
-//! compactc's executor emits on chain (rung D), or anything about the
+//! sequences — under our own simulator and under the upstream
+//! `IrSource::check`. What it does not prove: that a proof made from that
+//! preimage verifies (`signet_real_proof.rs`), that the Impact program in it is the one
+//! compactc's executor emits on chain (`signet_ledger_apply.rs`), or anything about the
 //! contract's state, since these three circuits have none.
+
 
 use midnight_base_crypto::fab::AlignedValue;
 use midnight_transient_crypto::proofs::ProofPreimage;
 use minocrab::Fr;
 use minocrab_contracts::signet_contract;
-use minocrab_sim::v3::{assert_call_compatible, simulate};
-use minocrab_zkir::v3::IrSource;
+use minocrab_sim::{assert_call_compatible, simulate};
+use minocrab_zkir::IrSource;
 
 mod support;
 
@@ -39,12 +40,16 @@ use support::signet_call::{
     respond_bidirectional_misc, sample_attestation, scalar_input, RespondAttestation,
 };
 
+/// compactc's artifact of one of the three circuits: `signBidirectional` is
+/// the signet signer's, the respond pair the signet responder's
+/// (midnight-integration v0.26.0-rc.15).
 fn corpus_zkir(name: &str) -> IrSource {
-    let path = format!(
-        "{}/../../corpus/zkir/signet-midnight-integration-v0250/packages/signet-contract/src/signet-contract/zkir/{name}.zkir",
-        env!("CARGO_MANIFEST_DIR")
-    );
-    minocrab_zkir::v3::read_zkir(&path).expect("corpus golden parses")
+    let dir = if name == "signBidirectional" {
+        "signet-midnight-integration-v026/packages/signet-signer/src/signet-signer/zkir"
+    } else {
+        "signet-midnight-integration-v026/packages/signet-responder/src/signet-responder/zkir"
+    };
+    support::common::corpus_zkir(dir, name)
 }
 
 /// `pad(32, name)` into the first 32 misc bytes.
@@ -91,7 +96,7 @@ impl SignCall {
         bytes
     }
 
-    /// The arguments with their COMPACT alignment: `Bytes<32>`, `Uint<8>`
+    /// The arguments with their Compact alignment: `Bytes<32>`, `Uint<8>`
     /// (one byte), `Bytes<128>`.
     fn typed_input(&self) -> AlignedValue {
         AlignedValue::concat([
@@ -235,7 +240,7 @@ fn sign_bidirectional_call_is_compatible_with_the_corpus_artifact() {
     let call = SignCall::new();
     let pi = call.preimage();
     support::dump_preimage("signBidirectional", &pi);
-    assert_call_compatible(&signet_contract::SignetContract::sign_bidirectional().ir, &corpus_zkir("signBidirectional"), &pi);
+    assert_call_compatible(&signet_contract::Signer::sign_bidirectional().ir, &corpus_zkir("signBidirectional"), &pi);
 }
 
 #[test]
@@ -243,7 +248,7 @@ fn respond_call_is_compatible_with_the_corpus_artifact() {
     let call = RespondCall::new();
     let pi = call.preimage("respond", signet_contract::SIGNATURE_RESPONDED_EVENT);
     support::dump_preimage("respond", &pi);
-    assert_call_compatible(&signet_contract::SignetContract::respond().ir, &corpus_zkir("respond"), &pi);
+    assert_call_compatible(&signet_contract::Responder::respond().ir, &corpus_zkir("respond"), &pi);
 }
 
 #[test]
@@ -252,15 +257,15 @@ fn respond_bidirectional_call_is_compatible_with_the_corpus_artifact() {
     let pi = call.preimage();
     support::dump_preimage("respondBidirectional", &pi);
     assert_call_compatible(
-        &signet_contract::SignetContract::respond_bidirectional().ir,
+        &signet_contract::Responder::respond_bidirectional().ir,
         &corpus_zkir("respondBidirectional"),
         &pi,
     );
 }
 
-/// The preimage the LEDGER builds is the preimage the differential's
+/// The preimage the ledger builds is the preimage the differential's
 /// `inputs`/`public_transcript_inputs` describe — stated as an assertion
-/// rather than as a comment, and stated on the FIELD VECTOR the circuit
+/// rather than as a comment, and stated on the field vector the circuit
 /// actually reads.
 ///
 /// `ContractCallExt::construct_proof` fills `inputs` from
@@ -288,7 +293,7 @@ fn the_ledgers_inputs_are_the_arguments_field_repr() {
 }
 
 /// The typed alignment and a flat `[Field; n]` alignment over the same limbs
-/// give the SAME preimage, byte for byte.
+/// give the same preimage, byte for byte.
 ///
 /// This is what licenses `serialization/deployed.rs`'s `misc_preimage`,
 /// which takes raw limbs (its proptest generates thousands of payloads and
@@ -345,8 +350,8 @@ fn input_schema_matches_the_corpus_artifact() {
     assert_eq!(RespondBidirectionalCall::new().preimage().inputs.len(), 16);
 }
 
-/// The tamper twins, on the LEDGER-BUILT preimage: a transcript whose logged
-/// bytes disagree with the arguments must be rejected by BOTH artifacts.
+/// The tamper twins, on the ledger-built preimage: a transcript whose logged
+/// bytes disagree with the arguments must be rejected by both artifacts.
 /// `partition_transcripts` is content-blind — it runs whatever program it is
 /// given — so the tamper survives the move onto the production path.
 #[test]
@@ -355,14 +360,14 @@ fn a_tampered_event_is_rejected_by_both_artifacts() {
     let mut misc = sign.misc_bytes();
     misc[40] ^= 0x01; // a requestId byte inside the logged bytes only
     let pi = call_preimage("signBidirectional", sign.typed_input(), &misc);
-    assert!(simulate(&signet_contract::SignetContract::sign_bidirectional().ir, &pi).is_err(), "ours must reject");
+    assert!(simulate(&signet_contract::Signer::sign_bidirectional().ir, &pi).is_err(), "ours must reject");
     assert!(simulate(&corpus_zkir("signBidirectional"), &pi).is_err(), "corpus must reject");
 
     let respond = RespondCall::new();
     let mut misc = respond.misc_bytes(signet_contract::SIGNATURE_RESPONDED_EVENT);
     misc[130] ^= 0x01; // an s byte inside the logged bytes only
     let pi = call_preimage("respond", respond.typed_input(), &misc);
-    assert!(simulate(&signet_contract::SignetContract::respond().ir, &pi).is_err(), "ours must reject");
+    assert!(simulate(&signet_contract::Responder::respond().ir, &pi).is_err(), "ours must reject");
     assert!(simulate(&corpus_zkir("respond"), &pi).is_err(), "corpus must reject");
 
     // The five attestation fields, one tamper each, at the offsets the
@@ -373,7 +378,7 @@ fn a_tampered_event_is_rejected_by_both_artifacts() {
         let mut misc = bidirectional.misc_bytes();
         misc[offset] ^= 0x01;
         let pi = call_preimage("respondBidirectional", bidirectional.typed_input(), &misc);
-        assert!(simulate(&signet_contract::SignetContract::respond_bidirectional().ir, &pi).is_err(), "ours must reject a tampered {what}");
+        assert!(simulate(&signet_contract::Responder::respond_bidirectional().ir, &pi).is_err(), "ours must reject a tampered {what}");
         assert!(simulate(&corpus_zkir("respondBidirectional"), &pi).is_err(), "corpus must reject a tampered {what}");
     }
 }
@@ -385,11 +390,11 @@ fn an_out_of_range_output_kind_is_rejected_by_both_artifacts() {
     let mut call = RespondBidirectionalCall::new();
     call.attestation.output_kind = 3;
     let pi = call.preimage();
-    assert!(simulate(&signet_contract::SignetContract::respond_bidirectional().ir, &pi).is_err(), "ours must reject");
+    assert!(simulate(&signet_contract::Responder::respond_bidirectional().ir, &pi).is_err(), "ours must reject");
     assert!(simulate(&corpus_zkir("respondBidirectional"), &pi).is_err(), "corpus must reject");
     call.attestation.output_kind = 2;
     let pi = call.preimage();
-    assert!(simulate(&signet_contract::SignetContract::respond_bidirectional().ir, &pi).is_ok(), "ours accepts `unviable`");
+    assert!(simulate(&signet_contract::Responder::respond_bidirectional().ir, &pi).is_ok(), "ours accepts `unviable`");
     assert!(simulate(&corpus_zkir("respondBidirectional"), &pi).is_ok(), "corpus accepts `unviable`");
 }
 
@@ -399,6 +404,6 @@ fn an_out_of_range_output_kind_is_rejected_by_both_artifacts() {
 fn a_swapped_event_name_is_rejected_by_both_artifacts() {
     let respond = RespondCall::new();
     let pi = respond.preimage("respond", signet_contract::RESPOND_BIDIRECTIONAL_EVENT);
-    assert!(simulate(&signet_contract::SignetContract::respond().ir, &pi).is_err(), "ours must reject");
+    assert!(simulate(&signet_contract::Responder::respond().ir, &pi).is_err(), "ours must reject");
     assert!(simulate(&corpus_zkir("respond"), &pi).is_err(), "corpus must reject");
 }

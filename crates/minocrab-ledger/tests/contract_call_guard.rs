@@ -1,19 +1,19 @@
-//! `contract_call` under a guard (external review §4.3): its witnesses —
+//! `contract_call` under a guard: its witnesses —
 //! the callee's results and cc-rand — are read under
 //! the same guard the claim op is emitted under, so a call inside a branch
 //! consumes the private transcript only where the branch runs.
 //!
-//! `contract_call` no longer takes a guard parameter at all
+//! `contract_call` takes no guard parameter at all
 //! (notes/edsl-trim.org §B): its witness reads are `c.witness()`, which
-//! resolves the AMBIENT scope, so the one way to guard a call is
+//! resolves the ambient scope, so the one way to guard a call is
 //! `c.when(g, |c| contract_call(c, ..))`.
 
-use minocrab::v3::{Circuit3, FieldT, LimbConstraint};
+use minocrab::{Circuit, FieldT, LimbConstraint};
 use minocrab_ledger::{contract_call, EntryPoint};
-use minocrab_zkir::v3::to_zkir_string;
+use minocrab_zkir::to_zkir_string;
 
-fn zkir(build: impl FnOnce(&mut Circuit3)) -> String {
-    let mut c = Circuit3::new();
+fn zkir(build: impl FnOnce(&mut Circuit)) -> String {
+    let mut c = Circuit::new();
     build(&mut c);
     to_zkir_string(&c.finish(true).ir).expect("serializes")
 }

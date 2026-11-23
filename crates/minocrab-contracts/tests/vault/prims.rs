@@ -2,7 +2,7 @@
 //! encodings, hash constructions and signature helpers that reproduce, in
 //! ordinary Rust, exactly what the circuits compute in-circuit.
 //!
-//! ONE concretization (M44): every vault commitment is Poseidon —
+//! One concretization: every vault commitment is Poseidon —
 //! `upgradeFromTransient(transientHash(…))` — as the flush-pattern source has
 //! it (`userCommitment`, `ownershipCommitment`, `requestIndex`, the per-action
 //! args hashes, `vaultTokenDomainSeparator`), and so is the V1 protocol's
@@ -10,7 +10,7 @@
 //! `HashDomain` tag. What stays protocol-pinned and SHA-256 is the ledger's
 //! own: `tokenType`, the coin commitment and nullifier.
 
-use midnight_base_crypto::fab::{Alignment, AlignmentAtom, AlignmentSegment, AlignedValue, Value, ValueAtom};
+use midnight_base_crypto::fab::{Alignment, AlignmentSegment, AlignedValue};
 use midnight_base_crypto::repr::BinaryHashRepr;
 use midnight_curves::k256;
 use midnight_onchain_state::state::StateValue;
@@ -31,29 +31,27 @@ use midnight_zkir_v3::ir_instructions::mul::mul_offcircuit;
 use minocrab::Fr;
 use minocrab_contracts::erc20_vault as v;
 use minocrab_contracts::signet_v1::{hash_domain, ETHEREUM_CAIP2_ID};
-use minocrab_zkir::v3::{IrSource, IrType, IrValue};
+use minocrab_zkir::{IrSource, IrType, IrValue};
 use sha2::{Digest, Sha256};
+
+// The FAB encodings every suite shares (`atom`, `bytesn_value`,
+// `b32_slots`), declared by path so the binaries that include this file
+// need not declare `support`.
+// A binary that also declares `support` loads the file twice, as two
+// distinct modules of plain functions; that is harmless.
+#[path = "../support/common.rs"]
+#[allow(clippy::duplicate_mod)]
+mod common;
+pub use common::{atom, b32_slots, bytesn_value};
 
 pub type VmOp = Op<ResultModeVerify, InMemoryDB>;
 
 pub fn corpus_zkir_named(name: &str) -> IrSource {
-    let path = format!(
-        "{}/../../corpus/zkir/signet-midnight-examples/examples/erc20-vault/contract/src/erc20-vault/zkir/{name}.zkir",
-        env!("CARGO_MANIFEST_DIR")
-    );
-    minocrab_zkir::v3::read_zkir(&path).expect("corpus golden parses")
-}
-
-pub fn atom(n: u32) -> AlignmentSegment {
-    AlignmentSegment::Atom(AlignmentAtom::Bytes { length: n })
-}
-
-pub fn bytesn_value(n: u32, bytes: &[u8]) -> AlignedValue {
-    AlignedValue::new(Value(vec![ValueAtom(bytes.to_vec()).normalize()]), Alignment(vec![atom(n)])).unwrap()
+    common::corpus_zkir("signet-midnight-examples-v070/examples/erc20-vault/contract/src/erc20-vault/zkir", name)
 }
 
 /// A multi-atom value from its limbs and atom widths.
-/// NORMAL FORM: atoms come back with trailing zero bytes stripped
+/// Normal form: atoms come back with trailing zero bytes stripped
 /// (`ValueAtom::normalize`), the ledger's canonical spelling and the one
 /// the executor decodes a program's values into since the FAB-atom fix of
 /// 2026-10 — `bytes<8>` of 123456 is `[40e201]`, not `[40e2010000000000]`.
@@ -71,11 +69,6 @@ fn aligned_padded(widths: &[u32], limbs: &[Fr]) -> AlignedValue {
 
 pub fn cell(av: AlignedValue) -> StateValue {
     StateValue::Cell(Sp::new(av))
-}
-
-/// [hi, lo] Fr slot pair of a Bytes<32>.
-pub fn b32_slots(bytes: &[u8; 32]) -> (Fr, Fr) {
-    (Fr::from(u64::from(bytes[31])), Fr::from_le_bytes(&bytes[..31]).unwrap())
 }
 
 /// A `Bytes<20>` as its single limb.
@@ -101,7 +94,7 @@ pub fn transient_upgrade(limbs: &[Fr]) -> [u8; 32] {
 }
 
 /// `userCommitment(sk)` — `[sk, pad]` since `375071b`: the MPC's
-/// key-derivation PATH of a deposit, and the deployer's identity.
+/// key-derivation path of a deposit, and the deployer's identity.
 pub fn user_commitment(sk: &[u8; 32]) -> [u8; 32] {
     let (p_hi, p_lo) = b32_slots(&pad32(v::USER_PAD));
     let (sk_hi, sk_lo) = b32_slots(sk);
@@ -137,7 +130,7 @@ pub fn vault_domain_sep(erc20: &[u8; 20]) -> [u8; 32] {
     transient_upgrade(&[p_hi, p_lo, Fr::from(0u64), b20(erc20)])
 }
 
-/// `tokenType(vaultTokenDomainSeparator(erc20), self)` — PINNED: the
+/// `tokenType(vaultTokenDomainSeparator(erc20), self)` — pinned: the
 /// ledger derives the colour (coin-structure/src/contract.rs:58-68).
 pub fn vault_color(erc20: &[u8; 20], self_addr: &[u8; 32]) -> [u8; 32] {
     let (d_hi, d_lo) = b32_slots(&vault_domain_sep(erc20));
@@ -147,7 +140,7 @@ pub fn vault_color(erc20: &[u8; 20], self_addr: &[u8; 32]) -> [u8; 32] {
 }
 
 /// The `fff3421c` request id the Pending lineage's V2 records keep: Poseidon
-/// over the WHOLE record's FAB limbs in slot order, upgraded.
+/// over the whole record's FAB limbs in slot order, upgraded.
 pub fn request_id_of(limbs: &[Fr]) -> [u8; 32] {
     transient_upgrade(limbs)
 }
@@ -194,14 +187,25 @@ pub fn tx_params_digest(
     out
 }
 
-/// `calculateRequestIdV1(RequestIdPreimageV1 { keyVersion, sender, path,
-/// ecdsa, evmType2, txParamsDigest, ethereumCaip2Id() })`.
-pub fn request_id_v1(key_version: u8, sender: &[u8; 32], path: &[u8; 32], tx_digest: &[u8; 32]) -> [u8; 32] {
+/// `pad(64, "eip155:1")`, the `executionDest` of `@sig-net/midnight` 0.25
+/// on, as its three FAB limbs `[bytes 62..64, bytes 31..62, bytes 0..31]`.
+pub fn execution_dest_limbs() -> [Fr; 3] {
+    let mut b = [0u8; 64];
+    b[..ETHEREUM_CAIP2_ID.len()].copy_from_slice(ETHEREUM_CAIP2_ID.as_bytes());
+    [
+        Fr::from_le_bytes(&b[62..]).unwrap(),
+        Fr::from_le_bytes(&b[31..62]).unwrap(),
+        Fr::from_le_bytes(&b[..31]).unwrap(),
+    ]
+}
+
+/// v0.26.0-rc.15's `calculateRequestIdV1`: [`request_id_v1`] with the
+/// 64-byte `executionDest` (three limbs).
+pub fn request_id_v026(key_version: u8, sender: &[u8; 32], path: &[u8; 32], tx_digest: &[u8; 32]) -> [u8; 32] {
     let (s_hi, s_lo) = b32_slots(sender);
     let (p_hi, p_lo) = b32_slots(path);
     let (d_hi, d_lo) = b32_slots(tx_digest);
-    let (c_hi, c_lo) = b32_slots(&pad32(ETHEREUM_CAIP2_ID));
-    transient_upgrade(&[
+    let mut limbs = vec![
         Fr::from(hash_domain::REQUEST_ID),
         Fr::from(u64::from(key_version)),
         s_hi,
@@ -212,26 +216,33 @@ pub fn request_id_v1(key_version: u8, sender: &[u8; 32], path: &[u8; 32], tx_dig
         Fr::from(0u64), // txParamType: evmType2
         d_hi,
         d_lo,
-        c_hi,
-        c_lo,
-    ])
+    ];
+    limbs.extend(execution_dest_limbs());
+    transient_upgrade(&limbs)
 }
 
-/// `calculateSignetAttestationDigestV1<len>(requestId, blockHeight,
-/// outputKind, output)` — the tag, the id, the height, the verdict, the
-/// WIDTH, then the output's limbs.
-pub fn attestation_digest(request_id: &[u8; 32], block_height: u64, output_kind: u64, len: usize, output_limbs: &[Fr]) -> [u8; 32] {
+/// `calculateAttestedOutputHashV1(output)` — `[attestedOutput, output limbs]`.
+pub fn attested_output_hash(output_limbs: &[Fr]) -> [u8; 32] {
+    let mut limbs = vec![Fr::from(hash_domain::ATTESTED_OUTPUT)];
+    limbs.extend_from_slice(output_limbs);
+    transient_upgrade(&limbs)
+}
+
+/// v0.26.0-rc.15's `calculateSignetAttestationDigestV1(requestId,
+/// blockHeight, outputKind, serializedOutputLength, outputHash)`.
+pub fn attestation_digest_v026(request_id: &[u8; 32], block_height: u64, output_kind: u64, len: usize, output_hash: &[u8; 32]) -> [u8; 32] {
     let (r_hi, r_lo) = b32_slots(request_id);
-    let mut limbs = vec![
+    let (h_hi, h_lo) = b32_slots(output_hash);
+    transient_upgrade(&[
         Fr::from(hash_domain::ATTESTATION_DIGEST),
         r_hi,
         r_lo,
         Fr::from(block_height),
         Fr::from(output_kind),
         Fr::from(len as u64),
-    ];
-    limbs.extend_from_slice(output_limbs);
-    transient_upgrade(&limbs)
+        h_hi,
+        h_lo,
+    ])
 }
 
 pub fn scalar(v: u64) -> IrValue {
@@ -344,7 +355,7 @@ pub fn abi_num_word(v: u128) -> [u8; 32] {
 }
 
 /// A schema literal's slot limbs: one limb at 31 bytes or fewer, else the
-/// FAB limbing (the leftover tail bytes 31..n FIRST, then bytes 0..31).
+/// FAB limbing (the leftover tail bytes 31..n first, then bytes 0..31).
 pub fn schema_limbs(schema: &[u8]) -> Vec<Fr> {
     if schema.len() <= 31 {
         vec![Fr::from_le_bytes(schema).unwrap()]

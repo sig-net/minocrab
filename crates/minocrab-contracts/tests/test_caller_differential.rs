@@ -1,12 +1,18 @@
 //! test-caller-contract `initialise`: call-compatibility with the corpus
 //! artifact per notes/ledger-abi.org §6 — the first differential over
-//! ledger READS (Counter.read + Cell.read), plus acceptance agreement on
-//! the guard failures (already initialised, wrong deployer secret).
+//! ledger reads (Counter.read + Cell.read), plus acceptance agreement on
+//! the guard failures (already initialised, wrong deployer secret, the
+//! identity point as the response key). The artifact is
+//! signet-midnight-integration v0.26.0-rc.15's.
+
+#[path = "support/common.rs"]
+mod common;
+use common::*;
 
 use std::borrow::Cow;
 
 use midnight_base_crypto::fab::{
-    Alignment, AlignmentAtom, AlignmentSegment, AlignedValue, Value, ValueAtom,
+    Alignment, AlignmentSegment, AlignedValue,
 };
 use midnight_curves::k256;
 use midnight_onchain_state::state::StateValue;
@@ -23,41 +29,17 @@ use midnight_zkir_v3::ir_instructions::encode::encode_offcircuit;
 use midnight_zkir_v3::ir_instructions::from_bytes::from_bytes_offcircuit;
 use minocrab::Fr;
 use minocrab_contracts::test_caller;
-use minocrab_sim::v3::{assert_call_compatible, simulate};
-use minocrab_zkir::v3::{IrSource, IrType, IrValue};
+use minocrab_sim::{assert_call_compatible, simulate};
+use minocrab_zkir::{IrSource, IrType, IrValue};
 
 type VmOp = Op<ResultModeVerify, InMemoryDB>;
 
 fn corpus_zkir() -> IrSource {
-    let path = format!(
-        "{}/../../corpus/zkir/signet-midnight-integration/packages/test-caller-contract/src/test-caller-contract/zkir/initialise.zkir",
-        env!("CARGO_MANIFEST_DIR")
-    );
-    minocrab_zkir::v3::read_zkir(&path).expect("corpus golden parses")
-}
-
-fn atom(n: u32) -> AlignmentSegment {
-    AlignmentSegment::Atom(AlignmentAtom::Bytes { length: n })
-}
-
-fn bytesn_value(n: u32, bytes: &[u8]) -> AlignedValue {
-    AlignedValue::new(
-        Value(vec![ValueAtom(bytes.to_vec()).normalize()]),
-        Alignment(vec![atom(n)]),
-    )
-    .unwrap()
+    common::corpus_zkir("signet-midnight-integration-v026/packages/test-caller-contract/src/test-caller-contract/zkir", "initialise")
 }
 
 fn cell(av: AlignedValue) -> StateValue {
     StateValue::Cell(Sp::new(av))
-}
-
-/// [hi, lo] Fr slot pair of a Bytes<32>.
-fn b32_slots(bytes: &[u8; 32]) -> (Fr, Fr) {
-    (
-        Fr::from(u64::from(bytes[31])),
-        Fr::from_le_bytes(&bytes[..31]).unwrap(),
-    )
 }
 
 /// `pad(32, s)`: string at the front, zero-filled.
@@ -275,6 +257,26 @@ fn initialise_rejects_wrong_deployer_secret() {
     let pi = preimage(
         natives(&s.point),
         vec![hi, lo],
+        transcript(&ops),
+        outputs(0, &s.commitment),
+    );
+    assert!(simulate(&ours, &pi).is_err(), "ours must reject");
+    assert!(simulate(&theirs, &pi).is_err(), "corpus must reject");
+}
+
+/// Both artifacts must reject the identity point as the response key
+/// (`assert(responseKey != default<Secp256k1Point>)`, new at v0.26).
+#[test]
+fn initialise_rejects_the_identity_key() {
+    let theirs = corpus_zkir();
+    let ours = test_caller::TestCaller::initialise().ir;
+    let mut s = Scenario::new();
+    s.point = ec_mul_offcircuit(&IrValue::Secp256k1Point(k256::K256::generator()), &scalar(0)).unwrap();
+
+    let ops = initialise_ops(0, &s.commitment, s.point_av());
+    let pi = preimage(
+        natives(&s.point),
+        s.witnesses(),
         transcript(&ops),
         outputs(0, &s.commitment),
     );

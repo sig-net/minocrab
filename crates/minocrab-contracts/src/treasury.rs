@@ -1,18 +1,18 @@
-//! THE README'S CROSS-CHAIN EXAMPLE, COMPILED — notes/evm-calls.org §0's
-//! target shape, as a real contract with real circuits (M37 rung C).
+//! The readme's cross-chain example, compiled — notes/evm-calls.org §0's
+//! target shape, as a real contract with real circuits.
 //!
 //! A treasury that sends ERC-20 tokens on an EVM chain through Sig Network's
 //! MPC. Three circuits, and every line of them is business:
 //!
 //! - `send(token, to, amount)` files `transfer(to, amount)` against `token`,
-//!   remembering the amount and the CALLER;
+//!   remembering the amount and the caller;
 //! - `complete(ticket)` settles a successful transfer — anyone may call it,
 //!   because the MPC's attestation is the gate;
 //! - `refund(ticket)` settles a non-success — only the original caller may
 //!   call it, because the environment's owner commitment is opened with a
 //!   fresh witness.
 //!
-//! WHAT IS NOT WRITTEN HERE, and where it went (the point of the milestone):
+//! What is not written here, and where it went (the point of the milestone):
 //!
 //! | not written                       | comes from                     |
 //! |-----------------------------------|--------------------------------|
@@ -28,21 +28,21 @@
 //! | the owner commitment and its gate | `Owned` + `request_owned`      |
 //! | "a `false` must not complete"     | `erc20::Transfer::succeeded`   |
 //!
-//! WHAT IS STILL WRITTEN, on purpose (notes/evm-calls.org §5): the labels,
+//! What is still written, on purpose (notes/evm-calls.org §5): the labels,
 //! the `Discloses` tuple, and the one value §7 has yet to find a home for —
-//! the EVM nonce. (The MPC key version found one in M44 rung D: it is a cell
+//! the EVM nonce. (The MPC key version is a cell
 //! of the `Signet` block, so no circuit takes it.)
 //!
-//! CALLEE ALLOW-LIST: this example takes the token as an argument, which a
+//! Callee allow-list: this example takes the token as an argument, which a
 //! deployment must not do unqualified — a non-conforming ERC-20 that returns
-//! nothing produces an attested FAILURE for a transfer that moved the tokens
+//! nothing produces an attested failure for a transfer that moved the tokens
 //! (crate::evm_flow's hazard note, notes/evm-calls.org §3.1). A real treasury
 //! pins its tokens in a ledger cell and builds the callee with
 //! `Contract::from_address`.
 
-use minocrab::v3::Circuit3;
+use minocrab::Circuit;
 use minocrab::Public;
-use minocrab_std::v3::{
+use minocrab_std::{
     contract, label, Bytes, Disclose, Discloses, Ledger, LedgerRepr, Uint,
 };
 
@@ -52,7 +52,7 @@ use crate::evm_flow::{Contract, Failed, Owned, Pending, Succeeded};
 use crate::signet_flow::{Requested, Settled, Signet};
 use crate::signet_v1::schema;
 
-/// HOW THIS TREASURY FILES ITS ONE CALL: the library's
+/// How this treasury files its one call: the library's
 /// [`erc20::Transfer`], decoded under the `success` schema.
 ///
 /// The schema is the one the deployed lineage files a `transfer` with —
@@ -107,7 +107,7 @@ impl Treasury {
     /// `token.transfer(to, amount)`, remembering the amount and the caller.
     #[circuit]
     pub fn send(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         evm_nonce: Uint<64>,
         token: Contract<Erc20>,
         to: Bytes<20>,
@@ -128,15 +128,15 @@ impl Treasury {
         Discloses::of(())
     }
 
-    /// `complete(ticket)` — the transfer executed AND returned `true`.
+    /// `complete(ticket)` — the transfer executed and returned `true`.
     ///
-    /// ANYONE MAY CALL THIS: the attestation is the gate, and there is no
+    /// Anyone may call this: the attestation is the gate, and there is no
     /// witness in the circuit at all. And the attested `false` case cannot
     /// reach here: `erc20::Transfer`'s return is `Bool`, and its
     /// `EvmCall::succeeded` is that flag, which `complete` asserts — so
     /// nothing in this body has to remember to look.
     #[circuit]
-    pub fn complete(c: &mut Circuit3, ticket: Succeeded<Transfer>) -> Discloses<Settled> {
+    pub fn complete(c: &mut Circuit, ticket: Succeeded<Transfer>) -> Discloses<Settled> {
         let outcome = TREASURY.transfers.complete(c, ticket);
         let _amount = outcome.env.inner.amount;
         Discloses::of(())
@@ -146,13 +146,13 @@ impl Treasury {
     /// fail: the MPC's `failed` / `unviable` verdict, or an `executed` call
     /// that returned `false`.
     ///
-    /// ONLY THE ORIGINAL CALLER: `refund_to_owner` witnesses a fresh secret
+    /// Only the original caller: `refund_to_owner` witnesses a fresh secret
     /// and opens the environment's commitment against it. A real treasury
     /// re-mints `amount` to `owner` here; this example stops at naming them,
     /// so the circuit is the API and nothing else.
     #[circuit]
     pub fn refund(
-        c: &mut Circuit3,
+        c: &mut Circuit,
         ticket: Failed<Transfer>,
     ) -> Discloses<(Settled, RefundRecipient)> {
         // The attested flag comes back too — `false` for a mined call that

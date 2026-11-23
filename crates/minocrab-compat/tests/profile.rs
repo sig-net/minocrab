@@ -1,0 +1,71 @@
+//! `profile` sets compactc's lowering, and refuses the combinations that
+//! would make a ported circuit lowered half one way and half the other.
+
+use minocrab::{Circuit, Lowering, SelfAddressReads};
+use minocrab_std::kernel;
+
+fn len(c: Circuit) -> usize {
+    c.finish(true).ir.instructions.len()
+}
+
+/// The profile is compactc's: every self read emitted, no dedup.
+#[test]
+fn the_profile_is_compactcs() {
+    let mut c = Circuit::new();
+    c.dedup_range_constraints(true);
+    minocrab_compat::profile(&mut c);
+    assert_eq!(c.lowering(), Lowering { self_address: SelfAddressReads::EveryCall, dedup_range_constraints: false, simplify: false });
+    assert!(c.lowering_chosen());
+}
+
+/// Under the profile two self reads stay two reads, where a fresh
+/// circuit's default (read once per circuit) emits one.
+#[test]
+fn under_the_profile_every_self_read_is_emitted() {
+    let mut once = Circuit::new();
+    minocrab_compat::profile(&mut once);
+    kernel::self_address(&mut once);
+    let one = len(once);
+
+    let mut twice = Circuit::new();
+    minocrab_compat::profile(&mut twice);
+    kernel::self_address(&mut twice);
+    kernel::self_address(&mut twice);
+    let two = len(twice);
+
+    let mut plain = Circuit::new();
+    kernel::self_address(&mut plain);
+    kernel::self_address(&mut plain);
+
+    assert_eq!(two - one, one, "each call emits a full read");
+    assert_eq!(len(plain), one, "the default reads once per circuit");
+}
+
+/// compactc never caches: a ported circuit asking to is refused, not
+/// silently overridden.
+#[test]
+#[should_panic(expected = "cache_self_address in a circuit whose lowering reads kernel.self() at every call")]
+fn cache_after_the_profile_is_refused() {
+    let mut c = Circuit::new();
+    minocrab_compat::profile(&mut c);
+    kernel::cache_self_address(&mut c);
+}
+
+/// The profile must come first: after a gadget lowered under the defaults
+/// it is refused.
+#[test]
+#[should_panic(expected = "called after a gadget already lowered")]
+fn the_profile_after_a_self_read_is_refused() {
+    let mut c = Circuit::new();
+    kernel::self_address(&mut c);
+    minocrab_compat::profile(&mut c);
+}
+
+/// …including after a cache, which the profile would otherwise contradict.
+#[test]
+#[should_panic(expected = "called after a gadget already lowered")]
+fn the_profile_after_a_cache_is_refused() {
+    let mut c = Circuit::new();
+    kernel::cache_self_address(&mut c);
+    minocrab_compat::profile(&mut c);
+}

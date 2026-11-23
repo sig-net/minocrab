@@ -1,13 +1,13 @@
-//! M29 rung A's generated-equals-committed gate, the `spec/ts` pattern:
+//! The generated-equals-committed gate, the `spec/ts` pattern:
 //! regenerate the whole managed directory into a temp dir and assert the
-//! COMMITTED `.zkir`/`.verifier` files and `MANIFEST.sha256`/
+//! committed `.zkir`/`.verifier` files and `MANIFEST.sha256`/
 //! `expectedVk.json` are byte-identical to a fresh run. Drift in the
 //! uncommitted `.prover`/`.bzkir` files shows up as a manifest mismatch
-//! (their hashes are IN the manifest even though the files are not
+//! (their hashes are in the manifest even though the files are not
 //! committed — that is the whole point of the manifest).
 //!
 //! Skips loudly, like `corpus_roundtrip`, if `zkir-v3` is not on `PATH`
-//! (`$ZKIR_V3` overrides) — but it IS present in this workspace's devshell,
+//! (`$ZKIR_V3` overrides) — but it is present in this workspace's devshell,
 //! so the ordinary run exercises the real binary, not a mock.
 
 use std::path::Path;
@@ -64,7 +64,7 @@ fn generated_equals_committed() {
 
     // The manifest and the expectedVk table: both fully regenerated, so
     // they must match byte for byte too (the manifest additionally pins the
-    // NON-committed `.prover`/`.bzkir` hashes — any drift in keygen's output
+    // non-committed `.prover`/`.bzkir` hashes — any drift in keygen's output
     // shows up here even though those files never enter git).
     for rel in ["MANIFEST.sha256", "expectedVk.json"] {
         let committed = read_committed(rel);

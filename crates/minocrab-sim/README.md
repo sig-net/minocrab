@@ -22,7 +22,7 @@ assert!(report.disclosures[0].label.contains("not the age"));
 assert!(minocrab_sim::simulate(&compiled.ir, &[], &[Fr::from(11u64)], &[]).is_err());
 ```
 
-**The simulator is never trusted alone.** `Run::preimage` packages a run as a `ProofPreimage`, and every accepted run is replayed through Midnight's reference VM (`IrSource::check`) and the pinned ledger. This is what makes 9,000,000 property cases against a Rust spec affordable. `v3::simulate` is the current entry point; `profile` gives the per-region cost breakdown the benchmark charts.
+**The simulator is never trusted alone.** `Run::preimage` packages a run as a `ProofPreimage`, and every accepted run is replayed through Midnight's reference VM (`IrSource::check`) and the pinned ledger. This is what makes 9,000,000 property cases against a Rust spec affordable. `simulate` is the current entry point; `profile` gives the per-region cost breakdown the benchmark charts.
 
 [Repository README](https://github.com/sig-net/minocrab#readme) · [VERIFICATION.md](https://github.com/sig-net/minocrab/blob/main/VERIFICATION.md) · [BENCHMARK.md](https://github.com/sig-net/minocrab/blob/main/BENCHMARK.md)
 

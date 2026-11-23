@@ -517,7 +517,7 @@ export const flaggedU32Codec: Codec<FlaggedU32> = {
 // ---- VaultEventV1 ----------------------------------------------------------------
 
 /** The fixed serialized width of `VaultEventV1`. */
-export const VAULT_EVENT_V1_LEN = 362;
+export const VAULT_EVENT_V1_LEN = 394;
 
 /** `VaultEventV1`'s offset table — `spec/borsh-subset.md` §9, as data. */
 export const VAULT_EVENT_V1_FIELDS: readonly FieldSpec[] = [
@@ -539,11 +539,11 @@ export const VAULT_EVENT_V1_FIELDS: readonly FieldSpec[] = [
   { path: 'tx_params.calldata.value.words[0]', type: '[u8; 32]', offset: 166, width: 32 },
   { path: 'tx_params.calldata.value.words[1]', type: '[u8; 32]', offset: 198, width: 32 },
   { path: 'tx_params.access_list_entry_count', type: 'u8', offset: 230, width: 1 },
-  { path: 'execution_dest', type: '[u8; 32]', offset: 231, width: 32 },
-  { path: 'signature_dest', type: 'u8', offset: 263, width: 1 },
-  { path: 'params', type: '[u8; 64]', offset: 264, width: 64 },
-  { path: 'output_deserialization_schema', type: '[u8; 34]', offset: 328, width: 34 },
-  { path: 'respond_serialization_schema', type: '[u8; 0]', offset: 362, width: 0 },
+  { path: 'execution_dest', type: '[u8; 64]', offset: 231, width: 64 },
+  { path: 'signature_dest', type: 'u8', offset: 295, width: 1 },
+  { path: 'params', type: '[u8; 64]', offset: 296, width: 64 },
+  { path: 'output_deserialization_schema', type: '[u8; 34]', offset: 360, width: 34 },
+  { path: 'respond_serialization_schema', type: '[u8; 0]', offset: 394, width: 0 },
 ];
 
 export interface VaultEventV1 {
@@ -577,7 +577,7 @@ export interface VaultEventV1 {
   readonly respondSerializationSchema: Uint8Array;
 }
 
-/** Read a `VaultEventV1` from `bytes` at `offset` — 362 bytes, fixed. */
+/** Read a `VaultEventV1` from `bytes` at `offset` — 394 bytes, fixed. */
 export function readVaultEventV1(bytes: Uint8Array, offset = 0): VaultEventV1 {
   const view = checkedView(bytes, offset, VAULT_EVENT_V1_LEN);
   return {
@@ -607,11 +607,11 @@ export function readVaultEventV1(bytes: Uint8Array, offset = 0): VaultEventV1 {
       },
       accessListEntryCount: getU8(view, 230),
     },
-    executionDest: getBytes(view, 231, 32),
-    signatureDest: getU8(view, 263),
-    params: getBytes(view, 264, 64),
-    outputDeserializationSchema: getBytes(view, 328, 34),
-    respondSerializationSchema: getBytes(view, 362, 0),
+    executionDest: getBytes(view, 231, 64),
+    signatureDest: getU8(view, 295),
+    params: getBytes(view, 296, 64),
+    outputDeserializationSchema: getBytes(view, 360, 34),
+    respondSerializationSchema: getBytes(view, 394, 0),
   };
 }
 
@@ -640,11 +640,11 @@ export function writeVaultEventV1(
   setBytes(view, 166, 32, value.txParams.calldata.value.words[0]);
   setBytes(view, 198, 32, value.txParams.calldata.value.words[1]);
   setU8(view, 230, value.txParams.accessListEntryCount);
-  setBytes(view, 231, 32, value.executionDest);
-  setU8(view, 263, value.signatureDest);
-  setBytes(view, 264, 64, value.params);
-  setBytes(view, 328, 34, value.outputDeserializationSchema);
-  setBytes(view, 362, 0, value.respondSerializationSchema);
+  setBytes(view, 231, 64, value.executionDest);
+  setU8(view, 295, value.signatureDest);
+  setBytes(view, 296, 64, value.params);
+  setBytes(view, 360, 34, value.outputDeserializationSchema);
+  setBytes(view, 394, 0, value.respondSerializationSchema);
   return out;
 }
 
@@ -689,7 +689,7 @@ export const vaultEventV1Codec: Codec<VaultEventV1> = {
 // ---- ReplaceNonceEventV1 ---------------------------------------------------------
 
 /** The fixed serialized width of `ReplaceNonceEventV1`. */
-export const REPLACE_NONCE_EVENT_V1_LEN = 330;
+export const REPLACE_NONCE_EVENT_V1_LEN = 362;
 
 /** `ReplaceNonceEventV1`'s offset table — `spec/borsh-subset.md` §9, as data. */
 export const REPLACE_NONCE_EVENT_V1_FIELDS: readonly FieldSpec[] = [
@@ -711,11 +711,11 @@ export const REPLACE_NONCE_EVENT_V1_FIELDS: readonly FieldSpec[] = [
   { path: 'tx_params.calldata.value.words[0]', type: '[u8; 32]', offset: 166, width: 32 },
   { path: 'tx_params.calldata.value.words[1]', type: '[u8; 32]', offset: 198, width: 32 },
   { path: 'tx_params.access_list_entry_count', type: 'u8', offset: 230, width: 1 },
-  { path: 'execution_dest', type: '[u8; 32]', offset: 231, width: 32 },
-  { path: 'signature_dest', type: 'u8', offset: 263, width: 1 },
-  { path: 'params', type: '[u8; 64]', offset: 264, width: 64 },
-  { path: 'output_deserialization_schema', type: '[u8; 2]', offset: 328, width: 2 },
-  { path: 'respond_serialization_schema', type: '[u8; 0]', offset: 330, width: 0 },
+  { path: 'execution_dest', type: '[u8; 64]', offset: 231, width: 64 },
+  { path: 'signature_dest', type: 'u8', offset: 295, width: 1 },
+  { path: 'params', type: '[u8; 64]', offset: 296, width: 64 },
+  { path: 'output_deserialization_schema', type: '[u8; 2]', offset: 360, width: 2 },
+  { path: 'respond_serialization_schema', type: '[u8; 0]', offset: 362, width: 0 },
 ];
 
 export interface ReplaceNonceEventV1 {
@@ -749,7 +749,7 @@ export interface ReplaceNonceEventV1 {
   readonly respondSerializationSchema: Uint8Array;
 }
 
-/** Read a `ReplaceNonceEventV1` from `bytes` at `offset` — 330 bytes, fixed. */
+/** Read a `ReplaceNonceEventV1` from `bytes` at `offset` — 362 bytes, fixed. */
 export function readReplaceNonceEventV1(bytes: Uint8Array, offset = 0): ReplaceNonceEventV1 {
   const view = checkedView(bytes, offset, REPLACE_NONCE_EVENT_V1_LEN);
   return {
@@ -779,11 +779,11 @@ export function readReplaceNonceEventV1(bytes: Uint8Array, offset = 0): ReplaceN
       },
       accessListEntryCount: getU8(view, 230),
     },
-    executionDest: getBytes(view, 231, 32),
-    signatureDest: getU8(view, 263),
-    params: getBytes(view, 264, 64),
-    outputDeserializationSchema: getBytes(view, 328, 2),
-    respondSerializationSchema: getBytes(view, 330, 0),
+    executionDest: getBytes(view, 231, 64),
+    signatureDest: getU8(view, 295),
+    params: getBytes(view, 296, 64),
+    outputDeserializationSchema: getBytes(view, 360, 2),
+    respondSerializationSchema: getBytes(view, 362, 0),
   };
 }
 
@@ -812,11 +812,11 @@ export function writeReplaceNonceEventV1(
   setBytes(view, 166, 32, value.txParams.calldata.value.words[0]);
   setBytes(view, 198, 32, value.txParams.calldata.value.words[1]);
   setU8(view, 230, value.txParams.accessListEntryCount);
-  setBytes(view, 231, 32, value.executionDest);
-  setU8(view, 263, value.signatureDest);
-  setBytes(view, 264, 64, value.params);
-  setBytes(view, 328, 2, value.outputDeserializationSchema);
-  setBytes(view, 330, 0, value.respondSerializationSchema);
+  setBytes(view, 231, 64, value.executionDest);
+  setU8(view, 295, value.signatureDest);
+  setBytes(view, 296, 64, value.params);
+  setBytes(view, 360, 2, value.outputDeserializationSchema);
+  setBytes(view, 362, 0, value.respondSerializationSchema);
   return out;
 }
 
@@ -861,7 +861,7 @@ export const replaceNonceEventV1Codec: Codec<ReplaceNonceEventV1> = {
 // ---- SwapEventV1 -----------------------------------------------------------------
 
 /** The fixed serialized width of `SwapEventV1`. */
-export const SWAP_EVENT_V1_LEN = 526;
+export const SWAP_EVENT_V1_LEN = 558;
 
 /** `SwapEventV1`'s offset table — `spec/borsh-subset.md` §9, as data. */
 export const SWAP_EVENT_V1_FIELDS: readonly FieldSpec[] = [
@@ -888,11 +888,11 @@ export const SWAP_EVENT_V1_FIELDS: readonly FieldSpec[] = [
   { path: 'tx_params.calldata.value.words[5]', type: '[u8; 32]', offset: 326, width: 32 },
   { path: 'tx_params.calldata.value.words[6]', type: '[u8; 32]', offset: 358, width: 32 },
   { path: 'tx_params.access_list_entry_count', type: 'u8', offset: 390, width: 1 },
-  { path: 'execution_dest', type: '[u8; 32]', offset: 391, width: 32 },
-  { path: 'signature_dest', type: 'u8', offset: 423, width: 1 },
-  { path: 'params', type: '[u8; 64]', offset: 424, width: 64 },
-  { path: 'output_deserialization_schema', type: '[u8; 38]', offset: 488, width: 38 },
-  { path: 'respond_serialization_schema', type: '[u8; 0]', offset: 526, width: 0 },
+  { path: 'execution_dest', type: '[u8; 64]', offset: 391, width: 64 },
+  { path: 'signature_dest', type: 'u8', offset: 455, width: 1 },
+  { path: 'params', type: '[u8; 64]', offset: 456, width: 64 },
+  { path: 'output_deserialization_schema', type: '[u8; 38]', offset: 520, width: 38 },
+  { path: 'respond_serialization_schema', type: '[u8; 0]', offset: 558, width: 0 },
 ];
 
 export interface SwapEventV1 {
@@ -926,7 +926,7 @@ export interface SwapEventV1 {
   readonly respondSerializationSchema: Uint8Array;
 }
 
-/** Read a `SwapEventV1` from `bytes` at `offset` — 526 bytes, fixed. */
+/** Read a `SwapEventV1` from `bytes` at `offset` — 558 bytes, fixed. */
 export function readSwapEventV1(bytes: Uint8Array, offset = 0): SwapEventV1 {
   const view = checkedView(bytes, offset, SWAP_EVENT_V1_LEN);
   return {
@@ -961,11 +961,11 @@ export function readSwapEventV1(bytes: Uint8Array, offset = 0): SwapEventV1 {
       },
       accessListEntryCount: getU8(view, 390),
     },
-    executionDest: getBytes(view, 391, 32),
-    signatureDest: getU8(view, 423),
-    params: getBytes(view, 424, 64),
-    outputDeserializationSchema: getBytes(view, 488, 38),
-    respondSerializationSchema: getBytes(view, 526, 0),
+    executionDest: getBytes(view, 391, 64),
+    signatureDest: getU8(view, 455),
+    params: getBytes(view, 456, 64),
+    outputDeserializationSchema: getBytes(view, 520, 38),
+    respondSerializationSchema: getBytes(view, 558, 0),
   };
 }
 
@@ -999,11 +999,11 @@ export function writeSwapEventV1(
   setBytes(view, 326, 32, value.txParams.calldata.value.words[5]);
   setBytes(view, 358, 32, value.txParams.calldata.value.words[6]);
   setU8(view, 390, value.txParams.accessListEntryCount);
-  setBytes(view, 391, 32, value.executionDest);
-  setU8(view, 423, value.signatureDest);
-  setBytes(view, 424, 64, value.params);
-  setBytes(view, 488, 38, value.outputDeserializationSchema);
-  setBytes(view, 526, 0, value.respondSerializationSchema);
+  setBytes(view, 391, 64, value.executionDest);
+  setU8(view, 455, value.signatureDest);
+  setBytes(view, 456, 64, value.params);
+  setBytes(view, 520, 38, value.outputDeserializationSchema);
+  setBytes(view, 558, 0, value.respondSerializationSchema);
   return out;
 }
 
@@ -1053,7 +1053,7 @@ export const swapEventV1Codec: Codec<SwapEventV1> = {
 // ---- SupplyEventV1 ---------------------------------------------------------------
 
 /** The fixed serialized width of `SupplyEventV1`. */
-export const SUPPLY_EVENT_V1_LEN = 364;
+export const SUPPLY_EVENT_V1_LEN = 396;
 
 /** `SupplyEventV1`'s offset table — `spec/borsh-subset.md` §9, as data. */
 export const SUPPLY_EVENT_V1_FIELDS: readonly FieldSpec[] = [
@@ -1075,11 +1075,11 @@ export const SUPPLY_EVENT_V1_FIELDS: readonly FieldSpec[] = [
   { path: 'tx_params.calldata.value.words[0]', type: '[u8; 32]', offset: 166, width: 32 },
   { path: 'tx_params.calldata.value.words[1]', type: '[u8; 32]', offset: 198, width: 32 },
   { path: 'tx_params.access_list_entry_count', type: 'u8', offset: 230, width: 1 },
-  { path: 'execution_dest', type: '[u8; 32]', offset: 231, width: 32 },
-  { path: 'signature_dest', type: 'u8', offset: 263, width: 1 },
-  { path: 'params', type: '[u8; 64]', offset: 264, width: 64 },
-  { path: 'output_deserialization_schema', type: '[u8; 36]', offset: 328, width: 36 },
-  { path: 'respond_serialization_schema', type: '[u8; 0]', offset: 364, width: 0 },
+  { path: 'execution_dest', type: '[u8; 64]', offset: 231, width: 64 },
+  { path: 'signature_dest', type: 'u8', offset: 295, width: 1 },
+  { path: 'params', type: '[u8; 64]', offset: 296, width: 64 },
+  { path: 'output_deserialization_schema', type: '[u8; 36]', offset: 360, width: 36 },
+  { path: 'respond_serialization_schema', type: '[u8; 0]', offset: 396, width: 0 },
 ];
 
 export interface SupplyEventV1 {
@@ -1113,7 +1113,7 @@ export interface SupplyEventV1 {
   readonly respondSerializationSchema: Uint8Array;
 }
 
-/** Read a `SupplyEventV1` from `bytes` at `offset` — 364 bytes, fixed. */
+/** Read a `SupplyEventV1` from `bytes` at `offset` — 396 bytes, fixed. */
 export function readSupplyEventV1(bytes: Uint8Array, offset = 0): SupplyEventV1 {
   const view = checkedView(bytes, offset, SUPPLY_EVENT_V1_LEN);
   return {
@@ -1143,11 +1143,11 @@ export function readSupplyEventV1(bytes: Uint8Array, offset = 0): SupplyEventV1 
       },
       accessListEntryCount: getU8(view, 230),
     },
-    executionDest: getBytes(view, 231, 32),
-    signatureDest: getU8(view, 263),
-    params: getBytes(view, 264, 64),
-    outputDeserializationSchema: getBytes(view, 328, 36),
-    respondSerializationSchema: getBytes(view, 364, 0),
+    executionDest: getBytes(view, 231, 64),
+    signatureDest: getU8(view, 295),
+    params: getBytes(view, 296, 64),
+    outputDeserializationSchema: getBytes(view, 360, 36),
+    respondSerializationSchema: getBytes(view, 396, 0),
   };
 }
 
@@ -1176,11 +1176,11 @@ export function writeSupplyEventV1(
   setBytes(view, 166, 32, value.txParams.calldata.value.words[0]);
   setBytes(view, 198, 32, value.txParams.calldata.value.words[1]);
   setU8(view, 230, value.txParams.accessListEntryCount);
-  setBytes(view, 231, 32, value.executionDest);
-  setU8(view, 263, value.signatureDest);
-  setBytes(view, 264, 64, value.params);
-  setBytes(view, 328, 36, value.outputDeserializationSchema);
-  setBytes(view, 364, 0, value.respondSerializationSchema);
+  setBytes(view, 231, 64, value.executionDest);
+  setU8(view, 295, value.signatureDest);
+  setBytes(view, 296, 64, value.params);
+  setBytes(view, 360, 36, value.outputDeserializationSchema);
+  setBytes(view, 396, 0, value.respondSerializationSchema);
   return out;
 }
 
@@ -1225,7 +1225,7 @@ export const supplyEventV1Codec: Codec<SupplyEventV1> = {
 // ---- RedeemEventV1 ---------------------------------------------------------------
 
 /** The fixed serialized width of `RedeemEventV1`. */
-export const REDEEM_EVENT_V1_LEN = 396;
+export const REDEEM_EVENT_V1_LEN = 428;
 
 /** `RedeemEventV1`'s offset table — `spec/borsh-subset.md` §9, as data. */
 export const REDEEM_EVENT_V1_FIELDS: readonly FieldSpec[] = [
@@ -1248,11 +1248,11 @@ export const REDEEM_EVENT_V1_FIELDS: readonly FieldSpec[] = [
   { path: 'tx_params.calldata.value.words[1]', type: '[u8; 32]', offset: 198, width: 32 },
   { path: 'tx_params.calldata.value.words[2]', type: '[u8; 32]', offset: 230, width: 32 },
   { path: 'tx_params.access_list_entry_count', type: 'u8', offset: 262, width: 1 },
-  { path: 'execution_dest', type: '[u8; 32]', offset: 263, width: 32 },
-  { path: 'signature_dest', type: 'u8', offset: 295, width: 1 },
-  { path: 'params', type: '[u8; 64]', offset: 296, width: 64 },
-  { path: 'output_deserialization_schema', type: '[u8; 36]', offset: 360, width: 36 },
-  { path: 'respond_serialization_schema', type: '[u8; 0]', offset: 396, width: 0 },
+  { path: 'execution_dest', type: '[u8; 64]', offset: 263, width: 64 },
+  { path: 'signature_dest', type: 'u8', offset: 327, width: 1 },
+  { path: 'params', type: '[u8; 64]', offset: 328, width: 64 },
+  { path: 'output_deserialization_schema', type: '[u8; 36]', offset: 392, width: 36 },
+  { path: 'respond_serialization_schema', type: '[u8; 0]', offset: 428, width: 0 },
 ];
 
 export interface RedeemEventV1 {
@@ -1286,7 +1286,7 @@ export interface RedeemEventV1 {
   readonly respondSerializationSchema: Uint8Array;
 }
 
-/** Read a `RedeemEventV1` from `bytes` at `offset` — 396 bytes, fixed. */
+/** Read a `RedeemEventV1` from `bytes` at `offset` — 428 bytes, fixed. */
 export function readRedeemEventV1(bytes: Uint8Array, offset = 0): RedeemEventV1 {
   const view = checkedView(bytes, offset, REDEEM_EVENT_V1_LEN);
   return {
@@ -1317,11 +1317,11 @@ export function readRedeemEventV1(bytes: Uint8Array, offset = 0): RedeemEventV1 
       },
       accessListEntryCount: getU8(view, 262),
     },
-    executionDest: getBytes(view, 263, 32),
-    signatureDest: getU8(view, 295),
-    params: getBytes(view, 296, 64),
-    outputDeserializationSchema: getBytes(view, 360, 36),
-    respondSerializationSchema: getBytes(view, 396, 0),
+    executionDest: getBytes(view, 263, 64),
+    signatureDest: getU8(view, 327),
+    params: getBytes(view, 328, 64),
+    outputDeserializationSchema: getBytes(view, 392, 36),
+    respondSerializationSchema: getBytes(view, 428, 0),
   };
 }
 
@@ -1351,11 +1351,11 @@ export function writeRedeemEventV1(
   setBytes(view, 198, 32, value.txParams.calldata.value.words[1]);
   setBytes(view, 230, 32, value.txParams.calldata.value.words[2]);
   setU8(view, 262, value.txParams.accessListEntryCount);
-  setBytes(view, 263, 32, value.executionDest);
-  setU8(view, 295, value.signatureDest);
-  setBytes(view, 296, 64, value.params);
-  setBytes(view, 360, 36, value.outputDeserializationSchema);
-  setBytes(view, 396, 0, value.respondSerializationSchema);
+  setBytes(view, 263, 64, value.executionDest);
+  setU8(view, 327, value.signatureDest);
+  setBytes(view, 328, 64, value.params);
+  setBytes(view, 392, 36, value.outputDeserializationSchema);
+  setBytes(view, 428, 0, value.respondSerializationSchema);
   return out;
 }
 

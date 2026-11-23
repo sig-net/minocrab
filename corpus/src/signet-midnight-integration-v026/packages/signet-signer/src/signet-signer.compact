@@ -1,0 +1,43 @@
+pragma language_version >= 0.25;
+
+import CompactStandardLibrary;
+
+// Shared signet library: the request id and notification types. See the
+// module header in Signet.compact for the protocol.
+import "@sig-net/midnight/src/Signet";
+
+// This is the central Sig Network contract on Midnight.
+// Clients register emit signature-request notifications here via cross contract call.
+// The MPC posts its responses to the signet responder (@sig-net/midnight-responder),
+// where the SDK reads them.
+//
+// Every method here is unauthenticated by design to keep proving time as low as possible.
+// Verification is deliberately the reader's job:
+// - MPC authenticates notifications by:
+//   - confirming that the callerAddress named in the notification event is the contract
+//     that called this circuit in the same transaction.
+//   - reading the event back from the named caller's own ledger and refusing entries
+//     whose recomputed request id or sender does not match
+
+// signBidirectional should be called (cross-contract) by clients to notify the MPC
+// that a SignBidirectionalEvent has been written to their canonical
+// SignBidirectionalEventMapV1 state map. The MPC does not trust the notification's
+// content. It authenticates by:
+//   (a) reading the event back from the named caller's own ledger and refusing entries
+//       whose recomputed request id or sender does not match, and
+//   (b) confirming that the callerAddress named in the notification event is the contract
+//       that called this circuit in the same transaction.
+export circuit signBidirectional(
+      requestId: RequestId,
+      notification: SignBidirectionalEventNotification
+): [] {
+    emit (Misc {
+        name: pad(32, "SignBidirectionalEvent"),
+        payload: Bytes[
+            disclose(notification.version),    //  1
+            ...disclose(requestId),            // +32
+            ...disclose(notification.payload), // +128
+            ...default<Bytes<95>>              // +95
+        ],                                     // = 256 bytes
+    });
+}

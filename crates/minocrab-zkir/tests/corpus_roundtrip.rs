@@ -1,4 +1,4 @@
-//! M1 exit criterion: round-trip every compactc-compiled ZKIR v3 `.zkir` in
+//! Round-trip every compactc-compiled ZKIR v3 `.zkir` in
 //! the corpus — parse, re-emit, re-parse, assert equality. The corpus's v2
 //! artifacts are counted and skipped (nothing targets them). Skips when the
 //! corpus hasn't been compiled yet (corpus/compile.sh).
@@ -39,9 +39,9 @@ fn round_trips_entire_corpus() {
             if minocrab_zkir::major_version(path).map_err(|e| format!("version: {e}"))? != 3 {
                 return Ok(false);
             }
-            let ir = minocrab_zkir::v3::read_zkir(path).map_err(|e| format!("parse: {e}"))?;
-            let emitted = minocrab_zkir::v3::to_zkir_string(&ir).map_err(|e| format!("emit: {e}"))?;
-            let reparsed = minocrab_zkir::v3::parse_zkir(emitted.as_bytes(), &name)
+            let ir = minocrab_zkir::read_zkir(path).map_err(|e| format!("parse: {e}"))?;
+            let emitted = minocrab_zkir::to_zkir_string(&ir).map_err(|e| format!("emit: {e}"))?;
+            let reparsed = minocrab_zkir::parse_zkir(emitted.as_bytes(), &name)
                 .map_err(|e| format!("reparse: {e}"))?;
             if reparsed != ir {
                 return Err("re-emitted v3 IR differs from original".into());
@@ -67,7 +67,7 @@ fn round_trips_entire_corpus() {
         v3_count,
         files.len() - v3_count,
     );
-    // THE COUNT IS ASSERTED. Without it this test is green on a partial or
+    // The count is asserted. Without it this test is green on a partial or
     // empty checkout, which is silence, not evidence. The number moves only
     // when the corpus does (corpus/compile.sh after a source is added or the
     // compactc pin bumps — notes/version-bump.org); update it in the same
@@ -88,7 +88,7 @@ fn round_trips_entire_corpus() {
         // PR #127 beside the fff3421c ones (the Signet module and its
         // circuits.compact compile to no artifact of their own).
         // 834/95 → 849/110 at M44 A: the corpus repinned to
-        // midnight-examples main (375071b, the FLUSH-PATTERN vault) and
+        // midnight-examples main (375071b, the flush-pattern vault) and
         // midnight-integration v0.24.1 (the V1 Signet vocabulary). The
         // flush-pattern vault's circuit set is larger than the
         // seventeen-circuit one it replaces, and all fifteen new artifacts
@@ -101,7 +101,19 @@ fn round_trips_entire_corpus() {
         // (+6). The vault compiles with compact#856's workaround applied.
         // 855/855 → 907/907 with passport-account-custody (passport PR #184,
         // 531580c): account.compact's 52 circuits.
-        (907, 907),
+        // 907/907 → 897/897 at the compactc 0.36.1 bump, which moved no
+        // artifact; the compact source repinned to the release tag
+        // (56c3b77 → 7fa3a117): +31 new examples and test contracts, -41
+        // (advanced_casts and vector_to_bytes rewritten, four examples
+        // deleted upstream).
+        // 897/897 → 938/938 with the mainnet pins (M48 L, notes/mainnet-pin.org):
+        // signet-midnight-integration-v026 (signer 1, responder 2, test
+        // callers 8 + 1) and signet-midnight-examples-v070 (the vault, 29).
+        // 938/938 → 925/925 when the v0.25.0 pin (3) and fff3421c's signet
+        // contract and test callers (10) retired (M48 L).
+        // 925/925 → 893/893 when the 375071b vault (29) and the v0.24.1
+        // signet contract (3) retired.
+        (893, 893),
         "corpus size moved: {} files ({} v3). If the corpus was deliberately \
          recompiled or extended, update this assertion in the same commit and say \
          which source moved it; otherwise the checkout is incomplete.",

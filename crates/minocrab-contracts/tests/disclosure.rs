@@ -1,7 +1,7 @@
-//! THE GATE FOR THE WHOLE QUESTION (notes/disclosure-model.org): a value
+//! The gate for the whole question (notes/disclosure-model.org): a value
 //! disclosed on the public ledger by `disclosure::disclose_to` is recovered by
-//! the recipient's secret key — in NATIVE Rust, with no circuit, no proof and
-//! no transaction — and is NOT recovered by anyone else's.
+//! the recipient's secret key — in native Rust, with no circuit, no proof and
+//! no transaction — and is not recovered by anyone else's.
 //!
 //! The native half is the point. If decryption needed a circuit the claim
 //! would be much weaker: "the recipient can see it" would mean "the recipient
@@ -14,7 +14,7 @@
 //! of them is wrong about Midnight rather than about each other.
 //!
 //! The contract side runs on the on-chain VM through the executor
-//! (`minocrab_sim::v3::exec`), so the registry lookup reads real state and the
+//! (`minocrab_sim::exec`), so the registry lookup reads real state and the
 //! memo lands in a real post-state.
 
 use group::Group;
@@ -31,12 +31,12 @@ use midnight_storage::storage::Array;
 use midnight_transient_crypto::fab::{AlignmentExt, ValueReprAlignedValue};
 use midnight_zkir_v3::ir_instructions::ec_mul::ec_mul_offcircuit;
 use midnight_zkir_v3::ir_instructions::encode::{encode_offcircuit, native_to_jubjub_scalar};
-use minocrab::v3::{Compiled3, DisclosedWire};
+use minocrab::{Compiled, DisclosedWire};
 use minocrab::{Alignment, AlignmentAtom, AlignmentSegment, Fr};
 use minocrab_contracts::disclosure::{self, Disclosure};
-use minocrab_sim::v3::exec::{self, Call, ExecError, Executed};
-use minocrab_sim::v3::{cost, Run3};
-use minocrab_zkir::v3::{IrType, IrValue};
+use minocrab_sim::exec::{self, Call, ExecError, Executed};
+use minocrab_sim::{cost, Run};
+use minocrab_zkir::{IrType, IrValue};
 use sha2::{Digest, Sha256};
 
 // ---- the recipient's side, natively -----------------------------------------------
@@ -51,7 +51,7 @@ fn keypair(seed: u64) -> (JubjubFr, JubjubSubgroup) {
     (ek, JubjubSubgroup::generator() * ek)
 }
 
-/// The witness `register` wants for a key from [`keypair`]: the NATIVE field
+/// The witness `register` wants for a key from [`keypair`]: the native field
 /// element, before the reduction. The circuit applies
 /// `jubjub_scalar_from_native` itself, exactly as `keypair` does, so the two
 /// sides agree on which scalar a seed means.
@@ -75,7 +75,7 @@ fn encode_point(p: JubjubSubgroup) -> [Fr; 2] {
 
 /// `persistentHash` over a FAB-aligned preimage: `Sha256(binary_repr)`, which
 /// is what the ZKIR `persistent_hash` instruction computes
-/// (`minocrab_sim::v3`, the `I::PersistentHash` arm).
+/// (`minocrab_sim`, the `I::PersistentHash` arm).
 fn persistent_hash(alignment: &Alignment, slots: &[Fr]) -> [u8; 32] {
     let value = alignment
         .parse_field_repr(slots)
@@ -125,7 +125,7 @@ fn kdf(shared: JubjubSubgroup) -> Fr {
     Fr::from_le_bytes(&mixed[..31]).expect("31 bytes fit a field element")
 }
 
-/// THE WALLET. Given a memo off the ledger and the recipient's secret scalar,
+/// The wallet. Given a memo off the ledger and the recipient's secret scalar,
 /// recover the disclosed value. No circuit, no proof, no transaction.
 fn wallet_decrypt(memo: &[Fr; 3], ek: JubjubFr) -> Fr {
     let ephemeral = decode_point([memo[0], memo[1]]);
@@ -138,7 +138,7 @@ fn wallet_decrypt(memo: &[Fr; 3], ek: JubjubFr) -> Fr {
     memo[2] - kdf(shared)
 }
 
-/// The inverse of [`encode_point`] — available OFF-circuit only, which is
+/// The inverse of [`encode_point`] — available off-circuit only, which is
 /// exactly why the ledger stores limbs rather than a typed point (see
 /// `disclosure`'s module docs).
 fn decode_point(limbs: [Fr; 2]) -> JubjubSubgroup {
@@ -167,7 +167,7 @@ fn u64_cell(v: u64) -> StateValue<InMemoryDB> {
 /// The empty ledger block: field 0 the key registry, field 1 the memo list.
 ///
 /// A `List<T>` is `Array[3] = {head, tail, length}` (notes/ledger-adts.org), so
-/// the empty one is two nulls and a zero — NOT `Null`, which is what the first
+/// the empty one is two nulls and a zero — not `Null`, which is what the first
 /// attempt wrote and what `pushFront`'s `idx [2]` for the length then refused
 /// with "tried to idx, only map, array, and bmt are supported".
 fn empty_state() -> StateValue<InMemoryDB> {
@@ -182,7 +182,7 @@ fn empty_state() -> StateValue<InMemoryDB> {
 }
 
 fn run(
-    compiled: &Compiled3,
+    compiled: &Compiled,
     st: StateValue<InMemoryDB>,
     inputs: &[Fr],
 ) -> Result<Executed, ExecError> {
@@ -192,7 +192,7 @@ fn run(
 /// [`run`] with a private transcript. `register` witnesses the native scalar
 /// behind the key it publishes, so its proof of possession needs one.
 fn run_wit(
-    compiled: &Compiled3,
+    compiled: &Compiled,
     st: StateValue<InMemoryDB>,
     inputs: &[Fr],
     wit: &[Fr],
@@ -208,12 +208,12 @@ fn run_wit(
 /// The field wires a declared disclosure carried in this run, by label — the
 /// memo as the circuit computed it, addressed the way the eDSL addresses it.
 ///
-/// EVERY record with the label, concatenated in order, not just the first:
+/// Every record with the label, concatenated in order, not just the first:
 /// `PointLimbs::disclose_as` discloses its two limbs as two separate
 /// `disclose` instructions under one label (that is what "one label for both
 /// limbs" means in the `label!` block), so the ephemeral key is two records of
 /// one wire rather than one record of two.
-fn disclosed(compiled: &Compiled3, run: &Run3, label: &str) -> Vec<Fr> {
+fn disclosed(compiled: &Compiled, run: &Run, label: &str) -> Vec<Fr> {
     let matching: Vec<_> = compiled
         .disclosures
         .iter()
@@ -246,7 +246,7 @@ fn account_slots(id: &[u8; 32]) -> [Fr; 2] {
     ]
 }
 
-/// Alice's CALLER SECRET, not her account id. Since §12 option 2 the account
+/// Alice's caller secret, not her account id. Since §12 option 2 the account
 /// is derived from this and never supplied, so the registry key is whatever
 /// `register` computes — which is why the helpers below read it back out of
 /// the run rather than asserting a value.
@@ -309,7 +309,7 @@ fn disclose(value: u128, pk: JubjubSubgroup, ek_native: Fr, seed: &[u8; 32]) -> 
 
 // ---- the gates --------------------------------------------------------------------
 
-/// THE CLAIM: the recipient, and only the recipient, reads the value.
+/// The claim: the recipient, and only the recipient, reads the value.
 #[test]
 fn the_recipient_recovers_the_value_and_nobody_else_does() {
     let (ek, pk) = keypair(42);
@@ -377,7 +377,7 @@ fn a_memo_cannot_be_addressed_to_an_unregistered_key() {
     );
 }
 
-/// PROOF OF POSSESSION: a key whose secret the registrant does not hold
+/// Proof of possession: a key whose secret the registrant does not hold
 /// cannot be registered. Without this, an attacker could point an account at
 /// a key nobody controls and every disclosure to that account would be
 /// undecryptable by anyone — and the registry entry is the only thing a
@@ -402,12 +402,12 @@ fn a_key_the_registrant_does_not_hold_cannot_be_registered() {
         "expected the possession binding's constrain_eq to fail, got {shown}"
     );
 
-    // The same point with its OWN secret registers, so the refusal above is
+    // The same point with its own secret registers, so the refusal above is
     // the proof talking and not the shape of the call.
     register_key(empty_state(), &ALICE_SK, pk, ek_witness(42));
 }
 
-/// SQUATTING IS INEXPRESSIBLE since §12 option 2: the account is derived from
+/// Squatting is inexpressible since §12 option 2: the account is derived from
 /// a witnessed caller secret and there is no argument by which a caller could
 /// name somebody else's. Two different caller secrets therefore register two
 /// different accounts, and Mallory cannot reach Alice's entry at all — not by
@@ -424,7 +424,7 @@ fn the_account_is_derived_from_the_caller_not_chosen() {
     assert_ne!(alice_acct, mallory_acct, "different callers, different accounts");
 
     // Alice's entry is untouched: a disclosure to her account still binds to
-    // HER key, and Mallory's key is refused for it.
+    // her key, and Mallory's key is refused for it.
     let seed = account_slots(&[0x5e; 32]);
     let alice = encode_point(alice_pk);
     run(
@@ -443,8 +443,8 @@ fn the_account_is_derived_from_the_caller_not_chosen() {
     .expect_err("Mallory's key is not Alice's registered key");
 }
 
-/// Re-registering replaces the caller's OWN key and nobody else's, which is
-/// key ROTATION rather than a takeover — a recipient who loses `ek` is
+/// Re-registering replaces the caller's own key and nobody else's, which is
+/// key rotation rather than a takeover — a recipient who loses `ek` is
 /// otherwise locked out forever. It reads like the missing non-membership
 /// check and is not one: the entry a caller can overwrite is only ever the
 /// one their own secret derives.
@@ -458,7 +458,7 @@ fn re_registering_rotates_the_callers_own_key() {
     assert_eq!(first_acct, second_acct, "the same secret is the same account");
 
     // The rotated key is the one a sender now binds against, and the holder
-    // of the NEW secret reads the memo.
+    // of the new secret reads the memo.
     let disclose_to = Disclosure::disclose_to();
     let seed = account_slots(&[0x5e; 32]);
     let new = encode_point(new_pk);
@@ -479,7 +479,7 @@ fn re_registering_rotates_the_callers_own_key() {
 
 /// Encrypting to the identity point is refused: `S = identity` for any `e`,
 /// so `mask = KDF(identity)` is a value any observer can recompute and the
-/// "ciphertext" opens trivially. The identity IS a valid subgroup point, so
+/// "ciphertext" opens trivially. The identity is a valid subgroup point, so
 /// nothing below this assert catches it.
 #[test]
 fn the_identity_key_is_refused() {
@@ -518,20 +518,20 @@ fn the_row_and_k_table() {
     println!("| circuit | k | rows |");
     println!("|---------+---+------|");
     for (name, build) in [
-        ("register", Disclosure::register as fn() -> Compiled3),
+        ("register", Disclosure::register as fn() -> Compiled),
         ("discloseTo", Disclosure::disclose_to),
     ] {
         let (k, rows) = cost(&build().ir);
         println!("| {name} | {k} | {rows} |");
     }
     println!();
-    println!("{}", minocrab_sim::v3::profile(&Disclosure::disclose_to()));
+    println!("{}", minocrab_sim::profile(&Disclosure::disclose_to()));
 }
 
-/// WHY `encrypt` TAKES A `Uint<128>` (upstream PR #913). The 248-bit `kdf` pad
+/// Why `encrypt` takes A `Uint<128>` (upstream PR #913). The 248-bit `kdf` pad
 /// cannot hide a plaintext that reaches bit 248, and the failure is total
 /// rather than statistical: `mask < 2^248`, so `ct = m + mask` never carries
-/// into bit 248, so BIT 248 OF THE CIPHERTEXT IS BIT 248 OF THE PLAINTEXT, for
+/// into bit 248, so bit 248 of the ciphertext is bit 248 of the plaintext, for
 /// every pad. One ciphertext, one bit, no guessing.
 ///
 /// This is also the proof that the `Uint<128>` bound is load-bearing and not
@@ -587,7 +587,7 @@ fn the_248_bit_pad_cannot_hide_a_wide_value() {
         }
     }
 }
-/// WHAT PAYS FOR `derive_shared`'s CONSTANT IDENTITY. Jubjub is a twisted
+/// What pays for `derive_shared`'s constant identity. Jubjub is a twisted
 /// Edwards curve, so its identity is affine `(0, 1)`, and `encode` hands over
 /// exactly those two limbs — which is why the circuit can compare against two
 /// immediates instead of spending a scalar multiplication on
@@ -601,12 +601,12 @@ fn the_identity_point_encodes_to_zero_one() {
     assert_eq!(limbs[1], Fr::from(1u64), "the identity's y limb");
 }
 
-/// THE PRICE OF AN OBSERVER (notes/disclosure-model.org §7). A DAML observer
+/// The price of an observer (notes/disclosure-model.org §7). A DAML observer
 /// is free — adding a party to a contract's observer list costs nothing,
 /// because the ledger routes the payload rather than encrypting it. Here every
 /// additional reader is a scalar multiplication.
 ///
-/// MEASURED: 8290 rows per additional recipient, which is TWO curve operations,
+/// Measured: 8290 rows per additional recipient, which is two curve operations,
 /// not one. `encrypt` recomputes `E = g^e` for every recipient because
 /// `derive_shared` owns the ephemeral — but one ephemeral scalar can serve
 /// every recipient in a call (`E = g^e` once, then `S_i = pk_i^e` per
@@ -619,19 +619,19 @@ fn the_identity_point_encodes_to_zero_one() {
 /// mistake upstream PR #1110 is undoing.
 #[test]
 fn the_marginal_cost_of_an_extra_recipient() {
-    use minocrab::v3::{Circuit3, JubjubPointT, JubjubScalarT};
-    use minocrab_std::v3::{JubjubPoint, Uint};
+    use minocrab::{Circuit, JubjubPointT, JubjubScalarT};
+    use minocrab_std::{JubjubPoint, Uint};
 
     /// A bare circuit encrypting one value to `n` recipients under a shared
     /// ephemeral scalar — the shape, with no ledger and no argument plumbing,
     /// so the difference between two of these is the marginal cost alone.
     fn rows_for(n: usize) -> usize {
-        let mut c = Circuit3::new();
+        let mut c = Circuit::new();
         // Every argument is declared before the first instruction.
         let pks: Vec<_> = (0..n)
             .map(|i| JubjubPoint::from_point(c.arg::<JubjubPointT>(&format!("pk{i}"))))
             .collect();
-        let value = Uint::<128>::from_field_unchecked(c.arg::<minocrab::v3::FieldT>("value"));
+        let value = Uint::<128>::from_field_unchecked(c.arg::<minocrab::FieldT>("value"));
         let e = c.arg::<JubjubScalarT>("e");
         for pk in pks {
             let _memo = disclosure::encrypt(&mut c, pk, value, e);

@@ -1,40 +1,40 @@
-//! Row cost of the two `BorshReader` modes (M11 stage 2,
-//! notes/borsh-format.org §"The deserializer"): what it costs to READ a
+//! Row cost of the two `BorshReader` modes
+//! (notes/borsh-format.org §"The deserializer"): what it costs to read a
 //! fixed-width Borsh value back out of packed bytes, per leaf and per record,
 //! in Split mode (one `div_mod` per field boundary interior to a limb) and in
 //! WitnessCheck mode (witness each leaf, constrain it, re-pack and assert
 //! limb equality).
 //!
 //! Everything is marginal over a per-mode baseline — the `Bytes<N>` argument,
-//! its input constraint, and the mode's fixed cost with ZERO leaves read
+//! its input constraint, and the mode's fixed cost with zero leaves read
 //! (Split's pad assertion, WitnessCheck's empty re-pack and its limb
-//! equalities) — so the numbers are the cost of the READS alone.
+//! equalities) — so the numbers are the cost of the reads alone.
 //!
 //! Run: cargo run --release -p minocrab-sim --example borshcost
 
-use minocrab::v3::Circuit3;
+use minocrab::Circuit;
 use minocrab::Private;
-use minocrab_std::v3::borsh::{read_canonical, Flagged, Split, Tag, WitnessCheck};
-use minocrab_std::v3::{Bool, Bytes, BytesN, Uint, B32};
+use minocrab_std::borsh::{read_canonical, Flagged, Split, Tag, WitnessCheck};
+use minocrab_std::{Bool, Bytes, BytesN, Uint, B32};
 
 /// Bytes of the buffer every measurement reads out of.
 const N: usize = 204;
 
-fn rows(build: impl FnOnce(&mut Circuit3)) -> usize {
-    let mut c = Circuit3::new();
+fn rows(build: impl FnOnce(&mut Circuit)) -> usize {
+    let mut c = Circuit::new();
     build(&mut c);
     c.finish(false).ir.model().rows()
 }
 
 /// The buffer, constrained — what both baselines share.
-fn buffer(c: &mut Circuit3) -> BytesN<Private, N> {
+fn buffer(c: &mut Circuit) -> BytesN<Private, N> {
     let bytes = BytesN::<Private, N>::arg(c, "bytes");
     bytes.constrain_input(c);
     bytes
 }
 
 /// Split mode: read `f`'s leaves, then assert the pad is zero.
-fn split(f: impl FnOnce(&mut Circuit3, &mut Split<Private>)) -> usize {
+fn split(f: impl FnOnce(&mut Circuit, &mut Split<Private>)) -> usize {
     rows(|c| {
         let bytes = buffer(c);
         let mut reader = Split::new(&bytes);
@@ -44,7 +44,7 @@ fn split(f: impl FnOnce(&mut Circuit3, &mut Split<Private>)) -> usize {
 }
 
 /// WitnessCheck mode: read `f`'s leaves, then re-pack and assert equality.
-fn witness_check(f: impl FnOnce(&mut Circuit3, &mut WitnessCheck<N>)) -> usize {
+fn witness_check(f: impl FnOnce(&mut Circuit, &mut WitnessCheck<N>)) -> usize {
     rows(|c| {
         let bytes = buffer(c);
         let mut reader = WitnessCheck::<N>::new(&bytes);
@@ -93,7 +93,7 @@ fn main() {
     leaf!(Flagged<Uint<32, Private>, Private>, "Flagged<u32>");
 
     // The same leaf read at an offset that makes it straddle a 31-byte limb
-    // boundary — Split's cost is a function of the LAYOUT, not just the type.
+    // boundary — Split's cost is a function of the layout, not just the type.
     println!("\n{:28} {:>10} {:>14}", "u64 at byte offset", "Split", "WitnessCheck");
     for skip in [0usize, 23, 27, 30] {
         let s = split(|c, r| {

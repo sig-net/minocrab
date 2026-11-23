@@ -1,26 +1,26 @@
-//! M27 rung 4's RUN-RECORD INTERFACE (notes/zkir-semantics.org §6,
-//! notes/zkir-rung4.org): turn dumped `ProofPreimage`s into PLAIN-TEXT run
+//! The run-record interface (notes/zkir-semantics.org §6,
+//! notes/zkir-rung4.org): turn dumped `ProofPreimage`s into plain-text run
 //! records the Lean interpreter can read without a second implementation of
 //! midnight's tagged binary format.
 //!
 //! Lean must not parse `midnight_serialize::tagged_serialize` output — that
-//! is a format we refused to re-implement at M21 and would be a second,
+//! is a format we do not re-implement and would be a second,
 //! unwarranted serializer. So this regenerator (the house `--ignored`
 //! pattern of `row_snapshot.rs` / `interface_snapshot.rs`) reads each dumped
 //! preimage, names the `.zkir` it was proved against, runs the Rust oracle
-//! (`minocrab_sim::v3::simulate`, CROSS-CHECKED against upstream
+//! (`minocrab_sim::simulate`, cross-checked against upstream
 //! `IrSource::check`), and writes one record per (circuit, variant) under
 //! `crates/minocrab-zkir/lean/differential/`.
 //!
-//! Every artifact a record names is a CORPUS artifact — compactc's own
+//! Every artifact a record names is a corpus artifact — compactc's own
 //! `.zkir`, already tracked under `corpus/zkir/` — so the records add no
 //! duplicated artifact bytes, and the gate is a differential between
 //! compactc's output and our Lean rather than between two of ours. That is
 //! sound because the differential suites assert PI-equality of our artifact
 //! and the corpus twin on exactly these preimages
-//! (`minocrab_sim::v3::assert_call_compatible`).
+//! (`minocrab_sim::assert_call_compatible`).
 //!
-//! REGENERATE (two steps, both from the repo root):
+//! Regenerate (two steps, both from the repo root):
 //!
 //! ```text
 //! MINOCRAB_DUMP_PREIMAGES=$PWD/target/lean-differential/preimages \
@@ -49,8 +49,8 @@ use midnight_zkir_v3::ir_instructions::from_bytes::from_bytes_offcircuit;
 use midnight_zkir_v3::ir_instructions::to_bytes::to_bytes_offcircuit;
 use midnight_zkir_v3::ir_instructions::into_coordinates::into_coordinates_offcircuit;
 use minocrab::Fr;
-use minocrab_sim::v3::{simulate, Run3};
-use minocrab_zkir::v3::{IrSource, IrType, IrValue};
+use minocrab_sim::{simulate, Run};
+use minocrab_zkir::{IrSource, IrType, IrValue};
 use sha2::{Digest as _, Sha256};
 use sha3::Keccak256;
 
@@ -61,9 +61,11 @@ const CHUNK: usize = 8;
 
 /// The corpus directory each family's `.zkir` lives in, repo-relative.
 const VAULT_DIR: &str =
-    "corpus/zkir/signet-midnight-examples/examples/erc20-vault/contract/src/erc20-vault/zkir";
-const SIGNET_DIR: &str =
-    "corpus/zkir/signet-midnight-integration-v0250/packages/signet-contract/src/signet-contract/zkir";
+    "corpus/zkir/signet-midnight-examples-v070/examples/erc20-vault/contract/src/erc20-vault/zkir";
+const SIGNER_DIR: &str =
+    "corpus/zkir/signet-midnight-integration-v026/packages/signet-signer/src/signet-signer/zkir";
+const RESPONDER_DIR: &str =
+    "corpus/zkir/signet-midnight-integration-v026/packages/signet-responder/src/signet-responder/zkir";
 const MANAGER_DIR: &str = "corpus/zkir/aa-midnight-evm-experiment/contracts/manager/zkir";
 
 /// `(<preimage stem>, <repo-relative artifact path>)` for every dumped
@@ -72,17 +74,17 @@ const MANAGER_DIR: &str = "corpus/zkir/aa-midnight-evm-experiment/contracts/mana
 /// differential suites already prove PI-equal on these preimages.
 fn corpus_table() -> Vec<(&'static str, String)> {
     let mut t: Vec<(&'static str, String)> = Vec::new();
-    // The twenty-nine vault circuits (the M44 flush-pattern shape). The
+    // The twenty-nine vault circuits (the flush pattern at 0.7.0-rc.2). The
     // preimage stem is `Circuit::zkir_name`, which is also compactc's file
     // stem.
     for name in [
         "initialise",
         "setGasParams",
         "addAllowedToken",
+        "setTokenFees",
+        "setFeeRecipient",
         "flushQueue",
-        "queueAttestation0",
-        "queueAttestation1",
-        "queueAttestation32",
+        "queueAttestation",
         "startReplaceNonce",
         "sendReplaceNonce",
         "completeReplaceNonce",
@@ -108,9 +110,10 @@ fn corpus_table() -> Vec<(&'static str, String)> {
     ] {
         t.push((name, format!("{VAULT_DIR}/{name}.zkir")));
     }
-    // The signet signer's three emit-only circuits.
-    for name in ["signBidirectional", "respond", "respondBidirectional"] {
-        t.push((name, format!("{SIGNET_DIR}/{name}.zkir")));
+    // The signet signer's and the signet responder's three emit-only circuits.
+    t.push(("signBidirectional", format!("{SIGNER_DIR}/signBidirectional.zkir")));
+    for name in ["respond", "respondBidirectional"] {
+        t.push((name, format!("{RESPONDER_DIR}/{name}.zkir")));
     }
     // The manager: `depositShielded` (persistent_hash + transient_hash) and
     // the `execute` variants (keccak256 + persistent_hash + transient_hash +
@@ -133,7 +136,7 @@ fn corpus_table() -> Vec<(&'static str, String)> {
     t
 }
 
-/// Which preimages get a TAMPERED sibling, and where. `(stem, part, index)`
+/// Which preimages get a tampered sibling, and where. `(stem, part, index)`
 /// with the index taken modulo the stream length, so the table survives a
 /// scenario growing a slot. `Part::Inputs` tampering also breaks the
 /// communications commitment — that is a genuine reject and exactly the
@@ -183,7 +186,7 @@ impl Part {
 // ==== lexemes ===============================================================
 
 /// A field element as the artifact spells its immediates: `0x` then
-/// LITTLE-ENDIAN hex bytes, minimal length, at least one byte
+/// little-endian hex bytes, minimal length, at least one byte
 /// (compactc's `zkir-field-rep->string`, print-zkir-v3.ss:46-61; the Lean
 /// twin is `MinocrabZkir.immString`).
 fn fr_lexeme(x: &Fr) -> String {
@@ -199,7 +202,7 @@ fn fr_lexeme(x: &Fr) -> String {
     s
 }
 
-/// A byte string in STREAM order, `#` then two lowercase hex digits each.
+/// A byte string in stream order, `#` then two lowercase hex digits each.
 fn bytes_lexeme(bs: &[u8]) -> String {
     let mut s = String::with_capacity(1 + 2 * bs.len());
     s.push('#');
@@ -290,11 +293,11 @@ fn wrapped(key: &str, values: &[String]) -> String {
 /// upstream `IrSource::check` (which is `preprocess(..)?.pi_skips`
 /// verbatim, midnight-zkir 3.2.0 src/ir.rs:77-82).
 ///
-/// `check` PANICS rather than erroring on some malformed preimages
+/// `check` panics rather than erroring on some malformed preimages
 /// (notes/zkir-semantics.org §10 I2: `decode_offcircuit`'s `assert_eq!` on a
 /// `Bytes<32>` limb), so a panic there is caught and read as "not accept" —
 /// which is the disposition that note already records for this rung.
-fn oracle(ir: &IrSource, pi: &ProofPreimage) -> Option<Run3> {
+fn oracle(ir: &IrSource, pi: &ProofPreimage) -> Option<Run> {
     let ours = simulate(ir, pi).ok();
     let theirs: Option<Vec<Option<usize>>> =
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| ir.check(pi)))
@@ -313,7 +316,7 @@ fn oracle(ir: &IrSource, pi: &ProofPreimage) -> Option<Run3> {
 }
 
 /// Render one record.
-fn record(artifact: &str, variant: &str, pi: &ProofPreimage, run: Option<&Run3>) -> String {
+fn record(artifact: &str, variant: &str, pi: &ProofPreimage, run: Option<&Run>) -> String {
     let mut out = String::new();
     out.push_str(
         "# ZKIR v3 RUN RECORD — GENERATED, do not edit.\n\
@@ -340,14 +343,14 @@ fn record(artifact: &str, variant: &str, pi: &ProofPreimage, run: Option<&Run3>)
         None => out.push_str("comm_comm none\n"),
         Some((c, r)) => out.push_str(&format!("comm_comm {} {}\n", fr_lexeme(&c), fr_lexeme(&r))),
     }
-    // ---- the EXPECTED block: everything below this line is what
+    // ---- the expected block: everything below this line is what
     // `lake exe zkir-run` must print, byte for byte.
     out.push_str(&expected_block(run));
     out
 }
 
 /// The expected block — `zkir-run`'s entire stdout for this record.
-fn expected_block(run: Option<&Run3>) -> String {
+fn expected_block(run: Option<&Run>) -> String {
     let Some(run) = run else {
         return "result reject\n".to_string();
     };
@@ -378,7 +381,7 @@ fn expected_block(run: Option<&Run3>) -> String {
 
 /// The primitive-level KATs: one line per call, in the same lexemes the run
 /// records use. These are what validates each ported intrinsic on its own,
-/// BEFORE the interpreter is asked to agree on a whole circuit — a
+/// before the interpreter is asked to agree on a whole circuit — a
 /// disagreement here names the primitive, a disagreement in a record does
 /// not.
 ///
@@ -448,7 +451,7 @@ fn known_answers() -> String {
     //    byte hashes: `Alignment::parse_field_repr` then
     //    `ValueReprAlignedValue::binary_repr` (ir_vm.rs:491-499). The
     //    non-canonical vectors are the point: a limb carrying a byte above
-    //    its slot must REJECT, not truncate.
+    //    its slot must reject, not truncate.
     for (length, limbs) in fab_cases() {
         let align = Alignment(vec![AlignmentSegment::Atom(AlignmentAtom::Bytes { length })]);
         let got = align.parse_field_repr(&limbs).map(|v| {
@@ -602,7 +605,7 @@ fn fab_cases() -> Vec<(u32, Vec<Fr>)> {
         (32, vec![limb(0xfe), wide31]),
         // Exactly one full limb.
         (31, vec![wide31]),
-        // Two full limbs, no stray — note the REVERSED limb order.
+        // Two full limbs, no stray — note the reversed limb order.
         (62, vec![wide31, limb(9)]),
         // Empty.
         (0, vec![]),
@@ -704,7 +707,7 @@ fn regenerate_lean_run_records() {
             pi_path.display()
         );
         let pi = read_preimage(&pi_path);
-        let ir = minocrab_zkir::v3::read_zkir(root.join(&artifact)).unwrap_or_else(|e| {
+        let ir = minocrab_zkir::read_zkir(root.join(&artifact)).unwrap_or_else(|e| {
             panic!("corpus artifact {artifact} does not parse: {e}");
         });
 
@@ -730,9 +733,9 @@ fn regenerate_lean_run_records() {
             );
             let i = idx % slot.len();
             slot[i] = slot[i] + Fr::from(1u64);
-            // A tampered element is USUALLY a reject; it is not always one,
+            // A tampered element is usually a reject; it is not always one,
             // and that is a fact about the circuit rather than a defect in
-            // this table. Transcript reads and their guards are UNCONSTRAINED
+            // this table. Transcript reads and their guards are unconstrained
             // in the v3 statement (notes/zkir-semantics.org §4.3, and
             // upstream's own spec PR #16 §6.6(d)/O4), so a private input that
             // no downstream constraint depends on may be perturbed freely —
@@ -770,7 +773,7 @@ fn regenerate_lean_run_records() {
 }
 
 /// The records must stay in step with the Rust oracle: re-derive every
-/// record's expected block from the artifact and preimage IT NAMES and
+/// record's expected block from the artifact and preimage it names and
 /// compare. This is a plain `cargo test` (no `lake`, no preimage dump) —
 /// what it catches is a record edited by hand or left behind by a change to
 /// `simulate`.
@@ -793,7 +796,7 @@ fn the_run_records_agree_with_the_rust_oracle() {
     for path in files {
         let text = std::fs::read_to_string(&path).expect("record reads");
         let (artifact, pi, expected) = parse_record(&text);
-        let ir = minocrab_zkir::v3::read_zkir(root.join(&artifact)).expect("artifact parses");
+        let ir = minocrab_zkir::read_zkir(root.join(&artifact)).expect("artifact parses");
         let run = oracle(&ir, &pi);
         assert_eq!(
             expected_block(run.as_ref()),

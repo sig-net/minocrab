@@ -1,9 +1,9 @@
-//! The record's BYTE layout, field by field — `chain-midnight/src/
+//! The record's byte layout, field by field — `chain-midnight/src/
 //! request_id.rs` at `b940f0a7`, kept after the MPC deleted it in #1206 for
 //! two reasons: the legacy (keccak) request id the captured fixture carries
 //! is keccak over exactly these bytes, and the layout drift gate in
 //! minocrab-contracts (`tests/signet_flow.rs`) fills a ledger cell from
-//! them. The LIVE request id is [`crate::hashing::compute_request_id`].
+//! them. The live request id is [`crate::hashing::compute_request_id`].
 
 use sha3::{Digest, Keccak256};
 
@@ -12,7 +12,7 @@ use crate::records::{
     SignBidirectionalRecordV1, SignBidirectionalRecordV2,
 };
 
-/// keccak256 — the LEGACY id rule (see [`crate::hashing::legacy_request_id`]).
+/// keccak256 — the legacy id rule (see [`crate::hashing::legacy_request_id`]).
 pub fn hash_payload(data: &[u8]) -> [u8; 32] {
     Keccak256::digest(data).into()
 }
@@ -54,7 +54,7 @@ pub fn binary_repr_v2(record: &SignBidirectionalRecordV2) -> Vec<u8> {
 
 /// The V1 record's byte layout — what the ledger cell's FAB binary is, so a
 /// test can fill a cell from a record and a decoder can be checked against
-/// it. NOT a hash preimage: the V1 id hashes
+/// it. Not a hash preimage: the V1 id hashes
 /// [`crate::hashing::v1::request_id`]'s seven-field struct instead.
 ///
 /// `respondSerializationSchema` is `Bytes<0>` and contributes nothing.

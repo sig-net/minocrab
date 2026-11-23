@@ -1,103 +1,29 @@
 //! Shapes shared across the sig-net contracts.
 
-use minocrab::v3::{Circuit3, FieldT, Wire3};
+use minocrab::{Circuit, FieldT, Wire};
 use minocrab::{AlignmentAtom, Private, Public};
-use minocrab_ledger::{
+use minocrab_experimental::impact::raw::{
     cell_write_coin, counter_read, emit, kernel_claim_zswap_coin_receive,
     kernel_claim_zswap_coin_spend, kernel_claim_zswap_nullifier, kernel_mint_shielded, ImpactElem,
     LedgerValue,
 };
-use minocrab_std::v3::kernel;
-use minocrab_std::v3::kernel::SelfAddress;
-use minocrab_std::v3::{
+use minocrab_std::kernel;
+use minocrab_std::kernel::SelfAddress;
+use minocrab_std::{
     CoinNonce, TokenDomainSeparator,
-    b32_newtype, coin_commitment, coin_nullifier_contract, token_type, CircuitAbi, CoinRecipient,
-    ContractAddress, Secp256k1Point, ShieldedCoinInfo3, Uint, B32,
+    coin_commitment, coin_nullifier_contract, token_type, CircuitAbi, CoinRecipient,
+    ContractAddress, Secp256k1Point, ShieldedCoinInfo, Uint, B32,
 };
 
-b32_newtype! {
-    /// The witnessed vault secret key (`witness …SecretKey(): Bytes<32>`) —
-    /// what [`commitment_transient`] derives an identity from, and the first
-    /// preimage limb of every refund commitment. Constructed only by [`witness_sk`], so nothing but a
-    /// witnessed secret key can reach those derivations: any other private
-    /// `B32` in scope (a nonce, a colour, a request id) no longer
-    /// type-checks there, which is newtype-survey hazard A2 closed.
-    SecretKey,
-    /// An identity commitment — the MPC's key-derivation PATH, i.e. the
-    /// value that decides which EVM account is derived. Produced only by
-    /// [`commitment_transient`]; the stored
-    /// deployer and every depositor/caller comparison carry this type, so
-    /// no other 32-byte value (a nonce, a colour, a request id, a refund
-    /// commitment) can be compared against or written as one —
-    /// newtype-survey hazard A3, the family whose near-unification would
-    /// have "silently restranded every derived account"
-    /// (notes/vault-vocabulary.org §0).
-    UserCommitment,
-    /// A refund commitment — `refundCommitment(sk, requestId)`, one
-    /// derivation for the withdraw, swap, supply and redeem flows (the
-    /// settle-view maps distinguish which flow holds one). Produced only by
-    /// `erc20_vault::refund_commitment` and the `Pending` lineage's
-    /// `Commit::to`, stored and looked up as this type, so a
-    /// [`UserCommitment`] (or any other 32-byte value) can no longer satisfy
-    /// a withdrawer/swapper gate — newtype-survey hazard A4.
-    RefundCommitment,
-    /// The MPC's SIGNING PATH — slot 5 of the sign-bidirectional event
-    /// record, the value the MPC derives its signing key from. Genuinely
-    /// polymorphic (deposit signs from the depositor's [`UserCommitment`];
-    /// withdraw/swap/approveRouter from the constant vault path), which is
-    /// why it is ONE type with exactly two constructors —
-    /// `SigningPath::from(user_commitment)` and [`SigningPath::vault_path`]
-    /// — rather than four: nothing else fits the slot, so the
-    /// sender/path/caip2 transposition of newtype-survey hazard A7 no
-    /// longer compiles.
-    SigningPath,
-    /// A CAIP-2 chain id — slot 7 of the event record and the vault's
-    /// `caip2Id` cell. Distinct from [`SigningPath`] so the MPC can never
-    /// be asked to derive a signing key from a chain id (hazard A7's
-    /// sharpest transposition).
-    Caip2Id,
-}
-
-/// A depositor's identity commitment IS a signing path — deposit's event
-/// signs from it. The only conversion into [`SigningPath`] besides
-/// [`SigningPath::vault_path`].
-impl<V: minocrab_std::v3::Vis3> From<UserCommitment<V>> for SigningPath<V> {
-    fn from(commitment: UserCommitment<V>) -> Self {
-        SigningPath(commitment.bytes())
-    }
-}
-
-impl SigningPath<Public> {
-    /// `pad(32, "vault")` — the contract-authored path the non-deposit
-    /// circuits sign from.
-    ///
-    /// The vault's spelling of [`Self::contract_path`], kept because the
-    /// deployed lineage names it (and because its pad IS the vault's).
-    pub fn vault_path(c: &mut Circuit3) -> Self {
-        Self::contract_path(c)
-    }
-
-    /// THE CONTRACT'S OWN SIGNING PATH — the constant the MPC derives this
-    /// contract's EVM account from, and the value `evm_flow::Pending::request`
-    /// files without asking the caller for it.
-    ///
-    /// It is a CONSTANT of the contract, not an input: a request that could
-    /// name its own path could ask the MPC to sign from somebody else's
-    /// account. Today every lineage in this workspace derives from the same
-    /// pad (`erc20_vault::VAULT_PATH`, `pad(32, "vault")`), so this is that
-    /// pad under a name that no longer says "vault"; making the pad
-    /// per-contract is queued with the nonce and the gas policy
-    /// (notes/evm-calls.org §7).
-    pub fn contract_path(c: &mut Circuit3) -> Self {
-        SigningPath(B32::pad(c, super::erc20_vault::VAULT_PATH))
-    }
-}
+pub use minocrab_signet::common::{
+    witness_sk, Caip2Id, RefundCommitment, SecretKey, SigningPath, UserCommitment, VAULT_PATH,
+};
 
 /// A `Secp256k1Point`'s FAB alignment: x as b24+b8, y as b24+b8, plus a
 /// native field element (notes/ledger-abi.org §3) — 5 limbs, matching
 /// `encode`'s output.
 ///
-/// The table itself lives on the ARGUMENT type (M9 phase 5), because a
+/// The table itself lives on the argument type, because a
 /// point's alignment is one fact: the same five atoms describe the value
 /// entering a circuit and the value written to a `Secp256k1Point` cell.
 pub fn secp256k1_point_atoms() -> Vec<AlignmentAtom> {
@@ -110,40 +36,29 @@ pub fn secp256k1_point_atoms() -> Vec<AlignmentAtom> {
 /// upstream accepted that a transientHash change at a fork re-keys derived
 /// accounts). Four limbs in, one field element out, 31 bytes kept: a few
 /// hundred rows where the SHA-256 forms cost ~1,500.
-pub fn commitment_transient(c: &mut Circuit3, sk: &SecretKey<Private>) -> UserCommitment<Private> {
+pub fn commitment_transient(c: &mut Circuit, sk: &SecretKey<Private>) -> UserCommitment<Private> {
     let sk = sk.bytes();
     c.region("identity commitment (transientHash)", |c| {
-        let pad = minocrab_std::v3::B32::pad(c, "vault:user:");
+        let pad = minocrab_std::B32::pad(c, "vault:user:");
         let f = c.transient_hash(&[pad.hi.private(), pad.lo.private(), sk.hi, sk.lo]);
-        UserCommitment(minocrab_std::v3::hash::upgrade_from_transient(c, f))
+        UserCommitment(minocrab_std::hash::upgrade_from_transient(c, f))
     })
-}
-
-/// Witness a secret key (`witness …SecretKey(): Bytes<32>`), input-constrained.
-/// The ONLY [`SecretKey`] constructor.
-pub fn witness_sk(c: &mut Circuit3) -> SecretKey<Private> {
-    let sk = B32 {
-        hi: c.witness::<FieldT>(),
-        lo: c.witness::<FieldT>(),
-    };
-    sk.constrain_input(c);
-    SecretKey(sk)
 }
 
 /// `right<ZswapCoinPublicKey, ContractAddress>(kernel.self())` — a fresh
 /// kernel.self read packaged as a coin recipient (`is_left` = 0, the
 /// unused left arm `default<ZswapCoinPublicKey>`).
-fn self_recipient(c: &mut Circuit3) -> CoinRecipient<Public> {
+fn self_recipient(c: &mut Circuit) -> CoinRecipient<Public> {
     let me = kernel::self_address(c);
     contract_recipient(c, me)
 }
 
 /// [`self_recipient`] against an address the caller already read.
-fn contract_recipient(c: &mut Circuit3, me: SelfAddress) -> CoinRecipient<Public> {
+fn contract_recipient(c: &mut Circuit, me: SelfAddress) -> CoinRecipient<Public> {
     let zero = c.constant(0u64);
     CoinRecipient {
         is_left: zero,
-        left: minocrab_std::v3::ZswapCoinPublicKey(B32 { hi: zero, lo: zero }),
+        left: minocrab_std::ZswapCoinPublicKey(B32 { hi: zero, lo: zero }),
         right: me.address(),
     }
 }
@@ -156,7 +71,7 @@ fn b32_value(b: &B32<Public>) -> LedgerValue {
 /// `recipient = right(kernel.self());` `createZswapOutput(coin, recipient)`
 /// (a Void witness — off-circuit only, nothing emitted);
 /// `kernel.claimZswapCoinReceive(coinCommitment(coin, recipient))`.
-pub fn receive_shielded(c: &mut Circuit3, coin: &ShieldedCoinInfo3<Public>) {
+pub fn receive_shielded(c: &mut Circuit, coin: &ShieldedCoinInfo<Public>) {
     c.region("coin: receive", |c| {
         let recipient = self_recipient(c);
         claim_receive(c, coin, &recipient);
@@ -165,8 +80,8 @@ pub fn receive_shielded(c: &mut Circuit3, coin: &ShieldedCoinInfo3<Public>) {
 
 /// `kernel.claimZswapCoinReceive(coinCommitment(coin, recipient))`.
 fn claim_receive(
-    c: &mut Circuit3,
-    coin: &ShieldedCoinInfo3<Public>,
+    c: &mut Circuit,
+    coin: &ShieldedCoinInfo<Public>,
     recipient: &CoinRecipient<Public>,
 ) {
     let cm = coin_commitment(c, coin, recipient);
@@ -178,7 +93,7 @@ fn claim_receive(
 /// runtime coin commitment (`rt-coin-commit`, the same coinCommitment
 /// preimage), and the writeCoin op sequence resolving the Merkle-tree
 /// index on chain.
-pub fn write_coin_to_self(c: &mut Circuit3, field: u8, coin: &ShieldedCoinInfo3<Public>) {
+pub fn write_coin_to_self(c: &mut Circuit, field: u8, coin: &ShieldedCoinInfo<Public>) {
     c.region("coin: write", |c| {
         let recipient = self_recipient(c);
         let cm = coin_commitment(c, coin, &recipient);
@@ -211,7 +126,7 @@ pub fn write_coin_to_self(c: &mut Circuit3, field: u8, coin: &ShieldedCoinInfo3<
 /// recipient is a static `left`, and a constant-false-guarded op stream
 /// would break PI equality there.)
 pub fn mint_shielded_token(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     domain_sep: &TokenDomainSeparator<Public>,
     value: Uint<64, Public>,
     nonce: &CoinNonce<Public>,
@@ -228,7 +143,7 @@ pub fn mint_shielded_token(
         emit(c, &kernel_mint_shielded(&ds_val, &amount_val));
 
         // cm = coinCommitment({nonce, color, value}, recipient)
-        let coin = ShieldedCoinInfo3 {
+        let coin = ShieldedCoinInfo {
             nonce: *nonce,
             color,
             value: value.field(),
@@ -250,7 +165,7 @@ pub fn mint_shielded_token(
     });
 }
 
-/// A full-value burn that CLAIMS A NULLIFIER: the contract spends a coin it
+/// A full-value burn that claims a nullifier: the contract spends a coin it
 /// owns, so the spend is authorised by nullifying it.
 ///
 /// The other burn is [`burn_spend`], and the difference is protocol rather
@@ -267,9 +182,9 @@ pub fn mint_shielded_token(
 /// zero key, and the spend claim. (`createZswapInput`/`Output` are Void
 /// witness natives — off-circuit only.)
 pub fn burn_coin(
-    c: &mut Circuit3,
-    one: Wire3<FieldT, Public>,
-    coin: &ShieldedCoinInfo3<Public>,
+    c: &mut Circuit,
+    one: Wire<FieldT, Public>,
+    coin: &ShieldedCoinInfo<Public>,
 ) {
     c.region("coin: burn", |c| {
         // const selfAddr = kernel.self(); claimZswapNullifier(coinNullifier(...))
@@ -280,10 +195,10 @@ pub fn burn_coin(
 
 /// Everything [`burn_coin`] does after reading `kernel.self()`.
 fn burn_body(
-    c: &mut Circuit3,
-    one: Wire3<FieldT, Public>,
+    c: &mut Circuit,
+    one: Wire<FieldT, Public>,
     me: SelfAddress,
-    coin: &ShieldedCoinInfo3<Public>,
+    coin: &ShieldedCoinInfo<Public>,
 ) {
     {
         let nul = coin_nullifier_contract(c, coin, &me.bytes());
@@ -298,7 +213,7 @@ fn burn_body(
         let evolved = c.transient_hash(&[tag, coin.nonce.bytes().lo]);
         let (_overflow, lo) = c.div_mod_power_of_two(evolved, 248);
         let zero = c.constant(0u64);
-        let output = ShieldedCoinInfo3 {
+        let output = ShieldedCoinInfo {
             nonce: CoinNonce(B32 { hi: zero, lo }),
             color: coin.color,
             value: coin.value,
@@ -307,7 +222,7 @@ fn burn_body(
         // cm = coinCommitment(output, shieldedBurnAddress()) — left(default).
         let burn = CoinRecipient {
             is_left: one,
-            left: minocrab_std::v3::ZswapCoinPublicKey(B32 { hi: zero, lo: zero }),
+            left: minocrab_std::ZswapCoinPublicKey(B32 { hi: zero, lo: zero }),
             right: ContractAddress(B32 { hi: zero, lo: zero }),
         };
         let cm = coin_commitment(c, &output, &burn);
@@ -315,8 +230,8 @@ fn burn_body(
     }
 }
 
-/// The OPTIMIZED burn (M10 rung vi, avenue 6): the surrendered coin is
-/// destroyed by a SINGLE claimed shielded spend of the burn-address output —
+/// The optimized burn: the surrendered coin is
+/// destroyed by a single claimed shielded spend of the burn-address output —
 /// no `receiveShielded` custody claim and no nullifier. The user funds the
 /// burn Output directly (`createZswapOutput(coin, shieldedBurnAddress())`, a
 /// Void witness — off-circuit — with NO `createZswapInput` preceding it), and
@@ -331,21 +246,21 @@ fn burn_body(
 /// now the only one). Well-formedness of exactly this shape against the pinned
 /// ledger is proven in tests/erc20_vault_opt_burn_wellformed.rs.
 ///
-/// A full-value burn as ONE CLAIMED SPEND, with no nullifier claim and no
+/// A full-value burn as one claimed spend, with no nullifier claim and no
 /// `kernel.self()` read — the burn recipient is `left(default)` rather than
 /// self, so there is no owned coin to nullify. See [`burn_coin`] for the twin
 /// that does nullify, and why the two names are not a cost distinction.
 ///
-/// The burn Output keeps the port's EVOLVED nonce (the transientHash +
+/// The burn Output keeps the port's evolved nonce (the transientHash +
 /// div_mod, ~165 rows), so its commitment is byte-identical to the one the
 /// compat burn already builds and the off-chain twin already constructs; only
 /// the receive coinCommitment and the nullifier — two SHA-256 pair hashes,
-/// ~11,280 rows — are removed. `me` is no longer read (the burn recipient is
+/// ~11,280 rows — are removed. `me` is not read (the burn recipient is
 /// `left(default)`, not `self`), so it is not a parameter.
 pub fn burn_spend(
-    c: &mut Circuit3,
-    one: Wire3<FieldT, Public>,
-    coin: &ShieldedCoinInfo3<Public>,
+    c: &mut Circuit,
+    one: Wire<FieldT, Public>,
+    coin: &ShieldedCoinInfo<Public>,
 ) {
     c.region("coin: burn", |c| {
         // nonce' = upgradeFromTransient(transientHash([
@@ -357,7 +272,7 @@ pub fn burn_spend(
         let evolved = c.transient_hash(&[tag, coin.nonce.bytes().lo]);
         let (_overflow, lo) = c.div_mod_power_of_two(evolved, 248);
         let zero = c.constant(0u64);
-        let output = ShieldedCoinInfo3 {
+        let output = ShieldedCoinInfo {
             nonce: CoinNonce(B32 { hi: zero, lo }),
             color: coin.color,
             value: coin.value,
@@ -365,7 +280,7 @@ pub fn burn_spend(
         // cm = coinCommitment(output, shieldedBurnAddress()) — left(default).
         let burn = CoinRecipient {
             is_left: one,
-            left: minocrab_std::v3::ZswapCoinPublicKey(B32 { hi: zero, lo: zero }),
+            left: minocrab_std::ZswapCoinPublicKey(B32 { hi: zero, lo: zero }),
             right: ContractAddress(B32 { hi: zero, lo: zero }),
         };
         let cm = coin_commitment(c, &output, &burn);
@@ -377,7 +292,7 @@ pub fn burn_spend(
 /// the shared body of the static-`left(pk)` mints: compactc folds the
 /// recipient selects and the auto-receive branch.
 ///
-/// ONE name for every artifact (M18): the `kernel.self()` read comes from
+/// One name for every artifact: the `kernel.self()` read comes from
 /// [`kernel::self_address`], so a compat circuit gets its per-mint read
 /// (compactc parity) and an opt-lineage circuit that opened with
 /// [`kernel::cache_self_address`] gets the cached wires — a circuit that
@@ -385,11 +300,11 @@ pub fn burn_spend(
 /// "one read" once at its top instead of threading `me` through a `_with`
 /// twin.
 pub fn mint_shielded_token_to_key(
-    c: &mut Circuit3,
+    c: &mut Circuit,
     domain_sep: &TokenDomainSeparator<Public>,
     value: Uint<64, Public>,
     nonce: &CoinNonce<Public>,
-    pk: &minocrab_std::v3::ZswapCoinPublicKey<Public>,
+    pk: &minocrab_std::ZswapCoinPublicKey<Public>,
 ) {
     let me = kernel::self_address(c);
     c.region("coin: mint", |c| {
@@ -401,7 +316,7 @@ pub fn mint_shielded_token_to_key(
 
         let one = c.constant(1u64);
         let zero = c.constant(0u64);
-        let coin = ShieldedCoinInfo3 {
+        let coin = ShieldedCoinInfo {
             nonce: *nonce,
             color,
             value: value.field(),
@@ -417,7 +332,7 @@ pub fn mint_shielded_token_to_key(
 }
 
 /// The one-shot gate: `assert(<counter at field> == 0)`.
-pub fn assert_counter_zero(c: &mut Circuit3, field: u8) {
+pub fn assert_counter_zero(c: &mut Circuit, field: u8) {
     let count = counter_read(c, field);
     let zero = c.constant(0u64);
     let unset = c.test_eq(count, zero);

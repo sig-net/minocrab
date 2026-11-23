@@ -1,22 +1,22 @@
 //! The disclosure report, valued: what a real run of a real circuit made
-//! public, resolved to the values it took (M9 phase 6).
+//! public, resolved to the values it took.
 //!
-//! The generated set-equality tests beside each circuit check the LABELS,
+//! The generated set-equality tests beside each circuit check the labels,
 //! statically and cheaply. This is the other half — the v3 twin of v2's
 //! `simulate_compiled` report — and it needs a `ProofPreimage`, so it lives
 //! here, on the vault harness that already builds one.
 //!
-//! What it pins is the whole reporting path at once: that a v3 `Disclosure3`
-//! carries an `Identifier` the simulator's memory can be keyed by (before
-//! phase 6 it carried `index: 0`, and every value in a v3 report would have
+//! What it pins is the whole reporting path at once: that a v3 `Disclosure`
+//! carries an `Identifier` the simulator's memory can be keyed by (without
+//! one every value in a v3 report would
 //! read `<not computed>`); that a `Bytes<32>` disclosed under one label
-//! reports BOTH limbs under that one label; and that the values are the
+//! reports both limbs under that one label; and that the values are the
 //! preimage's own.
 
 use midnight_transient_crypto::proofs::ProofPreimage;
-use minocrab::v3::Compiled3;
+use minocrab::Compiled;
 use minocrab_contracts::erc20_vault;
-use minocrab_sim::v3::simulate_compiled;
+use minocrab_sim::simulate_compiled;
 
 mod support;
 mod vault;
@@ -39,7 +39,7 @@ the request's EIP-1559 fee envelope | disclosed | 00943577
 the request's EIP-1559 fee envelope | disclosed | 905f01
 the request's ownership commitment | disclosed | -, 3ccff5f8d992d4111463daaf9853d87eaf1d2ee838157f016a56692a715993";
 
-fn report_lines(compiled: &Compiled3, pi: &ProofPreimage) -> Vec<String> {
+fn report_lines(compiled: &Compiled, pi: &ProofPreimage) -> Vec<String> {
     let (_run, report) = simulate_compiled(compiled, pi).expect("the circuit accepts");
     report
         .disclosures
@@ -63,11 +63,11 @@ fn the_start_deposit_disclosure_report_is_valued() {
         lines.join("\n")
     );
 
-    // One record per LOGICAL value, however many wires it has: the two
+    // One record per logical value, however many wires it has: the two
     // commitments — the depositor's identity and the request's ownership —
     // report their two limbs each on one line, and the deposited ERC20, the
     // caller-chosen request index, the deposited amount and the caller's EVM
-    // account nonce one each. The gas params are three records under ONE
+    // account nonce one each. The gas params are three records under one
     // label (gas limit, maxFeePerGas, maxPriorityFeePerGas, in that order),
     // so nine lines for seven labels. Under M44's flush pattern
     // `startDeposit` only files the request, so the cross-contract call's

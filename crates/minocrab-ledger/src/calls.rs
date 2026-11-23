@@ -3,15 +3,15 @@
 
 use midnight_base_crypto::fab::AlignmentAtom;
 use midnight_onchain_state::state::EntryPointBuf;
-use minocrab::v3::{CallArgs, CallResult, Circuit3, Disclose, FieldT, Prim, Wire3};
-use minocrab::v3::{ImpactElem, LimbConstraint};
+use minocrab::{CallArgs, Circuit, Decode, Disclose, FieldT, Prim, Wire};
+use minocrab::{ImpactElem, LimbConstraint};
 use minocrab::{Fr, Public};
 
 use crate::impact::*;
 use crate::kernel::*;
 use crate::reads::*;
 
-// What a cross-contract call itself discloses. A CALLER declares these in
+// What a cross-contract call itself discloses. A caller declares these in
 // its own `Discloses<..>` — a call is a disclosure the caller makes, so the
 // labels are part of this crate's public vocabulary rather than strings
 // buried in `contract_call`.
@@ -27,12 +27,12 @@ minocrab::label! {
 /// desugars it: witness the callee's return limbs and the communication
 /// randomness; recompute `comm = transientHash([rand] ++ args ++ results)`
 /// in-circuit; claim `(addr, entry_point, comm)` via
-/// [`kernel_claim_contract_call`], with the entry-point hash as two CONSTANT
+/// [`kernel_claim_contract_call`], with the entry-point hash as two constant
 /// limbs.
 ///
 /// The constant is what binds the proof to the callee circuit named at the
 /// call site: two same-shaped entry points of a callee are different
-/// circuits (external review §4.5).
+/// circuits.
 ///
 /// `addr` is the callee's address (`Bytes<32>` `[hi, lo]`, from a
 /// [`cell_read`] of the target field — one fresh uncached read per call
@@ -43,7 +43,7 @@ minocrab::label! {
 /// `[Bits(8), Bits(248)]`, `Uint<128>` → `[Bits(128)]`, a `Field` limb →
 /// `None`).
 ///
-/// The result constraints and a circuit's own ARGUMENT constraints are the
+/// The result constraints and a circuit's own argument constraints are the
 /// same table — compactc runs `emit-constraints-for` over both — so a
 /// caller derives this list from the callee's return type via
 /// `CircuitAbi::prims`, and [`LimbConstraint`] is that table's output type
@@ -53,18 +53,18 @@ minocrab::label! {
 /// them publicly (under cc-rand hiding) via `comm`, and Compact treats
 /// them as public downstream.
 pub fn contract_call(
-    c: &mut Circuit3,
-    addr: [Wire3<FieldT, Public>; 2],
+    c: &mut Circuit,
+    addr: [Wire<FieldT, Public>; 2],
     entry_point: EntryPoint,
-    args: &[Wire3<FieldT, Public>],
+    args: &[Wire<FieldT, Public>],
     results: &[LimbConstraint],
-) -> Vec<Wire3<FieldT, Public>> {
-    // Every witness of the call is read under the AMBIENT scope, as the op
+) -> Vec<Wire<FieldT, Public>> {
+    // Every witness of the call is read under the ambient scope, as the op
     // that claims it is emitted under it (`c.witness()` resolves whatever
-    // `Circuit3::when` the call sits inside — notes/edsl-trim.org §B): a call
+    // `Circuit::when` the call sits inside — notes/edsl-trim.org §B): a call
     // inside a branch consumes the prover's cc-rand and results only where
     // the branch runs, or the private transcript shifts for everything after
-    // it (the external review's §4.3; the same class the choke point closed
+    // it (the same class the choke point closes
     // for the scope-based reads). Straight-line callers are unguarded, which
     // lowers to compactc's own `guard: null`.
     let results: Vec<_> = results
@@ -103,38 +103,38 @@ pub fn contract_call(
     results.disclose_as::<XcallResult>(c)
 }
 
-/// WHERE a cross-contract call's target address comes from.
+/// Where a cross-contract call's target address comes from.
 ///
 /// The two variants are the two things a Compact receiver expression can
 /// be, and they lower differently:
 ///
 /// - [`Callee::Field`] is a sealed ledger cell holding the address
-///   (`export sealed ledger target: Target`). EVERY call site does its own
-///   FRESH UNCACHED read: `xcall`'s `callTwice` calls the same target twice
+///   (`export sealed ledger target: Target`). Every call site does its own
+///   fresh uncached read: `xcall`'s `callTwice` calls the same target twice
 ///   in one circuit and compactc reads the cell twice, so caching the first
 ///   read would be a row-count difference, not an optimization.
 /// - [`Callee::Pinned`] is an address the caller already holds as data
 ///   (`kernel.self()`, an argument, a constant, or a `Field` callee resolved
 ///   early with [`Callee::pin`]).
 ///
-/// An interface crate NEVER contains an address: a deployment pins one via
+/// An interface crate never contains an address: a deployment pins one via
 /// a sealed cell or passes it as data. That is why this type has no
 /// constant-address variant.
 #[derive(Clone, Copy)]
 pub enum Callee {
     /// The ledger field whose cell holds the callee's address.
     Field(u8),
-    /// The same, by ledger field PATH (`elems[..len]`) — a block of sixteen
+    /// The same, by ledger field path (`elems[..len]`) — a block of sixteen
     /// fields or more is segmented and its fields have no single index.
     FieldPath([u8; 3], u8),
     /// The callee's address as FAB limbs `[hi, lo]`.
-    Pinned([Wire3<FieldT, Public>; 2]),
+    Pinned([Wire<FieldT, Public>; 2]),
 }
 
 impl Callee {
-    /// Resolve the address NOW, returning a [`Callee::Pinned`].
+    /// Resolve the address now, returning a [`Callee::Pinned`].
     ///
-    /// WHY THIS EXISTS: compactc evaluates a call's RECEIVER before its
+    /// Why this exists: compactc evaluates a call's receiver before its
     /// argument expressions; Rust evaluates the arguments before the call.
     /// Where an argument expression emits instructions — erc20-vault's
     /// `constructSignBidirectionalEventNotificationV1(kernel.self(), …)` —
@@ -144,12 +144,12 @@ impl Callee {
     /// arguments emit nothing (every other call site in the corpus),
     /// `Field` resolved inside [`call`] gives the same stream and is the
     /// simpler spelling.
-    pub fn pin(self, c: &mut Circuit3) -> Callee {
+    pub fn pin(self, c: &mut Circuit) -> Callee {
         Callee::Pinned(self.address(c))
     }
 
     /// The address limbs — for [`Callee::Field`], the fresh uncached read.
-    fn address(self, c: &mut Circuit3) -> [Wire3<FieldT, Public>; 2] {
+    fn address(self, c: &mut Circuit) -> [Wire<FieldT, Public>; 2] {
         match self {
             Callee::Field(index) => {
                 let limbs = cell_read(c, index, vec![AlignmentAtom::Bytes { length: 32 }]);
@@ -168,13 +168,13 @@ impl Callee {
     }
 }
 
-/// ONE TYPED CROSS-CONTRACT CALL: `callee.entry_point(args…) -> R`.
+/// One typed cross-contract call: `callee.entry_point(args…) -> R`.
 ///
-/// The whole of M12 above the desugar. [`contract_call`] takes flat limb
+/// [`contract_call`] takes flat limb
 /// vectors and a hand-written result-constraint list; this takes the
-/// callee's declared argument and result TYPES and derives both — the limb
+/// callee's declared argument and result types and derives both — the limb
 /// order from [`CallArgs::push_call_slots`], the result constraints from
-/// [`CircuitAbi::prims`](minocrab::v3::CircuitAbi::prims) run through
+/// [`CircuitAbi::prims`](minocrab::CircuitAbi::prims) run through
 /// compactc's own table. A caller can no
 /// longer flatten a struct in the wrong order or forget a result's range
 /// check, because it never writes either down.
@@ -182,8 +182,8 @@ impl Callee {
 /// `entry_point` is the callee circuit's name; [`contract_call`] bakes its
 /// hash into the claim as a constant, so the proof binds the call to that
 /// circuit and to no other entry point of the callee.
-pub fn call<A: CallArgs, R: CallResult>(
-    c: &mut Circuit3,
+pub fn call<A: CallArgs, R: Decode<Public>>(
+    c: &mut Circuit,
     callee: Callee,
     entry_point: EntryPoint,
     args: A,
@@ -196,21 +196,21 @@ pub fn call<A: CallArgs, R: CallResult>(
         .collect();
     let results = contract_call(c, addr, entry_point, &arg_slots, &constraints);
     debug_assert_eq!(results.len(), R::SLOTS, "contract_call returned {} slots", results.len());
-    R::from_call_slots(&results)
+    R::decode(&results)
 }
 
-/// A callee circuit's ENTRY POINT: its Compact name, and the `Bytes<32>`
+/// A callee circuit's entry point: its Compact name, and the `Bytes<32>`
 /// hash the ledger matches a `claimContractCall` against.
 ///
 /// The hash is not ours to define. `EntryPointBuf::ep_hash`
 /// (midnight-onchain-state `state.rs`) is the definition —
 /// `persistent_commit(name, "midnight:entry-point" ‖ 12 zero bytes)` — and
-/// [`EntryPoint::hash`] CALLS it. Nothing here re-derives a SHA: a
+/// [`EntryPoint::hash`] calls it. Nothing here re-derives a SHA: a
 /// reimplementation that agreed today would be a silent chain-split the
 /// day upstream changed the domain separator.
 ///
-/// This is what "derive keys, don't type them" means for M12: an interface
-/// declares circuit NAMES, and the 32-byte keys the claim carries fall out
+/// This is what "derive keys, don't type them" means: an interface
+/// declares circuit names, and the 32-byte keys the claim carries fall out
 /// of them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct EntryPoint(&'static str);

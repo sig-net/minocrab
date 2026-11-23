@@ -10,22 +10,62 @@ use midnight_onchain_vm::ops::{Key, Op};
 use midnight_onchain_vm::result_mode::ResultModeVerify;
 use midnight_storage::db::InMemoryDB;
 use midnight_transient_crypto::repr::FieldRepr;
-use minocrab::v3::ImpactElem;
+use minocrab::{ImpactElem, Val};
 use minocrab::Fr;
 
 /// The concrete op type whose `field_repr` defines the PI encoding.
 pub type VmOp = Op<ResultModeVerify, InMemoryDB>;
 
-/// One Impact instruction: the element stream of a single Impact-VM op.
+/// One Impact instruction: the element stream of a single Impact-VM op,
+/// and the value it stores, if it is the push of an author's value into
+/// ledger state.
+///
+/// The second field is what [`emit`](crate::emit) runs through the
+/// stale-read backstop (`Circuit::refuse_stale`). It is filled by the
+/// builders of the writes whose value a typed slot checks, from the same
+/// [`LedgerValue`] they splice into the op, so the wires checked are the
+/// wires written: [`cell_write_at`](crate::cell_write_at),
+/// [`map_insert_at`](crate::map_insert_at) and
+/// [`list_push_front_at`](crate::list_push_front_at) (and their field-index
+/// forms). No other op stores a checked value: not keys, paths or opcodes,
+/// not a counter increment (an immediate), not the coin arms, not a
+/// Merkle-tree leaf (a hash, which the typed `insert_hash` takes unchecked;
+/// the typed `insert` checks the item it hashes), not the kernel claims and
+/// not an event's payload (a log, not state). The field is private to this
+/// crate, so an op cannot be built outside it except through its builders
+/// and [`ImpactOp::constant`].
 #[derive(Clone)]
-pub struct ImpactOp(pub Vec<ImpactElem>);
+pub struct ImpactOp(pub Vec<ImpactElem>, pub(crate) Option<Stored>);
+
+/// The value an [`ImpactOp`] stores: its wires, and what it is, in the
+/// words the refusal uses (`a cell write's value`).
+#[derive(Clone)]
+pub(crate) struct Stored {
+    pub(crate) what: &'static str,
+    pub(crate) wires: Vec<Val>,
+}
 
 impl ImpactOp {
     /// A fully-constant op, encoded by the real `Op::field_repr`.
     pub fn constant(op: &VmOp) -> ImpactOp {
         let mut elems = Vec::new();
         op.field_repr(&mut elems);
-        ImpactOp(elems.into_iter().map(ImpactElem::Imm).collect())
+        ImpactOp(elems.into_iter().map(ImpactElem::Imm).collect(), None)
+    }
+
+    /// This op, marked as storing `value` (see the type's docs). `value` is
+    /// the [`LedgerValue`] the op was built from; its wires are what
+    /// [`emit`](crate::emit) checks.
+    pub(crate) fn storing(self, value: &LedgerValue, what: &'static str) -> ImpactOp {
+        let wires = value
+            .elems
+            .iter()
+            .filter_map(|e| match e {
+                ImpactElem::Wire(w) => Some(w.val()),
+                ImpactElem::Imm(_) => None,
+            })
+            .collect();
+        ImpactOp(self.0, Some(Stored { what, wires }))
     }
 }
 
@@ -44,11 +84,11 @@ pub struct LedgerValue {
 ///
 /// Public because it is the FAB rule and it should be stated once — the
 /// stdlib needs it to build a default value's zeros
-/// (notes/ledger-adts.org finding (c)).
+/// (notes/ledger-adts.org).
 pub fn atom_limbs(atom: &AlignmentAtom) -> usize {
     match atom {
-        // A `Bytes<0>` atom is in the alignment but holds NO limb (compactc's
-        // V1 Signet record: 23 atoms, 30 limbs — M44).
+        // A `Bytes<0>` atom is in the alignment but holds no limb (compactc's
+        // V1 Signet record: 23 atoms, 30 limbs).
         AlignmentAtom::Bytes { length } => (*length as usize).div_ceil(31),
         AlignmentAtom::Field | AlignmentAtom::Compress => 1,
     }
@@ -113,7 +153,7 @@ pub fn push_cell(storage: bool, value: &LedgerValue) -> ImpactOp {
     ];
     elems.extend(alignment_header(&value.atoms));
     elems.extend(value.elems.iter().copied());
-    ImpactOp(elems)
+    ImpactOp(elems, None)
 }
 
 /// One element of a pushed `StateValue::Array` whose cells may be
@@ -130,7 +170,7 @@ pub enum LedgerElem {
 /// `[0x10 + storage, 3 | len << 4, element reprs…]` (`StateValue::field_repr`,
 /// onchain-state state.rs:171-205).
 ///
-/// The ONE mixed push in the ADT layer: `List.pushFront` pushes
+/// The one mixed push in the ADT layer: `List.pushFront` pushes
 /// `[Cell(value), Null, Null]` whose first element carries the pushed value's
 /// wires (notes/ledger-adts.org §2). Every other ADT constant — the empty
 /// map, the blank tree, a `List`'s initial value — is fully constant and goes
@@ -152,14 +192,14 @@ pub fn push_array(storage: bool, elems: &[LedgerElem]) -> ImpactOp {
             }
         }
     }
-    ImpactOp(out)
+    ImpactOp(out, None)
 }
 
-/// The DEFAULT value of a type with these atoms: one zero limb per FAB limb.
+/// The default value of a type with these atoms: one zero limb per FAB limb.
 ///
 /// True for every Compact type, not just the scalar ones — compactc's `VMnull`
 /// reduction is `(make-list count 0)` over the limb count
-/// (reduce-to-zkir.ss:350-355, notes/ledger-adts.org finding (c)) — which is
+/// (reduce-to-zkir.ss:350-355, notes/ledger-adts.org) — which is
 /// why no per-type default table exists anywhere below this line.
 pub fn default_value(atoms: Vec<AlignmentAtom>) -> LedgerValue {
     let limbs: usize = atoms.iter().map(atom_limbs).sum();
@@ -184,20 +224,19 @@ pub fn field_key_checked(index: u8) -> AlignedValueChecked {
     AlignedValueChecked::from(index)
 }
 
-/// `idx` by ONE constant `bytes<1>` key.
+/// `idx` by one constant `bytes<1>` key.
 ///
 /// Two things are spelled this way, and they are the same instruction: a
-/// top-level ledger FIELD (`idx_one(false, false, field)` to read, uncached
+/// top-level ledger field (`idx_one(false, false, field)` to read, uncached
 /// and not remembering the path; `idx_one(false, true, field)` to reach one
-/// that will be written back) and a POSITION inside an ADT's `Array` —
+/// that will be written back) and a position inside an ADT's `Array` —
 /// `List` is `[head, tail, length]`, `MerkleTree` is `[tree, next-index]`,
 /// `HistoricMerkleTree` adds `[.., history]`, and every descent into one is
 /// `(align i 1)` in compactc's vm-code (notes/ledger-adts.org §1). The one
 /// spelling for both, per crate: production call sites (this crate's own
 /// `ops.rs`/`reads.rs`, and `minocrab-std`'s one `cached = true` site) all
-/// write the three arguments out rather than reach for a named wrapper —
-/// see notes/edsl-trim.org §D, finding 2, which removed the two this
-/// crate used to carry (`idx_field`, `idxp_field`).
+/// write the three arguments out rather than reach for a named wrapper
+/// (notes/edsl-trim.org §D).
 pub fn idx_one(cached: bool, push_path: bool, index: u8) -> ImpactOp {
     ImpactOp::constant(&Op::Idx {
         cached,
@@ -225,20 +264,20 @@ pub fn idx_key(key: &LedgerValue) -> ImpactOp {
     let mut elems = vec![ImpactElem::Imm(Fr::from(0x50u64))];
     elems.extend(alignment_header(&key.atoms));
     elems.extend(key.elems.iter().copied());
-    ImpactOp(elems)
+    ImpactOp(elems, None)
 }
 
-// --- the ledger PATH (`f`) --------------------------------------------------
+// --- the ledger path (`f`) --------------------------------------------------
 //
 // Every ledger operation's vm-code is written against `f`, "the path to the
-// field being operated on" (midnight-ledger.ss:133-138), and `f` is "a list of
+// field being operated on" (midnight-ledger.ss:139-145), and `f` is "a list of
 // either aligned value instances, or the symbol 'stack". For a top-level
 // field it is one `bytes<1>` key; nesting appends map keys.
 //
-// A NESTED ACCESS IS NOT A NEW INSTRUCTION. compactc's
+// A nested access is not a new instruction. compactc's
 // `propagate-ledger-paths.ss` walks a chain of accessors, folds every
 // intermediate `Map.lookup(k)` into `f` as one more path element, and emits
-// nothing for it; only the LAST accessor's vm-code runs, with a longer `f`.
+// nothing for it; only the last accessor's vm-code runs, with a longer `f`.
 // So `m.lookup(k).insert(k2, v)` is `map_insert`'s five instructions with a
 // two-element path — `idxp` gains a low nibble and the closing `insc` a
 // bigger `n`. See notes/coin-arms-nested-adts.org "AS BUILT — STAGE B1".
@@ -297,7 +336,7 @@ impl LedgerKey {
 /// `[0x50 | hi | (path.len() − 1)]` then each element's encoding, which is
 /// `assemble1`'s `idx` case (reduce-to-zkir.ss:586-601) and upstream's
 /// `Op::Idx` field_repr (ops.rs:510-524) at once. The low nibble is the
-/// ONLY thing depth changes.
+/// only thing depth changes.
 pub fn idx_path(cached: bool, push_path: bool, path: &[LedgerKey]) -> ImpactOp {
     assert!(
         !path.is_empty(),
@@ -322,11 +361,11 @@ pub fn idx_path(cached: bool, push_path: bool, path: &[LedgerKey]) -> ImpactOp {
     for key in path {
         key.push_elems(&mut elems);
     }
-    ImpactOp(elems)
+    ImpactOp(elems, None)
 }
 
 /// The one-element path of a top-level ledger field — what every `u8`
-/// builder widens into, and the reason the widening is purely ADDITIVE.
+/// builder widens into, and the reason the widening is purely additive.
 pub(crate) fn field_path(index: u8) -> [LedgerKey; 1] {
     [LedgerKey::Field(index)]
 }
@@ -342,13 +381,13 @@ pub fn swap(n: u8) -> ImpactOp {
     ImpactOp::constant(&Op::Swap { n })
 }
 
-/// `idx` by a single dynamic key, CACHED — [`idx_key`]'s twin, and the shape
+/// `idx` by a single dynamic key, cached — [`idx_key`]'s twin, and the shape
 /// the balance lookup descends with.
 pub fn idx_key_cached(key: &LedgerValue) -> ImpactOp {
     let mut elems = vec![ImpactElem::Imm(Fr::from(0x60u64))];
     elems.extend(alignment_header(&key.atoms));
     elems.extend(key.elems.iter().copied());
-    ImpactOp(elems)
+    ImpactOp(elems, None)
 }
 
 /// A path in words, for the stale-read backstop's refusal to name a read:
